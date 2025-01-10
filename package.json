@@ -1,0 +1,31 @@
+{
+  "name": "callllm",
+  "version": "1.0.0",
+  "description": "A universal LLM caller library.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "example": "ts-node examples/alias-chat.ts"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@dqbd/tiktoken": "^1.0.18",
+    "@types/jest": "^29.5.14",
+    "dotenv": "^16.4.7",
+    "gpt-tokenizer": "^2.8.1",
+    "jest": "^29.7.0",
+    "openai": "^4.77.0",
+    "ts-jest": "^29.2.5",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}

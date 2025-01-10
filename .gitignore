@@ -1,0 +1,34 @@
+# Node modules
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables
+.env
+
+# Logs
+logs/
+*.log
+
+# Jest coverage
+coverage/
+
+# TypeScript
+*.tsbuildinfo
+
+# MacOS
+.DS_Store
+
+# Yarn
+.yarn/
+.yarnrc.yml
+
+# Others
+.idea/
+.vscode/
+*.swp 
+
+.cursorignore
+.cursorrules
+.notes/
