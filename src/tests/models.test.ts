@@ -5,7 +5,22 @@ import { OpenAIAdapter } from '../adapters/openai/OpenAIAdapter';
 jest.mock('../adapters/openai/OpenAIAdapter', () => ({
     OpenAIAdapter: jest.fn().mockImplementation(() => ({
         chatCall: jest.fn(),
-        streamCall: jest.fn()
+        streamCall: jest.fn(),
+        convertToProviderParams: jest.fn((model: string, params: any) => {
+            const temperature = params.settings?.temperature ?? 1;
+            const clampedTemperature = Math.min(Math.max(temperature, 0), 2);
+            return {
+                model,
+                messages: params.messages,
+                temperature: clampedTemperature,
+                max_tokens: params.settings?.maxTokens,
+                top_p: params.settings?.topP,
+                frequency_penalty: params.settings?.frequencyPenalty,
+                presence_penalty: params.settings?.presencePenalty,
+                response_format: params.settings?.responseFormat,
+                stream: false
+            };
+        })
     }))
 }));
 
@@ -277,6 +292,13 @@ describe('OpenAI Adapter', () => {
 
     beforeEach(() => {
         adapter = new OpenAIAdapter('test-key');
+        jest.clearAllMocks();
+
+        // Ensure the adapter has the test model
+        const testModel = mockModels.find(m => m.name === 'gpt-4o');
+        if (testModel) {
+            (adapter as any).models.set('gpt-4o', { ...testModel, jsonMode: true });
+        }
     });
 
     describe('Parameter Validation', () => {

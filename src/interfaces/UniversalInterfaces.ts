@@ -32,7 +32,10 @@ export interface UniversalChatParams {
          * JSON schema for response validation and formatting
          * Can be either a JSON Schema string or a Zod schema
          */
-        jsonSchema?: JSONSchemaDefinition;
+        jsonSchema?: {
+            name?: string;
+            schema: JSONSchemaDefinition;
+        };
         /**
          * Specify the response format
          * @default 'text'
@@ -61,7 +64,10 @@ export interface UniversalChatResponse {
         finishReason?: FinishReason;
         created?: number;
         usage?: Usage;
-        [key: string]: any;
+        refusal?: any;
+        model?: string;
+        responseFormat?: ResponseFormat;
+        validationErrors?: Array<{ message: string; path: string }>;
     };
 }
 
@@ -73,7 +79,11 @@ export interface UniversalStreamResponse {
     metadata?: {
         finishReason?: FinishReason;
         usage?: Usage;
-        [key: string]: any;
+        created?: number;
+        model?: string;
+        refusal?: any;
+        responseFormat?: ResponseFormat;
+        validationErrors?: Array<{ message: string; path: string }>;
     };
 }
 

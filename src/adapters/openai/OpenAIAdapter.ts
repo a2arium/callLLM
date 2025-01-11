@@ -1,20 +1,27 @@
-import { LLMProvider } from '../../interfaces/LLMProvider';
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason, ModelInfo } from '../../interfaces/UniversalInterfaces';
 import { OpenAI } from 'openai';
-import dotenv from 'dotenv';
+import { zodResponseFormat } from 'openai/helpers/zod';
+import { LLMProvider } from '../../interfaces/LLMProvider';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason, ModelInfo, ResponseFormat } from '../../interfaces/UniversalInterfaces';
 import { defaultModels } from './models';
 import { encoding_for_model } from '@dqbd/tiktoken';
+import { z } from 'zod';
+import { SchemaFormatter } from '../../core/schema/SchemaFormatter';
 
-dotenv.config();
+interface JSONResponseFormat {
+    type: 'json_object' | 'json_schema';
+    json_schema?: Record<string, unknown>;
+}
 
 export class OpenAIAdapter implements LLMProvider {
     private client: OpenAI;
     private models: Map<string, ModelInfo>;
     private currentModel: string = '';
+    private currentResponseFormat: ResponseFormat = 'text';
 
     constructor(apiKey?: string) {
         this.client = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY || apiKey
+            apiKey: process.env.OPENAI_API_KEY || apiKey,
+            dangerouslyAllowBrowser: true
         });
         this.models = new Map(defaultModels.map(model => [model.name, model]));
     }
@@ -48,6 +55,47 @@ export class OpenAIAdapter implements LLMProvider {
             temperature = Math.max(0, Math.min(2, temperature));
         }
 
+        // Handle JSON mode and structured outputs
+        let responseFormat: OpenAI.Chat.ChatCompletionCreateParams['response_format'] | undefined;
+        if (params.settings?.jsonSchema) {
+            const modelInfo = this.models.get(model);
+            // Check if model supports structured outputs
+            if (modelInfo?.jsonMode) {
+                const { name, schema } = params.settings.jsonSchema;
+                if (schema instanceof z.ZodType) {
+                    responseFormat = zodResponseFormat(schema, name || 'Schema');
+                } else {
+                    // Format the JSON schema according to OpenAI's requirements
+                    responseFormat = {
+                        type: 'json_schema',
+                        json_schema: SchemaFormatter.formatJsonSchema(name || 'Schema', schema)
+                    };
+                }
+            } else {
+                // Fallback to basic JSON mode for older models
+                responseFormat = { type: 'json_object' };
+                // Add JSON instruction to system message if not present
+                if (!adjustedMessages.some(msg => msg.content.includes('JSON'))) {
+                    adjustedMessages.unshift({
+                        role: 'system',
+                        content: 'You must respond with valid JSON output.'
+                    });
+                }
+            }
+        } else if (params.settings?.responseFormat === 'json') {
+            responseFormat = { type: 'json_object' };
+            // Add JSON instruction to system message if not present
+            if (!adjustedMessages.some(msg => msg.content.includes('JSON'))) {
+                adjustedMessages.unshift({
+                    role: 'system',
+                    content: 'You must respond with valid JSON output.'
+                });
+            }
+        }
+
+        // Store the response format setting for use in response conversion
+        this.currentResponseFormat = params.settings?.responseFormat || 'text';
+
         return {
             model,
             messages: adjustedMessages,
@@ -56,12 +104,29 @@ export class OpenAIAdapter implements LLMProvider {
             top_p: params.settings?.topP,
             frequency_penalty: params.settings?.frequencyPenalty,
             presence_penalty: params.settings?.presencePenalty,
+            response_format: responseFormat,
             stream: false
         };
     }
 
     public convertFromProviderResponse(response: OpenAI.Chat.ChatCompletion): UniversalChatResponse {
         const choice = response.choices[0];
+        const message = choice.message as any; // Cast to access potential refusal
+
+        // Handle refusals in structured output
+        if (message.refusal) {
+            return {
+                content: '',
+                role: 'assistant',
+                metadata: {
+                    finishReason: FinishReason.CONTENT_FILTER,
+                    refusal: message.refusal,
+                    created: response.created,
+                    model: response.model
+                }
+            };
+        }
+
         const usage = response.usage ? {
             inputTokens: response.usage.prompt_tokens,
             outputTokens: response.usage.completion_tokens,
@@ -74,27 +139,46 @@ export class OpenAIAdapter implements LLMProvider {
         } : undefined;
 
         return {
-            content: choice.message?.content || '',
-            role: choice.message?.role || 'assistant',
+            content: message.content || '',
+            role: message.role || 'assistant',
             metadata: {
                 finishReason: this.mapFinishReason(choice.finish_reason),
                 created: response.created,
                 model: response.model,
-                usage
+                usage,
+                responseFormat: this.currentResponseFormat
             }
         };
     }
 
     public convertFromProviderStreamResponse(chunk: OpenAI.Chat.ChatCompletionChunk): UniversalStreamResponse {
         const choice = chunk.choices[0];
+        const delta = choice.delta as any; // Cast to access potential refusal
+
+        // Handle refusals in structured output
+        if (delta.refusal) {
+            return {
+                content: '',
+                role: 'assistant',
+                isComplete: true,
+                metadata: {
+                    finishReason: FinishReason.CONTENT_FILTER,
+                    refusal: delta.refusal,
+                    created: chunk.created,
+                    model: chunk.model
+                }
+            };
+        }
+
         return {
-            content: choice.delta?.content || '',
-            role: choice.delta?.role || 'assistant',
+            content: delta.content || '',
+            role: delta.role || 'assistant',
             isComplete: choice.finish_reason !== null,
             metadata: {
                 finishReason: this.mapFinishReason(choice.finish_reason),
                 created: chunk.created,
-                model: chunk.model
+                model: chunk.model,
+                responseFormat: this.currentResponseFormat
             }
         };
     }
@@ -151,7 +235,8 @@ export class OpenAIAdapter implements LLMProvider {
                             finishReason: chunk.choices[0]?.finish_reason as FinishReason || FinishReason.NULL,
                             created: chunk.created,
                             model: chunk.model,
-                            usage
+                            usage,
+                            responseFormat: this.currentResponseFormat
                         }
                     };
                 }
@@ -176,4 +261,4 @@ export class OpenAIAdapter implements LLMProvider {
             return Math.ceil(text.length / 4);
         }
     }
-} 
+}

@@ -1,6 +1,15 @@
 # callLLM
 
-A universal LLM caller library designed to provide a unified interface for interacting with various language model providers.
+A TypeScript library for interacting with various AI chat models, focusing on cost and performance optimization.
+
+## Features
+
+- Model selection based on performance characteristics
+- Cost tracking and optimization
+- Support for multiple AI providers (currently OpenAI)
+- Streaming responses
+- JSON mode with schema validation
+- Type-safe responses
 
 ## Installation
 
@@ -225,6 +234,115 @@ interface UniversalStreamResponse {
     };
 }
 ```
+
+
+
+## JSON Mode and Schema Validation
+
+The library supports structured outputs with schema validation using either Zod schemas or JSON Schema:
+
+### Using Zod Schema
+
+```typescript
+import { z } from 'zod';
+
+const UserSchema = z.object({
+    name: z.string(),
+    age: z.number(),
+    interests: z.array(z.string())
+});
+
+const response = await caller.chatCall<typeof UserSchema>({
+    message: 'Generate a profile for a user named Alice',
+    settings: {
+        jsonSchema: {
+            name: 'UserProfile',
+            schema: UserSchema
+        },
+        responseFormat: 'json'
+    }
+});
+
+// response.content is typed as { name: string; age: number; interests: string[] }
+```
+
+### Using JSON Schema
+
+```typescript
+const response = await caller.chatCall({
+    message: 'Generate a recipe',
+    settings: {
+        jsonSchema: {
+            name: 'Recipe',
+            schema: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string' },
+                    ingredients: {
+                        type: 'array',
+                        items: { type: 'string' }
+                    },
+                    steps: {
+                        type: 'array',
+                        items: { type: 'string' }
+                    }
+                },
+                required: ['name', 'ingredients', 'steps']
+            }
+        },
+        responseFormat: 'json'
+    }
+});
+```
+
+Note: The library automatically adds `additionalProperties: false` to all object levels in JSON schemas to ensure strict validation. You don't need to specify this in your schema.
+
+### Streaming with Schema Validation
+
+```typescript
+const stream = await caller.streamCall<typeof UserSchema>({
+    message: 'Generate a profile for a user named Bob',
+    settings: {
+        jsonSchema: {
+            name: 'UserProfile',
+            schema: UserSchema
+        },
+        responseFormat: 'json'
+    }
+});
+
+for await (const chunk of stream) {
+    if (chunk.isComplete) {
+        // Final chunk contains the validated JSON object
+        console.log(chunk.content);
+    }
+}
+```
+
+### Error Handling
+
+When using schema validation, the library provides detailed validation errors:
+
+```typescript
+try {
+    const response = await caller.chatCall({
+        message: 'Generate data',
+        settings: {
+            jsonSchema: {
+                name: 'Data',
+                schema: UserSchema
+            },
+            responseFormat: 'json'
+        }
+    });
+} catch (error) {
+    if (error instanceof SchemaValidationError) {
+        console.log('Validation errors:', error.validationErrors);
+    }
+}
+```
+
+
 
 ## Available Settings
 

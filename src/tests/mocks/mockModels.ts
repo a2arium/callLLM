@@ -8,6 +8,7 @@ export const mockModels: ModelInfo[] = [
         maxRequestTokens: 8192,
         maxResponseTokens: 4096,
         tokenizationModel: "mock-tokenizer",
+        jsonMode: true,
         characteristics: {
             qualityIndex: 95,
             outputSpeed: 15,
@@ -21,6 +22,7 @@ export const mockModels: ModelInfo[] = [
         maxRequestTokens: 16384,
         maxResponseTokens: 8192,
         tokenizationModel: "mock-tokenizer",
+        jsonMode: true,
         characteristics: {
             qualityIndex: 85,
             outputSpeed: 25,
@@ -34,6 +36,7 @@ export const mockModels: ModelInfo[] = [
         maxRequestTokens: 32768,
         maxResponseTokens: 16384,
         tokenizationModel: "mock-tokenizer",
+        jsonMode: true,
         characteristics: {
             qualityIndex: 100,
             outputSpeed: 10,

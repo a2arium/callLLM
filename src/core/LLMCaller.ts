@@ -4,7 +4,7 @@ import { OpenAIAdapter } from '../adapters/openai/OpenAIAdapter';
 import { defaultModels as openAIModels } from '../adapters/openai/models';
 import { ModelSelector } from './ModelSelector';
 import { encoding_for_model } from '@dqbd/tiktoken';
-import { SchemaValidator, SchemaValidationError } from './SchemaValidator';
+import { SchemaValidator, SchemaValidationError } from './schema/SchemaValidator';
 import { z } from 'zod';
 
 export type SupportedProviders = 'openai' | 'anthropic' | 'google';
@@ -181,16 +181,34 @@ export class LLMCaller {
     // New method for response validation
     private async validateResponse<T extends z.ZodType | undefined = undefined>(
         response: UniversalChatResponse,
-        schema?: JSONSchemaDefinition
+        settings: UniversalChatParams['settings'],
     ): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
-        if (!schema || response.metadata?.finishReason === FinishReason.NULL) {
+        if (!settings?.jsonSchema || response.metadata?.finishReason === FinishReason.NULL) {
+            // Parse JSON if JSON mode is requested
+            if (response.metadata?.responseFormat === 'json') {
+                try {
+                    return {
+                        ...response,
+                        content: JSON.parse(response.content)
+                    } as any;
+                } catch (error) {
+                    if (error instanceof Error) {
+                        throw new Error(`Failed to parse JSON response: ${error.message}`);
+                    }
+                    throw new Error('Failed to parse JSON response: Unknown error');
+                }
+            }
             return response as any;
         }
 
         try {
+            const contentToParse = typeof response.content === 'string'
+                ? JSON.parse(response.content)
+                : response.content;
+
             const validatedContent = SchemaValidator.validate(
-                response.metadata?.responseFormat === 'json' ? JSON.parse(response.content) : response.content,
-                schema
+                contentToParse,
+                settings.jsonSchema.schema
             );
 
             return {
@@ -208,7 +226,10 @@ export class LLMCaller {
                     }
                 } as any;
             }
-            throw error;
+            if (error instanceof Error) {
+                throw new Error(`Failed to validate response: ${error.message}`);
+            }
+            throw new Error('Failed to validate response: Unknown error');
         }
     }
 
@@ -250,7 +271,7 @@ export class LLMCaller {
         };
 
         // Validate response against schema if provided
-        return this.validateResponse<T>(responseWithUsage, settings?.jsonSchema);
+        return this.validateResponse<T>(responseWithUsage, settings);
     }
 
     // Basic streaming method
@@ -279,45 +300,87 @@ export class LLMCaller {
         const inputTokens = this.calculateTokens(this.systemMessage + '\n' + message);
         let accumulatedOutput = '';
 
-        // If no schema validation is needed, return original stream with usage tracking
-        if (!schema) {
-            return {
-                [Symbol.asyncIterator]: async function* (this: LLMCaller) {
-                    for await (const chunk of stream) {
-                        accumulatedOutput += chunk.content;
-                        const outputTokens = this.calculateTokens(accumulatedOutput);
-                        const usage = this.calculateUsage(inputTokens, outputTokens);
-
-                        yield {
-                            ...chunk,
-                            metadata: {
-                                ...chunk.metadata,
-                                usage
-                            }
-                        } as any;
-                    }
-                }.bind(this)
-            };
-        }
-
         // Create a new stream that validates chunks and tracks usage
         return {
             [Symbol.asyncIterator]: async function* (this: LLMCaller) {
-                let accumulatedJson = '';
 
                 for await (const chunk of stream) {
                     accumulatedOutput += chunk.content;
                     const outputTokens = this.calculateTokens(accumulatedOutput);
                     const usage = this.calculateUsage(inputTokens, outputTokens);
 
-                    if (settings?.responseFormat === 'json') {
-                        accumulatedJson += chunk.content;
-
+                    if (chunk.metadata?.responseFormat === 'json') {
                         if (chunk.isComplete) {
                             try {
+                                // If the chunk is complete and it's a string, parse it directly
+                                const parsedContent = typeof chunk.content === 'string'
+                                    ? JSON.parse(accumulatedOutput)
+                                    : accumulatedOutput;
+
+                                // If we have a schema, validate the parsed content
+                                if (schema) {
+                                    try {
+                                        const validatedContent = SchemaValidator.validate(
+                                            parsedContent,
+                                            schema.schema
+                                        );
+                                        yield {
+                                            ...chunk,
+                                            content: validatedContent,
+                                            metadata: {
+                                                ...chunk.metadata,
+                                                usage
+                                            }
+                                        } as any;
+                                    } catch (error) {
+                                        if (error instanceof SchemaValidationError) {
+                                            yield {
+                                                ...chunk,
+                                                metadata: {
+                                                    ...chunk.metadata,
+                                                    validationErrors: error.validationErrors,
+                                                    finishReason: FinishReason.CONTENT_FILTER,
+                                                    usage
+                                                }
+                                            } as any;
+                                        } else {
+                                            throw error;
+                                        }
+                                    }
+                                } else {
+                                    // No schema, just return parsed JSON
+                                    yield {
+                                        ...chunk,
+                                        content: parsedContent,
+                                        metadata: {
+                                            ...chunk.metadata,
+                                            usage
+                                        }
+                                    } as any;
+                                }
+                            } catch (error) {
+                                // JSON parsing error
+                                if (error instanceof Error) {
+                                    throw new Error(`Failed to parse JSON response: ${error.message}`);
+                                }
+                                throw new Error('Failed to parse JSON response: Unknown error');
+                            }
+                        } else {
+                            yield {
+                                ...chunk,
+                                metadata: {
+                                    ...chunk.metadata,
+                                    usage
+                                }
+                            } as any;
+                        }
+                    } else {
+                        // Not JSON mode, but might still need schema validation
+                        if (schema) {
+                            try {
                                 const validatedContent = SchemaValidator.validate(
-                                    JSON.parse(accumulatedJson),
-                                    schema
+                                    chunk.content,
+                                    schema.schema
                                 );
 
                                 yield {
@@ -344,6 +407,7 @@ export class LLMCaller {
                                 }
                             }
                         } else {
+                            // No schema validation needed
                             yield {
                                 ...chunk,
                                 metadata: {
@@ -351,38 +415,9 @@ export class LLMCaller {
                                     usage
                                 }
                             } as any;
-                        }
-                    } else {
-                        try {
-                            const validatedContent = SchemaValidator.validate(
-                                chunk.content,
-                                schema
-                            );
-
-                            yield {
-                                ...chunk,
-                                content: validatedContent,
-                                metadata: {
-                                    ...chunk.metadata,
-                                    usage
-                                }
-                            } as any;
-                        } catch (error) {
-                            if (error instanceof SchemaValidationError) {
-                                yield {
-                                    ...chunk,
-                                    metadata: {
-                                        ...chunk.metadata,
-                                        validationErrors: error.validationErrors,
-                                        finishReason: FinishReason.CONTENT_FILTER,
-                                        usage
-                                    }
-                                } as any;
-                            } else {
-                                throw error;
-                            }
                         }
                     }
+
                 }
             }.bind(this)
         };
@@ -395,17 +430,19 @@ export class LLMCaller {
         endingMessage?: string;
         settings?: any;
     }): Promise<UniversalChatResponse[]> {
-        // Here you can implement additional logic, like:
-        // - Handling multiple messages
-        // - Processing data
-        // - Adding ending messages
-        // - Implementing retry logic
-        // - Adding logging
-        // - Implementing rate limiting
-        // etc.
+        const responses: UniversalChatResponse[] = [];
 
-        const response = await this.chatCall({ message, data, settings });
-        return [response];
+        // First message
+        const firstResponse = await this.chatCall({ message, data, settings });
+        responses.push(firstResponse);
+
+        // Ending message if provided
+        if (endingMessage) {
+            const endResponse = await this.chatCall({ message: endingMessage, data, settings });
+            responses.push(endResponse);
+        }
+
+        return responses;
     }
 
     // Extended stream method with additional functionality
@@ -415,7 +452,23 @@ export class LLMCaller {
         endingMessage?: string;
         settings?: any;
     }): Promise<AsyncIterable<UniversalStreamResponse>> {
-        // Here you can implement additional logic, similar to the call method
-        return await this.streamCall({ message, data, settings });
+        const firstStream = await this.streamCall({ message, data, settings });
+
+        if (!endingMessage) {
+            return firstStream;
+        }
+
+        const endStream = await this.streamCall({ message: endingMessage, data, settings });
+
+        return {
+            [Symbol.asyncIterator]: async function* () {
+                for await (const chunk of firstStream) {
+                    yield chunk;
+                }
+                for await (const chunk of endStream) {
+                    yield chunk;
+                }
+            }
+        };
     }
 } 
