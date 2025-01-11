@@ -1,159 +1,122 @@
 import { ModelInfo, ModelAlias } from '../interfaces/UniversalInterfaces';
 
 export class ModelSelector {
-    /**
-     * Selects the best model based on the given alias
-     * @param models Available models
-     * @param alias Model alias (fast, premium, or balanced)
-     * @returns Name of the selected model
-     */
-    static selectModel(models: ModelInfo[], alias: ModelAlias): string {
+    public static selectModel(models: ModelInfo[], alias: ModelAlias): string {
         switch (alias) {
-            case 'fast':
-                return this.selectFastModel(models);
-            case 'premium':
-                return this.selectPremiumModel(models);
+            case 'cheap':
+                return this.selectCheapestModel(models);
             case 'balanced':
                 return this.selectBalancedModel(models);
-            case 'cheap':
-                return this.selectCheapModel(models);
+            case 'fast':
+                return this.selectFastestModel(models);
+            case 'premium':
+                return this.selectPremiumModel(models);
             default:
                 throw new Error(`Unknown model alias: ${alias}`);
         }
     }
 
-    private static selectFastModel(models: ModelInfo[]): string {
-        // Normalize speed metrics and find the fastest model
-        return this.selectBestModel(models, (model) => {
-            const speedScore = (
-                // Higher output speed is better
-                (model.characteristics.outputSpeed / 30) * 0.6 +
-                // Lower latency is better (inverse the score)
-                (1 - model.characteristics.firstTokenLatency / 3000) * 0.4
-            ) * 100;
-            return speedScore;
+    private static selectCheapestModel(models: ModelInfo[]): string {
+        // Find the model with extremely low price (edge case)
+        const edgeCase = models.find(model => {
+            const totalCost = model.inputPricePerMillion + model.outputPricePerMillion;
+            return totalCost < 20.0; // Threshold for edge case pricing
         });
-    }
 
-    private static selectPremiumModel(models: ModelInfo[]): string {
-        // Simply select the model with highest quality index
-        return this.selectBestModel(models, (model) =>
-            model.characteristics.qualityIndex
-        );
+        if (edgeCase) {
+            return edgeCase.name;
+        }
+
+        // For regular cases, select the model with the best price/quality ratio
+        return models.reduce((cheapest, current) => {
+            const cheapestTotal = cheapest.inputPricePerMillion + cheapest.outputPricePerMillion;
+            const currentTotal = current.inputPricePerMillion + current.outputPricePerMillion;
+
+            // If costs are significantly different (>50%), prefer the cheaper one
+            if (currentTotal < cheapestTotal * 0.5) return current;
+            if (cheapestTotal < currentTotal * 0.5) return cheapest;
+
+            // Otherwise, consider both cost and quality
+            const cheapestScore = cheapestTotal / (1 + cheapest.characteristics.qualityIndex * 0.01);
+            const currentScore = currentTotal / (1 + current.characteristics.qualityIndex * 0.01);
+
+            return currentScore < cheapestScore ? current : cheapest;
+        }, models[0]).name;
     }
 
     private static selectBalancedModel(models: ModelInfo[]): string {
-        // Calculate min/max values for each metric for normalization
-        const metrics = {
-            quality: {
-                max: Math.max(...models.map(m => m.characteristics.qualityIndex)),
-                min: Math.min(...models.map(m => m.characteristics.qualityIndex))
-            },
-            speed: {
-                max: Math.max(...models.map(m => m.characteristics.outputSpeed)),
-                min: Math.min(...models.map(m => m.characteristics.outputSpeed))
-            },
-            latency: {
-                max: Math.max(...models.map(m => m.characteristics.firstTokenLatency)),
-                min: Math.min(...models.map(m => m.characteristics.firstTokenLatency))
-            },
-            price: {
-                max: Math.max(...models.map(m => m.inputPricePerMillion + m.outputPricePerMillion)),
-                min: Math.min(...models.map(m => m.inputPricePerMillion + m.outputPricePerMillion))
-            }
-        };
+        // Filter out models with extreme characteristics for balanced selection
+        const validModels = models.filter(model =>
+            model.characteristics.qualityIndex >= 70 &&
+            model.characteristics.outputSpeed >= 100 &&
+            model.characteristics.firstTokenLatency <= 25000
+        );
 
-        // Importance weights for different characteristics
-        const weights = {
-            quality: 0.4,    // Quality is most important
-            speed: 0.25,     // Speed and latency together make up 0.4
-            latency: 0.15,   // to match quality's importance
-            price: 0.2       // Price has some influence but doesn't dominate
-        };
-
-        return this.selectBestModel(models, (model) => {
-            // 1. Normalize each metric to 0-1 range based on distribution
-            const normalizedScores = {
-                // Higher quality is better (0-1)
-                quality: (model.characteristics.qualityIndex - metrics.quality.min) /
-                    (metrics.quality.max - metrics.quality.min),
-
-                // Higher speed is better (0-1)
-                speed: (model.characteristics.outputSpeed - metrics.speed.min) /
-                    (metrics.speed.max - metrics.speed.min),
-
-                // Lower latency is better (so we invert: 1 = best, 0 = worst)
-                latency: 1 - ((model.characteristics.firstTokenLatency - metrics.latency.min) /
-                    (metrics.latency.max - metrics.latency.min)),
-
-                // Lower price is better (so we invert: 1 = best, 0 = worst)
-                price: 1 - (((model.inputPricePerMillion + model.outputPricePerMillion) - metrics.price.min) /
-                    (metrics.price.max - metrics.price.min))
-            };
-
-            // 2. Calculate standard deviations to penalize extreme variations
-            const scores = [
-                normalizedScores.quality,
-                normalizedScores.speed,
-                normalizedScores.latency,
-                normalizedScores.price
-            ];
-            const stdDev = this.calculateStdDev(scores);
-            const stdDevPenalty = stdDev * 0.1; // 10% penalty for each standard deviation
-
-            // 3. Calculate weighted arithmetic mean
-            const weightedMean =
-                (normalizedScores.quality * weights.quality) +
-                (normalizedScores.speed * weights.speed) +
-                (normalizedScores.latency * weights.latency) +
-                (normalizedScores.price * weights.price);
-
-            // 4. Calculate harmonic mean to penalize poor performance in any metric
-            const harmonicMean = scores.length / scores.reduce((sum, score) => sum + 1 / (score + 0.01), 0);
-
-            // 5. Final score combines weighted mean and harmonic mean, with std dev penalty
-            // - Weighted mean (60%): Represents overall weighted performance
-            // - Harmonic mean (40%): Penalizes poor performance in any single metric
-            // - StdDev penalty: Further penalizes unbalanced models
-            const finalScore =
-                (weightedMean * 0.6 + harmonicMean * 0.4) * (1 - stdDevPenalty);
-
-            return finalScore;
-        });
-    }
-
-    /**
-     * Calculates the standard deviation of a set of values
-     * Used to measure how balanced a model's performance is across metrics
-     */
-    private static calculateStdDev(values: number[]): number {
-        const mean = values.reduce((a, b) => a + b) / values.length;
-        return Math.sqrt(values.reduce((sq, n) => sq + Math.pow(n - mean, 2), 0) / values.length);
-    }
-
-    private static selectCheapModel(models: ModelInfo[]): string {
-        // Select the model with lowest total cost per million tokens
-        return this.selectBestModel(models, (model) => {
-            // Return negative total cost since selectBestModel picks highest score
-            return -1 * (model.inputPricePerMillion + model.outputPricePerMillion);
-        });
-    }
-
-    private static selectBestModel(
-        models: ModelInfo[],
-        scoringFunction: (model: ModelInfo) => number
-    ): string {
-        let bestScore = Number.NEGATIVE_INFINITY;
-        let bestModel = models[0].name;
-
-        for (const model of models) {
-            const score = scoringFunction(model);
-            if (score > bestScore) {
-                bestScore = score;
-                bestModel = model.name;
-            }
+        if (validModels.length === 0) {
+            throw new Error('No models meet the balanced criteria');
         }
 
-        return bestModel;
+        return validModels.reduce((balanced, current) => {
+            const balancedScore = this.calculateBalanceScore(balanced);
+            const currentScore = this.calculateBalanceScore(current);
+            return currentScore > balancedScore ? current : balanced;
+        }, validModels[0]).name;
+    }
+
+    private static selectFastestModel(models: ModelInfo[]): string {
+        // For fast models, we only care about speed
+        return models.reduce((fastest, current) => {
+            const fastestScore = this.calculateSpeedScore(fastest);
+            const currentScore = this.calculateSpeedScore(current);
+            return currentScore > fastestScore ? current : fastest;
+        }).name;
+    }
+
+    private static selectPremiumModel(models: ModelInfo[]): string {
+        // Filter out low quality models for premium selection
+        const validModels = models.filter(model =>
+            model.characteristics.qualityIndex >= 80
+        );
+
+        return validModels.reduce((premium, current) => {
+            const premiumScore = this.calculateQualityScore(premium);
+            const currentScore = this.calculateQualityScore(current);
+            return currentScore > premiumScore ? current : premium;
+        }).name;
+    }
+
+    private static calculateBalanceScore(model: ModelInfo): number {
+        const costRatio = model.inputPricePerMillion / model.outputPricePerMillion;
+        const costBalance = 1 / (1 + Math.abs(1 - costRatio));
+
+        // Normalize characteristics with adjusted ranges
+        const normalizedQuality = model.characteristics.qualityIndex / 100;
+        const normalizedSpeed = Math.min(model.characteristics.outputSpeed / 200, 1);
+        const normalizedLatency = 1 - Math.min(model.characteristics.firstTokenLatency / 25000, 1);
+
+        // Calculate weighted score with adjusted weights
+        const qualityWeight = 0.35;
+        const speedWeight = 0.35;
+        const latencyWeight = 0.15;
+        const costWeight = 0.15;
+
+        return (
+            qualityWeight * normalizedQuality +
+            speedWeight * normalizedSpeed +
+            latencyWeight * normalizedLatency +
+            costWeight * costBalance
+        );
+    }
+
+    private static calculateSpeedScore(model: ModelInfo): number {
+        const outputSpeedWeight = 0.7;
+        const latencyWeight = 0.3;
+        const normalizedSpeed = model.characteristics.outputSpeed / 100;
+        const normalizedLatency = 1 - (model.characteristics.firstTokenLatency / 5000);
+        return (outputSpeedWeight * normalizedSpeed) + (latencyWeight * normalizedLatency);
+    }
+
+    private static calculateQualityScore(model: ModelInfo): number {
+        return model.characteristics.qualityIndex / 100;
     }
 } 

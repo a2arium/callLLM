@@ -71,10 +71,10 @@ describe('Model Management', () => {
         it('should resolve cheap model alias correctly', () => {
             const cheapModel = caller.getModel('cheap');
             expect(cheapModel).toBeDefined();
-            expect(cheapModel?.name).toBe('mock-model-2');
+            expect(cheapModel?.name).toBe('edge-case-model');
 
             const totalCost = cheapModel!.inputPricePerMillion + cheapModel!.outputPricePerMillion;
-            expect(totalCost).toBe(45.0);
+            expect(totalCost).toBe(15.0);
         });
 
         it('should consider both input and output costs when selecting cheap model', () => {

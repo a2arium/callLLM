@@ -42,5 +42,19 @@ export const mockModels: ModelInfo[] = [
             outputSpeed: 10,
             firstTokenLatency: 2500
         }
+    },
+    {
+        name: "edge-case-model",
+        inputPricePerMillion: 5.0,
+        outputPricePerMillion: 10.0,
+        maxRequestTokens: 4096,
+        maxResponseTokens: 2048,
+        tokenizationModel: "mock-tokenizer",
+        jsonMode: true,
+        characteristics: {
+            qualityIndex: 65,
+            outputSpeed: 150,
+            firstTokenLatency: 100
+        }
     }
 ]; 

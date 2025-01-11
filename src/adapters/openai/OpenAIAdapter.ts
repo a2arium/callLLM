@@ -19,8 +19,15 @@ export class OpenAIAdapter implements LLMProvider {
     private currentResponseFormat: ResponseFormat = 'text';
 
     constructor(apiKey?: string) {
+        console.log('OpenAIAdapter: Initializing with API key from:', apiKey ? 'parameter' : 'environment');
+        const key = apiKey || process.env.OPENAI_API_KEY;
+        if (!key) {
+            console.error('OpenAIAdapter: No API key found in environment or parameters');
+            throw new Error('OpenAI API key is required');
+        }
+        console.log('OpenAIAdapter: API key found, length:', key.length);
         this.client = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY || apiKey,
+            apiKey: key,
             dangerouslyAllowBrowser: true
         });
         this.models = new Map(defaultModels.map(model => [model.name, model]));
