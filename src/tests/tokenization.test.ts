@@ -58,7 +58,7 @@ jest.mock('openai', () => ({
 }));
 
 // Mock OpenAI models
-jest.mock('../adapters/openai/models', () => ({
+jest.mock('../adapters/providers/openai/models', () => ({
     defaultModels: mockModels
 }));
 
@@ -70,7 +70,7 @@ jest.mock('@dqbd/tiktoken', () => ({
     })
 }));
 
-import { OpenAIAdapter } from '../adapters/openai/OpenAIAdapter';
+import { OpenAIAdapter } from '../adapters/openai';
 import { UniversalChatParams } from '../interfaces/UniversalInterfaces';
 
 describe('Token Counting', () => {

@@ -1,4 +1,4 @@
-import { LLMCaller } from '../src/core/LLMCaller';
+import { LLMCaller } from '../src/core/caller/LLMCaller';
 import { z } from 'zod';
 import dotenv from 'dotenv';
 
@@ -7,7 +7,11 @@ dotenv.config();
 
 async function main() {
     // Initialize the caller with OpenAI
-    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.');
+    const caller = new LLMCaller(
+        'openai',
+        'gpt-4o-mini',
+        'You are a helpful assistant.'
+    );
 
     // Define a Zod schema for user information
     const UserSchema = z.object({
@@ -115,6 +119,7 @@ async function main() {
             if (chunk.isComplete) {
                 console.log("\nFinal structured data:");
                 console.log(JSON.stringify(chunk.content, null, 2));
+
             } else {
                 process.stdout.write(chunk.content);
             }

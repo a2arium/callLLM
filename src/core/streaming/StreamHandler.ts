@@ -2,6 +2,7 @@ import { UniversalStreamResponse, UniversalChatParams, FinishReason } from '../.
 import { SchemaValidator, SchemaValidationError } from '../schema/SchemaValidator';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { z } from 'zod';
+import { ModelInfo } from '../../interfaces/UniversalInterfaces';
 
 export class StreamHandler {
     constructor(
@@ -11,7 +12,8 @@ export class StreamHandler {
     public async *processStream<T extends z.ZodType | undefined = undefined>(
         stream: AsyncIterable<UniversalStreamResponse>,
         params: UniversalChatParams,
-        inputTokens: number
+        inputTokens: number,
+        modelInfo: ModelInfo
     ): AsyncGenerator<UniversalStreamResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
         let accumulatedOutput = '';
         const schema = params.settings?.jsonSchema;
@@ -19,6 +21,12 @@ export class StreamHandler {
         for await (const chunk of stream) {
             accumulatedOutput += chunk.content;
             const outputTokens = this.tokenCalculator.calculateTokens(accumulatedOutput);
+            const usage = this.tokenCalculator.calculateUsage(
+                inputTokens,
+                outputTokens,
+                modelInfo.inputPricePerMillion,
+                modelInfo.outputPricePerMillion
+            );
 
             if (chunk.metadata?.responseFormat === 'json') {
                 if (chunk.isComplete) {
@@ -38,11 +46,7 @@ export class StreamHandler {
                                     content: validatedContent,
                                     metadata: {
                                         ...chunk.metadata,
-                                        usage: {
-                                            inputTokens,
-                                            outputTokens,
-                                            totalTokens: inputTokens + outputTokens
-                                        }
+                                        usage
                                     }
                                 } as any;
                             } catch (error) {
@@ -53,11 +57,7 @@ export class StreamHandler {
                                             ...chunk.metadata,
                                             validationErrors: error.validationErrors,
                                             finishReason: FinishReason.CONTENT_FILTER,
-                                            usage: {
-                                                inputTokens,
-                                                outputTokens,
-                                                totalTokens: inputTokens + outputTokens
-                                            }
+                                            usage
                                         }
                                     } as any;
                                 } else {
@@ -70,11 +70,7 @@ export class StreamHandler {
                                 content: parsedContent,
                                 metadata: {
                                     ...chunk.metadata,
-                                    usage: {
-                                        inputTokens,
-                                        outputTokens,
-                                        totalTokens: inputTokens + outputTokens
-                                    }
+                                    usage
                                 }
                             } as any;
                         }
@@ -89,11 +85,7 @@ export class StreamHandler {
                         ...chunk,
                         metadata: {
                             ...chunk.metadata,
-                            usage: {
-                                inputTokens,
-                                outputTokens,
-                                totalTokens: inputTokens + outputTokens
-                            }
+                            usage
                         }
                     } as any;
                 }
@@ -110,11 +102,7 @@ export class StreamHandler {
                             content: validatedContent,
                             metadata: {
                                 ...chunk.metadata,
-                                usage: {
-                                    inputTokens,
-                                    outputTokens,
-                                    totalTokens: inputTokens + outputTokens
-                                }
+                                usage
                             }
                         } as any;
                     } catch (error) {
@@ -125,11 +113,7 @@ export class StreamHandler {
                                     ...chunk.metadata,
                                     validationErrors: error.validationErrors,
                                     finishReason: FinishReason.CONTENT_FILTER,
-                                    usage: {
-                                        inputTokens,
-                                        outputTokens,
-                                        totalTokens: inputTokens + outputTokens
-                                    }
+                                    usage
                                 }
                             } as any;
                         } else {
@@ -141,11 +125,7 @@ export class StreamHandler {
                         ...chunk,
                         metadata: {
                             ...chunk.metadata,
-                            usage: {
-                                inputTokens,
-                                outputTokens,
-                                totalTokens: inputTokens + outputTokens
-                            }
+                            usage
                         }
                     } as any;
                 }

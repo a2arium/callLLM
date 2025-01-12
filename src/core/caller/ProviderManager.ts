@@ -1,6 +1,7 @@
 import { LLMProvider } from '../../interfaces/LLMProvider';
-import { OpenAIAdapter } from '../../adapters/openai/OpenAIAdapter';
+import { OpenAIAdapter } from '../../adapters/openai/adapter';
 import { SupportedProviders } from '../types';
+import { AdapterConfig } from '../../adapters/base/baseAdapter';
 
 export class ProviderManager {
     private provider: LLMProvider;
@@ -10,9 +11,11 @@ export class ProviderManager {
     }
 
     private createProvider(providerName: SupportedProviders, apiKey?: string): LLMProvider {
+        const config: Partial<AdapterConfig> = apiKey ? { apiKey } : {};
+
         switch (providerName) {
             case 'openai':
-                return new OpenAIAdapter(apiKey);
+                return new OpenAIAdapter(config);
             default:
                 throw new Error(`Provider ${providerName} is not supported yet`);
         }

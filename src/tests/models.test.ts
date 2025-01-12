@@ -1,8 +1,8 @@
 import { mockModels } from './mocks/mockModels';
-import { OpenAIAdapter } from '../adapters/openai/OpenAIAdapter';
+import { OpenAIAdapter } from '../adapters/openai';
 
 // Mock OpenAI adapter and its models
-jest.mock('../adapters/openai/OpenAIAdapter', () => ({
+jest.mock('../adapters/providers/openai', () => ({
     OpenAIAdapter: jest.fn().mockImplementation(() => ({
         chatCall: jest.fn(),
         streamCall: jest.fn(),
@@ -24,11 +24,11 @@ jest.mock('../adapters/openai/OpenAIAdapter', () => ({
     }))
 }));
 
-jest.mock('../adapters/openai/models', () => ({
+jest.mock('../adapters/providers/openai/models', () => ({
     defaultModels: mockModels
 }));
 
-import { LLMCaller } from '../core/LLMCaller';
+import { LLMCaller } from '../core/___LLMCaller';
 import { ModelInfo, ModelAlias } from '../interfaces/UniversalInterfaces';
 
 describe('Model Management', () => {

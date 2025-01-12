@@ -80,9 +80,14 @@ export class LLMCaller {
         data?: any;
         settings?: UniversalChatParams['settings'];
     }): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
+
+        const systemMessage = settings?.responseFormat === 'json' || settings?.jsonSchema
+            ? `${this.systemMessage}\n Provide your response in valid JSON format.`
+            : this.systemMessage;
+
         const params: UniversalChatParams = {
             messages: [
-                { role: 'system', content: this.systemMessage },
+                { role: 'system', content: systemMessage },
                 { role: 'user', content: message }
             ],
             settings
@@ -123,9 +128,14 @@ export class LLMCaller {
         data?: any;
         settings?: UniversalChatParams['settings'];
     }): Promise<AsyncIterable<UniversalStreamResponse & { content: T extends z.ZodType ? z.infer<T> : string }>> {
+
+        const systemMessage = settings?.responseFormat === 'json' || settings?.jsonSchema
+            ? `${this.systemMessage}\n Provide your response in valid JSON format.`
+            : this.systemMessage;
+
         const params: UniversalChatParams = {
             messages: [
-                { role: 'system', content: this.systemMessage },
+                { role: 'system', content: systemMessage },
                 { role: 'user', content: message }
             ],
             settings
@@ -142,7 +152,7 @@ export class LLMCaller {
         const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
 
         // Process the stream
-        return this.streamHandler.processStream<T>(stream, params, inputTokens);
+        return this.streamHandler.processStream<T>(stream, params, inputTokens, modelInfo!);
     }
 
     // Extended call method with additional functionality
@@ -177,18 +187,41 @@ export class LLMCaller {
         const firstStream = await this.streamCall({ message, data, settings });
 
         if (!endingMessage) {
-            return firstStream;
+            let accumulatedContent = '';
+            return {
+                [Symbol.asyncIterator]: async function* () {
+                    for await (const chunk of firstStream) {
+                        accumulatedContent += chunk.content;
+                        if (chunk.isComplete) {
+                            yield { ...chunk, content: accumulatedContent };
+                        } else {
+                            yield chunk;
+                        }
+                    }
+                }
+            };
         }
 
         const endStream = await this.streamCall({ message: endingMessage, data, settings });
+        let accumulatedContent = '';
 
         return {
             [Symbol.asyncIterator]: async function* () {
                 for await (const chunk of firstStream) {
-                    yield chunk;
+                    accumulatedContent += chunk.content;
+                    if (chunk.isComplete) {
+                        yield { ...chunk, content: accumulatedContent };
+                    } else {
+                        yield chunk;
+                    }
                 }
                 for await (const chunk of endStream) {
-                    yield chunk;
+                    accumulatedContent += chunk.content;
+                    if (chunk.isComplete) {
+                        yield { ...chunk, content: accumulatedContent };
+                    } else {
+                        yield chunk;
+                    }
                 }
             }
         };

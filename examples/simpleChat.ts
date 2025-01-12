@@ -1,8 +1,4 @@
-import { LLMCaller } from '../src/core/LLMCaller';
-import dotenv from 'dotenv';
-
-// Load environment variables
-dotenv.config();
+import { LLMCaller } from '../src/core/caller/LLMCaller';
 
 async function main() {
     // Initialize the caller with OpenAI

@@ -1,5 +1,5 @@
 import { ModelInfo, ModelAlias } from '../../interfaces/UniversalInterfaces';
-import { ModelSelector } from '../ModelSelector';
+import { ModelSelector } from './ModelSelector';
 import { defaultModels as openAIModels } from '../../adapters/openai/models';
 import { SupportedProviders } from '../types';
 

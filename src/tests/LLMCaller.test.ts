@@ -19,7 +19,7 @@ const mockStreamCosts = {
 };
 
 // Mock OpenAI adapter
-jest.mock('../adapters/openai/OpenAIAdapter', () => ({
+jest.mock('../adapters/openai', () => ({
     OpenAIAdapter: jest.fn().mockImplementation(() => ({
         chatCall: jest.fn().mockImplementation(async (model, params) => {
             // Handle JSON mode validation error
@@ -121,7 +121,7 @@ jest.mock('../adapters/openai/models', () => ({
     defaultModels: mockModels
 }));
 
-import { LLMCaller } from '../core/LLMCaller';
+import { LLMCaller } from '../core/___LLMCaller';
 import { ModelInfo } from '../interfaces/UniversalInterfaces';
 
 describe('LLMCaller', () => {

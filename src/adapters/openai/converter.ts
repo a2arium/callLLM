@@ -1,0 +1,132 @@
+import { UniversalChatParams, UniversalChatResponse, FinishReason, ModelInfo } from '../../interfaces/UniversalInterfaces';
+import { OpenAIModelParams, OpenAIResponse, OpenAIChatMessage } from './types';
+import { zodResponseFormat } from 'openai/helpers/zod';
+import { ChatCompletionCreateParams } from 'openai/resources/chat';
+import { z } from 'zod';
+
+export class Converter {
+    private currentModel?: ModelInfo;
+    private currentParams?: UniversalChatParams;
+
+    setModel(model: ModelInfo) {
+        this.currentModel = model;
+    }
+
+    setParams(params: UniversalChatParams) {
+        this.currentParams = params;
+    }
+
+    private getResponseFormat(settings: UniversalChatParams['settings']): ChatCompletionCreateParams['response_format'] {
+        if (settings?.jsonSchema) {
+            const schema = settings.jsonSchema.schema;
+
+            // Handle Zod schema
+            if (schema instanceof z.ZodObject) {
+                // Use a default name if none provided
+                const schemaName = settings.jsonSchema.name || 'response';
+                return zodResponseFormat(schema, schemaName);
+            }
+
+            // Handle JSON Schema string
+            if (typeof schema === 'string' || typeof schema === 'object') {
+                const jsonSchema = typeof schema === 'string' ? JSON.parse(schema) : schema;
+                return {
+                    type: 'json_schema',
+                    json_schema: {
+                        name: settings.jsonSchema.name || 'response',
+                        schema: jsonSchema
+                    }
+                };
+            }
+        }
+
+        // Default JSON format if requested
+        if (settings?.responseFormat === 'json') {
+            return { type: 'json_object' };
+        }
+
+        return undefined;
+    }
+
+    convertToProviderParams(params: UniversalChatParams): Omit<OpenAIModelParams, 'model'> {
+        this.currentParams = params;
+        const messages = this.convertMessages(params.messages);
+        const settings = params.settings || {};
+
+        return {
+            messages,
+            temperature: settings.temperature,
+            top_p: settings.topP,
+            n: 1,
+            stream: false,
+            stop: undefined,
+            max_tokens: settings.maxTokens,
+            presence_penalty: settings.presencePenalty,
+            frequency_penalty: settings.frequencyPenalty,
+            response_format: this.getResponseFormat(settings),
+        };
+    }
+
+    convertFromProviderResponse(response: OpenAIResponse): UniversalChatResponse {
+        return {
+            content: response.choices[0].message.content || '',
+            role: response.choices[0].message.role,
+            metadata: {
+                finishReason: this.mapFinishReason(response.choices[0].finish_reason),
+                created: response.created,
+                model: response.model,
+                usage: this.convertUsage(response.usage),
+                responseFormat: this.currentParams?.settings?.responseFormat || 'text'
+            }
+        };
+    }
+
+    private convertMessages(messages: Array<{ role: string; content: string; name?: string }>): OpenAIChatMessage[] {
+        return messages.map(msg => ({
+            role: msg.role as OpenAIChatMessage['role'],
+            content: msg.content,
+            name: msg.name,
+            refusal: null,
+        }));
+    }
+
+    private convertUsage(usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }) {
+        if (!this.currentModel) {
+            return {
+                inputTokens: usage.prompt_tokens,
+                outputTokens: usage.completion_tokens,
+                totalTokens: usage.total_tokens,
+                costs: {
+                    inputCost: 0,
+                    outputCost: 0,
+                    totalCost: 0
+                }
+            };
+        }
+
+        const inputCost = (usage.prompt_tokens / 1_000_000) * this.currentModel.inputPricePerMillion;
+        const outputCost = (usage.completion_tokens / 1_000_000) * this.currentModel.outputPricePerMillion;
+
+        return {
+            inputTokens: usage.prompt_tokens,
+            outputTokens: usage.completion_tokens,
+            totalTokens: usage.total_tokens,
+            costs: {
+                inputCost,
+                outputCost,
+                totalCost: inputCost + outputCost
+            }
+        };
+    }
+
+    private mapFinishReason(reason: string | null): FinishReason {
+        switch (reason) {
+            case 'stop': return FinishReason.STOP;
+            case 'length': return FinishReason.LENGTH;
+            case 'content_filter': return FinishReason.CONTENT_FILTER;
+            case 'tool_calls': return FinishReason.TOOL_CALLS;
+            case null: return FinishReason.NULL;
+            default: return FinishReason.STOP;  // Default to STOP for unknown reasons
+        }
+    }
+} 

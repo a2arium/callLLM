@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { SchemaValidator } from '../core/schema/SchemaValidator';
 import { SchemaFormatter } from '../core/schema/SchemaFormatter';
-import { OpenAIAdapter } from '../adapters/openai/OpenAIAdapter';
+import { OpenAIAdapter } from '../adapters/openai';
 import { SchemaValidationError } from '../core/schema/SchemaValidator';
 import { defaultModels } from '../adapters/openai/models';
 

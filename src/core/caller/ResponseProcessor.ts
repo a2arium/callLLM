@@ -1,4 +1,4 @@
-import { UniversalChatResponse, UniversalChatParams, FinishReason } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatResponse, UniversalChatParams, FinishReason, JSONSchemaDefinition } from '../../interfaces/UniversalInterfaces';
 import { SchemaValidator, SchemaValidationError } from '../schema/SchemaValidator';
 import { z } from 'zod';
 
@@ -9,40 +9,78 @@ export class ResponseProcessor {
         response: UniversalChatResponse,
         settings: UniversalChatParams['settings']
     ): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
-        if (!settings?.jsonSchema || response.metadata?.finishReason === FinishReason.NULL) {
-            // Parse JSON if JSON mode is requested
-            if (response.metadata?.responseFormat === 'json') {
-                try {
-                    return {
-                        ...response,
-                        content: JSON.parse(response.content)
-                    } as any;
-                } catch (error) {
-                    if (error instanceof Error) {
-                        throw new Error(`Failed to parse JSON response: ${error.message}`);
-                    }
-                    throw new Error('Failed to parse JSON response: Unknown error');
-                }
-            }
-            return response as any;
+
+        // Case 1: No special handling needed - return as is
+        if (!settings?.jsonSchema && response.metadata?.responseFormat !== 'json') {
+            return response as UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string };
         }
 
+        // Case 2: Schema validation (either Zod or JSON Schema)
+        if (settings?.jsonSchema) {
+            return this.validateWithSchema<T>(response, settings.jsonSchema.schema, settings);
+        }
+
+        // Case 3: JSON parsing without schema
+        return this.parseJson<T>(response);
+    }
+
+    private async parseJson<T>(
+        response: UniversalChatResponse
+    ): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
         try {
-            const contentToParse = typeof response.content === 'string'
+            const parsedResponse = {
+                ...response,
+                content: JSON.parse(response.content)
+            };
+            return parsedResponse as UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string };
+        } catch (error) {
+            const errorMessage = error instanceof Error
+                ? error.message
+                : 'Unknown error';
+            console.error('[parseJson] Failed to parse JSON:', errorMessage);
+            throw new Error(`Failed to parse JSON response: ${errorMessage}`);
+        }
+    }
+
+    private async validateWithSchema<T>(
+        response: UniversalChatResponse,
+        schema: JSONSchemaDefinition,
+        settings: UniversalChatParams['settings']
+    ): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
+        try {
+            let contentToParse = typeof response.content === 'string'
                 ? JSON.parse(response.content)
                 : response.content;
 
-            const validatedContent = SchemaValidator.validate(
-                contentToParse,
-                settings.jsonSchema.schema
-            );
+            // Check if content is wrapped in a named object matching schema name
+            if (typeof contentToParse === 'object' &&
+                contentToParse !== null &&
+                !Array.isArray(contentToParse) &&
+                settings?.jsonSchema?.name) {
 
-            return {
+                const schemaName = settings.jsonSchema.name.toLowerCase();
+                const keys = Object.keys(contentToParse);
+
+                // Find a matching key (case insensitive)
+                const matchingKey = keys.find(key => key.toLowerCase() === schemaName);
+
+                if (matchingKey && typeof contentToParse[matchingKey] === 'object') {
+                    contentToParse = contentToParse[matchingKey];
+                }
+            }
+
+            const validatedContent = SchemaValidator.validate(contentToParse, schema);
+
+            const validatedResponse = {
                 ...response,
                 content: validatedContent
-            } as any;
+            };
+            return validatedResponse as UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string };
         } catch (error) {
             if (error instanceof SchemaValidationError) {
+                console.warn('[validateWithSchema] Schema validation failed:', {
+                    errors: error.validationErrors
+                });
                 return {
                     ...response,
                     metadata: {
@@ -50,12 +88,14 @@ export class ResponseProcessor {
                         validationErrors: error.validationErrors,
                         finishReason: FinishReason.CONTENT_FILTER
                     }
-                } as any;
+                } as UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string };
             }
-            if (error instanceof Error) {
-                throw new Error(`Failed to validate response: ${error.message}`);
-            }
-            throw new Error('Failed to validate response: Unknown error');
+
+            const errorMessage = error instanceof Error
+                ? error.message
+                : 'Unknown error';
+            console.error('[validateWithSchema] Validation error:', errorMessage);
+            throw new Error(`Failed to validate response: ${errorMessage}`);
         }
     }
 
