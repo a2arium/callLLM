@@ -1,0 +1,291 @@
+import { OpenAI } from 'openai';
+import { OpenAIAdapter } from '../../../../adapters/openai/adapter';
+import { Converter } from '../../../../adapters/openai/converter';
+import { StreamHandler } from '../../../../adapters/openai/stream';
+import { Validator } from '../../../../adapters/openai/validator';
+import { FinishReason } from '../../../../interfaces/UniversalInterfaces';
+import type { UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
+import type { OpenAIModelParams } from '../../../../adapters/openai/types';
+
+// Mock dependencies
+jest.mock('openai');
+jest.mock('../../../../adapters/openai/converter');
+jest.mock('../../../../adapters/openai/stream');
+jest.mock('../../../../adapters/openai/validator');
+
+describe('OpenAIAdapter', () => {
+    const mockApiKey = 'test-api-key';
+    const mockOrg = 'test-org';
+    const mockBaseUrl = 'https://test.openai.com';
+    const mockModel = 'gpt-4';
+
+    let mockOpenAIClient: jest.MockedObject<OpenAI>;
+    let mockConverter: jest.Mocked<Converter>;
+    let mockStreamHandler: jest.Mocked<StreamHandler>;
+    let mockValidator: jest.Mocked<Validator>;
+
+    beforeEach(() => {
+        // Reset all mocks
+        jest.clearAllMocks();
+
+        // Setup OpenAI client mock
+        const mockCreate = jest.fn();
+        mockOpenAIClient = {
+            chat: {
+                completions: {
+                    create: mockCreate
+                }
+            }
+        } as unknown as jest.MockedObject<OpenAI>;
+        (OpenAI as unknown as jest.Mock).mockImplementation(() => mockOpenAIClient);
+
+        // Setup other mocks
+        mockConverter = {
+            convertToProviderParams: jest.fn(),
+            convertFromProviderResponse: jest.fn(),
+            setModel: jest.fn(),
+            setParams: jest.fn()
+        } as unknown as jest.Mocked<Converter>;
+        (Converter as jest.Mock).mockImplementation(() => mockConverter);
+
+        mockStreamHandler = {
+            handleStream: jest.fn()
+        } as unknown as jest.Mocked<StreamHandler>;
+        (StreamHandler as jest.Mock).mockImplementation(() => mockStreamHandler);
+
+        mockValidator = {
+            validateParams: jest.fn()
+        } as unknown as jest.Mocked<Validator>;
+        (Validator as jest.Mock).mockImplementation(() => mockValidator);
+
+        // Mock implementations
+        mockConverter.convertToProviderParams.mockReturnValue({
+            model: mockModel,
+            messages: [{ role: 'user', content: 'test' }]
+        } as unknown as OpenAIModelParams);
+        mockConverter.convertFromProviderResponse.mockReturnValue({
+            content: 'test response',
+            role: 'assistant'
+        });
+        mockStreamHandler.handleStream.mockImplementation(async function* () {
+            yield {
+                content: 'test stream',
+                role: 'assistant',
+                isComplete: true
+            };
+        });
+    });
+
+    describe('constructor', () => {
+        it('should create instance with API key from config', () => {
+            const adapter = new OpenAIAdapter({ apiKey: mockApiKey });
+            expect(adapter).toBeInstanceOf(OpenAIAdapter);
+            expect(OpenAI).toHaveBeenCalledWith({
+                apiKey: mockApiKey,
+                organization: undefined,
+                baseURL: undefined
+            });
+        });
+
+        it('should create instance with full config', () => {
+            const adapter = new OpenAIAdapter({
+                apiKey: mockApiKey,
+                organization: mockOrg,
+                baseUrl: mockBaseUrl
+            });
+            expect(adapter).toBeInstanceOf(OpenAIAdapter);
+            expect(OpenAI).toHaveBeenCalledWith({
+                apiKey: mockApiKey,
+                organization: mockOrg,
+                baseURL: mockBaseUrl
+            });
+        });
+
+        it('should throw error if API key is missing', () => {
+            process.env.OPENAI_API_KEY = '';
+            expect(() => new OpenAIAdapter()).toThrow('OpenAI API key is required');
+        });
+    });
+
+    describe('chatCall', () => {
+        let adapter: OpenAIAdapter;
+        const mockParams: UniversalChatParams = {
+            messages: [{ role: 'user', content: 'test' }]
+        };
+
+        beforeEach(() => {
+            adapter = new OpenAIAdapter({ apiKey: mockApiKey });
+            (mockOpenAIClient.chat.completions.create as jest.Mock).mockResolvedValue({
+                choices: [{
+                    message: { content: 'test response', role: 'assistant' },
+                    finish_reason: 'stop'
+                }]
+            });
+        });
+
+        it('should make successful chat call', async () => {
+            const response = await adapter.chatCall(mockModel, mockParams);
+            expect(mockValidator.validateParams).toHaveBeenCalledWith(mockParams);
+            expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith(mockParams);
+            expect(mockOpenAIClient.chat.completions.create).toHaveBeenCalled();
+            expect(mockConverter.convertFromProviderResponse).toHaveBeenCalled();
+            expect(response).toEqual({
+                content: 'test response',
+                role: 'assistant'
+            });
+        });
+
+        it('should handle errors', async () => {
+            (mockOpenAIClient.chat.completions.create as jest.Mock).mockRejectedValue(new Error('API error'));
+            await expect(adapter.chatCall(mockModel, mockParams)).rejects.toThrow('API error');
+        });
+    });
+
+    describe('streamCall', () => {
+        let adapter: OpenAIAdapter;
+        const mockParams: UniversalChatParams = {
+            messages: [{ role: 'user', content: 'test' }]
+        };
+
+        beforeEach(() => {
+            adapter = new OpenAIAdapter({ apiKey: mockApiKey });
+            (mockOpenAIClient.chat.completions.create as jest.Mock).mockResolvedValue({
+                choices: [{
+                    delta: { content: 'test stream', role: 'assistant' },
+                    finish_reason: 'stop'
+                }]
+            });
+        });
+
+        it('should make successful stream call', async () => {
+            const mockStream = {
+                async *[Symbol.asyncIterator]() {
+                    yield {
+                        choices: [{
+                            delta: { content: 'test stream', role: 'assistant' },
+                            finish_reason: 'stop'
+                        }]
+                    };
+                }
+            };
+            (mockOpenAIClient.chat.completions.create as jest.Mock).mockResolvedValue(mockStream);
+
+            const stream = await adapter.streamCall(mockModel, mockParams);
+            const chunks = [];
+            for await (const chunk of stream) {
+                chunks.push(chunk);
+            }
+            expect(mockValidator.validateParams).toHaveBeenCalledWith(mockParams);
+            expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith(mockParams);
+            expect(mockOpenAIClient.chat.completions.create).toHaveBeenCalledWith(
+                expect.objectContaining({ stream: true })
+            );
+            expect(mockStreamHandler.handleStream).toHaveBeenCalled();
+            expect(chunks).toEqual([{
+                content: 'test stream',
+                role: 'assistant',
+                isComplete: true
+            }]);
+        });
+
+        it('should handle stream errors', async () => {
+            (mockOpenAIClient.chat.completions.create as jest.Mock).mockRejectedValue(new Error('Stream error'));
+            await expect(adapter.streamCall(mockModel, mockParams)).rejects.toThrow('Stream error');
+        });
+    });
+
+    describe('conversion methods', () => {
+        let adapter: OpenAIAdapter;
+
+        beforeEach(() => {
+            adapter = new OpenAIAdapter({ apiKey: mockApiKey });
+        });
+
+        it('should convert to provider params', () => {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test' }]
+            };
+            const result = adapter.convertToProviderParams(mockModel, params);
+            expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith(params);
+            expect(result).toEqual({
+                model: mockModel,
+                messages: [{ role: 'user', content: 'test' }]
+            });
+        });
+
+        it('should convert from provider response', () => {
+            const mockResponse = {
+                choices: [{
+                    message: { content: 'test', role: 'assistant' },
+                    finish_reason: 'stop'
+                }]
+            };
+            const result = adapter.convertFromProviderResponse(mockResponse);
+            expect(mockConverter.convertFromProviderResponse).toHaveBeenCalledWith(mockResponse);
+            expect(result).toEqual({
+                content: 'test response',
+                role: 'assistant'
+            });
+        });
+
+        it('should convert from provider stream response', () => {
+            const mockStreamResponse = {
+                choices: [{
+                    delta: { content: 'test', role: 'assistant' },
+                    finish_reason: 'stop'
+                }]
+            };
+            const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+            expect(result).toEqual({
+                content: 'test',
+                role: 'assistant',
+                isComplete: true,
+                metadata: {
+                    finishReason: FinishReason.STOP,
+                    responseFormat: 'text'
+                }
+            });
+        });
+
+        it('should handle empty stream response', () => {
+            const mockStreamResponse = {
+                choices: [{
+                    delta: {},
+                    finish_reason: null
+                }]
+            };
+            const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+            expect(result).toEqual({
+                content: '',
+                role: 'assistant',
+                isComplete: false,
+                metadata: {
+                    finishReason: FinishReason.NULL,
+                    responseFormat: 'text'
+                }
+            });
+        });
+
+        it('should map different finish reasons', () => {
+            const testCases = [
+                { input: 'stop', expected: FinishReason.STOP },
+                { input: 'length', expected: FinishReason.LENGTH },
+                { input: 'content_filter', expected: FinishReason.CONTENT_FILTER },
+                { input: 'tool_calls', expected: FinishReason.TOOL_CALLS },
+                { input: 'unknown', expected: FinishReason.NULL },
+                { input: null, expected: FinishReason.NULL }
+            ];
+
+            testCases.forEach(({ input, expected }) => {
+                const mockStreamResponse = {
+                    choices: [{
+                        delta: { content: 'test' },
+                        finish_reason: input
+                    }]
+                };
+                const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+                expect(result.metadata?.finishReason).toBe(expected);
+            });
+        });
+    });
+}); 

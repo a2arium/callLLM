@@ -204,12 +204,14 @@ export class LLMCaller {
 
         const endStream = await this.streamCall({ message: endingMessage, data, settings });
         let accumulatedContent = '';
+        let firstStreamComplete = false;
 
         return {
             [Symbol.asyncIterator]: async function* () {
                 for await (const chunk of firstStream) {
                     accumulatedContent += chunk.content;
                     if (chunk.isComplete) {
+                        firstStreamComplete = true;
                         yield { ...chunk, content: accumulatedContent };
                     } else {
                         yield chunk;
@@ -220,7 +222,7 @@ export class LLMCaller {
                     if (chunk.isComplete) {
                         yield { ...chunk, content: accumulatedContent };
                     } else {
-                        yield chunk;
+                        yield { ...chunk, content: accumulatedContent };
                     }
                 }
             }

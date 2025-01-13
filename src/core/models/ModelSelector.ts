@@ -64,12 +64,16 @@ export class ModelSelector {
     }
 
     private static selectFastestModel(models: ModelInfo[]): string {
+        if (models.length === 0) {
+            throw new Error('No models meet the balanced criteria');
+        }
+
         // For fast models, we only care about speed
         return models.reduce((fastest, current) => {
             const fastestScore = this.calculateSpeedScore(fastest);
             const currentScore = this.calculateSpeedScore(current);
             return currentScore > fastestScore ? current : fastest;
-        }).name;
+        }, models[0]).name;
     }
 
     private static selectPremiumModel(models: ModelInfo[]): string {
@@ -94,18 +98,35 @@ export class ModelSelector {
         const normalizedSpeed = Math.min(model.characteristics.outputSpeed / 200, 1);
         const normalizedLatency = 1 - Math.min(model.characteristics.firstTokenLatency / 25000, 1);
 
-        // Calculate weighted score with adjusted weights
-        const qualityWeight = 0.35;
-        const speedWeight = 0.35;
-        const latencyWeight = 0.15;
-        const costWeight = 0.15;
+        // Calculate weighted score with adjusted weights to favor more balanced models
+        const qualityWeight = 0.25;
+        const speedWeight = 0.25;
+        const latencyWeight = 0.25;
+        const costWeight = 0.25;
 
-        return (
+        // Calculate base score
+        const baseScore = (
             qualityWeight * normalizedQuality +
             speedWeight * normalizedSpeed +
             latencyWeight * normalizedLatency +
             costWeight * costBalance
         );
+
+        // Calculate variance from ideal balanced values
+        const idealQuality = 0.85;  // Target for balanced model
+        const idealSpeed = 0.75;    // Target for balanced model
+        const idealLatency = 0.75;  // Target for balanced model
+        const idealCost = 0.75;     // Target for balanced model
+
+        const varianceFromIdeal = Math.sqrt(
+            Math.pow(normalizedQuality - idealQuality, 2) +
+            Math.pow(normalizedSpeed - idealSpeed, 2) +
+            Math.pow(normalizedLatency - idealLatency, 2) +
+            Math.pow(costBalance - idealCost, 2)
+        );
+
+        // Apply a stronger penalty for variance from ideal values
+        return baseScore * Math.exp(-varianceFromIdeal);
     }
 
     private static calculateSpeedScore(model: ModelInfo): number {

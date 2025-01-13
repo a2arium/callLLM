@@ -1,4 +1,4 @@
-type JSONSchemaObject = {
+export type JSONSchemaObject = {
     type?: string;
     properties?: Record<string, JSONSchemaObject>;
     items?: JSONSchemaObject;
