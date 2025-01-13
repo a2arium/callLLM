@@ -1,4 +1,4 @@
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, Usage, FinishReason } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { ProviderManager } from './ProviderManager';
 import { SupportedProviders } from '../types';
@@ -6,6 +6,8 @@ import { ModelManager } from '../models/ModelManager';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { ResponseProcessor } from './ResponseProcessor';
 import { StreamHandler } from '../streaming/StreamHandler';
+import { v4 as uuidv4 } from 'uuid';
+import { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces';
 
 export class LLMCaller {
     private providerManager: ProviderManager;
@@ -15,13 +17,28 @@ export class LLMCaller {
     private streamHandler: StreamHandler;
     private model: string;
     private systemMessage: string;
+    private callerId: string;
+    private usageCallback?: UsageCallback;
 
-    constructor(providerName: SupportedProviders, modelOrAlias: string, systemMessage: string, apiKey?: string) {
-        this.providerManager = new ProviderManager(providerName, apiKey);
+    constructor(
+        providerName: SupportedProviders,
+        modelOrAlias: string,
+        systemMessage: string,
+        options?: {
+            apiKey?: string;
+            callerId?: string;
+            usageCallback?: UsageCallback;
+        }
+    ) {
+        this.providerManager = new ProviderManager(providerName, options?.apiKey);
         this.modelManager = new ModelManager(providerName);
         this.tokenCalculator = new TokenCalculator();
         this.responseProcessor = new ResponseProcessor();
-        this.streamHandler = new StreamHandler(this.tokenCalculator);
+        this.streamHandler = new StreamHandler(
+            this.tokenCalculator,
+            options?.usageCallback,
+            options?.callerId
+        );
         this.systemMessage = systemMessage;
 
         // Initialize model
@@ -30,6 +47,9 @@ export class LLMCaller {
             throw new Error(`Model ${modelOrAlias} not found for provider ${providerName}`);
         }
         this.model = resolvedModel.name;
+
+        this.callerId = options?.callerId ?? uuidv4();
+        this.usageCallback = options?.usageCallback;
     }
 
     // Model management methods - delegated to ModelManager
@@ -105,13 +125,25 @@ export class LLMCaller {
             const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
             const outputTokens = this.tokenCalculator.calculateTokens(response.content);
             const modelInfo = this.modelManager.getModel(this.model)!;
-            const usage = this.tokenCalculator.calculateUsage(
+            const costs = this.tokenCalculator.calculateUsage(
                 inputTokens,
                 outputTokens,
                 modelInfo.inputPricePerMillion,
                 modelInfo.outputPricePerMillion
             );
+            const usage: Usage = {
+                inputTokens,
+                outputTokens,
+                totalTokens: inputTokens + outputTokens,
+                costs
+            };
             response.metadata = { ...response.metadata, usage };
+
+            // Notify about usage
+            await this.notifyUsage(usage);
+        } else {
+            // If usage was provided by the provider, still notify
+            await this.notifyUsage(response.metadata.usage);
         }
 
         // Validate response against schema if provided
@@ -227,5 +259,35 @@ export class LLMCaller {
                 }
             }
         };
+    }
+
+    // Add methods to manage ID and callback
+    public setCallerId(newId: string): void {
+        this.callerId = newId;
+        this.streamHandler = new StreamHandler(
+            this.tokenCalculator,
+            this.usageCallback,
+            newId
+        );
+    }
+
+    public setUsageCallback(callback: UsageCallback): void {
+        this.usageCallback = callback;
+        this.streamHandler = new StreamHandler(
+            this.tokenCalculator,
+            callback,
+            this.callerId
+        );
+    }
+
+    private async notifyUsage(usage: UsageData['usage']): Promise<void> {
+        if (this.usageCallback) {
+            const usageData: UsageData = {
+                callerId: this.callerId,
+                usage,
+                timestamp: Date.now()
+            };
+            await Promise.resolve(this.usageCallback(usageData));
+        }
     }
 } 

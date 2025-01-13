@@ -15,37 +15,28 @@ describe('TokenCalculator', () => {
     });
 
     describe('calculateUsage', () => {
-        it('should calculate usage correctly with standard values', () => {
-            const usage: Usage = calculator.calculateUsage(100, 200, 1000, 2000);
+        it('should calculate costs correctly', () => {
+            const result = calculator.calculateUsage(100, 200, 1000, 2000);
 
-            expect(usage.inputTokens).toBe(100);
-            expect(usage.outputTokens).toBe(200);
-            expect(usage.totalTokens).toBe(300);
-            expect(usage.costs.inputCost).toBe(0.1);  // (100/1M) * 1000
-            expect(usage.costs.outputCost).toBe(0.4);  // (200/1M) * 2000
-            expect(usage.costs.totalCost).toBe(0.5);
+            expect(result.inputCost).toBe(0.1);    // 100 * 1000 / 1_000_000
+            expect(result.outputCost).toBe(0.4);   // 200 * 2000 / 1_000_000
+            expect(result.totalCost).toBe(0.5);    // 0.1 + 0.4
         });
 
         it('should handle zero tokens', () => {
-            const usage = calculator.calculateUsage(0, 0, 1000, 2000);
+            const result = calculator.calculateUsage(0, 0, 1000, 2000);
 
-            expect(usage.inputTokens).toBe(0);
-            expect(usage.outputTokens).toBe(0);
-            expect(usage.totalTokens).toBe(0);
-            expect(usage.costs.inputCost).toBe(0);
-            expect(usage.costs.outputCost).toBe(0);
-            expect(usage.costs.totalCost).toBe(0);
+            expect(result.inputCost).toBe(0);
+            expect(result.outputCost).toBe(0);
+            expect(result.totalCost).toBe(0);
         });
 
         it('should handle large token counts', () => {
-            const usage = calculator.calculateUsage(1_000_000, 2_000_000, 1000, 2000);
+            const result = calculator.calculateUsage(1_000_000, 2_000_000, 1000, 2000);
 
-            expect(usage.inputTokens).toBe(1_000_000);
-            expect(usage.outputTokens).toBe(2_000_000);
-            expect(usage.totalTokens).toBe(3_000_000);
-            expect(usage.costs.inputCost).toBe(1000);
-            expect(usage.costs.outputCost).toBe(4000);
-            expect(usage.costs.totalCost).toBe(5000);
+            expect(result.inputCost).toBe(1000);
+            expect(result.outputCost).toBe(4000);
+            expect(result.totalCost).toBe(5000);
         });
     });
 

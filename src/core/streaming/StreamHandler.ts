@@ -1,135 +1,149 @@
-import { UniversalStreamResponse, UniversalChatParams, FinishReason } from '../../interfaces/UniversalInterfaces';
+import { UniversalStreamResponse, UniversalChatParams, FinishReason, Usage } from '../../interfaces/UniversalInterfaces';
 import { SchemaValidator, SchemaValidationError } from '../schema/SchemaValidator';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { z } from 'zod';
 import { ModelInfo } from '../../interfaces/UniversalInterfaces';
+import { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces';
 
 export class StreamHandler {
+    /**
+     * Number of tokens to accumulate before triggering a usage callback.
+     * This helps reduce callback frequency while maintaining reasonable granularity.
+     */
+    private static readonly TOKEN_BATCH_SIZE = 100;
+
     constructor(
-        private tokenCalculator: TokenCalculator
+        private tokenCalculator: TokenCalculator,
+        private usageCallback?: UsageCallback,
+        private callerId?: string
     ) { }
 
+    /**
+     * Processes a stream of responses with usage tracking.
+     * - First chunk includes both input and output costs
+     * - Subsequent chunks only include output costs
+     * - Usage callbacks are triggered every TOKEN_BATCH_SIZE tokens or on completion
+     * - Metadata contains cumulative usage for the entire stream
+     */
     public async *processStream<T extends z.ZodType | undefined = undefined>(
         stream: AsyncIterable<UniversalStreamResponse>,
         params: UniversalChatParams,
         inputTokens: number,
         modelInfo: ModelInfo
     ): AsyncGenerator<UniversalStreamResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
-        let accumulatedOutput = '';
+        let accumulatedContent = '';
+        let lastOutputTokens = 0;
+        let lastCallbackTokens = 0;
+        let isFirstCallback = true;
         const schema = params.settings?.jsonSchema;
 
-        for await (const chunk of stream) {
-            accumulatedOutput += chunk.content;
-            const outputTokens = this.tokenCalculator.calculateTokens(accumulatedOutput);
-            const usage = this.tokenCalculator.calculateUsage(
-                inputTokens,
-                outputTokens,
-                modelInfo.inputPricePerMillion,
-                modelInfo.outputPricePerMillion
-            );
+        // Add total usage tracking
+        let totalUsage: Usage = {
+            inputTokens,
+            outputTokens: 0,
+            totalTokens: inputTokens,
+            costs: { inputCost: 0, outputCost: 0, totalCost: 0 }
+        };
 
-            if (chunk.metadata?.responseFormat === 'json') {
-                if (chunk.isComplete) {
-                    try {
-                        const parsedContent = typeof chunk.content === 'string'
-                            ? JSON.parse(accumulatedOutput)
-                            : accumulatedOutput;
+        try {
+            for await (const chunk of stream) {
+                accumulatedContent += chunk.content;
+                const currentOutputTokens = this.tokenCalculator.calculateTokens(accumulatedContent);
+                const incrementalTokens = currentOutputTokens - lastOutputTokens;
 
-                        if (schema) {
-                            try {
-                                const validatedContent = SchemaValidator.validate(
-                                    parsedContent,
-                                    schema.schema
-                                );
-                                yield {
-                                    ...chunk,
-                                    content: validatedContent,
-                                    metadata: {
-                                        ...chunk.metadata,
-                                        usage
-                                    }
-                                } as any;
-                            } catch (error) {
-                                if (error instanceof SchemaValidationError) {
-                                    yield {
-                                        ...chunk,
-                                        metadata: {
-                                            ...chunk.metadata,
-                                            validationErrors: error.validationErrors,
-                                            finishReason: FinishReason.CONTENT_FILTER,
-                                            usage
-                                        }
-                                    } as any;
-                                } else {
-                                    throw error;
-                                }
-                            }
-                        } else {
-                            yield {
-                                ...chunk,
-                                content: parsedContent,
-                                metadata: {
-                                    ...chunk.metadata,
-                                    usage
-                                }
-                            } as any;
-                        }
-                    } catch (error) {
-                        if (error instanceof Error) {
-                            throw new Error(`Failed to parse JSON response: ${error.message}`);
-                        }
-                        throw new Error('Failed to parse JSON response: Unknown error');
+                // Calculate incremental costs for callback
+                const incrementalCosts = this.tokenCalculator.calculateUsage(
+                    isFirstCallback ? inputTokens : 0,
+                    currentOutputTokens - lastCallbackTokens,
+                    modelInfo.inputPricePerMillion,
+                    modelInfo.outputPricePerMillion
+                );
+
+                // Update total usage for metadata
+                totalUsage = {
+                    inputTokens,
+                    outputTokens: currentOutputTokens,
+                    totalTokens: inputTokens + currentOutputTokens,
+                    costs: this.tokenCalculator.calculateUsage(
+                        inputTokens,
+                        currentOutputTokens,
+                        modelInfo.inputPricePerMillion,
+                        modelInfo.outputPricePerMillion
+                    )
+                };
+
+                // Incremental usage for callback
+                const usage: Usage = {
+                    inputTokens: isFirstCallback ? inputTokens : 0,
+                    outputTokens: currentOutputTokens - lastCallbackTokens,
+                    totalTokens: (isFirstCallback ? inputTokens : 0) + (currentOutputTokens - lastCallbackTokens),
+                    costs: isFirstCallback ? incrementalCosts : {
+                        inputCost: 0,
+                        outputCost: incrementalCosts.outputCost,
+                        totalCost: incrementalCosts.outputCost
                     }
-                } else {
-                    yield {
-                        ...chunk,
-                        metadata: {
-                            ...chunk.metadata,
-                            usage
-                        }
-                    } as any;
-                }
-            } else {
-                if (schema) {
-                    try {
-                        const validatedContent = SchemaValidator.validate(
-                            chunk.content,
-                            schema.schema
-                        );
+                };
 
-                        yield {
-                            ...chunk,
-                            content: validatedContent,
-                            metadata: {
-                                ...chunk.metadata,
-                                usage
-                            }
-                        } as any;
+                if (this.usageCallback && this.callerId &&
+                    (currentOutputTokens - lastCallbackTokens >= StreamHandler.TOKEN_BATCH_SIZE || chunk.isComplete)) {
+                    await Promise.resolve(this.usageCallback({ callerId: this.callerId, usage, timestamp: Date.now() }));
+                    lastCallbackTokens = currentOutputTokens;
+                    isFirstCallback = false;
+                }
+
+                lastOutputTokens = currentOutputTokens;
+
+                let content: T extends z.ZodType ? z.infer<T> : string = chunk.content as any;
+                const metadata = {
+                    ...chunk.metadata,
+                    usage: totalUsage  // Use total usage in metadata
+                };
+
+                if (chunk.isComplete && params.settings?.responseFormat === 'json') {
+                    try {
+                        const parsedContent = JSON.parse(accumulatedContent);
+                        if (schema) {
+                            content = SchemaValidator.validate(
+                                parsedContent,
+                                schema.schema
+                            ) as T extends z.ZodType ? z.infer<T> : string;
+                        } else {
+                            content = parsedContent as T extends z.ZodType ? z.infer<T> : string;
+                        }
                     } catch (error) {
                         if (error instanceof SchemaValidationError) {
-                            yield {
-                                ...chunk,
-                                metadata: {
-                                    ...chunk.metadata,
-                                    validationErrors: error.validationErrors,
-                                    finishReason: FinishReason.CONTENT_FILTER,
-                                    usage
-                                }
-                            } as any;
+                            metadata.validationErrors = error.validationErrors;
+                            metadata.finishReason = FinishReason.CONTENT_FILTER;
                         } else {
-                            throw error;
+                            throw new Error(`Failed to parse JSON response: ${error instanceof Error ? error.message : 'Unknown error'}`);
                         }
                     }
-                } else {
-                    yield {
-                        ...chunk,
-                        metadata: {
-                            ...chunk.metadata,
-                            usage
-                        }
-                    } as any;
                 }
+
+                yield {
+                    ...chunk,
+                    content,
+                    metadata
+                } as UniversalStreamResponse & { content: T extends z.ZodType ? z.infer<T> : string };
             }
+        } catch (error) {
+            // Call callback one final time with accumulated tokens
+            if (this.usageCallback && this.callerId && lastOutputTokens > lastCallbackTokens) {
+                const costs = this.tokenCalculator.calculateUsage(
+                    0,
+                    lastOutputTokens - lastCallbackTokens,
+                    modelInfo.inputPricePerMillion,
+                    modelInfo.outputPricePerMillion
+                );
+                const usage: Usage = {
+                    inputTokens: 0,
+                    outputTokens: lastOutputTokens - lastCallbackTokens,
+                    totalTokens: lastOutputTokens - lastCallbackTokens,
+                    costs
+                };
+                await Promise.resolve(this.usageCallback({ callerId: this.callerId, usage, timestamp: Date.now() }));
+            }
+            throw error;
         }
     }
 } 

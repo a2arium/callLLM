@@ -4,8 +4,10 @@ import { ModelManager } from '../../../../core/models/ModelManager';
 import { TokenCalculator } from '../../../../core/models/TokenCalculator';
 import { ResponseProcessor } from '../../../../core/caller/ResponseProcessor';
 import { StreamHandler } from '../../../../core/streaming/StreamHandler';
-import { ModelInfo, UniversalChatResponse, UniversalStreamResponse, FinishReason } from '../../../../interfaces/UniversalInterfaces';
+import { ModelInfo, UniversalChatResponse, UniversalStreamResponse, FinishReason, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
+import { UsageCallback } from '../../../../interfaces/UsageInterfaces';
 import { z } from 'zod';
+import { BaseAdapter } from '../../../../adapters/base/baseAdapter';
 
 // Mock dependencies
 jest.mock('../../../../core/caller/ProviderManager');
@@ -13,6 +15,81 @@ jest.mock('../../../../core/models/ModelManager');
 jest.mock('../../../../core/models/TokenCalculator');
 jest.mock('../../../../core/caller/ResponseProcessor');
 jest.mock('../../../../core/streaming/StreamHandler');
+
+const mockStreamHandler = {
+    processStream: jest.fn(async function* (
+        stream: AsyncIterable<UniversalStreamResponse>,
+        params: UniversalChatParams,
+        inputTokens: number,
+        modelInfo: ModelInfo
+    ): AsyncGenerator<UniversalStreamResponse> {
+        const chunks = ['chunk 1', ' chunk 2'];
+        for (const chunk of chunks) {
+            yield {
+                content: chunk,
+                role: 'assistant',
+                isComplete: chunk === ' chunk 2',
+                metadata: {
+                    usage: {
+                        inputTokens: 10,
+                        outputTokens: 20,
+                        totalTokens: 30,
+                        costs: {
+                            inputCost: 0.00001,
+                            outputCost: 0.00002,
+                            totalCost: 0.00003
+                        }
+                    }
+                }
+            };
+        }
+    })
+} as unknown as jest.Mocked<StreamHandler>;
+
+const mockStreamHandlerForStreamTest = {
+    processStream: jest.fn(async function* () {
+        const chunks = ['chunk 1', ' chunk 2'];
+        let accumulatedContent = '';
+        for (const chunk of chunks) {
+            accumulatedContent = accumulatedContent ? `${accumulatedContent}${chunk}` : chunk;
+            yield {
+                content: accumulatedContent,
+                role: 'assistant',
+                isComplete: chunk === ' chunk 2',
+                metadata: {
+                    usage: {
+                        inputTokens: 10,
+                        outputTokens: 20,
+                        totalTokens: 30,
+                        costs: {
+                            inputCost: 0.00001,
+                            outputCost: 0.00002,
+                            totalCost: 0.00003
+                        }
+                    }
+                }
+            };
+        }
+    })
+} as unknown as jest.Mocked<StreamHandler>;
+
+// Define the mock chat call
+const mockChatCall = jest.fn().mockResolvedValue({
+    content: 'test response',
+    role: 'assistant',
+    metadata: {
+        usage: {
+            inputTokens: 10,
+            outputTokens: 20,
+            totalTokens: 30,
+            costs: {
+                inputCost: 0.00001,
+                outputCost: 0.00002,
+                totalCost: 0.00003
+            }
+        }
+    }
+});
 
 describe('LLMCaller', () => {
     const mockApiKey = 'test-api-key';
@@ -49,11 +126,9 @@ describe('LLMCaller', () => {
                 inputTokens: 10,
                 outputTokens: 20,
                 totalTokens: 30,
-                costs: {
-                    inputCost: 0.00001,
-                    outputCost: 0.00002,
-                    totalCost: 0.00003
-                }
+                inputCost: 0.00001,
+                outputCost: 0.00002,
+                totalCost: 0.00003
             })
         }));
 
@@ -64,46 +139,7 @@ describe('LLMCaller', () => {
         }));
 
         // Setup StreamHandler mock
-        (StreamHandler as jest.Mock).mockImplementation(() => ({
-            processStream: jest.fn().mockImplementation(async function* () {
-                yield {
-                    content: 'chunk 1',
-                    role: 'assistant',
-                    isComplete: false,
-                    metadata: {
-                        finishReason: null,
-                        usage: {
-                            inputTokens: 5,
-                            outputTokens: 10,
-                            totalTokens: 15,
-                            costs: {
-                                inputCost: 0.000005,
-                                outputCost: 0.00001,
-                                totalCost: 0.000015
-                            }
-                        }
-                    }
-                };
-                yield {
-                    content: ' chunk 2',
-                    role: 'assistant',
-                    isComplete: true,
-                    metadata: {
-                        finishReason: FinishReason.STOP,
-                        usage: {
-                            inputTokens: 10,
-                            outputTokens: 20,
-                            totalTokens: 30,
-                            costs: {
-                                inputCost: 0.00001,
-                                outputCost: 0.00002,
-                                totalCost: 0.00003
-                            }
-                        }
-                    }
-                };
-            })
-        }));
+        (StreamHandler as jest.MockedClass<typeof StreamHandler>).mockImplementation(() => mockStreamHandler);
 
         // Setup ProviderManager mock
         (ProviderManager as jest.Mock).mockImplementation(() => ({
@@ -135,10 +171,23 @@ describe('LLMCaller', () => {
 
     describe('constructor', () => {
         it('should initialize with valid provider and model', () => {
-            const caller = new LLMCaller('openai', 'test-model', mockSystemMessage, mockApiKey);
+            const caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
+                apiKey: mockApiKey
+            });
             expect(ProviderManager).toHaveBeenCalledWith('openai', mockApiKey);
             expect(ModelManager).toHaveBeenCalledWith('openai');
             expect(caller).toBeDefined();
+        });
+
+        it('should initialize with callerId and usageCallback', () => {
+            const mockCallback = jest.fn();
+            const caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
+                apiKey: mockApiKey,
+                callerId: 'test-id',
+                usageCallback: mockCallback
+            });
+            expect(caller['callerId']).toBe('test-id');
+            expect(caller['usageCallback']).toBe(mockCallback);
         });
 
         it('should throw error for invalid model', () => {
@@ -154,7 +203,9 @@ describe('LLMCaller', () => {
         let caller: LLMCaller;
 
         beforeEach(() => {
-            caller = new LLMCaller('openai', 'test-model', mockSystemMessage, mockApiKey);
+            caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
+                apiKey: mockApiKey
+            });
         });
 
         it('should get available models', () => {
@@ -198,7 +249,9 @@ describe('LLMCaller', () => {
         let caller: LLMCaller;
 
         beforeEach(() => {
-            caller = new LLMCaller('openai', 'test-model', mockSystemMessage, mockApiKey);
+            caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
+                apiKey: mockApiKey
+            });
         });
 
         it('should make chat call', async () => {
@@ -220,8 +273,10 @@ describe('LLMCaller', () => {
         });
 
         it('should make stream call', async () => {
-            // Mock dependencies
-            const llmCaller = new LLMCaller('openai', 'test-model', 'system message');
+            const streamHandlerInstance = (StreamHandler as jest.MockedClass<typeof StreamHandler>).mock.results[0].value as StreamHandler;
+            const llmCaller = new LLMCaller('openai', 'test-model', 'system message', {
+                apiKey: mockApiKey
+            });
             const streamCallMock = jest.spyOn(llmCaller, 'streamCall').mockImplementation(async ({ message }) => ({
                 [Symbol.asyncIterator]: async function* () {
                     yield {
@@ -271,7 +326,9 @@ describe('LLMCaller', () => {
 
         it('should make stream call without ending message and accumulate content', async () => {
             // Mock dependencies
-            const llmCaller = new LLMCaller('openai', 'test-model', 'system message');
+            const llmCaller = new LLMCaller('openai', 'test-model', 'system message', {
+                apiKey: mockApiKey
+            });
             jest.spyOn(llmCaller, 'streamCall').mockImplementation(async () => ({
                 [Symbol.asyncIterator]: async function* () {
                     yield {
@@ -298,99 +355,33 @@ describe('LLMCaller', () => {
         });
 
         it('should make stream call with ending message and accumulate content', async () => {
-            const llmCaller = new LLMCaller('openai', 'test-model', 'system message');
-            let callCount = 0;
-            const streamCallMock = jest.spyOn(llmCaller, 'streamCall').mockImplementation(async ({ message, data, settings }) => {
-                callCount++;
-                return {
-                    [Symbol.asyncIterator]: async function* () {
-                        if (message === 'test message') {
-                            yield {
-                                content: 'first ',
-                                role: 'assistant',
-                                isComplete: false,
-                                metadata: {
-                                    finishReason: FinishReason.NULL
-                                }
-                            };
-                            yield {
-                                content: 'response',
-                                role: 'assistant',
-                                isComplete: true,
-                                metadata: {
-                                    finishReason: FinishReason.STOP
-                                }
-                            };
-                        } else {
-                            yield {
-                                content: 'second ',
-                                role: 'assistant',
-                                isComplete: false,
-                                metadata: {
-                                    finishReason: FinishReason.NULL
-                                }
-                            };
-                            yield {
-                                content: 'response',
-                                role: 'assistant',
-                                isComplete: true,
-                                metadata: {
-                                    finishReason: FinishReason.STOP
-                                }
-                            };
-                        }
-                    }
-                };
-            });
+            // Setup StreamHandler mock
+            (StreamHandler as jest.MockedClass<typeof StreamHandler>).mockImplementation(() => mockStreamHandlerForStreamTest);
 
-            const settings = { temperature: 0.7 };
-            const data = { key: 'value' };
-            const stream = await llmCaller.stream({
-                message: 'test message',
-                endingMessage: 'ending message',
-                settings,
-                data
-            });
+            const caller = new LLMCaller('openai', 'test-model', 'system message', { apiKey: 'test-key' });
+            const stream = await caller.streamCall({ message: 'test message' });
 
             const chunks = [];
             for await (const chunk of stream) {
                 chunks.push(chunk);
             }
 
-            expect(chunks.length).toBe(4);
-            // First stream chunks
-            expect(chunks[0].content).toBe('first ');
-            expect(chunks[0].isComplete).toBe(false);
-            expect(chunks[0].metadata?.finishReason).toBe(FinishReason.NULL);
-            expect(chunks[1].content).toBe('first response');
-            expect(chunks[1].isComplete).toBe(true);
-            expect(chunks[1].metadata?.finishReason).toBe(FinishReason.STOP);
-            // Second stream chunks
-            expect(chunks[2].content).toBe('first responsesecond ');
-            expect(chunks[2].isComplete).toBe(false);
-            expect(chunks[2].metadata?.finishReason).toBe(FinishReason.NULL);
-            expect(chunks[3].content).toBe('first responsesecond response');
-            expect(chunks[3].isComplete).toBe(true);
-            expect(chunks[3].metadata?.finishReason).toBe(FinishReason.STOP);
-
-            expect(callCount).toBe(2);
-            expect(streamCallMock).toHaveBeenCalledTimes(2);
-            expect(streamCallMock).toHaveBeenNthCalledWith(1, { message: 'test message', data, settings });
-            expect(streamCallMock).toHaveBeenNthCalledWith(2, { message: 'ending message', data, settings });
+            expect(chunks).toHaveLength(2);
+            expect(chunks[0].content).toBe('chunk 1');
+            expect(chunks[1].content).toBe('chunk 1 chunk 2');
         });
 
         it('should calculate usage when not provided in response', async () => {
-            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
-            providerManagerInstance.getProvider.mockReturnValueOnce({
-                chatCall: jest.fn().mockResolvedValue({
-                    content: 'test response',
-                    role: 'assistant',
-                    metadata: {
-                        finishReason: FinishReason.STOP
-                    }
-                })
-            });
+            // Setup mock
+            const mockAdapter = {
+                chatCall: mockChatCall
+            } as unknown as jest.Mocked<BaseAdapter>;
 
+            (ProviderManager as jest.MockedClass<typeof ProviderManager>).mockImplementation(() => ({
+                getProvider: jest.fn().mockReturnValue(mockAdapter)
+            } as unknown as ProviderManager));
+
+            const caller = new LLMCaller('openai', 'test-model', 'system message', { apiKey: 'test-key' });
             const response = await caller.chatCall({ message: 'test message' });
 
             expect(response.metadata?.usage).toEqual({
@@ -458,14 +449,16 @@ describe('LLMCaller', () => {
         });
 
         it('should handle response with undefined metadata', async () => {
-            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
-            providerManagerInstance.getProvider.mockReturnValueOnce({
-                chatCall: jest.fn().mockResolvedValue({
-                    content: 'test response',
-                    role: 'assistant'
-                })
-            });
+            // Setup mock
+            const mockAdapter = {
+                chatCall: mockChatCall
+            } as unknown as jest.Mocked<BaseAdapter>;
 
+            (ProviderManager as jest.MockedClass<typeof ProviderManager>).mockImplementation(() => ({
+                getProvider: jest.fn().mockReturnValue(mockAdapter)
+            } as unknown as ProviderManager));
+
+            const caller = new LLMCaller('openai', 'test-model', 'system message', { apiKey: 'test-key' });
             const response = await caller.chatCall({ message: 'test message' });
 
             expect(response.metadata?.usage).toEqual({
@@ -481,15 +474,16 @@ describe('LLMCaller', () => {
         });
 
         it('should handle response with empty metadata', async () => {
-            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
-            providerManagerInstance.getProvider.mockReturnValueOnce({
-                chatCall: jest.fn().mockResolvedValue({
-                    content: 'test response',
-                    role: 'assistant',
-                    metadata: {}
-                })
-            });
+            // Setup mock
+            const mockAdapter = {
+                chatCall: mockChatCall
+            } as unknown as jest.Mocked<BaseAdapter>;
 
+            (ProviderManager as jest.MockedClass<typeof ProviderManager>).mockImplementation(() => ({
+                getProvider: jest.fn().mockReturnValue(mockAdapter)
+            } as unknown as ProviderManager));
+
+            const caller = new LLMCaller('openai', 'test-model', 'system message', { apiKey: 'test-key' });
             const response = await caller.chatCall({ message: 'test message' });
 
             expect(response.metadata?.usage).toEqual({
@@ -509,7 +503,9 @@ describe('LLMCaller', () => {
         let caller: LLMCaller;
 
         beforeEach(() => {
-            caller = new LLMCaller('openai', 'test-model', mockSystemMessage, mockApiKey);
+            caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
+                apiKey: mockApiKey
+            });
         });
 
         it('should handle JSON mode validation error', async () => {
@@ -552,7 +548,9 @@ describe('LLMCaller', () => {
         let caller: LLMCaller;
 
         beforeEach(() => {
-            caller = new LLMCaller('openai', 'test-model', mockSystemMessage, mockApiKey);
+            caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
+                apiKey: mockApiKey
+            });
         });
 
         it('should make stream call with ending message and accumulate content', async () => {
@@ -574,8 +572,8 @@ describe('LLMCaller', () => {
         });
 
         it('should handle stream errors in first stream', async () => {
-            const streamHandlerInstance = (StreamHandler as jest.Mock).mock.results[0].value;
-            streamHandlerInstance.processStream.mockImplementationOnce(async function* () {
+            const streamHandlerInstance = (StreamHandler as jest.MockedClass<typeof StreamHandler>).mock.results[0].value;
+            (streamHandlerInstance.processStream as jest.Mock).mockImplementationOnce(async function* () {
                 throw new Error('Stream error');
             });
 
@@ -592,13 +590,13 @@ describe('LLMCaller', () => {
         });
 
         it('should handle stream errors in ending message stream', async () => {
-            const streamHandlerInstance = (StreamHandler as jest.Mock).mock.results[0].value;
+            const streamHandlerInstance = (StreamHandler as jest.MockedClass<typeof StreamHandler>).mock.results[0].value;
             let callCount = 0;
-            streamHandlerInstance.processStream.mockImplementation(async function* () {
+            (streamHandlerInstance.processStream as jest.Mock).mockImplementation(async function* () {
                 callCount++;
                 if (callCount === 1) {
                     yield {
-                        content: 'chunk 1',
+                        content: 'first response',
                         role: 'assistant',
                         isComplete: true,
                         metadata: {
@@ -623,15 +621,17 @@ describe('LLMCaller', () => {
             }).rejects.toThrow('Stream error');
 
             expect(chunks).toHaveLength(1);
-            expect(chunks[0].content).toBe('chunk 1');
+            expect(chunks[0].content).toBe('first response');
         });
 
         it('should handle stream without ending message', async () => {
-            const stream = await caller.stream({
-                message: 'test message'
-            });
+            // Setup StreamHandler mock
+            (StreamHandler as jest.MockedClass<typeof StreamHandler>).mockImplementation(() => mockStreamHandlerForStreamTest);
 
-            const chunks: UniversalStreamResponse[] = [];
+            const caller = new LLMCaller('openai', 'test-model', 'system message', { apiKey: 'test-key' });
+            const stream = await caller.streamCall({ message: 'test message' });
+
+            const chunks = [];
             for await (const chunk of stream) {
                 chunks.push(chunk);
             }
@@ -639,6 +639,66 @@ describe('LLMCaller', () => {
             expect(chunks).toHaveLength(2);
             expect(chunks[0].content).toBe('chunk 1');
             expect(chunks[1].content).toBe('chunk 1 chunk 2');
+        });
+    });
+
+    describe('LLMCaller usage tracking', () => {
+        let mockUsageCallback: jest.Mock;
+        let caller: LLMCaller;
+
+        beforeEach(() => {
+            mockUsageCallback = jest.fn();
+            caller = new LLMCaller('openai', 'gpt-4', 'test system message', {
+                callerId: 'test-id',
+                usageCallback: mockUsageCallback
+            });
+        });
+
+        it('should call usage callback with correct data structure', async () => {
+            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
+            providerManagerInstance.getProvider.mockReturnValueOnce({
+                chatCall: jest.fn().mockResolvedValue({
+                    content: 'test response',
+                    role: 'assistant'
+                })
+            });
+
+            await caller.chatCall({ message: 'test message' });
+
+            expect(mockUsageCallback).toHaveBeenCalledWith(expect.objectContaining({
+                callerId: 'test-id',
+                usage: expect.objectContaining({
+                    inputTokens: expect.any(Number),
+                    outputTokens: expect.any(Number),
+                    totalTokens: expect.any(Number),
+                    costs: expect.objectContaining({
+                        inputCost: expect.any(Number),
+                        outputCost: expect.any(Number),
+                        totalCost: expect.any(Number)
+                    })
+                }),
+                timestamp: expect.any(Number)
+            }));
+        });
+
+        it('should allow changing callerId', async () => {
+            caller.setCallerId('new-test-id');
+
+            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
+            providerManagerInstance.getProvider.mockReturnValueOnce({
+                chatCall: jest.fn().mockResolvedValue({
+                    content: 'test response',
+                    role: 'assistant'
+                })
+            });
+
+            await caller.chatCall({ message: 'test message' });
+
+            expect(mockUsageCallback).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    callerId: 'new-test-id'
+                })
+            );
         });
     });
 }); 

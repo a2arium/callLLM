@@ -9,19 +9,13 @@ export class TokenCalculator {
         outputTokens: number,
         inputPricePerMillion: number,
         outputPricePerMillion: number
-    ): Usage {
-        const inputCost = (inputTokens / 1_000_000) * inputPricePerMillion;
-        const outputCost = (outputTokens / 1_000_000) * outputPricePerMillion;
-
+    ): { inputCost: number; outputCost: number; totalCost: number } {
+        const inputCost = (inputTokens * inputPricePerMillion) / 1_000_000;
+        const outputCost = (outputTokens * outputPricePerMillion) / 1_000_000;
         return {
-            inputTokens,
-            outputTokens,
-            totalTokens: inputTokens + outputTokens,
-            costs: {
-                inputCost,
-                outputCost,
-                totalCost: inputCost + outputCost
-            }
+            inputCost,
+            outputCost,
+            totalCost: inputCost + outputCost
         };
     }
 

@@ -46,7 +46,7 @@ export interface UniversalChatParams {
 }
 
 // Universal interface for chat response
-export interface Usage {
+export type Usage = {
     inputTokens: number;
     outputTokens: number;
     totalTokens: number;
@@ -55,7 +55,7 @@ export interface Usage {
         outputCost: number;
         totalCost: number;
     };
-}
+};
 
 export interface UniversalChatResponse {
     content: string;

@@ -387,3 +387,50 @@ To add support for a new provider:
 ## License
 
 MIT 
+
+## Advanced Features
+
+### Usage Tracking
+
+The library provides built-in usage tracking capabilities through an optional callback system. This feature allows you to monitor and analyze the costs and token usage of your LLM calls in real-time. You can implement saving the usage data to a database or other storage.
+
+For streaming calls, the usage is tracked in chunks of 100 tokens and at the end of the streaming response. The first chunk includes both input and output costs, while subsequent chunks only include output costs.
+
+```typescript
+const usageCallback = (usageData: UsageData) => {
+    console.log(`Usage for caller ${usageData.callerId}:`, {
+        costs: usageData.usage.costs,
+        tokens: {
+            input: usageData.usage.inputTokens,
+            output: usageData.usage.outputTokens,
+            total: usageData.usage.totalTokens
+        },
+        timestamp: new Date(usageData.timestamp).toISOString()
+    });
+};
+
+const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
+    callerId: 'my-custom-id',
+    usageCallback
+});
+```
+
+#### Why Usage Tracking?
+
+- **Cost Monitoring**: Track expenses in real-time for better budget management
+- **Usage Analytics**: Analyze token usage patterns across different conversations
+- **Billing Integration**: Easily integrate with billing systems by grouping costs by caller ID
+- **Debugging**: Monitor token usage to optimize prompts and prevent token limit issues
+
+The callback receives detailed usage data including:
+- Unique caller ID (automatically generated if not provided)
+- Input and output token counts
+- Cost breakdown (input cost, output cost, total cost)
+- Timestamp of the usage
+
+You can change the caller ID during runtime:
+```typescript
+caller.setCallerId('new-conversation-id');
+```
+
+## Error Handling 
