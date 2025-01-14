@@ -121,6 +121,10 @@ describe('OpenAIAdapter', () => {
                     finish_reason: 'stop'
                 }]
             });
+            // Mock the models map
+            (adapter as any).models = new Map([
+                ['gpt-4', { name: 'gpt-4', inputPricePerMillion: 1 }]
+            ]);
         });
 
         it('should make successful chat call', async () => {
@@ -139,6 +143,18 @@ describe('OpenAIAdapter', () => {
             (mockOpenAIClient.chat.completions.create as jest.Mock).mockRejectedValue(new Error('API error'));
             await expect(adapter.chatCall(mockModel, mockParams)).rejects.toThrow('API error');
         });
+
+        it('should handle model info when available', async () => {
+            await adapter.chatCall('gpt-4', mockParams);
+            expect(mockConverter.setModel).toHaveBeenCalledWith({ name: 'gpt-4', inputPricePerMillion: 1 });
+            expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
+        });
+
+        it('should work without model info', async () => {
+            await adapter.chatCall('non-existent-model', mockParams);
+            expect(mockConverter.setModel).not.toHaveBeenCalled();
+            expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
+        });
     });
 
     describe('streamCall', () => {
@@ -155,6 +171,10 @@ describe('OpenAIAdapter', () => {
                     finish_reason: 'stop'
                 }]
             });
+            // Mock the models map
+            (adapter as any).models = new Map([
+                ['gpt-4', { name: 'gpt-4', inputPricePerMillion: 1 }]
+            ]);
         });
 
         it('should make successful stream call', async () => {
@@ -192,6 +212,18 @@ describe('OpenAIAdapter', () => {
             (mockOpenAIClient.chat.completions.create as jest.Mock).mockRejectedValue(new Error('Stream error'));
             await expect(adapter.streamCall(mockModel, mockParams)).rejects.toThrow('Stream error');
         });
+
+        it('should handle model info when available', async () => {
+            await adapter.streamCall('gpt-4', mockParams);
+            expect(mockConverter.setModel).toHaveBeenCalledWith({ name: 'gpt-4', inputPricePerMillion: 1 });
+            expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
+        });
+
+        it('should work without model info', async () => {
+            await adapter.streamCall('non-existent-model', mockParams);
+            expect(mockConverter.setModel).not.toHaveBeenCalled();
+            expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
+        });
     });
 
     describe('conversion methods', () => {
@@ -199,6 +231,17 @@ describe('OpenAIAdapter', () => {
 
         beforeEach(() => {
             adapter = new OpenAIAdapter({ apiKey: mockApiKey });
+            // Mock converter to throw errors for invalid responses
+            mockConverter.convertFromProviderResponse
+                .mockImplementation((response) => {
+                    if (!response || !response.choices?.[0]?.message) {
+                        throw new Error('Invalid response');
+                    }
+                    return {
+                        content: 'test response',
+                        role: 'assistant'
+                    };
+                });
         });
 
         it('should convert to provider params', () => {
@@ -285,6 +328,163 @@ describe('OpenAIAdapter', () => {
                 };
                 const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
                 expect(result.metadata?.finishReason).toBe(expected);
+            });
+        });
+
+        describe('convertFromProviderStreamResponse edge cases', () => {
+            let adapter: OpenAIAdapter;
+
+            beforeEach(() => {
+                adapter = new OpenAIAdapter({ apiKey: mockApiKey });
+            });
+
+            it('should handle missing choices array', () => {
+                const mockStreamResponse = { choices: [{}] };
+                const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+                expect(result).toEqual({
+                    content: '',
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        finishReason: FinishReason.NULL,
+                        responseFormat: 'text'
+                    }
+                });
+            });
+
+            it('should handle empty choices array', () => {
+                const mockStreamResponse = { choices: [{}] };
+                const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+                expect(result).toEqual({
+                    content: '',
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        finishReason: FinishReason.NULL,
+                        responseFormat: 'text'
+                    }
+                });
+            });
+
+            it('should handle missing delta in choice', () => {
+                const mockStreamResponse = {
+                    choices: [{ finish_reason: 'stop' }]
+                };
+                const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+                expect(result).toEqual({
+                    content: '',
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        finishReason: FinishReason.STOP,
+                        responseFormat: 'text'
+                    }
+                });
+            });
+
+            it('should handle undefined finish_reason', () => {
+                const mockStreamResponse = {
+                    choices: [{
+                        delta: { content: 'test', role: 'assistant' },
+                        finish_reason: undefined
+                    }]
+                };
+                const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+                expect(result).toEqual({
+                    content: 'test',
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        finishReason: FinishReason.NULL,
+                        responseFormat: 'text'
+                    }
+                });
+            });
+
+            it('should handle missing content in delta', () => {
+                const mockStreamResponse = {
+                    choices: [{
+                        delta: { role: 'assistant' },
+                        finish_reason: null
+                    }]
+                };
+                const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+                expect(result).toEqual({
+                    content: '',
+                    role: 'assistant',
+                    isComplete: false,
+                    metadata: {
+                        finishReason: FinishReason.NULL,
+                        responseFormat: 'text'
+                    }
+                });
+            });
+
+            it('should handle missing role in delta', () => {
+                const mockStreamResponse = {
+                    choices: [{
+                        delta: { content: 'test' },
+                        finish_reason: null
+                    }]
+                };
+                const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+                expect(result).toEqual({
+                    content: 'test',
+                    role: 'assistant',
+                    isComplete: false,
+                    metadata: {
+                        finishReason: FinishReason.NULL,
+                        responseFormat: 'text'
+                    }
+                });
+            });
+        });
+
+        describe('error handling', () => {
+            let adapter: OpenAIAdapter;
+
+            beforeEach(() => {
+                adapter = new OpenAIAdapter({ apiKey: mockApiKey });
+                // Mock converter to throw errors for invalid responses
+                mockConverter.convertFromProviderResponse
+                    .mockImplementation((response) => {
+                        if (!response || !response.choices?.[0]?.message) {
+                            throw new Error('Invalid response');
+                        }
+                        return {
+                            content: 'test response',
+                            role: 'assistant'
+                        };
+                    });
+            });
+
+            it('should handle null response in convertFromProviderResponse', () => {
+                expect(() => adapter.convertFromProviderResponse(null)).toThrow('Invalid response');
+            });
+
+            it('should handle undefined response in convertFromProviderResponse', () => {
+                expect(() => adapter.convertFromProviderResponse(undefined)).toThrow('Invalid response');
+            });
+
+            it('should handle malformed response in convertFromProviderResponse', () => {
+                const malformedResponse = {
+                    choices: [{ wrong_field: 'test' }]
+                };
+                expect(() => adapter.convertFromProviderResponse(malformedResponse)).toThrow('Invalid response');
+            });
+
+            it('should handle null response in convertFromProviderStreamResponse', () => {
+                const mockStreamResponse = { choices: [{}] };
+                const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+                expect(result).toEqual({
+                    content: '',
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        finishReason: FinishReason.NULL,
+                        responseFormat: 'text'
+                    }
+                });
             });
         });
     });

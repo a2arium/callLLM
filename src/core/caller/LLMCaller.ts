@@ -23,7 +23,7 @@ export class LLMCaller {
     constructor(
         providerName: SupportedProviders,
         modelOrAlias: string,
-        systemMessage: string,
+        systemMessage?: string,
         options?: {
             apiKey?: string;
             callerId?: string;
@@ -39,7 +39,7 @@ export class LLMCaller {
             options?.usageCallback,
             options?.callerId
         );
-        this.systemMessage = systemMessage;
+        this.systemMessage = systemMessage ?? 'You are a helpful assistant.';
 
         // Initialize model
         const resolvedModel = this.modelManager.getModel(modelOrAlias);

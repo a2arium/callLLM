@@ -9,7 +9,7 @@ async function main() {
     // Initialize the caller with OpenAI
     const caller = new LLMCaller(
         'openai',
-        'gpt-4o-mini',
+        'cheap',
         'You are a helpful assistant.'
     );
 
