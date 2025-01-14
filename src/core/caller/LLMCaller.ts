@@ -93,11 +93,9 @@ export class LLMCaller {
     // Basic chat completion method
     public async chatCall<T extends z.ZodType | undefined = undefined>({
         message,
-        data,
         settings
     }: {
         message: string;
-        data?: any;
         settings?: UniversalChatParams['settings'];
     }): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
 
@@ -153,11 +151,9 @@ export class LLMCaller {
     // Basic streaming method
     public async streamCall<T extends z.ZodType | undefined = undefined>({
         message,
-        data,
         settings
     }: {
         message: string;
-        data?: any;
         settings?: UniversalChatParams['settings'];
     }): Promise<AsyncIterable<UniversalStreamResponse & { content: T extends z.ZodType ? z.infer<T> : string }>> {
 
@@ -194,19 +190,8 @@ export class LLMCaller {
         endingMessage?: string;
         settings?: any;
     }): Promise<UniversalChatResponse[]> {
-        const responses: UniversalChatResponse[] = [];
-
-        // First message
-        const firstResponse = await this.chatCall({ message, data, settings });
-        responses.push(firstResponse);
-
-        // Ending message if provided
-        if (endingMessage) {
-            const endResponse = await this.chatCall({ message: endingMessage, data, settings });
-            responses.push(endResponse);
-        }
-
-        return responses;
+        const response = await this.chatCall({ message, settings });
+        return [response];
     }
 
     // Extended stream method with additional functionality
@@ -216,45 +201,17 @@ export class LLMCaller {
         endingMessage?: string;
         settings?: any;
     }): Promise<AsyncIterable<UniversalStreamResponse>> {
-        const firstStream = await this.streamCall({ message, data, settings });
-
-        if (!endingMessage) {
-            let accumulatedContent = '';
-            return {
-                [Symbol.asyncIterator]: async function* () {
-                    for await (const chunk of firstStream) {
-                        accumulatedContent += chunk.content;
-                        if (chunk.isComplete) {
-                            yield { ...chunk, content: accumulatedContent };
-                        } else {
-                            yield chunk;
-                        }
-                    }
-                }
-            };
-        }
-
-        const endStream = await this.streamCall({ message: endingMessage, data, settings });
+        const stream = await this.streamCall({ message, settings });
         let accumulatedContent = '';
-        let firstStreamComplete = false;
 
         return {
             [Symbol.asyncIterator]: async function* () {
-                for await (const chunk of firstStream) {
+                for await (const chunk of stream) {
                     accumulatedContent += chunk.content;
                     if (chunk.isComplete) {
-                        firstStreamComplete = true;
                         yield { ...chunk, content: accumulatedContent };
                     } else {
                         yield chunk;
-                    }
-                }
-                for await (const chunk of endStream) {
-                    accumulatedContent += chunk.content;
-                    if (chunk.isComplete) {
-                        yield { ...chunk, content: accumulatedContent };
-                    } else {
-                        yield { ...chunk, content: accumulatedContent };
                     }
                 }
             }

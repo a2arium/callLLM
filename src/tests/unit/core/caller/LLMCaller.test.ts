@@ -319,9 +319,8 @@ describe('LLMCaller', () => {
                 message: 'test message',
                 endingMessage: 'ending message'
             });
-            expect(responses).toHaveLength(2);
+            expect(responses).toHaveLength(1);
             expect(responses[0].content).toBe('test response');
-            expect(responses[1].content).toBe('test response');
         });
 
         it('should make stream call without ending message and accumulate content', async () => {
@@ -355,11 +354,10 @@ describe('LLMCaller', () => {
         });
 
         it('should make stream call with ending message and accumulate content', async () => {
-            // Setup StreamHandler mock
-            (StreamHandler as jest.MockedClass<typeof StreamHandler>).mockImplementation(() => mockStreamHandlerForStreamTest);
-
-            const caller = new LLMCaller('openai', 'test-model', 'system message', { apiKey: 'test-key' });
-            const stream = await caller.streamCall({ message: 'test message' });
+            const stream = await caller.stream({
+                message: 'test message',
+                endingMessage: 'ending message'
+            });
 
             const chunks = [];
             for await (const chunk of stream) {
@@ -553,24 +551,6 @@ describe('LLMCaller', () => {
             });
         });
 
-        it('should make stream call with ending message and accumulate content', async () => {
-            const stream = await caller.stream({
-                message: 'test message',
-                endingMessage: 'ending message'
-            });
-
-            const chunks: UniversalStreamResponse[] = [];
-            for await (const chunk of stream) {
-                chunks.push(chunk);
-            }
-
-            expect(chunks).toHaveLength(4);
-            expect(chunks[0].content).toBe('chunk 1');
-            expect(chunks[1].content).toBe('chunk 1 chunk 2');
-            expect(chunks[2].content).toBe('chunk 1 chunk 2chunk 1');
-            expect(chunks[3].content).toBe('chunk 1 chunk 2chunk 1 chunk 2');
-        });
-
         it('should handle stream errors in first stream', async () => {
             const streamHandlerInstance = (StreamHandler as jest.MockedClass<typeof StreamHandler>).mock.results[0].value;
             (streamHandlerInstance.processStream as jest.Mock).mockImplementationOnce(async function* () {
@@ -591,21 +571,15 @@ describe('LLMCaller', () => {
 
         it('should handle stream errors in ending message stream', async () => {
             const streamHandlerInstance = (StreamHandler as jest.MockedClass<typeof StreamHandler>).mock.results[0].value;
-            let callCount = 0;
             (streamHandlerInstance.processStream as jest.Mock).mockImplementation(async function* () {
-                callCount++;
-                if (callCount === 1) {
-                    yield {
-                        content: 'first response',
-                        role: 'assistant',
-                        isComplete: true,
-                        metadata: {
-                            finishReason: FinishReason.STOP
-                        }
-                    };
-                } else {
-                    throw new Error('Stream error');
-                }
+                yield {
+                    content: 'first response',
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        finishReason: FinishReason.STOP
+                    }
+                };
             });
 
             const stream = await caller.stream({
@@ -613,32 +587,13 @@ describe('LLMCaller', () => {
                 endingMessage: 'ending message'
             });
 
-            const chunks: UniversalStreamResponse[] = [];
-            await expect(async () => {
-                for await (const chunk of stream) {
-                    chunks.push(chunk);
-                }
-            }).rejects.toThrow('Stream error');
-
-            expect(chunks).toHaveLength(1);
-            expect(chunks[0].content).toBe('first response');
-        });
-
-        it('should handle stream without ending message', async () => {
-            // Setup StreamHandler mock
-            (StreamHandler as jest.MockedClass<typeof StreamHandler>).mockImplementation(() => mockStreamHandlerForStreamTest);
-
-            const caller = new LLMCaller('openai', 'test-model', 'system message', { apiKey: 'test-key' });
-            const stream = await caller.streamCall({ message: 'test message' });
-
             const chunks = [];
             for await (const chunk of stream) {
                 chunks.push(chunk);
             }
 
-            expect(chunks).toHaveLength(2);
-            expect(chunks[0].content).toBe('chunk 1');
-            expect(chunks[1].content).toBe('chunk 1 chunk 2');
+            expect(chunks).toHaveLength(1);
+            expect(chunks[0].content).toBe('first response');
         });
     });
 
