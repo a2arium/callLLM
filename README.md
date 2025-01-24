@@ -235,7 +235,69 @@ interface UniversalStreamResponse {
 }
 ```
 
+## Message Composition
 
+The library provides flexible message composition through three components:
+
+### Basic Message Structure
+```typescript
+const response = await caller.call({
+    message: "Your main message here",
+    data?: any,              // Optional data to include
+    endingMessage?: string,  // Optional concluding message
+    settings?: { ... }       // Optional settings
+});
+```
+
+Each component is combined with double newlines for clear separation:
+
+1. `message`: The primary message or instruction (required)
+2. `data`: Additional context or information (optional)
+   - String data is included as-is
+   - Objects are automatically formatted as JSON with proper indentation
+   ```typescript
+   // With string data
+   {
+       message: "Analyze this text:",
+       data: "The quick brown fox jumps over the lazy dog."
+   }
+   // Results in:
+   "Analyze this text:
+
+   The quick brown fox jumps over the lazy dog."
+
+   // With object data
+   {
+       message: "Analyze this data:",
+       data: { temperature: 25, humidity: 60 }
+   }
+   // Results in:
+   "Analyze this data:
+
+   {
+     "temperature": 25,
+     "humidity": 60
+   }"
+   ```
+
+3. `endingMessage`: Final instructions or constraints (optional)
+   ```typescript
+   {
+       message: "Tell me about the solar system",
+       data: { focus: "planets" },
+       endingMessage: "Keep the response under 100 words"
+   }
+   // Results in:
+   "Tell me about the solar system
+
+   {
+     "focus": "planets"
+   }
+
+   Keep the response under 100 words"
+   ```
+
+This structured approach helps maintain clear message organization while allowing flexible data inclusion and final instructions.
 
 ## JSON Mode and Schema Validation
 
@@ -341,8 +403,6 @@ try {
     }
 }
 ```
-
-
 
 ## Available Settings
 
