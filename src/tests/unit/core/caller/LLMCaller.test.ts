@@ -2,7 +2,7 @@ import { LLMCaller } from '../../../../core/caller/LLMCaller';
 import { ProviderManager } from '../../../../core/caller/ProviderManager';
 import { ModelManager } from '../../../../core/models/ModelManager';
 import { TokenCalculator } from '../../../../core/models/TokenCalculator';
-import { ResponseProcessor } from '../../../../core/caller/ResponseProcessor';
+import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
 import { StreamHandler } from '../../../../core/streaming/StreamHandler';
 import { ModelInfo, UniversalChatResponse, UniversalStreamResponse, FinishReason, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
 import { UsageCallback } from '../../../../interfaces/UsageInterfaces';
@@ -13,7 +13,7 @@ import { BaseAdapter } from '../../../../adapters/base/baseAdapter';
 jest.mock('../../../../core/caller/ProviderManager');
 jest.mock('../../../../core/models/ModelManager');
 jest.mock('../../../../core/models/TokenCalculator');
-jest.mock('../../../../core/caller/ResponseProcessor');
+jest.mock('../../../../core/processors/ResponseProcessor');
 jest.mock('../../../../core/streaming/StreamHandler');
 
 const mockStreamHandler = {
@@ -309,7 +309,7 @@ describe('LLMCaller', () => {
             expect(chunks.length).toBe(2);
             expect(chunks[0].content).toBe('first 1');
             expect(chunks[0].isComplete).toBe(false);
-            expect(chunks[1].content).toBe('first 1 first 2');
+            expect(chunks[1].content).toBe(' first 2');
             expect(chunks[1].isComplete).toBe(true);
             expect(chunks[1].metadata?.finishReason).toBe(FinishReason.STOP);
         });
@@ -349,7 +349,7 @@ describe('LLMCaller', () => {
             expect(chunks.length).toBe(2);
             expect(chunks[0].content).toBe('chunk 1');
             expect(chunks[0].isComplete).toBe(false);
-            expect(chunks[1].content).toBe('chunk 1 chunk 2');
+            expect(chunks[1].content).toBe(' chunk 2');
             expect(chunks[1].isComplete).toBe(true);
         });
 
@@ -366,7 +366,7 @@ describe('LLMCaller', () => {
 
             expect(chunks).toHaveLength(2);
             expect(chunks[0].content).toBe('chunk 1');
-            expect(chunks[1].content).toBe('chunk 1 chunk 2');
+            expect(chunks[1].content).toBe(' chunk 2');
         });
 
         it('should calculate usage when not provided in response', async () => {

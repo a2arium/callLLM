@@ -237,67 +237,97 @@ interface UniversalStreamResponse {
 
 ## Message Composition
 
-The library provides flexible message composition through three components:
+The library provides flexible message composition through three components, with intelligent handling of large data:
 
 ### Basic Message Structure
 ```typescript
 const response = await caller.call({
     message: "Your main message here",
-    data?: any,              // Optional data to include
+    data?: string | object, // Optional data to include, text or object
     endingMessage?: string,  // Optional concluding message
     settings?: { ... }       // Optional settings
 });
 ```
 
-Each component is combined with double newlines for clear separation:
+Each component serves a specific purpose in the request:
 
-1. `message`: The primary message or instruction (required)
+1. `message`: The primary instruction or prompt (required)
+   - Defines what operation to perform on the data
+   - Example: "Translate the following text to French" or "Summarize this data"
+
 2. `data`: Additional context or information (optional)
-   - String data is included as-is
-   - Objects are automatically formatted as JSON with proper indentation
-   ```typescript
-   // With string data
-   {
-       message: "Analyze this text:",
-       data: "The quick brown fox jumps over the lazy dog."
-   }
-   // Results in:
-   "Analyze this text:
-
-   The quick brown fox jumps over the lazy dog."
-
-   // With object data
-   {
-       message: "Analyze this data:",
-       data: { temperature: 25, humidity: 60 }
-   }
-   // Results in:
-   "Analyze this data:
-
-   {
-     "temperature": 25,
-     "humidity": 60
-   }"
-   ```
+   - Can be a string or object
+   - Automatically handles large data by splitting it into manageable chunks
+   - For large datasets, multiple API calls are made and results are combined
 
 3. `endingMessage`: Final instructions or constraints (optional)
-   ```typescript
-   {
-       message: "Tell me about the solar system",
-       data: { focus: "planets" },
-       endingMessage: "Keep the response under 100 words"
-   }
-   // Results in:
-   "Tell me about the solar system
+   - Applied to each chunk when data is split
+   - Example: "Keep the translation formal" or "Summarize in bullet points"
 
-   {
-     "focus": "planets"
-   }
+### Simple Examples
 
-   Keep the response under 100 words"
-   ```
+Here's how components are combined:
 
-This structured approach helps maintain clear message organization while allowing flexible data inclusion and final instructions.
+```typescript
+// With string data
+{
+    message: "Analyze this text:",
+    data: "The quick brown fox jumps over the lazy dog.",
+    endingMessage: "Keep the response under 100 words"
+}
+// Results in:
+"Analyze this text:
+
+The quick brown fox jumps over the lazy dog.
+
+Keep the response under 100 words"
+
+// With object data
+{
+    message: "Analyze this data:",
+    data: { temperature: 25, humidity: 60 }
+}
+// Results in:
+"Analyze this data:
+
+{
+  "temperature": 25,
+  "humidity": 60
+}"
+```
+
+### Handling Large Data
+
+When the data is too large to fit in the model's context window:
+
+1. The data is automatically split into chunks that fit within token limits
+2. Each chunk is processed separately with the same message and endingMessage
+3. Results are returned as an array of responses
+
+Example with large text:
+```typescript
+const response = await caller.call({
+    message: "Translate this text to French:",
+    data: veryLongText,  // Text larger than model's context window
+    endingMessage: "Maintain formal language style"
+});
+// Returns array of translations, one for each chunk
+```
+
+Example with large object:
+```typescript
+const response = await caller.call({
+    message: "Summarize this customer data:",
+    data: largeCustomerDatabase,  // Object too large for single request
+    endingMessage: "Focus on key trends"
+});
+// Returns array of summaries, one for each data chunk
+```
+
+In both cases:
+- Each chunk is sent to the model as: message + data_chunk + endingMessage
+- Token limits are automatically respected
+- Context and instructions are preserved across chunks
 
 ## JSON Mode and Schema Validation
 

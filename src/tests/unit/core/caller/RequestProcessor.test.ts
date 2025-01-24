@@ -1,4 +1,4 @@
-import { RequestProcessor } from '../../../../core/caller/RequestProcessor';
+import { RequestProcessor } from '../../../../core/processors/RequestProcessor';
 import { ModelInfo } from '../../../../interfaces/UniversalInterfaces';
 
 describe('RequestProcessor', () => {
@@ -7,7 +7,7 @@ describe('RequestProcessor', () => {
         name: 'test-model',
         inputPricePerMillion: 1,
         outputPricePerMillion: 2,
-        maxRequestTokens: 1000,
+        maxRequestTokens: 4000,
         maxResponseTokens: 1000,
         tokenizationModel: 'gpt-4',
         jsonMode: true,

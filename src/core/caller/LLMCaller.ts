@@ -4,10 +4,12 @@ import { ProviderManager } from './ProviderManager';
 import { SupportedProviders } from '../types';
 import { ModelManager } from '../models/ModelManager';
 import { TokenCalculator } from '../models/TokenCalculator';
-import { ResponseProcessor } from './ResponseProcessor';
+import { ResponseProcessor } from '../processors/ResponseProcessor';
 import { StreamHandler } from '../streaming/StreamHandler';
 import { v4 as uuidv4 } from 'uuid';
 import { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces';
+import { RequestProcessor } from '../processors/RequestProcessor';
+import { DataSplitter } from '../processors/DataSplitter';
 
 export class LLMCaller {
     private providerManager: ProviderManager;
@@ -19,6 +21,8 @@ export class LLMCaller {
     private systemMessage: string;
     private callerId: string;
     private usageCallback?: UsageCallback;
+    private requestProcessor: RequestProcessor;
+    private dataSplitter: DataSplitter;
 
     constructor(
         providerName: SupportedProviders,
@@ -50,6 +54,8 @@ export class LLMCaller {
 
         this.callerId = options?.callerId ?? uuidv4();
         this.usageCallback = options?.usageCallback;
+        this.requestProcessor = new RequestProcessor();
+        this.dataSplitter = new DataSplitter(this.tokenCalculator);
     }
 
     // Model management methods - delegated to ModelManager
@@ -98,7 +104,6 @@ export class LLMCaller {
         message: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
-
         const systemMessage = settings?.responseFormat === 'json' || settings?.jsonSchema
             ? `${this.systemMessage}\n Provide your response in valid JSON format.`
             : this.systemMessage;
@@ -188,10 +193,31 @@ export class LLMCaller {
         message: string;
         data?: any;
         endingMessage?: string;
-        settings?: any;
+        settings?: UniversalChatParams['settings'];
     }): Promise<UniversalChatResponse[]> {
-        const response = await this.chatCall({ message, settings });
-        return [response];
+        const modelInfo = this.modelManager.getModel(settings?.model || this.model)!;
+        const maxResponseTokens = settings?.maxTokens || modelInfo.maxResponseTokens;
+
+        // Process request and get messages
+        const messages = this.requestProcessor.processRequest({
+            message,
+            data,
+            endingMessage,
+            model: modelInfo,
+            maxResponseTokens
+        });
+
+        // Process each message
+        const responses: UniversalChatResponse[] = [];
+        for (const processedMessage of messages) {
+            const response = await this.chatCall({
+                message: processedMessage,
+                settings
+            });
+            responses.push(response);
+        }
+
+        return responses;
     }
 
     // Extended stream method with additional functionality
@@ -199,21 +225,86 @@ export class LLMCaller {
         message: string;
         data?: any;
         endingMessage?: string;
-        settings?: any;
+        settings?: UniversalChatParams['settings'];
     }): Promise<AsyncIterable<UniversalStreamResponse>> {
-        const stream = await this.streamCall({ message, settings });
-        let accumulatedContent = '';
+        const modelInfo = this.modelManager.getModel(settings?.model || this.model)!;
+        const maxResponseTokens = settings?.maxTokens || modelInfo.maxResponseTokens;
+        const self = this;
+
+        // Process request and get messages
+        const messages = this.requestProcessor.processRequest({
+            message,
+            data,
+            endingMessage,
+            model: modelInfo,
+            maxResponseTokens
+        });
+
+        let currentMessageIndex = 0;
+        const totalMessages = messages.length;
 
         return {
-            [Symbol.asyncIterator]: async function* () {
-                for await (const chunk of stream) {
-                    accumulatedContent += chunk.content;
-                    if (chunk.isComplete) {
-                        yield { ...chunk, content: accumulatedContent };
-                    } else {
-                        yield chunk;
+            [Symbol.asyncIterator]() {
+                let currentStream: AsyncIterator<UniversalStreamResponse> | null = null;
+                let accumulatedContent = '';
+
+                return {
+                    async next(): Promise<IteratorResult<UniversalStreamResponse>> {
+                        while (currentMessageIndex < totalMessages) {
+                            if (!currentStream) {
+                                const processedMessage = messages[currentMessageIndex];
+                                const stream = await self.streamCall({
+                                    message: processedMessage,
+                                    settings
+                                });
+                                currentStream = stream[Symbol.asyncIterator]();
+                            }
+
+                            const result = await currentStream!.next();
+                            if (!result.done) {
+                                const newContent = result.value.content + (result.value.isComplete && currentMessageIndex !== totalMessages - 1 ? '\n' : '');
+                                accumulatedContent += newContent;
+                                const response: UniversalStreamResponse = {
+                                    ...result.value,
+                                    content: newContent,
+                                    metadata: {
+                                        ...result.value.metadata,
+                                        processInfo: {
+                                            currentChunk: currentMessageIndex + 1,
+                                            totalChunks: totalMessages
+                                        }
+                                    }
+                                };
+                                return { done: false, value: response };
+                            }
+
+                            // Current stream is done, move to next message
+                            currentMessageIndex++;
+                            currentStream = null;
+
+                            // Add newline after each message is complete
+                            if (currentMessageIndex !== totalMessages - 1) accumulatedContent += '\n';
+
+                            // If this was the last message, return the final accumulated content
+                            if (currentMessageIndex === totalMessages) {
+                                const finalResponse: UniversalStreamResponse = {
+                                    content: accumulatedContent,
+                                    role: 'assistant',
+                                    isComplete: true,
+                                    metadata: {
+                                        processInfo: {
+                                            currentChunk: totalMessages,
+                                            totalChunks: totalMessages
+                                        }
+                                    }
+                                };
+                                return { done: true, value: finalResponse };
+                            }
+                        }
+
+                        return { done: true, value: undefined };
                     }
-                }
+                };
             }
         };
     }

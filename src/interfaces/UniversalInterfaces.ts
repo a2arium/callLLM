@@ -84,6 +84,10 @@ export interface UniversalStreamResponse {
         refusal?: any;
         responseFormat?: ResponseFormat;
         validationErrors?: Array<{ message: string; path: string }>;
+        processInfo?: {
+            currentChunk: number;
+            totalChunks: number;
+        };
     };
 }
 

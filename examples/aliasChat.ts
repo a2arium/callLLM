@@ -33,9 +33,7 @@ async function runAliasExample() {
         message: 'Tell me a joke.'
     });
     console.log('\nStream Response:');
-    let accumulatedContent = '';
     for await (const chunk of stream) {
-        accumulatedContent += chunk.content;
         process.stdout.write(chunk.content);
     }
     console.log('\n');

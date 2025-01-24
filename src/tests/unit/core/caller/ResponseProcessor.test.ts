@@ -1,4 +1,4 @@
-import { ResponseProcessor } from '../../../../core/caller/ResponseProcessor';
+import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
 import { UniversalChatResponse, UniversalChatParams, FinishReason } from '../../../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 
