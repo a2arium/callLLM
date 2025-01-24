@@ -1,7 +1,6 @@
 import { ProviderManager } from '../../../../core/caller/ProviderManager';
 import { OpenAIAdapter } from '../../../../adapters/openai/adapter';
 import { SupportedProviders } from '../../../../core/types';
-import { AdapterConfig } from '../../../../adapters/base/baseAdapter';
 
 // Mock OpenAIAdapter
 jest.mock('../../../../adapters/openai/adapter');

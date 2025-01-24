@@ -4,8 +4,7 @@ import { ModelManager } from '../../../../core/models/ModelManager';
 import { TokenCalculator } from '../../../../core/models/TokenCalculator';
 import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
 import { StreamHandler } from '../../../../core/streaming/StreamHandler';
-import { ModelInfo, UniversalChatResponse, UniversalStreamResponse, FinishReason, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
-import { UsageCallback } from '../../../../interfaces/UsageInterfaces';
+import { ModelInfo, UniversalStreamResponse, FinishReason, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { BaseAdapter } from '../../../../adapters/base/baseAdapter';
 
