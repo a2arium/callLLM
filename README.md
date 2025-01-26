@@ -1,20 +1,39 @@
-# callLLM
 
-A TypeScript library for interacting with various AI chat models, focusing on cost and performance optimization.
+# callLLM - Unified LLM Orchestration for TypeScript
 
-## Features
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![TypeScript](https://img.shields.io/badge/lang-TypeScript-007ACC.svg)
 
-- Model selection based on performance characteristics
-- Cost tracking and optimization
-- Support for multiple AI providers (currently OpenAI)
-- Streaming responses
-- JSON mode with schema validation
-- Type-safe responses
+A single interface for multi-provider LLM operations with cost optimization, large data handling, and enterprise-grade JSON management.
 
-## Installation
+```typescript
+// Unified example across providers
+const caller = new LLMCaller('openai', 'balanced', 'Analyst assistant');
+const response = await caller.call({
+    message: "Analyze these logs:",
+    data: massiveSecurityLogs, // 250MB+ of data
+    endingMessage: "Identify critical vulnerabilities",
+    settings: {
+        responseFormat: 'json',
+        jsonSchema: VulnerabilitySchema
+    }
+});
+```
+
+## Why callLLM?
+
+- **Multi-Provider Unified API**: Switch between OpenAI, Anthropic (coming soon), and others with one interface
+- **Large Data Processing**: Automatic chunking of massive datasets (text/JSON) with context preservation
+- **Smart Model Management**: Pre-configured & customizable models with real-time price updates
+- **Enterprise JSON Handling**: Schema validation, type safety, and streaming JSON support
+- **Cost Transparency**: Real-time token tracking with per-call cost breakdowns
 
 ```bash
 yarn add callllm
+```
+or 
+```bash
+npm install callllm
 ```
 
 ## Configuration
@@ -577,6 +596,112 @@ const response = await caller.chatCall({
 // - maxTokens: 1000 (from class)
 // - topP: 0.8 (from method)
 ```
+
+## Error Handling and Retries
+
+The library includes a robust retry mechanism for both regular and streaming calls. This helps handle transient failures and network issues gracefully.
+
+### Retry Configuration
+
+You can configure retries at both the class level and method level using the `maxRetries` setting:
+
+```typescript
+// Set maxRetries at class level
+const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
+    settings: {
+        maxRetries: 3  // Will retry up to 3 times
+    }
+});
+
+// Override maxRetries for a specific call
+const response = await caller.chatCall({
+    message: 'Hello',
+    settings: {
+        maxRetries: 2  // Will retry up to 2 times for this call only
+    }
+});
+```
+
+### Regular Call Retries
+
+For regular (non-streaming) calls, the library will:
+1. Attempt the call
+2. If it fails, wait with exponential backoff (1s, 2s, 4s, etc.)
+3. Retry up to the specified number of times
+4. Throw an error if all retries are exhausted
+
+```typescript
+try {
+    const response = await caller.chatCall({
+        message: 'Hello',
+        settings: { maxRetries: 2 }
+    });
+} catch (error) {
+    // Will contain message like: "Failed after 2 retries. Last error: API error"
+    console.error(error);
+}
+```
+
+### Streaming Call Retries
+
+The library provides two levels of retry protection for streaming calls:
+
+1. **Initial Connection Retries**:
+   - Uses the same retry mechanism as regular calls
+   - Handles failures during stream initialization
+   - Uses exponential backoff between attempts
+
+```typescript
+try {
+    const stream = await caller.streamCall({
+        message: 'Hello',
+        settings: { maxRetries: 2 }
+    });
+    
+    for await (const chunk of stream) {
+        console.log(chunk.content);
+    }
+} catch (error) {
+    // Will contain message like: "Failed to start stream after 2 retries"
+    console.error(error);
+}
+```
+
+2. **Mid-Stream Retries**:
+   - Handles failures after the stream has started
+   - Preserves accumulated content across retries
+   - Continues from where it left off
+   - Uses exponential backoff between attempts
+
+```typescript
+const stream = await caller.streamCall({
+    message: 'Tell me a story',
+    settings: { maxRetries: 2 }
+});
+
+try {
+    for await (const chunk of stream) {
+        // If stream fails mid-way:
+        // 1. Previous content is preserved
+        // 2. Stream is re-established
+        // 3. Continues from where it left off
+        console.log(chunk.content);
+    }
+} catch (error) {
+    // Will contain message like: "Stream failed after 2 retries"
+    console.error(error);
+}
+```
+
+### Exponential Backoff
+
+Both regular and streaming retries use exponential backoff to avoid overwhelming the API:
+- First retry: 1 second delay
+- Second retry: 2 seconds delay
+- Third retry: 4 seconds delay
+- And so on...
+
+This helps prevent rate limiting and gives transient issues time to resolve.
 
 ## Environment Variables
 

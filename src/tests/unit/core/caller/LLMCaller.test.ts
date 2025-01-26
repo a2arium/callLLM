@@ -15,6 +15,14 @@ jest.mock('../../../../core/models/TokenCalculator');
 jest.mock('../../../../core/processors/ResponseProcessor');
 jest.mock('../../../../core/streaming/StreamHandler');
 
+const createMockProvider = (chatCallImpl: jest.Mock, streamCallImpl?: jest.Mock) => ({
+    chatCall: chatCallImpl,
+    streamCall: streamCallImpl || jest.fn(),
+    convertToProviderParams: jest.fn(),
+    convertFromProviderResponse: jest.fn(),
+    convertFromProviderStreamResponse: jest.fn()
+});
+
 const mockStreamHandler = {
     processStream: jest.fn(async function* (
         stream: AsyncIterable<UniversalStreamResponse>,
@@ -246,8 +254,40 @@ describe('LLMCaller', () => {
 
     describe('chat methods', () => {
         let caller: LLMCaller;
+        let mockProviderManager: jest.Mocked<ProviderManager>;
+        let mockResponseProcessor: jest.Mocked<ResponseProcessor>;
 
         beforeEach(() => {
+            jest.clearAllMocks();
+
+            // Setup ResponseProcessor mock
+            mockResponseProcessor = {
+                validateResponse: jest.fn().mockImplementation((response, settings) => {
+                    if (settings?.jsonSchema) {
+                        if (typeof response.content === 'string') {
+                            response.content = JSON.parse(response.content);
+                        }
+                    }
+                    return response;
+                }),
+                validateJsonMode: jest.fn()
+            } as unknown as jest.Mocked<ResponseProcessor>;
+            (ResponseProcessor as jest.Mock).mockImplementation(() => mockResponseProcessor);
+
+            // Setup ProviderManager mock with default successful response
+            const defaultProvider = createMockProvider(jest.fn().mockResolvedValue({
+                content: 'test response',
+                role: 'assistant',
+                metadata: { finishReason: FinishReason.STOP }
+            }));
+
+            mockProviderManager = {
+                getProvider: jest.fn().mockReturnValue(defaultProvider),
+                switchProvider: jest.fn(),
+                getCurrentProviderName: jest.fn().mockReturnValue('openai')
+            } as unknown as jest.Mocked<ProviderManager>;
+            (ProviderManager as jest.Mock).mockImplementation(() => mockProviderManager);
+
             caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
                 apiKey: mockApiKey
             });
@@ -264,12 +304,20 @@ describe('LLMCaller', () => {
 
         it('should make chat call with JSON schema', async () => {
             const schema = z.object({ name: z.string() });
+            const mockChatCall = jest.fn().mockResolvedValue({
+                content: JSON.stringify({ name: 'test' }),
+                role: 'assistant',
+                metadata: { finishReason: FinishReason.STOP }
+            });
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(mockChatCall));
+
             const response = await caller.chatCall({
                 message: 'test message',
-                settings: { jsonSchema: { schema } }
+                settings: { jsonSchema: { schema }, maxRetries: 0 }
             });
-            expect(response.content).toBe('test response');
-        });
+            expect(response.content).toEqual({ name: 'test' });
+        }, 10000);
 
         it('should make stream call', async () => {
             const streamHandlerInstance = (StreamHandler as jest.MockedClass<typeof StreamHandler>).mock.results[0].value as StreamHandler;
@@ -353,6 +401,25 @@ describe('LLMCaller', () => {
         });
 
         it('should make stream call with ending message and accumulate content', async () => {
+            const mockStreamCall = jest.fn().mockImplementation(async () => ({
+                [Symbol.asyncIterator]: async function* () {
+                    yield {
+                        content: 'first chunk',
+                        role: 'assistant',
+                        isComplete: false,
+                        metadata: { finishReason: FinishReason.NULL }
+                    };
+                    yield {
+                        content: ' second chunk',
+                        role: 'assistant',
+                        isComplete: true,
+                        metadata: { finishReason: FinishReason.STOP }
+                    };
+                }
+            }));
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(jest.fn(), mockStreamCall));
+
             const stream = await caller.stream({
                 message: 'test message',
                 endingMessage: 'ending message'
@@ -363,9 +430,9 @@ describe('LLMCaller', () => {
                 chunks.push(chunk);
             }
 
-            expect(chunks).toHaveLength(2);
-            expect(chunks[0].content).toBe('chunk 1');
-            expect(chunks[1].content).toBe(' chunk 2');
+            expect(chunks.length).toBe(2);
+            expect(chunks[0].content).toBe('first chunk');
+            expect(chunks[1].content).toBe(' second chunk');
         });
 
         it('should calculate usage when not provided in response', async () => {
@@ -406,20 +473,48 @@ describe('LLMCaller', () => {
         });
 
         it('should handle response validation error', async () => {
-            const responseProcessorInstance = (ResponseProcessor as jest.Mock).mock.results[0].value;
-            responseProcessorInstance.validateResponse.mockImplementationOnce(() => {
+            // Setup the validation to fail after the provider call
+            mockResponseProcessor.validateResponse.mockImplementationOnce(() => {
                 throw new Error('Invalid response format');
             });
 
+            const mockChatCall = jest.fn().mockResolvedValue({
+                content: 'test response',
+                role: 'assistant',
+                metadata: { finishReason: FinishReason.STOP }
+            });
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(mockChatCall));
+
             await expect(caller.chatCall({
                 message: 'test message',
-                settings: { jsonSchema: { schema: z.object({ name: z.string() }) } }
+                settings: { jsonSchema: { schema: z.object({ name: z.string() }) }, maxRetries: 0 }
             })).rejects.toThrow('Invalid response format');
-        });
+
+            // Verify that both the provider call and validation were attempted
+            expect(mockChatCall).toHaveBeenCalled();
+            expect(mockResponseProcessor.validateResponse).toHaveBeenCalled();
+        }, 10000);
 
         it('should make stream call with JSON mode', async () => {
+            const mockStreamCall = jest.fn().mockImplementation(async () => ({
+                [Symbol.asyncIterator]: async function* () {
+                    yield {
+                        content: '{"key": "value"}',
+                        role: 'assistant',
+                        isComplete: true,
+                        metadata: {
+                            finishReason: FinishReason.STOP,
+                            responseFormat: 'json'
+                        }
+                    };
+                }
+            }));
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(jest.fn(), mockStreamCall));
+
             const stream = await caller.streamCall({
-                message: 'test message',
+                message: 'test',
                 settings: { responseFormat: 'json' }
             });
 
@@ -428,9 +523,9 @@ describe('LLMCaller', () => {
                 chunks.push(chunk);
             }
 
-            expect(chunks).toHaveLength(2);
-            expect(chunks[0].content).toBe('chunk 1');
-            expect(chunks[1].content).toBe(' chunk 2');
+            expect(chunks.length).toBe(1);
+            expect(chunks[0].content).toBe('{"key": "value"}');
+            expect(chunks[0].metadata?.responseFormat).toBe('json');
         });
 
         it('should handle stream JSON mode validation error', async () => {
@@ -498,16 +593,55 @@ describe('LLMCaller', () => {
 
     describe('error handling', () => {
         let caller: LLMCaller;
+        let mockProviderManager: jest.Mocked<ProviderManager>;
+        let mockResponseProcessor: jest.Mocked<ResponseProcessor>;
+
+        const createMockProvider = (chatCallImpl: jest.Mock, streamCallImpl?: jest.Mock) => ({
+            chatCall: chatCallImpl,
+            streamCall: streamCallImpl || jest.fn(),
+            convertToProviderParams: jest.fn(),
+            convertFromProviderResponse: jest.fn(),
+            convertFromProviderStreamResponse: jest.fn()
+        });
 
         beforeEach(() => {
+            jest.clearAllMocks();
+
+            // Setup ResponseProcessor mock
+            mockResponseProcessor = {
+                validateResponse: jest.fn().mockImplementation((response, settings) => {
+                    if (settings?.jsonSchema) {
+                        if (typeof response.content === 'string') {
+                            response.content = JSON.parse(response.content);
+                        }
+                    }
+                    return response;
+                }),
+                validateJsonMode: jest.fn()
+            } as unknown as jest.Mocked<ResponseProcessor>;
+            (ResponseProcessor as jest.Mock).mockImplementation(() => mockResponseProcessor);
+
+            // Setup ProviderManager mock with default successful response
+            const defaultProvider = createMockProvider(jest.fn().mockResolvedValue({
+                content: 'test response',
+                role: 'assistant',
+                metadata: { finishReason: FinishReason.STOP }
+            }));
+
+            mockProviderManager = {
+                getProvider: jest.fn().mockReturnValue(defaultProvider),
+                switchProvider: jest.fn(),
+                getCurrentProviderName: jest.fn().mockReturnValue('openai')
+            } as unknown as jest.Mocked<ProviderManager>;
+            (ProviderManager as jest.Mock).mockImplementation(() => mockProviderManager);
+
             caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
                 apiKey: mockApiKey
             });
         });
 
         it('should handle JSON mode validation error', async () => {
-            const responseProcessorInstance = (ResponseProcessor as jest.Mock).mock.results[0].value;
-            responseProcessorInstance.validateJsonMode.mockImplementationOnce(() => {
+            mockResponseProcessor.validateJsonMode.mockImplementationOnce(() => {
                 throw new Error('JSON mode not supported');
             });
 
@@ -518,72 +652,276 @@ describe('LLMCaller', () => {
         });
 
         it('should handle schema validation error', async () => {
-            const responseProcessorInstance = (ResponseProcessor as jest.Mock).mock.results[0].value;
-            responseProcessorInstance.validateResponse.mockImplementationOnce(() => {
+            // Setup the validation to fail after the provider call
+            mockResponseProcessor.validateResponse.mockImplementationOnce(() => {
                 throw new Error('Schema validation failed');
             });
 
+            const mockChatCall = jest.fn().mockResolvedValue({
+                content: 'test response',
+                role: 'assistant',
+                metadata: { finishReason: FinishReason.STOP }
+            });
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(mockChatCall));
+
             await expect(caller.chatCall({
                 message: 'test',
-                settings: { jsonSchema: { schema: z.object({ name: z.string() }) } }
+                settings: { jsonSchema: { schema: z.object({ name: z.string() }) }, maxRetries: 0 }
             })).rejects.toThrow('Schema validation failed');
-        });
+
+            // Verify that both the provider call and validation were attempted
+            expect(mockChatCall).toHaveBeenCalled();
+            expect(mockResponseProcessor.validateResponse).toHaveBeenCalled();
+        }, 10000);
 
         it('should handle provider errors', async () => {
-            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
-            providerManagerInstance.getProvider.mockReturnValueOnce({
-                chatCall: jest.fn().mockRejectedValue(new Error('API error'))
-            });
+            mockProviderManager.getProvider.mockReturnValue(
+                createMockProvider(jest.fn().mockRejectedValue(new Error('API error')))
+            );
 
             await expect(caller.chatCall({
                 message: 'test'
-            })).rejects.toThrow('API error');
+            })).rejects.toThrow('Failed after 3 retries. Last error: API error');
+        }, 15000); // Increase timeout to 15 seconds for retries
+
+        it('should retry on failure with default maxRetries', async () => {
+            const mockChatCall = jest.fn()
+                .mockRejectedValueOnce(new Error('First failure'))
+                .mockRejectedValueOnce(new Error('Second failure'))
+                .mockResolvedValueOnce({
+                    content: 'Success after retries',
+                    role: 'assistant',
+                    metadata: { finishReason: FinishReason.STOP }
+                });
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(mockChatCall));
+
+            const response = await caller.chatCall({ message: 'test' });
+
+            expect(mockChatCall).toHaveBeenCalledTimes(3);
+            expect(response.content).toBe('Success after retries');
+        }, 15000); // Increase timeout to 15 seconds for retries
+
+        it('should respect custom maxRetries setting', async () => {
+            const mockChatCall = jest.fn()
+                .mockRejectedValueOnce(new Error('First failure'))
+                .mockRejectedValueOnce(new Error('Second failure'))
+                .mockRejectedValueOnce(new Error('Third failure'))
+                .mockRejectedValueOnce(new Error('Fourth failure'))
+                .mockResolvedValueOnce({
+                    content: 'Success after retries',
+                    role: 'assistant',
+                    metadata: { finishReason: FinishReason.STOP }
+                });
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(mockChatCall));
+
+            const response = await caller.chatCall({
+                message: 'test',
+                settings: { maxRetries: 4 }
+            });
+
+            expect(mockChatCall).toHaveBeenCalledTimes(5); // 1 initial + 4 retries
+            expect(response.content).toBe('Success after retries');
+        }, 20000); // Increase timeout to 20 seconds for more retries
+
+        it('should fail after exhausting all retries', async () => {
+            const mockChatCall = jest.fn()
+                .mockRejectedValue(new Error('Persistent failure'));
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(mockChatCall));
+
+            await expect(caller.chatCall({
+                message: 'test',
+                settings: { maxRetries: 2 }
+            })).rejects.toThrow('Failed after 2 retries. Last error: Persistent failure');
+
+            expect(mockChatCall).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+        }, 15000); // Increase timeout to 15 seconds for retries
+
+        it('should use exponential backoff between retries', async () => {
+            jest.useFakeTimers();
+            const mockChatCall = jest.fn()
+                .mockRejectedValueOnce(new Error('First failure'))
+                .mockRejectedValueOnce(new Error('Second failure'))
+                .mockResolvedValueOnce({
+                    content: 'Success after retries',
+                    role: 'assistant',
+                    metadata: { finishReason: FinishReason.STOP }
+                });
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(mockChatCall));
+
+            const callPromise = caller.chatCall({ message: 'test' });
+
+            // First retry should wait 1 second
+            await jest.advanceTimersByTimeAsync(1000);
+            // Second retry should wait 2 seconds
+            await jest.advanceTimersByTimeAsync(2000);
+
+            const response = await callPromise;
+
+            expect(mockChatCall).toHaveBeenCalledTimes(3);
+            expect(response.content).toBe('Success after retries');
+
+            jest.useRealTimers();
         });
     });
 
     describe('stream methods', () => {
         let caller: LLMCaller;
+        let mockProviderManager: jest.Mocked<ProviderManager>;
+        let mockResponseProcessor: jest.Mocked<ResponseProcessor>;
+        let mockTokenCalculator: jest.Mocked<TokenCalculator>;
 
         beforeEach(() => {
+            jest.clearAllMocks();
+
+            // Setup ResponseProcessor mock
+            mockResponseProcessor = {
+                validateResponse: jest.fn(),
+                validateJsonMode: jest.fn()
+            } as unknown as jest.Mocked<ResponseProcessor>;
+            (ResponseProcessor as jest.Mock).mockImplementation(() => mockResponseProcessor);
+
+            // Setup TokenCalculator mock
+            mockTokenCalculator = {
+                calculateTokens: jest.fn().mockReturnValue(10),
+                calculateUsage: jest.fn()
+            } as unknown as jest.Mocked<TokenCalculator>;
+            (TokenCalculator as jest.Mock).mockImplementation(() => mockTokenCalculator);
+
+            // Setup ProviderManager mock
+            mockProviderManager = {
+                getProvider: jest.fn(),
+                switchProvider: jest.fn(),
+                getCurrentProviderName: jest.fn().mockReturnValue('openai')
+            } as unknown as jest.Mocked<ProviderManager>;
+            (ProviderManager as jest.Mock).mockImplementation(() => mockProviderManager);
+
             caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
                 apiKey: mockApiKey
             });
         });
 
         it('should handle stream errors in first stream', async () => {
-            const streamHandlerInstance = (StreamHandler as jest.MockedClass<typeof StreamHandler>).mock.results[0].value;
-            (streamHandlerInstance.processStream as jest.Mock).mockImplementationOnce(async function* () {
-                throw new Error('Stream error');
-            });
+            const mockStreamCall = jest.fn()
+                .mockRejectedValueOnce(new Error('First failure'))
+                .mockRejectedValueOnce(new Error('Second failure'))
+                .mockImplementationOnce(async () => ({
+                    [Symbol.asyncIterator]: async function* () {
+                        yield {
+                            content: 'Success after retries',
+                            role: 'assistant',
+                            isComplete: true,
+                            metadata: { finishReason: FinishReason.STOP }
+                        };
+                    }
+                }));
 
-            const stream = await caller.stream({
-                message: 'test message',
-                endingMessage: 'ending message'
-            });
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(jest.fn(), mockStreamCall));
 
-            await expect(async () => {
-                for await (const chunk of stream) {
-                    // This should throw
-                }
-            }).rejects.toThrow('Stream error');
-        });
+            const stream = await caller.streamCall({ message: 'test' });
+            const chunks = [];
+            for await (const chunk of stream) {
+                chunks.push(chunk);
+            }
+
+            expect(mockStreamCall).toHaveBeenCalledTimes(3);
+            expect(chunks).toHaveLength(1);
+            expect(chunks[0].content).toBe('Success after retries');
+        }, 15000);
 
         it('should handle stream errors in ending message stream', async () => {
-            const streamHandlerInstance = (StreamHandler as jest.MockedClass<typeof StreamHandler>).mock.results[0].value;
-            (streamHandlerInstance.processStream as jest.Mock).mockImplementation(async function* () {
-                yield {
-                    content: 'first response',
-                    role: 'assistant',
-                    isComplete: true,
-                    metadata: {
-                        finishReason: FinishReason.STOP
+            const mockStreamCall = jest.fn()
+                .mockImplementationOnce(async () => ({
+                    [Symbol.asyncIterator]: async function* () {
+                        yield {
+                            content: 'First chunk',
+                            role: 'assistant',
+                            isComplete: false,
+                            metadata: { finishReason: FinishReason.NULL }
+                        };
+                        throw new Error('Mid-stream failure');
                     }
-                };
-            });
+                }))
+                .mockImplementationOnce(async () => ({
+                    [Symbol.asyncIterator]: async function* () {
+                        yield {
+                            content: 'Success after retry',
+                            role: 'assistant',
+                            isComplete: true,
+                            metadata: { finishReason: FinishReason.STOP }
+                        };
+                    }
+                }));
 
-            const stream = await caller.stream({
-                message: 'test message',
-                endingMessage: 'ending message'
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(jest.fn(), mockStreamCall));
+
+            const stream = await caller.streamCall({ message: 'test' });
+            const chunks = [];
+            for await (const chunk of stream) {
+                chunks.push(chunk);
+            }
+
+            expect(mockStreamCall).toHaveBeenCalledTimes(2);
+            expect(chunks).toHaveLength(2);
+            expect(chunks[0].content).toBe('First chunk');
+            expect(chunks[1].content).toBe('Success after retry');
+        }, 15000);
+
+        it('should fail after exhausting all retries in stream', async () => {
+            const mockStreamCall = jest.fn()
+                .mockRejectedValueOnce(new Error('First failure'))
+                .mockRejectedValueOnce(new Error('Second failure'))
+                .mockRejectedValueOnce(new Error('Third failure'));
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(jest.fn(), mockStreamCall));
+
+            let error: Error | undefined;
+            try {
+                const stream = await caller.streamCall({
+                    message: 'test',
+                    settings: { maxRetries: 2 }
+                });
+
+                for await (const chunk of stream) {
+                    // This should not be reached
+                }
+            } catch (e) {
+                error = e as Error;
+            }
+
+            expect(error).toBeDefined();
+            expect((error as Error).message).toContain('Failed to start stream after 2 retries');
+            expect(mockStreamCall).toHaveBeenCalledTimes(3); // Initial + 2 retries
+        }, 15000);
+
+        it('should respect custom maxRetries setting in stream', async () => {
+            const mockStreamCall = jest.fn()
+                .mockImplementationOnce(async () => {
+                    throw new Error('First failure');
+                })
+                .mockImplementationOnce(async () => {
+                    throw new Error('Second failure');
+                })
+                .mockImplementationOnce(async () => ({
+                    [Symbol.asyncIterator]: async function* () {
+                        yield {
+                            content: 'Success after retries',
+                            role: 'assistant',
+                            isComplete: true,
+                            metadata: { finishReason: FinishReason.STOP }
+                        };
+                    }
+                }));
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(jest.fn(), mockStreamCall));
+
+            const stream = await caller.streamCall({
+                message: 'test',
+                settings: { maxRetries: 4 }
             });
 
             const chunks = [];
@@ -591,9 +929,62 @@ describe('LLMCaller', () => {
                 chunks.push(chunk);
             }
 
+            expect(mockStreamCall).toHaveBeenCalledTimes(3);
             expect(chunks).toHaveLength(1);
-            expect(chunks[0].content).toBe('first response');
-        });
+            expect(chunks[0].content).toBe('Success after retries');
+        }, 20000);
+
+        it('should use exponential backoff between stream retries', async () => {
+            jest.useFakeTimers();
+
+            const mockStreamCall = jest.fn()
+                .mockImplementationOnce(async () => ({
+                    [Symbol.asyncIterator]: async function* () {
+                        yield {
+                            content: 'First chunk',
+                            role: 'assistant',
+                            isComplete: false,
+                            metadata: { finishReason: FinishReason.NULL }
+                        };
+                        throw new Error('Mid-stream failure');
+                    }
+                }))
+                .mockImplementationOnce(async () => ({
+                    [Symbol.asyncIterator]: async function* () {
+                        yield {
+                            content: 'Success after retry',
+                            role: 'assistant',
+                            isComplete: true,
+                            metadata: { finishReason: FinishReason.STOP }
+                        };
+                    }
+                }));
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(jest.fn(), mockStreamCall));
+
+            const stream = await caller.streamCall({ message: 'test' });
+            const chunksPromise = (async () => {
+                const chunks = [];
+                for await (const chunk of stream) {
+                    chunks.push(chunk);
+                }
+                return chunks;
+            })();
+
+            // First retry should wait 1 second
+            await jest.advanceTimersByTimeAsync(1000);
+            // Second retry should wait 2 seconds
+            await jest.advanceTimersByTimeAsync(2000);
+
+            const chunks = await chunksPromise;
+
+            expect(mockStreamCall).toHaveBeenCalledTimes(2);
+            expect(chunks).toHaveLength(2);
+            expect(chunks[0].content).toBe('First chunk');
+            expect(chunks[1].content).toBe('Success after retry');
+
+            jest.useRealTimers();
+        }, 15000);
     });
 
     describe('LLMCaller usage tracking', () => {

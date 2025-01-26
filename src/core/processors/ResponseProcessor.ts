@@ -47,11 +47,11 @@ export class ResponseProcessor {
         schema: JSONSchemaDefinition,
         settings: UniversalChatParams['settings']
     ): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
-        try {
-            let contentToParse = typeof response.content === 'string'
-                ? JSON.parse(response.content)
-                : response.content;
+        let contentToParse = typeof response.content === 'string'
+            ? JSON.parse(response.content)
+            : response.content;
 
+        try {
             // Check if content is wrapped in a named object matching schema name
             if (typeof contentToParse === 'object' &&
                 contentToParse !== null &&
@@ -83,6 +83,7 @@ export class ResponseProcessor {
                 });
                 return {
                     ...response,
+                    content: contentToParse,
                     metadata: {
                         ...response.metadata,
                         validationErrors: error.validationErrors,

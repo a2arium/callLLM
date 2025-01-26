@@ -152,47 +152,64 @@ export class LLMCaller {
         const modelInfo = this.modelManager.getModel(this.model);
         this.responseProcessor.validateJsonMode(modelInfo!, params);
 
-        // Make the call
-        const response = await this.providerManager.getProvider().chatCall(this.model, params);
+        // Make the call with retries
+        const maxRetries = mergedSettings?.maxRetries ?? 3;
+        let lastError: Error | undefined;
 
-        // Calculate usage if not provided
-        if (!response.metadata?.usage) {
-            const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
-            const outputTokens = this.tokenCalculator.calculateTokens(response.content);
-            const modelInfo = this.modelManager.getModel(this.model)!;
-            const costs = this.tokenCalculator.calculateUsage(
-                inputTokens,
-                outputTokens,
-                modelInfo.inputPricePerMillion,
-                modelInfo.outputPricePerMillion
-            );
-            const usage: Usage = {
-                inputTokens,
-                outputTokens,
-                totalTokens: inputTokens + outputTokens,
-                costs
-            };
-            response.metadata = { ...response.metadata, usage };
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                const response = await this.providerManager.getProvider().chatCall(this.model, params);
 
-            // Notify about usage
-            await this.notifyUsage(usage);
-        } else {
-            // If usage was provided by the provider, still notify
-            await this.notifyUsage(response.metadata.usage);
+                // Calculate usage if not provided
+                if (!response.metadata?.usage) {
+                    const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
+                    const outputTokens = this.tokenCalculator.calculateTokens(response.content);
+                    const modelInfo = this.modelManager.getModel(this.model)!;
+                    const costs = this.tokenCalculator.calculateUsage(
+                        inputTokens,
+                        outputTokens,
+                        modelInfo.inputPricePerMillion,
+                        modelInfo.outputPricePerMillion
+                    );
+                    const usage: Usage = {
+                        inputTokens,
+                        outputTokens,
+                        totalTokens: inputTokens + outputTokens,
+                        costs
+                    };
+                    response.metadata = { ...response.metadata, usage };
+
+                    // Notify about usage
+                    await this.notifyUsage(usage);
+                } else {
+                    // If usage was provided by the provider, still notify
+                    await this.notifyUsage(response.metadata.usage);
+                }
+
+                // Validate response against schema if provided
+                return this.responseProcessor.validateResponse<T>(response, mergedSettings);
+            } catch (error) {
+                lastError = error as Error;
+                if (attempt === maxRetries) {
+                    throw new Error(`Failed after ${maxRetries} retries. Last error: ${lastError.message}`);
+                }
+                // Wait with exponential backoff before retrying
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+            }
         }
 
-        // Validate response against schema if provided
-        return this.responseProcessor.validateResponse<T>(response, mergedSettings);
+        // This should never be reached due to the throw in the loop, but TypeScript needs it
+        throw lastError;
     }
 
     // Basic streaming method
-    public async streamCall<T extends z.ZodType | undefined = undefined>({
+    public async streamCall({
         message,
         settings
     }: {
         message: string;
         settings?: UniversalChatParams['settings'];
-    }): Promise<AsyncIterable<UniversalStreamResponse & { content: T extends z.ZodType ? z.infer<T> : string }>> {
+    }): Promise<AsyncIterable<UniversalStreamResponse>> {
         const mergedSettings = this.mergeSettings(settings);
         const systemMessage = mergedSettings?.responseFormat === 'json' || mergedSettings?.jsonSchema
             ? `${this.systemMessage}\n Provide your response in valid JSON format.`
@@ -210,14 +227,70 @@ export class LLMCaller {
         const modelInfo = this.modelManager.getModel(this.model);
         this.responseProcessor.validateJsonMode(modelInfo!, params);
 
-        // Get the stream
-        const stream = await this.providerManager.getProvider().streamCall(this.model, params);
+        // Make the call with retries
+        const maxRetries = mergedSettings?.maxRetries ?? 3;
+        let lastError: Error | undefined;
+        let attempt = 0;
 
-        // Calculate input tokens
-        const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
+        const makeStreamRequest = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
+            try {
+                const provider = this.providerManager.getProvider();
+                const stream = await provider.streamCall(this.model, params);
 
-        // Process the stream
-        return this.streamHandler.processStream<T>(stream, params, inputTokens, modelInfo!);
+                // Calculate input tokens
+                const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
+
+                // Process the stream with retries
+                return {
+                    [Symbol.asyncIterator]() {
+                        const iterator = stream[Symbol.asyncIterator]();
+                        let accumulatedContent = '';
+                        let isFirstChunk = true;
+
+                        return {
+                            async next(): Promise<IteratorResult<UniversalStreamResponse>> {
+                                try {
+                                    const result = await iterator.next();
+                                    if (!result.done) {
+                                        accumulatedContent += result.value.content;
+                                        return result;
+                                    }
+                                    return { done: true, value: undefined };
+                                } catch (error: unknown) {
+                                    // If this is not the first chunk, we've already received some data
+                                    // We should preserve it and continue from where we left off
+                                    if (!isFirstChunk && accumulatedContent) {
+                                        if (attempt < maxRetries) {
+                                            attempt++;
+                                            // Wait with exponential backoff before retrying
+                                            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+                                            // Create a new stream starting from where we left off
+                                            const newStream = await makeStreamRequest();
+                                            const newIterator = newStream[Symbol.asyncIterator]();
+                                            return newIterator.next();
+                                        }
+                                    }
+                                    throw new Error(`Stream failed after ${attempt} retries. Last error: ${error instanceof Error ? error.message : String(error)}`);
+                                } finally {
+                                    isFirstChunk = false;
+                                }
+                            }
+                        };
+                    }
+                };
+            } catch (error) {
+                lastError = error as Error;
+                if (attempt >= maxRetries) {
+                    throw new Error(`Failed to start stream after ${maxRetries} retries. Last error: ${lastError.message}`);
+                }
+                attempt++;
+                // Wait with exponential backoff before retrying
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+                return makeStreamRequest();
+            }
+        };
+
+        return makeStreamRequest();
     }
 
     // Extended call method with additional functionality

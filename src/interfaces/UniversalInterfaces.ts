@@ -29,6 +29,11 @@ export interface UniversalChatParams {
         frequencyPenalty?: number;
         presencePenalty?: number;
         /**
+         * Maximum number of retries when the provider call fails
+         * @default 3
+         */
+        maxRetries?: number;
+        /**
          * JSON schema for response validation and formatting
          * Can be either a JSON Schema string or a Zod schema
          */
