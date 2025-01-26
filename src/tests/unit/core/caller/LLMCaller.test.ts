@@ -655,4 +655,194 @@ describe('LLMCaller', () => {
             );
         });
     });
+
+    describe('settings management', () => {
+        let caller: LLMCaller;
+
+        beforeEach(() => {
+            caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
+                apiKey: mockApiKey,
+                settings: {
+                    temperature: 0.7,
+                    maxTokens: 100
+                }
+            });
+        });
+
+        it('should initialize with settings', async () => {
+            const response = await caller.chatCall({ message: 'test message' });
+            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
+            const provider = providerManagerInstance.getProvider();
+
+            expect(provider.chatCall).toHaveBeenCalledWith('test-model', expect.objectContaining({
+                settings: expect.objectContaining({
+                    temperature: 0.7,
+                    maxTokens: 100
+                })
+            }));
+        });
+
+        it('should update settings', async () => {
+            caller.updateSettings({ temperature: 0.9 });
+
+            const response = await caller.chatCall({ message: 'test message' });
+            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
+            const provider = providerManagerInstance.getProvider();
+
+            expect(provider.chatCall).toHaveBeenCalledWith('test-model', expect.objectContaining({
+                settings: expect.objectContaining({
+                    temperature: 0.9,
+                    maxTokens: 100
+                })
+            }));
+        });
+
+        it('should merge method-level settings with class-level settings', async () => {
+            const response = await caller.chatCall({
+                message: 'test message',
+                settings: {
+                    temperature: 0.5,
+                    topP: 0.8
+                }
+            });
+
+            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
+            const provider = providerManagerInstance.getProvider();
+
+            expect(provider.chatCall).toHaveBeenCalledWith('test-model', expect.objectContaining({
+                settings: expect.objectContaining({
+                    temperature: 0.5,  // Method-level overrides class-level
+                    maxTokens: 100,    // Class-level preserved
+                    topP: 0.8         // New setting added
+                })
+            }));
+        });
+
+        it('should use method-level settings when no class-level settings exist', async () => {
+            // Create a new instance without class-level settings
+            const mockProvider = {
+                chatCall: jest.fn().mockResolvedValue({
+                    content: 'test response',
+                    role: 'assistant',
+                    metadata: {
+                        finishReason: FinishReason.STOP,
+                        usage: {
+                            inputTokens: 10,
+                            outputTokens: 20,
+                            totalTokens: 30,
+                            costs: {
+                                inputCost: 0.00001,
+                                outputCost: 0.00002,
+                                totalCost: 0.00003
+                            }
+                        }
+                    }
+                })
+            };
+
+            // Setup the mock before creating the instance
+            (ProviderManager as jest.Mock).mockImplementation(() => ({
+                getProvider: jest.fn().mockReturnValue(mockProvider),
+                switchProvider: jest.fn(),
+                getCurrentProviderName: jest.fn().mockReturnValue('openai')
+            }));
+
+            caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
+                apiKey: mockApiKey
+            });
+
+            await caller.chatCall({
+                message: 'test message',
+                settings: {
+                    temperature: 0.5
+                }
+            });
+
+            expect(mockProvider.chatCall).toHaveBeenCalledWith('test-model', expect.objectContaining({
+                settings: expect.objectContaining({
+                    temperature: 0.5
+                })
+            }));
+        });
+
+        it('should handle undefined settings', async () => {
+            // Create a new instance without class-level settings
+            const mockProvider = {
+                chatCall: jest.fn().mockResolvedValue({
+                    content: 'test response',
+                    role: 'assistant',
+                    metadata: {
+                        finishReason: FinishReason.STOP,
+                        usage: {
+                            inputTokens: 10,
+                            outputTokens: 20,
+                            totalTokens: 30,
+                            costs: {
+                                inputCost: 0.00001,
+                                outputCost: 0.00002,
+                                totalCost: 0.00003
+                            }
+                        }
+                    }
+                })
+            };
+
+            // Setup the mock before creating the instance
+            (ProviderManager as jest.Mock).mockImplementation(() => ({
+                getProvider: jest.fn().mockReturnValue(mockProvider),
+                switchProvider: jest.fn(),
+                getCurrentProviderName: jest.fn().mockReturnValue('openai')
+            }));
+
+            caller = new LLMCaller('openai', 'test-model', mockSystemMessage, {
+                apiKey: mockApiKey
+            });
+
+            await caller.chatCall({
+                message: 'test message'
+            });
+
+            expect(mockProvider.chatCall).toHaveBeenCalledWith('test-model', expect.objectContaining({
+                settings: undefined
+            }));
+        });
+
+        it('should apply settings to stream calls', async () => {
+            const stream = await caller.streamCall({
+                message: 'test message',
+                settings: {
+                    temperature: 0.5
+                }
+            });
+
+            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
+            const provider = providerManagerInstance.getProvider();
+
+            expect(provider.streamCall).toHaveBeenCalledWith('test-model', expect.objectContaining({
+                settings: expect.objectContaining({
+                    temperature: 0.5,
+                    maxTokens: 100
+                })
+            }));
+        });
+
+        it('should apply settings to extended call methods', async () => {
+            const responses = await caller.call({
+                message: 'test message',
+                settings: {
+                    temperature: 0.5
+                }
+            });
+
+            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
+            const provider = providerManagerInstance.getProvider();
+
+            expect(provider.chatCall).toHaveBeenCalledWith('test-model', expect.objectContaining({
+                settings: expect.objectContaining({
+                    temperature: 0.5,
+                    maxTokens: 100
+                })
+            }));
+        });
+    });
 }); 

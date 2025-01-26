@@ -436,13 +436,147 @@ try {
 
 ## Available Settings
 
-| Setting | Type | Description |
-|---------|------|-------------|
-| temperature | number | Controls randomness (0-1) |
-| maxTokens | number | Maximum tokens to generate |
-| topP | number | Nucleus sampling parameter |
-| frequencyPenalty | number | Reduces repetition |
-| presencePenalty | number | Encourages new topics |
+The library supports both universal settings and model-specific settings. Settings are passed through to the underlying model provider when applicable.
+
+### Universal Settings
+
+| Setting | Type | Description | Default |
+|---------|------|-------------|---------|
+| temperature | number | Controls randomness (0-1). Higher values make output more random, lower values make it more deterministic | 1.0 |
+| maxTokens | number | Maximum tokens to generate. If not set, uses model's maxResponseTokens | model dependent |
+| topP | number | Nucleus sampling parameter (0-1). Alternative to temperature for controlling randomness | 1.0 |
+| frequencyPenalty | number | Reduces repetition (-2.0 to 2.0). Higher values penalize tokens based on their frequency | 0.0 |
+| presencePenalty | number | Encourages new topics (-2.0 to 2.0). Higher values penalize tokens that have appeared at all | 0.0 |
+| responseFormat | 'text' \| 'json' | Specifies the desired response format | 'text' |
+| jsonSchema | { name?: string; schema: JSONSchemaDefinition } | Schema for response validation and formatting | undefined |
+
+### Model-Specific Settings
+
+Some settings are specific to certain providers or models. These settings are passed through to the underlying API:
+
+#### OpenAI-Specific Settings
+```typescript
+{
+    // OpenAI-specific settings
+    user?: string;           // Unique identifier for end-user
+    n?: number;             // Number of completions (default: 1)
+    stop?: string[];        // Custom stop sequences
+    logitBias?: Record<string, number>; // Token biasing
+}
+```
+
+### Settings Validation
+
+The library validates settings before passing them to the model:
+- Temperature must be between 0 and 2
+- TopP must be between 0 and 1
+- Frequency and presence penalties must be between -2 and 2
+- MaxTokens must be positive and within model limits
+
+Example with model-specific settings:
+```typescript
+const response = await caller.chatCall({
+    message: "Hello",
+    settings: {
+        // Universal settings
+        temperature: 0.7,
+        maxTokens: 1000,
+        
+        // OpenAI-specific settings
+        user: "user-123",
+        stop: ["\n", "Stop"],
+        logitBias: {
+            50256: -100  // Bias against specific token
+        }
+    }
+});
+```
+
+## Settings Management
+
+The library provides flexible settings management at both the class level and method level. You can:
+1. Initialize settings when creating the LLMCaller instance
+2. Update settings after initialization
+3. Override settings for individual calls
+
+### Class-Level Settings
+
+Set default settings for all calls when initializing:
+
+```typescript
+const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
+    apiKey: 'your-api-key',
+    settings: {
+        temperature: 0.7,
+        maxTokens: 1000
+    }
+});
+```
+
+Update settings after initialization:
+
+```typescript
+// Update specific settings
+caller.updateSettings({
+    temperature: 0.9
+});
+```
+
+### Method-Level Settings
+
+Override class-level settings for individual calls:
+
+```typescript
+// Override temperature just for this call
+const response = await caller.chatCall({
+    message: "Hello",
+    settings: {
+        temperature: 0.5  // This takes precedence over class-level setting
+    }
+});
+
+// Settings work with all call types
+const stream = await caller.streamCall({
+    message: "Hello",
+    settings: { temperature: 0.5 }
+});
+
+const responses = await caller.call({
+    message: "Hello",
+    settings: { temperature: 0.5 }
+});
+```
+
+### Settings Merging
+
+When both class-level and method-level settings are provided:
+- Method-level settings take precedence over class-level settings
+- Settings not specified at method level fall back to class-level values
+- Settings not specified at either level use the model's defaults
+
+Example:
+```typescript
+// Initialize with class-level settings
+const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
+    settings: {
+        temperature: 0.7,
+        maxTokens: 1000
+    }
+});
+
+// Make a call with method-level settings
+const response = await caller.chatCall({
+    message: "Hello",
+    settings: {
+        temperature: 0.5,  // Overrides class-level
+        topP: 0.8         // New setting
+    }
+});
+// Effective settings:
+// - temperature: 0.5 (from method)
+// - maxTokens: 1000 (from class)
+// - topP: 0.8 (from method)
+```
 
 ## Environment Variables
 

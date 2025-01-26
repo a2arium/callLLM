@@ -23,6 +23,7 @@ export class LLMCaller {
     private usageCallback?: UsageCallback;
     private requestProcessor: RequestProcessor;
     private dataSplitter: DataSplitter;
+    private settings?: UniversalChatParams['settings'];
 
     constructor(
         providerName: SupportedProviders,
@@ -32,6 +33,7 @@ export class LLMCaller {
             apiKey?: string;
             callerId?: string;
             usageCallback?: UsageCallback;
+            settings?: UniversalChatParams['settings'];
         }
     ) {
         this.providerManager = new ProviderManager(providerName, options?.apiKey);
@@ -44,6 +46,7 @@ export class LLMCaller {
             options?.callerId
         );
         this.systemMessage = systemMessage ?? 'You are a helpful assistant.';
+        this.settings = options?.settings;
 
         // Initialize model
         const resolvedModel = this.modelManager.getModel(modelOrAlias);
@@ -96,6 +99,34 @@ export class LLMCaller {
         this.model = resolvedModel.name;
     }
 
+    // Add methods to manage ID and callback
+    public setCallerId(newId: string): void {
+        this.callerId = newId;
+        this.streamHandler = new StreamHandler(
+            this.tokenCalculator,
+            this.usageCallback,
+            newId
+        );
+    }
+
+    public setUsageCallback(callback: UsageCallback): void {
+        this.usageCallback = callback;
+        this.streamHandler = new StreamHandler(
+            this.tokenCalculator,
+            callback,
+            this.callerId
+        );
+    }
+
+    public updateSettings(newSettings: UniversalChatParams['settings']): void {
+        this.settings = { ...this.settings, ...newSettings };
+    }
+
+    private mergeSettings(methodSettings?: UniversalChatParams['settings']): UniversalChatParams['settings'] | undefined {
+        if (!this.settings && !methodSettings) return undefined;
+        return { ...this.settings, ...methodSettings };
+    }
+
     // Basic chat completion method
     public async chatCall<T extends z.ZodType | undefined = undefined>({
         message,
@@ -104,7 +135,8 @@ export class LLMCaller {
         message: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
-        const systemMessage = settings?.responseFormat === 'json' || settings?.jsonSchema
+        const mergedSettings = this.mergeSettings(settings);
+        const systemMessage = mergedSettings?.responseFormat === 'json' || mergedSettings?.jsonSchema
             ? `${this.systemMessage}\n Provide your response in valid JSON format.`
             : this.systemMessage;
 
@@ -113,7 +145,7 @@ export class LLMCaller {
                 { role: 'system', content: systemMessage },
                 { role: 'user', content: message }
             ],
-            settings
+            settings: mergedSettings
         };
 
         // Validate JSON mode support
@@ -150,7 +182,7 @@ export class LLMCaller {
         }
 
         // Validate response against schema if provided
-        return this.responseProcessor.validateResponse<T>(response, settings);
+        return this.responseProcessor.validateResponse<T>(response, mergedSettings);
     }
 
     // Basic streaming method
@@ -161,8 +193,8 @@ export class LLMCaller {
         message: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<AsyncIterable<UniversalStreamResponse & { content: T extends z.ZodType ? z.infer<T> : string }>> {
-
-        const systemMessage = settings?.responseFormat === 'json' || settings?.jsonSchema
+        const mergedSettings = this.mergeSettings(settings);
+        const systemMessage = mergedSettings?.responseFormat === 'json' || mergedSettings?.jsonSchema
             ? `${this.systemMessage}\n Provide your response in valid JSON format.`
             : this.systemMessage;
 
@@ -171,7 +203,7 @@ export class LLMCaller {
                 { role: 'system', content: systemMessage },
                 { role: 'user', content: message }
             ],
-            settings
+            settings: mergedSettings
         };
 
         // Validate JSON mode support
@@ -195,8 +227,9 @@ export class LLMCaller {
         endingMessage?: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<UniversalChatResponse[]> {
-        const modelInfo = this.modelManager.getModel(settings?.model || this.model)!;
-        const maxResponseTokens = settings?.maxTokens || modelInfo.maxResponseTokens;
+        const mergedSettings = this.mergeSettings(settings);
+        const modelInfo = this.modelManager.getModel(mergedSettings?.model || this.model)!;
+        const maxResponseTokens = mergedSettings?.maxTokens || modelInfo.maxResponseTokens;
 
         // Process request and get messages
         const messages = this.requestProcessor.processRequest({
@@ -212,7 +245,7 @@ export class LLMCaller {
         for (const processedMessage of messages) {
             const response = await this.chatCall({
                 message: processedMessage,
-                settings
+                settings: mergedSettings
             });
             responses.push(response);
         }
@@ -227,8 +260,9 @@ export class LLMCaller {
         endingMessage?: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<AsyncIterable<UniversalStreamResponse>> {
-        const modelInfo = this.modelManager.getModel(settings?.model || this.model)!;
-        const maxResponseTokens = settings?.maxTokens || modelInfo.maxResponseTokens;
+        const mergedSettings = this.mergeSettings(settings);
+        const modelInfo = this.modelManager.getModel(mergedSettings?.model || this.model)!;
+        const maxResponseTokens = mergedSettings?.maxTokens || modelInfo.maxResponseTokens;
         const self = this;
 
         // Process request and get messages
@@ -255,7 +289,7 @@ export class LLMCaller {
                                 const processedMessage = messages[currentMessageIndex];
                                 const stream = await self.streamCall({
                                     message: processedMessage,
-                                    settings
+                                    settings: mergedSettings
                                 });
                                 currentStream = stream[Symbol.asyncIterator]();
                             }
@@ -307,25 +341,6 @@ export class LLMCaller {
                 };
             }
         };
-    }
-
-    // Add methods to manage ID and callback
-    public setCallerId(newId: string): void {
-        this.callerId = newId;
-        this.streamHandler = new StreamHandler(
-            this.tokenCalculator,
-            this.usageCallback,
-            newId
-        );
-    }
-
-    public setUsageCallback(callback: UsageCallback): void {
-        this.usageCallback = callback;
-        this.streamHandler = new StreamHandler(
-            this.tokenCalculator,
-            callback,
-            this.callerId
-        );
     }
 
     private async notifyUsage(usage: UsageData['usage']): Promise<void> {
