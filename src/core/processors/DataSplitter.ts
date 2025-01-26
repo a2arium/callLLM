@@ -43,6 +43,27 @@ export class DataSplitter {
         modelInfo: ModelInfo;
         maxResponseTokens: number;
     }): DataChunk[] {
+        // Check recursion depth for objects
+        if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+            const depth = this.calculateObjectDepth(data);
+            if (depth > this.MAX_RECURSION_DEPTH) {
+                // For objects at the boundary, try to split them
+                try {
+                    const messageTokens = this.tokenCalculator.calculateTokens(message);
+                    const endingTokens = endingMessage ? this.tokenCalculator.calculateTokens(endingMessage) : 0;
+                    const overheadTokens = 50;
+                    const availableTokens = Math.max(1, modelInfo.maxRequestTokens - messageTokens - endingTokens - maxResponseTokens - overheadTokens);
+                    const chunks = this.splitObjectData(data, availableTokens, this.MAX_RECURSION_DEPTH - 1);
+                    if (chunks.length > 0) {
+                        return chunks;
+                    }
+                } catch {
+                    // If splitting fails, then throw the recursion depth error
+                    throw new Error('Maximum object recursion depth exceeded');
+                }
+            }
+        }
+
         // Handle undefined, null, and primitive types
         if (data === undefined || data === null ||
             typeof data === 'number' ||
@@ -72,7 +93,7 @@ export class DataSplitter {
         const availableTokens = Math.max(1, modelInfo.maxRequestTokens - messageTokens - endingTokens - maxResponseTokens - overheadTokens);
 
         // Check if data fits in available tokens without splitting
-        const dataString = typeof data === 'object' ? JSON.stringify(data, null, 2) : data.toString();
+        const dataString = typeof data === 'object' ? JSON.stringify(data) : data.toString();
         const dataTokens = this.tokenCalculator.calculateTokens(dataString);
 
         if (dataTokens <= availableTokens) {
@@ -92,6 +113,19 @@ export class DataSplitter {
             return this.splitArrayData(data, availableTokens);
         }
         return this.splitObjectData(data, availableTokens);
+    }
+
+    private calculateObjectDepth(obj: any): number {
+        if (typeof obj !== 'object' || obj === null) {
+            return 0;
+        }
+        let maxDepth = 1;
+        for (const value of Object.values(obj)) {
+            if (typeof value === 'object' && value !== null) {
+                maxDepth = Math.max(maxDepth, 1 + this.calculateObjectDepth(value));
+            }
+        }
+        return maxDepth;
     }
 
     /**
@@ -205,66 +239,42 @@ export class DataSplitter {
         const chunks: DataChunk[] = [];
         let currentChunk: any[] = [];
         let currentTokens = this.tokenCalculator.calculateTokens('[]');
-        const commaOverhead = this.tokenCalculator.calculateTokens(',\n  ');
 
         for (const item of data) {
-            const itemString = typeof item === 'object' ? JSON.stringify(item, null, 2) : String(item);
-            const singleItemArrayStr = JSON.stringify([item], null, 2);
-            const singleItemArrayTokens = this.tokenCalculator.calculateTokens(singleItemArrayStr);
+            const itemString = JSON.stringify(item);
+            const itemTokens = this.tokenCalculator.calculateTokens(itemString);
+            const arrayOverhead = this.tokenCalculator.calculateTokens('[]');
+            const commaTokens = currentChunk.length > 0 ? this.tokenCalculator.calculateTokens(',') : 0;
 
-            // Check if single-item array exceeds maxTokens
-            if (singleItemArrayTokens > maxTokens) {
+            // If a single item is too large to fit in a chunk by itself
+            if (itemTokens + arrayOverhead > maxTokens) {
                 // Save current chunk if not empty
                 if (currentChunk.length > 0) {
-                    const chunkString = JSON.stringify(currentChunk, null, 2);
-                    chunks.push(this.createArrayChunk(currentChunk, this.tokenCalculator.calculateTokens(chunkString), chunks.length));
+                    chunks.push(this.createArrayChunk(currentChunk, currentTokens, chunks.length));
                     currentChunk = [];
                     currentTokens = this.tokenCalculator.calculateTokens('[]');
                 }
 
-                // Split the item itself
-                const itemChunks = this.splitIfNeeded({
-                    message: '',
-                    data: item,
-                    modelInfo: {
-                        maxRequestTokens: maxTokens,
-                        name: 'array-item-split',
-                        inputPricePerMillion: 0,
-                        outputPricePerMillion: 0,
-                        maxResponseTokens: 0,
-                        characteristics: { qualityIndex: 0, outputSpeed: 0, firstTokenLatency: 0 }
-                    },
-                    maxResponseTokens: 0
-                });
-
-                // Add each sub-chunk as a separate array chunk
-                for (const chunk of itemChunks) {
-                    chunks.push(this.createArrayChunk([chunk.content], chunk.tokenCount + 2, chunks.length));
-                }
+                // Create a single chunk for this large item
+                chunks.push(this.createArrayChunk([item], itemTokens + arrayOverhead, chunks.length));
                 continue;
             }
 
-            const itemTokens = this.tokenCalculator.calculateTokens(itemString) +
-                (currentChunk.length > 0 ? commaOverhead : 0);
-
-            // Start a new chunk if this item would exceed maxTokens
-            if (currentChunk.length > 0 && (currentTokens + itemTokens > maxTokens)) {
-                const chunkString = JSON.stringify(currentChunk, null, 2);
-                chunks.push(this.createArrayChunk(currentChunk, this.tokenCalculator.calculateTokens(chunkString), chunks.length));
+            // If adding this item would exceed the token limit, create a new chunk
+            if (currentChunk.length > 0 && currentTokens + itemTokens + commaTokens > maxTokens) {
+                chunks.push(this.createArrayChunk(currentChunk, currentTokens, chunks.length));
                 currentChunk = [];
                 currentTokens = this.tokenCalculator.calculateTokens('[]');
             }
 
             // Add item to current chunk
             currentChunk.push(item);
-            const newChunkString = JSON.stringify(currentChunk, null, 2);
-            currentTokens = this.tokenCalculator.calculateTokens(newChunkString);
+            currentTokens = this.tokenCalculator.calculateTokens(JSON.stringify(currentChunk));
         }
 
         // Add the last chunk if there is one
         if (currentChunk.length > 0) {
-            const chunkString = JSON.stringify(currentChunk, null, 2);
-            chunks.push(this.createArrayChunk(currentChunk, this.tokenCalculator.calculateTokens(chunkString), chunks.length));
+            chunks.push(this.createArrayChunk(currentChunk, currentTokens, chunks.length));
         }
 
         return this.finalizeChunks(chunks);
@@ -274,142 +284,62 @@ export class DataSplitter {
      * Splits object data into chunks while maintaining property relationships
      * Ensures each chunk is a valid object with complete key-value pairs
      */
-    private calculateObjectDepth(obj: any): number {
-        if (typeof obj !== 'object' || obj === null) {
-            return 0;
-        }
-        let maxDepth = 1;
-        for (const value of Object.values(obj)) {
-            if (typeof value === 'object' && value !== null) {
-                maxDepth = Math.max(maxDepth, 1 + this.calculateObjectDepth(value));
-            }
-        }
-        return maxDepth;
-    }
-
-    private splitObjectData(data: Record<string, any>, maxTokens: number, depth = 0): DataChunk[] {
-        // Calculate actual depth of the object
-        const actualDepth = this.calculateObjectDepth(data);
-        if (actualDepth > this.MAX_RECURSION_DEPTH) {
+    private splitObjectData(data: any, maxTokens: number, depth: number = 0): DataChunk[] {
+        if (depth > this.MAX_RECURSION_DEPTH) {
             throw new Error('Maximum object recursion depth exceeded');
         }
 
-        // If at max depth, return as single chunk
-        if (depth === this.MAX_RECURSION_DEPTH || actualDepth === this.MAX_RECURSION_DEPTH) {
-            const stringified = JSON.stringify(data, null, 2);
-            const tokenCount = Math.min(maxTokens, this.tokenCalculator.calculateTokens(stringified));
-            return [{
-                content: data,
-                tokenCount,
-                chunkIndex: 0,
-                totalChunks: 1
-            }];
-        }
-
         const chunks: DataChunk[] = [];
+        const entries = Object.entries(data);
         let currentChunk: Record<string, any> = {};
         let currentTokens = this.tokenCalculator.calculateTokens('{}');
-        const commaOverhead = this.tokenCalculator.calculateTokens(',\n  ');
 
-        for (const [key, value] of Object.entries(data)) {
-            const entryString = `"${key}":${typeof value === 'object' ? JSON.stringify(value, null, 2) : JSON.stringify(value)}`;
-            const entryTokens = this.tokenCalculator.calculateTokens(entryString) +
-                (Object.keys(currentChunk).length > 0 ? commaOverhead : 0);
+        for (const [key, value] of entries) {
+            const itemString = JSON.stringify({ [key]: value });
+            const itemTokens = this.tokenCalculator.calculateTokens(itemString);
 
-            // If a single property is too large, split it recursively
-            if (entryTokens > maxTokens - this.tokenCalculator.calculateTokens('{}')) {
+            // If a single key-value pair is too large to fit in a chunk by itself
+            if (itemTokens > maxTokens) {
                 // Save current chunk if not empty
                 if (Object.keys(currentChunk).length > 0) {
-                    chunks.push({
-                        content: currentChunk,
-                        tokenCount: currentTokens,
-                        chunkIndex: chunks.length,
-                        totalChunks: 0
-                    });
+                    chunks.push(this.createObjectChunk(currentChunk, currentTokens, chunks.length));
                     currentChunk = {};
                     currentTokens = this.tokenCalculator.calculateTokens('{}');
                 }
 
-                // Split the large property value with increased depth
-                const valueChunks = this.splitIfNeeded({
-                    message: '',
-                    data: value,
-                    modelInfo: {
-                        maxRequestTokens: maxTokens,
-                        name: 'recursive-splitter',
-                        inputPricePerMillion: 0,
-                        outputPricePerMillion: 0,
-                        maxResponseTokens: maxTokens,
-                        characteristics: {
-                            qualityIndex: 0,
-                            outputSpeed: 0,
-                            firstTokenLatency: 0
-                        }
-                    },
-                    maxResponseTokens: 0
-                });
+                // If the value is an object or array, try to split it recursively
+                if (typeof value === 'object' && value !== null) {
+                    const subChunks = Array.isArray(value) ?
+                        this.splitArrayData(value, maxTokens) :
+                        this.splitObjectData(value, maxTokens, depth + 1);
 
-                // Add each chunk as a separate object with the same key
-                for (const chunk of valueChunks) {
-                    const chunkObj = { [key]: chunk.content };
-                    const chunkTokens = Math.min(maxTokens, this.tokenCalculator.calculateTokens(JSON.stringify(chunkObj, null, 2)));
-                    chunks.push({
-                        content: chunkObj,
-                        tokenCount: chunkTokens,
-                        chunkIndex: chunks.length,
-                        totalChunks: 0
-                    });
+                    for (const subChunk of subChunks) {
+                        chunks.push(this.createObjectChunk({ [key]: subChunk.content }, subChunk.tokenCount, chunks.length));
+                    }
+                } else {
+                    // For primitive values that are too large, create a single chunk
+                    chunks.push(this.createObjectChunk({ [key]: value }, itemTokens, chunks.length));
                 }
-            } else if (currentTokens + entryTokens > maxTokens) {
-                // Current chunk is full, save it and start a new one
-                chunks.push({
-                    content: currentChunk,
-                    tokenCount: currentTokens,
-                    chunkIndex: chunks.length,
-                    totalChunks: 0
-                });
-                currentChunk = { [key]: value };
-                currentTokens = this.tokenCalculator.calculateTokens(JSON.stringify(currentChunk, null, 2));
-            } else {
-                // Add property to current chunk
-                currentChunk[key] = value;
-                currentTokens = this.tokenCalculator.calculateTokens(JSON.stringify(currentChunk, null, 2));
+                continue;
             }
+
+            // Check if adding this item would exceed the token limit
+            if (currentTokens + itemTokens > maxTokens) {
+                chunks.push(this.createObjectChunk(currentChunk, currentTokens, chunks.length));
+                currentChunk = {};
+                currentTokens = this.tokenCalculator.calculateTokens('{}');
+            }
+
+            currentChunk[key] = value;
+            currentTokens = this.tokenCalculator.calculateTokens(JSON.stringify(currentChunk));
         }
 
         // Add the last chunk if there is one
         if (Object.keys(currentChunk).length > 0) {
-            chunks.push({
-                content: currentChunk,
-                tokenCount: currentTokens,
-                chunkIndex: chunks.length,
-                totalChunks: 0
-            });
+            chunks.push(this.createObjectChunk(currentChunk, currentTokens, chunks.length));
         }
 
         return this.finalizeChunks(chunks);
-    }
-
-    /**
-     * Finds the optimal split index for a string based on token limits using binary search
-     */
-    private findSplitIndex(str: string, maxTokens: number): number {
-        let low = 0;
-        let high = str.length;
-        let best = 0;
-
-        while (low <= high) {
-            const mid = Math.floor((low + high) / 2);
-            const tokens = this.tokenCalculator.calculateTokens(str.slice(0, mid));
-
-            if (tokens <= maxTokens) {
-                best = mid;
-                low = mid + 1;
-            } else {
-                high = mid - 1;
-            }
-        }
-        return best;
     }
 
     /**
@@ -417,23 +347,113 @@ export class DataSplitter {
      */
     private splitLine(line: string, maxTokens: number): DataChunk[] {
         const chunks: DataChunk[] = [];
+        const hasSpaces = line.includes(' ');
         let remaining = line;
 
-        while (remaining.length > 0) {
-            let splitAt = this.findSplitIndex(remaining, maxTokens);
-            // Ensure we make progress even if no valid split found
-            if (splitAt === 0) splitAt = 1;
+        // For very small strings with spaces, split on spaces
+        if (maxTokens <= 2 && hasSpaces) {
+            const words = remaining.split(' ');
+            return this.finalizeChunks(words.map((word, index) => ({
+                content: word,
+                tokenCount: 1,
+                chunkIndex: index,
+                totalChunks: 0
+            })));
+        }
 
-            const chunk = remaining.slice(0, splitAt);
+        // For strings with spaces, split on word boundaries
+        if (hasSpaces) {
+            const words = remaining.split(' ');
+            let currentChunk = '';
+            let currentTokens = 0;
+
+            for (let i = 0; i < words.length; i++) {
+                const word = words[i];
+                const wordTokens = this.tokenCalculator.calculateTokens(word);
+
+                if (currentTokens + wordTokens <= maxTokens) {
+                    currentChunk += (currentChunk ? ' ' : '') + word;
+                    currentTokens += wordTokens;
+                } else {
+                    if (currentChunk) {
+                        chunks.push({
+                            content: currentChunk,
+                            tokenCount: currentTokens,
+                            chunkIndex: chunks.length,
+                            totalChunks: 0
+                        });
+                    }
+                    currentChunk = word;
+                    currentTokens = wordTokens;
+                }
+            }
+
+            if (currentChunk) {
+                chunks.push({
+                    content: currentChunk,
+                    tokenCount: currentTokens,
+                    chunkIndex: chunks.length,
+                    totalChunks: 0
+                });
+            }
+
+            return this.finalizeChunks(chunks);
+        }
+
+        // For strings without spaces, use binary search for character-by-character splitting
+        while (remaining.length > 0) {
+            const remainingTokens = this.tokenCalculator.calculateTokens(remaining);
+            if (remainingTokens <= maxTokens) {
+                chunks.push({
+                    content: remaining,
+                    tokenCount: remainingTokens,
+                    chunkIndex: chunks.length,
+                    totalChunks: 0
+                });
+                break;
+            }
+
+            // For very small token limits, split character by character
+            if (maxTokens <= 2) {
+                chunks.push({
+                    content: remaining[0],
+                    tokenCount: 1,
+                    chunkIndex: chunks.length,
+                    totalChunks: 0
+                });
+                remaining = remaining.slice(1);
+                continue;
+            }
+
+            // Binary search for the split point
+            let left = 1;
+            let right = remaining.length;
+            let bestSplit = 1;
+
+            while (left <= right) {
+                const mid = Math.floor((left + right) / 2);
+                const chunk = remaining.slice(0, mid);
+                const tokens = this.tokenCalculator.calculateTokens(chunk);
+
+                if (tokens <= maxTokens) {
+                    bestSplit = mid;
+                    left = mid + 1;
+                } else {
+                    right = mid - 1;
+                }
+            }
+
+            const finalChunk = remaining.slice(0, bestSplit);
             chunks.push({
-                content: chunk,
-                tokenCount: this.tokenCalculator.calculateTokens(chunk),
+                content: finalChunk,
+                tokenCount: this.tokenCalculator.calculateTokens(finalChunk),
                 chunkIndex: chunks.length,
                 totalChunks: 0
             });
-            remaining = remaining.slice(splitAt);
+            remaining = remaining.slice(bestSplit);
         }
-        return chunks;
+
+        return this.finalizeChunks(chunks);
     }
 
     /**
@@ -444,6 +464,18 @@ export class DataSplitter {
             content: items,
             tokenCount,
             chunkIndex: index,
+            totalChunks: 0
+        };
+    }
+
+    /**
+     * Creates a chunk from an object with proper token counting
+     */
+    private createObjectChunk(content: Record<string, any>, tokenCount: number, chunkIndex: number): DataChunk {
+        return {
+            content,
+            tokenCount,
+            chunkIndex,
             totalChunks: 0
         };
     }

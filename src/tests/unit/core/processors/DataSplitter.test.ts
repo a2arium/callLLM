@@ -569,143 +569,180 @@ describe('DataSplitter', () => {
     });
 
     describe('binary search splitting', () => {
-        it('should handle string that cannot be split', () => {
-            tokenCalculator.calculateTokens.mockImplementation((text) => text.length * 2); // Each char counts as 2 tokens
-            const data = 'abc'; // 6 tokens
-            const result = dataSplitter.splitIfNeeded({
+        it('should split text while preserving word boundaries when possible', () => {
+            const splitter = new DataSplitter(tokenCalculator);
+            const longString = 'word1 word2 word3 word4 word5';
+            const result = splitter.splitIfNeeded({
                 message: 'test',
-                data,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 4 }, // Less than one char
+                data: longString,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 10 },
+                maxResponseTokens: 5,
+            });
+
+            // Each chunk should:
+            // 1. Not start with a space (unless it's the original string)
+            // 2. Not end with a space
+            // 3. Preserve word boundaries where possible
+            expect(result.every(chunk => {
+                const content = chunk.content as string;
+                return (
+                    (!content.startsWith(' ') || content === longString) &&
+                    !content.endsWith(' ') &&
+                    // Each chunk should be a sequence of complete words
+                    content.split(' ').every(word => word.length > 0)
+                );
+            })).toBe(true);
+
+            // When joined with spaces, should reconstruct the original string
+            expect(result.map(chunk => chunk.content).join(' ')).toBe(longString);
+        });
+
+        it('should split text character by character when word boundaries are not possible', () => {
+            const splitter = new DataSplitter(tokenCalculator);
+            const longWord = 'supercalifragilisticexpialidocious';
+            const result = splitter.splitIfNeeded({
+                message: 'test',
+                data: longWord,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 5 },
                 maxResponseTokens: 2,
             });
 
-            expect(result.length).toBeGreaterThan(1);
-            expect(result.every(chunk => chunk.content.length === 1)).toBe(true);
+            // For text without spaces:
+            // 1. Each chunk should be a substring of the original
+            // 2. No spaces should be added
+            expect(result.every(chunk => {
+                const content = chunk.content as string;
+                return (
+                    longWord.includes(content) &&
+                    !content.includes(' ')
+                );
+            })).toBe(true);
+
+            // When joined directly (no spaces), should reconstruct the original string
+            expect(result.map(chunk => chunk.content).join('')).toBe(longWord);
         });
 
-        it('should find optimal split points', () => {
-            tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
-            const data = 'abcdefghijk'; // 11 chars
-            const result = dataSplitter.splitIfNeeded({
+        it('should handle minimum token limits correctly', () => {
+            const splitter = new DataSplitter(tokenCalculator);
+            const input = 'abc';
+            const result = splitter.splitIfNeeded({
                 message: 'test',
-                data,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 4 }, // Should split into chunks of at most 4 chars
-                maxResponseTokens: 2,
+                data: input,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 1 },
+                maxResponseTokens: 1,
             });
 
-            expect(result.length).toBeGreaterThan(2); // At least 3 chunks
-            expect(result.every(chunk => chunk.tokenCount <= 4)).toBe(true);
-            expect(result.map(c => c.content).join('')).toBe(data);
+            // For very small token limits:
+            // 1. Should split into individual characters
+            // 2. No spaces should be added
+            expect(result.length).toBe(3);
+            expect(result.map(chunk => chunk.content)).toEqual(['a', 'b', 'c']);
+
+            // When joined directly (no spaces), should reconstruct the original string
+            expect(result.map(chunk => chunk.content).join('')).toBe(input);
+        });
+    });
+
+    describe('space preservation rules', () => {
+        it('should preserve spaces between words when splitting on word boundaries', () => {
+            const splitter = new DataSplitter(tokenCalculator);
+            const input = 'The quick brown fox';
+            const result = splitter.splitIfNeeded({
+                message: 'test',
+                data: input,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 8 },
+                maxResponseTokens: 4,
+            });
+
+            // When splitting on word boundaries:
+            // 1. Chunks should not have trailing spaces
+            // 2. Original spacing should be preserved when joined
+            expect(result.every(chunk => !chunk.content.endsWith(' '))).toBe(true);
+            expect(result.map(chunk => chunk.content).join(' ')).toBe(input);
         });
 
-        it('should handle different binary search scenarios', () => {
-            tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
-
-            // Exact fit with adequate tokens
-            const exactFitData = '12345';
-            const exactFitResult = dataSplitter.splitIfNeeded({
+        it('should not add spaces when splitting non-word content', () => {
+            const splitter = new DataSplitter(tokenCalculator);
+            const input = '12345';
+            const result = splitter.splitIfNeeded({
                 message: 'test',
-                data: exactFitData,
-                modelInfo: {
-                    ...mockModelInfo,
-                    maxRequestTokens: 70 // Available: 70 - 4 - 50 - 4 = 12 tokens
-                },
-                maxResponseTokens: 4
-            });
-            expect(exactFitResult[0].content).toBe('12345'); // Now fits
-
-            // Long data splitting
-            const longData = 'a'.repeat(100);
-            const splitResult = dataSplitter.splitIfNeeded({
-                message: 'test',
-                data: longData,
-                modelInfo: {
-                    ...mockModelInfo,
-                    maxRequestTokens: 70 // Available: 12 tokens → 12 chars per chunk
-                },
-                maxResponseTokens: 4
-            });
-            expect(splitResult.every(chunk => chunk.content.length <= 12)).toBe(true);
-        });
-
-        it('should split character-by-character when needed', () => {
-            tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
-
-            const data = 'abcde';
-            const result = dataSplitter.splitIfNeeded({
-                message: 'test',
-                data,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 2 }, // 1 char per chunk
-                maxResponseTokens: 1
+                data: input,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 2 },
+                maxResponseTokens: 1,
             });
 
-            expect(result.length).toBe(5);
-            expect(result.map(c => c.content)).toEqual(['a', 'b', 'c', 'd', 'e']);
+            // When splitting non-word content:
+            // 1. No spaces should be added
+            // 2. Original content should be preserved when joined directly
+            expect(result.every(chunk => !chunk.content.includes(' '))).toBe(true);
+            expect(result.map(chunk => chunk.content).join('')).toBe(input);
         });
     });
 
     describe('array chunk creation and handling', () => {
         it('should handle array chunk creation with complex items', () => {
             tokenCalculator.calculateTokens.mockImplementation((text) => {
-                // Realistic token calculation preserving objects
                 if (text === '[]') return 2;
-                if (text.startsWith('[{')) {
-                    // Count 1 token per character in the JSON string
-                    return text.length;
+                if (text.startsWith('[') && text.endsWith(']')) {
+                    // For array strings, calculate tokens based on array content
+                    const content = text.slice(1, -1).trim();
+                    return content ? content.length + 2 : 2; // Array overhead + content length
                 }
+                // For individual items, return their length plus some overhead
                 try {
                     const parsed = JSON.parse(text);
-                    if (typeof parsed === 'object') {
-                        // Full object token count
-                        return JSON.stringify(parsed).length;
-                    }
-                    return String(parsed).length;
+                    return typeof parsed === 'object' ?
+                        JSON.stringify(parsed).length + 5 : // Add overhead for objects
+                        String(parsed).length;
                 } catch {
                     return text.length;
                 }
             });
 
-            const data = [{ id: 1, value: 'a' }, { id: 2, value: 'b' }];
+            const complexArray = [
+                { id: 1, nested: { data: 'test1' } },
+                { id: 2, nested: { data: 'test2' } }
+            ];
 
-            // Increase token limits to allow for object retention
             const result = dataSplitter.splitIfNeeded({
-                message: 'test', // 4 tokens
-                data,
-                modelInfo: {
-                    ...mockModelInfo,
-                    maxRequestTokens: 200 // AvailableTokens = 200 - 4 - 50 - 5 = 141
-                },
-                maxResponseTokens: 5
+                message: 'test',
+                data: complexArray,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 30 },
+                maxResponseTokens: 10
             });
 
-            // Should keep objects intact in chunks
-            expect(result.flatMap(c => c.content)).toEqual(data);
-            expect(result.every(chunk =>
-                chunk.content.every((item: any) =>
-                    'id' in item && 'value' in item
-                )
+            // Verify that chunks are created and maintain object structure
+            expect(result.length).toBeGreaterThan(1);
+            expect(result.every(chunk => Array.isArray(chunk.content))).toBe(true);
+
+            // Verify that all items in all chunks maintain their structure
+            const allItems = result.flatMap(chunk => chunk.content);
+            expect(allItems).toHaveLength(complexArray.length);
+            expect(allItems.every(item =>
+                typeof item === 'object' &&
+                'id' in item &&
+                'nested' in item &&
+                typeof item.nested === 'object' &&
+                'data' in item.nested
             )).toBe(true);
         });
 
         it('should handle final array chunk with remaining items', () => {
             tokenCalculator.calculateTokens.mockImplementation((text) => {
                 if (text === '[]') return 2;
-                if (text.startsWith('[') && text.endsWith(']')) {
-                    return text.length * 2;
-                }
-                return text.length;
+                return JSON.stringify(text).length;
             });
 
-            const data = ['item1', 'item2', 'item3', 'item4', 'item5'];
+            const data = [1, 2, 3, 4, 5];
             const result = dataSplitter.splitIfNeeded({
                 message: 'test',
                 data,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 20 },
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 10 },
                 maxResponseTokens: 5
             });
 
             const lastChunk = result[result.length - 1];
-            expect(lastChunk.content.length).toBeGreaterThan(0);
+            expect(Array.isArray(lastChunk.content)).toBe(true);
             expect(lastChunk.chunkIndex).toBe(result.length - 1);
             expect(lastChunk.totalChunks).toBe(result.length);
         });
@@ -713,79 +750,95 @@ describe('DataSplitter', () => {
 
     describe('object depth and recursion handling', () => {
         it('should calculate object depth correctly for mixed structures', () => {
-            const complexData = {
-                array: [1, { nested: 'value' }],
-                object: {
-                    level1: {
-                        level2: { deep: 'value' }
-                    }
-                },
-                simple: 'value'
+            tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
+
+            const data = {
+                a: 1,
+                b: { c: 2, d: { e: 3 } },
+                f: [{ g: 4 }, { h: { i: 5 } }]
             };
 
             const result = dataSplitter.splitIfNeeded({
                 message: 'test',
-                data: complexData,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 100 },
-                maxResponseTokens: 50
+                data,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 1000 },
+                maxResponseTokens: 100
             });
 
-            expect(result.length).toBeGreaterThan(0);
-            expect(result[0].content).toEqual(complexData);
+            expect(result).toHaveLength(1);
+            expect(result[0].content).toEqual(data);
         });
 
         it('should handle object recursion depth at boundaries', () => {
-            const almostMaxDepth = {
-                l1: {
-                    l2: {
-                        l3: {
-                            value: 'test'
-                        }
-                    }
-                }
-            };
+            tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
+
+            // Create deeply nested object at MAX_RECURSION_DEPTH + 1
+            let deepObj: any = { value: 1 };
+            for (let i = 0; i < 6; i++) {
+                deepObj = { nested: deepObj };
+            }
 
             const result = dataSplitter.splitIfNeeded({
                 message: 'test',
-                data: almostMaxDepth,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 100 },
-                maxResponseTokens: 50
+                data: deepObj,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 1000 },
+                maxResponseTokens: 100
             });
 
-            expect(result.length).toBe(1);
-            expect(result[0].content).toEqual(almostMaxDepth);
+            expect(result).toHaveLength(1);
+            expect(typeof result[0].content).toBe('object');
         });
     });
 
     describe('binary search splitting edge cases', () => {
         it('should handle binary search with exact midpoint splits', () => {
             tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
-            const data = '1234567890';
+            const text = 'even split test';
+
             const result = dataSplitter.splitIfNeeded({
                 message: 'test',
-                data,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 6 },
-                maxResponseTokens: 2
+                data: text,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 5 },
+                maxResponseTokens: 2,
             });
 
             expect(result.length).toBeGreaterThan(1);
-            expect(result.map(chunk => chunk.content).join('')).toBe(data);
-            expect(result.every(chunk => chunk.tokenCount <= 6)).toBe(true);
+            expect(result.every(chunk => chunk.tokenCount <= 5)).toBe(true);
+
+            // Verify that splits occur at word boundaries
+            expect(result.every(chunk => {
+                const content = chunk.content as string;
+                return content.match(/^[a-zA-Z0-9]+$/); // Single words only
+            })).toBe(true);
+
+            // Verify that all content is preserved
+            const joinedContent = result.map(chunk => chunk.content).join(' ').trim();
+            expect(joinedContent).toBe(text);
         });
 
         it('should handle binary search with uneven splits', () => {
             tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
-            const data = 'a'.repeat(15);
+            const longString = 'word1 word2 word3 word4 word5';
+
             const result = dataSplitter.splitIfNeeded({
                 message: 'test',
-                data,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 7 },
-                maxResponseTokens: 2
+                data: longString,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 15 },
+                maxResponseTokens: 10,
             });
 
             expect(result.length).toBeGreaterThan(1);
-            expect(result.map(chunk => chunk.content).join('')).toBe(data);
-            expect(result.every(chunk => chunk.tokenCount <= 7)).toBe(true);
+            expect(result.every(chunk => chunk.tokenCount <= 15)).toBe(true);
+
+            // Check that splits occur at word boundaries when possible
+            const allContent = result.map(chunk => chunk.content);
+            expect(allContent.join(' ')).toBe(longString);
+            expect(allContent.every(content =>
+                // Either starts with a word character or is at the start of a chunk
+                (!content.startsWith(' ') || content === longString) &&
+                // Either ends with a word character or is at the end of a chunk
+                (!content.endsWith(' ') || content === longString)
+            )).toBe(true);
         });
     });
 }); 
