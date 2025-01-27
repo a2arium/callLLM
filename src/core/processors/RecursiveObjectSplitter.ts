@@ -166,23 +166,4 @@ export class RecursiveObjectSplitter {
 
         return chunks.length > 0 ? chunks : [{}];
     }
-
-    private setNestedValue(obj: JsObject, path: string[], value: any): void {
-        let current = obj;
-        for (let i = 0; i < path.length - 1; i++) {
-            const key = path[i];
-            current[key] = current[key] || {};
-            current = current[key];
-        }
-        current[path[path.length - 1]] = value;
-    }
-
-    private getNestedValue(obj: JsObject, path: string[]): JsObject | undefined {
-        let current = obj;
-        for (const key of path) {
-            if (current[key] === undefined) return undefined;
-            current = current[key];
-        }
-        return current;
-    }
 }
