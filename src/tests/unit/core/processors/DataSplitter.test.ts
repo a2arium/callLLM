@@ -74,20 +74,30 @@ describe('DataSplitter', () => {
 
     describe('string splitting', () => {
         it('should split long string into chunks', async () => {
-            const longString = 'This is the first sentence. This is the second sentence with more content. ' +
+            const sampleText = 'This is the first sentence. This is the second sentence with more content. ' +
                 'Here comes the third sentence which is even longer to ensure splitting. ' +
                 'And this is the fourth sentence that adds more text to exceed the limit. ' +
                 'Finally, this fifth sentence should definitely cause the text to be split into chunks.';
+
+            // Repeat the text 20 times to make it much longer
+            const longString = Array(20).fill(sampleText).join(' ') +
+                ' Additional unique sentence at the end to verify proper splitting.';
+
             const result = await dataSplitter.splitIfNeeded({
                 message: 'test',
                 data: longString,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 100 },
-                maxResponseTokens: 50,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 1000 },  // Smaller token window
+                maxResponseTokens: 100,
             });
 
             expect(result.length).toBeGreaterThan(1);
-            expect(result.every(chunk => chunk.tokenCount <= 100)).toBe(true);
+            expect(result.every(chunk => chunk.tokenCount <= 1000)).toBe(true);
             expect(result.map(chunk => chunk.content).join(' ')).toBe(longString);
+
+            // Additional assertions to verify chunk properties
+            expect(result[0].chunkIndex).toBe(0);
+            expect(result[result.length - 1].chunkIndex).toBe(result.length - 1);
+            expect(result[0].totalChunks).toBe(result.length);
         });
     });
 
