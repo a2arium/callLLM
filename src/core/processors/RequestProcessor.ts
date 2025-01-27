@@ -11,7 +11,7 @@ export class RequestProcessor {
         this.dataSplitter = new DataSplitter(this.tokenCalculator);
     }
 
-    public processRequest({
+    public async processRequest({
         message,
         data,
         endingMessage,
@@ -23,14 +23,14 @@ export class RequestProcessor {
         endingMessage?: string;
         model: ModelInfo;
         maxResponseTokens?: number;
-    }): string[] {
+    }): Promise<string[]> {
         // If no data or null data, return single message
         if (data === undefined || data === null) {
             return [this.createMessage(message, undefined, endingMessage)];
         }
 
         // Use DataSplitter to split the data if needed
-        const chunks = this.dataSplitter.splitIfNeeded({
+        const chunks = await this.dataSplitter.splitIfNeeded({
             message,
             data,
             endingMessage,

@@ -300,12 +300,11 @@ export class LLMCaller {
         endingMessage?: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<UniversalChatResponse[]> {
-        const mergedSettings = this.mergeSettings(settings);
-        const modelInfo = this.modelManager.getModel(mergedSettings?.model || this.model)!;
-        const maxResponseTokens = mergedSettings?.maxTokens || modelInfo.maxResponseTokens;
+        const modelInfo = this.modelManager.getModel(this.model)!;
+        const maxResponseTokens = settings?.maxTokens ?? modelInfo.maxResponseTokens;
 
-        // Process request and get messages
-        const messages = this.requestProcessor.processRequest({
+        // Process request into messages
+        const messages = await this.requestProcessor.processRequest({
             message,
             data,
             endingMessage,
@@ -313,12 +312,12 @@ export class LLMCaller {
             maxResponseTokens
         });
 
-        // Process each message
+        // Call for each message
         const responses: UniversalChatResponse[] = [];
-        for (const processedMessage of messages) {
+        for (const msg of messages) {
             const response = await this.chatCall({
-                message: processedMessage,
-                settings: mergedSettings
+                message: msg,
+                settings
             });
             responses.push(response);
         }
@@ -333,13 +332,11 @@ export class LLMCaller {
         endingMessage?: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<AsyncIterable<UniversalStreamResponse>> {
-        const mergedSettings = this.mergeSettings(settings);
-        const modelInfo = this.modelManager.getModel(mergedSettings?.model || this.model)!;
-        const maxResponseTokens = mergedSettings?.maxTokens || modelInfo.maxResponseTokens;
-        const self = this;
+        const modelInfo = this.modelManager.getModel(this.model)!;
+        const maxResponseTokens = settings?.maxTokens ?? modelInfo.maxResponseTokens;
 
-        // Process request and get messages
-        const messages = this.requestProcessor.processRequest({
+        // Process request into messages
+        const messages = await this.requestProcessor.processRequest({
             message,
             data,
             endingMessage,
@@ -347,6 +344,7 @@ export class LLMCaller {
             maxResponseTokens
         });
 
+        const self = this;
         let currentMessageIndex = 0;
         const totalMessages = messages.length;
 
@@ -362,7 +360,7 @@ export class LLMCaller {
                                 const processedMessage = messages[currentMessageIndex];
                                 const stream = await self.streamCall({
                                     message: processedMessage,
-                                    settings: mergedSettings
+                                    settings: settings
                                 });
                                 currentStream = stream[Symbol.asyncIterator]();
                             }

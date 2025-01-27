@@ -1,6 +1,7 @@
 import { ModelInfo } from '../../interfaces/UniversalInterfaces';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { RecursiveObjectSplitter } from './RecursiveObjectSplitter';
+import { NLPChunker } from '@orama/chunker';
 
 /**
  * Represents a chunk of data after splitting
@@ -23,7 +24,7 @@ export class DataSplitter {
     /**
      * Determines if data needs to be split and performs splitting if necessary
      */
-    public splitIfNeeded({
+    public async splitIfNeeded({
         message,
         data,
         endingMessage,
@@ -35,7 +36,7 @@ export class DataSplitter {
         endingMessage?: string;
         modelInfo: ModelInfo;
         maxResponseTokens: number;
-    }): DataChunk[] {
+    }): Promise<DataChunk[]> {
         // Handle undefined, null, and primitive types
         if (data === undefined || data === null ||
             typeof data === 'number' ||
@@ -79,7 +80,7 @@ export class DataSplitter {
 
         // Choose appropriate splitting strategy based on data type
         if (typeof data === 'string') {
-            return this.splitStringData(data, availableTokens);
+            return await this.splitStringData(data, availableTokens);
         }
         if (Array.isArray(data)) {
             return this.splitArrayData(data, availableTokens);
@@ -105,24 +106,14 @@ export class DataSplitter {
         }));
     }
 
-    private splitStringData(data: string, maxTokens: number): DataChunk[] {
-        const chunks: DataChunk[] = [];
-        let remaining = data;
+    private async splitStringData(data: string, maxTokens: number): Promise<DataChunk[]> {
+        const chunker = new NLPChunker();
+        const chunks = await chunker.chunk(data, maxTokens);
 
-        while (remaining.length > 0) {
-            const chunkSize = Math.min(maxTokens, remaining.length);
-            const chunk = remaining.slice(0, chunkSize);
-            chunks.push({
-                content: chunk,
-                tokenCount: this.tokenCalculator.calculateTokens(chunk),
-                chunkIndex: chunks.length,
-                totalChunks: 0
-            });
-            remaining = remaining.slice(chunkSize);
-        }
-
-        return chunks.map(chunk => ({
-            ...chunk,
+        return chunks.map((chunk, index) => ({
+            content: chunk,
+            tokenCount: this.tokenCalculator.calculateTokens(chunk),
+            chunkIndex: index,
             totalChunks: chunks.length
         }));
     }

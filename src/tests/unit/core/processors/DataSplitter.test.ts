@@ -30,8 +30,8 @@ describe('DataSplitter', () => {
     });
 
     describe('splitIfNeeded', () => {
-        it('should return single chunk for undefined data', () => {
-            const result = dataSplitter.splitIfNeeded({
+        it('should return single chunk for undefined data', async () => {
+            const result = await dataSplitter.splitIfNeeded({
                 message: 'test',
                 data: undefined,
                 modelInfo: mockModelInfo,
@@ -47,8 +47,8 @@ describe('DataSplitter', () => {
             });
         });
 
-        it('should return single chunk when data fits in available tokens', () => {
-            const result = dataSplitter.splitIfNeeded({
+        it('should return single chunk when data fits in available tokens', async () => {
+            const result = await dataSplitter.splitIfNeeded({
                 message: 'test',
                 data: 'small data',
                 modelInfo: mockModelInfo,
@@ -59,8 +59,8 @@ describe('DataSplitter', () => {
             expect(result[0].content).toBe('small data');
         });
 
-        it('should handle endingMessage in token calculation', () => {
-            const result = dataSplitter.splitIfNeeded({
+        it('should handle endingMessage in token calculation', async () => {
+            const result = await dataSplitter.splitIfNeeded({
                 message: 'test',
                 data: 'data',
                 endingMessage: 'ending',
@@ -73,9 +73,12 @@ describe('DataSplitter', () => {
     });
 
     describe('string splitting', () => {
-        it('should split long string into chunks', () => {
-            const longString = 'a'.repeat(200);
-            const result = dataSplitter.splitIfNeeded({
+        it('should split long string into chunks', async () => {
+            const longString = 'This is the first sentence. This is the second sentence with more content. ' +
+                'Here comes the third sentence which is even longer to ensure splitting. ' +
+                'And this is the fourth sentence that adds more text to exceed the limit. ' +
+                'Finally, this fifth sentence should definitely cause the text to be split into chunks.';
+            const result = await dataSplitter.splitIfNeeded({
                 message: 'test',
                 data: longString,
                 modelInfo: { ...mockModelInfo, maxRequestTokens: 100 },
@@ -84,14 +87,14 @@ describe('DataSplitter', () => {
 
             expect(result.length).toBeGreaterThan(1);
             expect(result.every(chunk => chunk.tokenCount <= 100)).toBe(true);
-            expect(result.map(chunk => chunk.content).join('')).toBe(longString);
+            expect(result.map(chunk => chunk.content).join(' ')).toBe(longString);
         });
     });
 
     describe('array splitting', () => {
-        it('should split array into chunks', () => {
+        it('should split array into chunks', async () => {
             const array = Array.from({ length: 5 }, (_, i) => 'item-' + String(i).repeat(20));
-            const result = dataSplitter.splitIfNeeded({
+            const result = await dataSplitter.splitIfNeeded({
                 message: 'test',
                 data: array,
                 modelInfo: { ...mockModelInfo, maxRequestTokens: 50 },
@@ -105,13 +108,13 @@ describe('DataSplitter', () => {
     });
 
     describe('object splitting', () => {
-        it('should delegate object splitting to RecursiveObjectSplitter', () => {
+        it('should delegate object splitting to RecursiveObjectSplitter', async () => {
             const obj = {
                 key1: 'a'.repeat(50),
                 key2: 'b'.repeat(50)
             };
 
-            const result = dataSplitter.splitIfNeeded({
+            const result = await dataSplitter.splitIfNeeded({
                 message: 'test',
                 data: obj,
                 modelInfo: { ...mockModelInfo, maxRequestTokens: 50 },
@@ -124,8 +127,8 @@ describe('DataSplitter', () => {
     });
 
     describe('edge cases', () => {
-        it('should handle empty string', () => {
-            const result = dataSplitter.splitIfNeeded({
+        it('should handle empty string', async () => {
+            const result = await dataSplitter.splitIfNeeded({
                 message: 'test',
                 data: '',
                 modelInfo: mockModelInfo,
@@ -136,8 +139,8 @@ describe('DataSplitter', () => {
             expect(result[0].content).toBe('');
         });
 
-        it('should handle empty array', () => {
-            const result = dataSplitter.splitIfNeeded({
+        it('should handle empty array', async () => {
+            const result = await dataSplitter.splitIfNeeded({
                 message: 'test',
                 data: [],
                 modelInfo: mockModelInfo,
@@ -147,8 +150,8 @@ describe('DataSplitter', () => {
             expect(result[0].content).toEqual([]);
         });
 
-        it('should handle empty object', () => {
-            const result = dataSplitter.splitIfNeeded({
+        it('should handle empty object', async () => {
+            const result = await dataSplitter.splitIfNeeded({
                 message: 'test',
                 data: {},
                 modelInfo: mockModelInfo,
@@ -158,7 +161,7 @@ describe('DataSplitter', () => {
             expect(result[0].content).toEqual({});
         });
 
-        it('should handle primitive types', () => {
+        it('should handle primitive types', async () => {
             const cases = [
                 { input: true, expected: true, tokenCount: 4 },
                 { input: 12345, expected: 12345, tokenCount: 5 },
@@ -166,7 +169,7 @@ describe('DataSplitter', () => {
             ];
 
             for (const { input, expected, tokenCount } of cases) {
-                const result = dataSplitter.splitIfNeeded({
+                const result = await dataSplitter.splitIfNeeded({
                     message: 'test',
                     data: input,
                     modelInfo: mockModelInfo,

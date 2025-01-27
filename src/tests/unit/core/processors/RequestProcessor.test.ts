@@ -22,8 +22,8 @@ describe('RequestProcessor', () => {
         processor = new RequestProcessor();
     });
 
-    it('should process message only', () => {
-        const result = processor.processRequest({
+    it('should process message only', async () => {
+        const result = await processor.processRequest({
             message: 'Hello world',
             model: mockModel
         });
@@ -32,8 +32,8 @@ describe('RequestProcessor', () => {
         expect(result[0]).toBe('Hello world');
     });
 
-    it('should process message with string data', () => {
-        const result = processor.processRequest({
+    it('should process message with string data', async () => {
+        const result = await processor.processRequest({
             message: 'Hello world',
             data: 'Additional data',
             model: mockModel
@@ -43,9 +43,9 @@ describe('RequestProcessor', () => {
         expect(result[0]).toBe('Hello world\n\nAdditional data');
     });
 
-    it('should process message with object data', () => {
+    it('should process message with object data', async () => {
         const data = { key: 'value', nested: { prop: 123 } };
-        const result = processor.processRequest({
+        const result = await processor.processRequest({
             message: 'Hello world',
             data,
             model: mockModel
@@ -55,8 +55,8 @@ describe('RequestProcessor', () => {
         expect(result[0]).toBe('Hello world\n\n{\n  "key": "value",\n  "nested": {\n    "prop": 123\n  }\n}');
     });
 
-    it('should process message with ending message', () => {
-        const result = processor.processRequest({
+    it('should process message with ending message', async () => {
+        const result = await processor.processRequest({
             message: 'Hello world',
             endingMessage: 'Goodbye',
             model: mockModel
@@ -66,9 +66,9 @@ describe('RequestProcessor', () => {
         expect(result[0]).toBe('Hello world\n\nGoodbye');
     });
 
-    it('should process message with data and ending message', () => {
+    it('should process message with data and ending message', async () => {
         const data = { key: 'value' };
-        const result = processor.processRequest({
+        const result = await processor.processRequest({
             message: 'Hello world',
             data,
             endingMessage: 'Goodbye',
@@ -79,8 +79,8 @@ describe('RequestProcessor', () => {
         expect(result[0]).toBe('Hello world\n\n{\n  "key": "value"\n}\n\nGoodbye');
     });
 
-    it('should handle non-object data', () => {
-        const result = processor.processRequest({
+    it('should handle non-object data', async () => {
+        const result = await processor.processRequest({
             message: 'Hello world',
             data: 123,
             model: mockModel
@@ -90,8 +90,8 @@ describe('RequestProcessor', () => {
         expect(result[0]).toBe('Hello world\n\n123');
     });
 
-    it('should handle undefined data', () => {
-        const result = processor.processRequest({
+    it('should handle undefined data', async () => {
+        const result = await processor.processRequest({
             message: 'Hello world',
             data: undefined,
             model: mockModel
