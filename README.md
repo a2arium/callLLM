@@ -319,7 +319,7 @@ Keep the response under 100 words"
 
 When the data is too large to fit in the model's context window:
 
-1. The data is automatically split into chunks that fit within token limits
+1. The data is automatically split into chunks that fit within token limits. Both strings and objects are supported.
 2. Each chunk is processed separately with the same message and endingMessage
 3. Results are returned as an array of responses
 

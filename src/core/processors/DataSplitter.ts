@@ -22,9 +22,7 @@ export class DataSplitter {
     private stringSplitter: StringSplitter;
 
     constructor(private tokenCalculator: TokenCalculator) {
-        console.log('Initializing DataSplitter...');
         this.stringSplitter = new StringSplitter(tokenCalculator);
-        console.log('DataSplitter initialized');
     }
 
     /**
@@ -43,25 +41,18 @@ export class DataSplitter {
         modelInfo: ModelInfo;
         maxResponseTokens: number;
     }): Promise<DataChunk[]> {
-        console.log('\nStarting data split operation...');
-        console.log(`Data type: ${typeof data}`);
-        console.log(`Model max tokens: ${modelInfo.maxRequestTokens}`);
-        console.log(`Max response tokens: ${maxResponseTokens}`);
-
         // Handle undefined, null, and primitive types
         if (data === undefined || data === null ||
             typeof data === 'number' ||
             typeof data === 'boolean' ||
             (Array.isArray(data) && data.length === 0) ||
             (typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length === 0)) {
-            console.log('Handling primitive or empty data type');
             const content = data === undefined ? undefined :
                 data === null ? null :
                     Array.isArray(data) ? [] :
                         typeof data === 'object' ? {} :
                             data;
             const tokenCount = content === undefined ? 0 : this.tokenCalculator.calculateTokens(JSON.stringify(content));
-            console.log(`Token count for primitive data: ${tokenCount}`);
             return [{
                 content,
                 tokenCount,
@@ -71,25 +62,17 @@ export class DataSplitter {
         }
 
         // Calculate available tokens
-        console.log('\nCalculating available tokens...');
         const messageTokens = this.tokenCalculator.calculateTokens(message);
         const endingTokens = endingMessage ? this.tokenCalculator.calculateTokens(endingMessage) : 0;
         const overheadTokens = 50;
 
-        console.log(`Message tokens: ${messageTokens}`);
-        console.log(`Ending message tokens: ${endingTokens}`);
-        console.log(`Overhead tokens: ${overheadTokens}`);
-
         const availableTokens = Math.max(1, modelInfo.maxRequestTokens - messageTokens - endingTokens - maxResponseTokens - overheadTokens);
-        console.log(`Available tokens for data: ${availableTokens}`);
 
         // Check if data fits without splitting
         const dataString = typeof data === 'object' ? JSON.stringify(data) : data.toString();
         const dataTokens = this.tokenCalculator.calculateTokens(dataString);
-        console.log(`Total data tokens: ${dataTokens}`);
 
         if (dataTokens <= availableTokens) {
-            console.log('Data fits without splitting');
             return [{
                 content: data,
                 tokenCount: dataTokens,
@@ -98,12 +81,9 @@ export class DataSplitter {
             }];
         }
 
-        console.log('\nData requires splitting...');
         // Choose splitting strategy
         if (typeof data === 'string') {
-            console.log('Using string splitting strategy');
-            const { chunks } = this.stringSplitter.split(data, availableTokens);
-            console.log(`String split into ${chunks.length} chunks`);
+            const chunks = this.stringSplitter.split(data, availableTokens);
             return chunks.map((chunk, index) => ({
                 content: chunk,
                 tokenCount: this.tokenCalculator.calculateTokens(chunk),
@@ -112,10 +92,8 @@ export class DataSplitter {
             }));
         }
         if (Array.isArray(data)) {
-            console.log('Using array splitting strategy');
             return this.splitArrayData(data, availableTokens);
         }
-        console.log('Using object splitting strategy');
         return this.splitObjectData(data, availableTokens);
     }
 
@@ -124,11 +102,9 @@ export class DataSplitter {
      * Ensures each chunk is a valid object with complete key-value pairs
      */
     private splitObjectData(data: any, maxTokens: number): DataChunk[] {
-        // Create a RecursiveObjectSplitter with maxTokens as the chunk size
         const splitter = new RecursiveObjectSplitter(maxTokens, maxTokens - 50);
         const splitObjects = splitter.split(data);
 
-        // Convert split objects to DataChunks
         return splitObjects.map((obj, index) => ({
             content: obj,
             tokenCount: this.tokenCalculator.calculateTokens(JSON.stringify(obj)),
