@@ -1,5 +1,6 @@
 import { ModelInfo } from '../../interfaces/UniversalInterfaces';
 import { TokenCalculator } from '../models/TokenCalculator';
+import { RecursiveObjectSplitter } from './RecursiveObjectSplitter';
 
 /**
  * Represents a chunk of data after splitting
@@ -17,8 +18,6 @@ export type DataChunk = {
  * Ensures that each chunk fits within the model's token constraints while maintaining data integrity
  */
 export class DataSplitter {
-    private readonly MAX_RECURSION_DEPTH = 5;
-
     constructor(private tokenCalculator: TokenCalculator) { }
 
     /**
@@ -43,27 +42,6 @@ export class DataSplitter {
         modelInfo: ModelInfo;
         maxResponseTokens: number;
     }): DataChunk[] {
-        // Check recursion depth for objects
-        if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
-            const depth = this.calculateObjectDepth(data);
-            if (depth > this.MAX_RECURSION_DEPTH) {
-                // For objects at the boundary, try to split them
-                try {
-                    const messageTokens = this.tokenCalculator.calculateTokens(message);
-                    const endingTokens = endingMessage ? this.tokenCalculator.calculateTokens(endingMessage) : 0;
-                    const overheadTokens = 50;
-                    const availableTokens = Math.max(1, modelInfo.maxRequestTokens - messageTokens - endingTokens - maxResponseTokens - overheadTokens);
-                    const chunks = this.splitObjectData(data, availableTokens, this.MAX_RECURSION_DEPTH - 1);
-                    if (chunks.length > 0) {
-                        return chunks;
-                    }
-                } catch {
-                    // If splitting fails, then throw the recursion depth error
-                    throw new Error('Maximum object recursion depth exceeded');
-                }
-            }
-        }
-
         // Handle undefined, null, and primitive types
         if (data === undefined || data === null ||
             typeof data === 'number' ||
@@ -113,19 +91,6 @@ export class DataSplitter {
             return this.splitArrayData(data, availableTokens);
         }
         return this.splitObjectData(data, availableTokens);
-    }
-
-    private calculateObjectDepth(obj: any): number {
-        if (typeof obj !== 'object' || obj === null) {
-            return 0;
-        }
-        let maxDepth = 1;
-        for (const value of Object.values(obj)) {
-            if (typeof value === 'object' && value !== null) {
-                maxDepth = Math.max(maxDepth, 1 + this.calculateObjectDepth(value));
-            }
-        }
-        return maxDepth;
     }
 
     /**
@@ -284,62 +249,18 @@ export class DataSplitter {
      * Splits object data into chunks while maintaining property relationships
      * Ensures each chunk is a valid object with complete key-value pairs
      */
-    private splitObjectData(data: any, maxTokens: number, depth: number = 0): DataChunk[] {
-        if (depth > this.MAX_RECURSION_DEPTH) {
-            throw new Error('Maximum object recursion depth exceeded');
-        }
+    private splitObjectData(data: any, maxTokens: number): DataChunk[] {
+        // Create a RecursiveObjectSplitter with maxTokens as the chunk size
+        const splitter = new RecursiveObjectSplitter(maxTokens, maxTokens - 50);
+        const splitObjects = splitter.split(data);
 
-        const chunks: DataChunk[] = [];
-        const entries = Object.entries(data);
-        let currentChunk: Record<string, any> = {};
-        let currentTokens = this.tokenCalculator.calculateTokens('{}');
-
-        for (const [key, value] of entries) {
-            const itemString = JSON.stringify({ [key]: value });
-            const itemTokens = this.tokenCalculator.calculateTokens(itemString);
-
-            // If a single key-value pair is too large to fit in a chunk by itself
-            if (itemTokens > maxTokens) {
-                // Save current chunk if not empty
-                if (Object.keys(currentChunk).length > 0) {
-                    chunks.push(this.createObjectChunk(currentChunk, currentTokens, chunks.length));
-                    currentChunk = {};
-                    currentTokens = this.tokenCalculator.calculateTokens('{}');
-                }
-
-                // If the value is an object or array, try to split it recursively
-                if (typeof value === 'object' && value !== null) {
-                    const subChunks = Array.isArray(value) ?
-                        this.splitArrayData(value, maxTokens) :
-                        this.splitObjectData(value, maxTokens, depth + 1);
-
-                    for (const subChunk of subChunks) {
-                        chunks.push(this.createObjectChunk({ [key]: subChunk.content }, subChunk.tokenCount, chunks.length));
-                    }
-                } else {
-                    // For primitive values that are too large, create a single chunk
-                    chunks.push(this.createObjectChunk({ [key]: value }, itemTokens, chunks.length));
-                }
-                continue;
-            }
-
-            // Check if adding this item would exceed the token limit
-            if (currentTokens + itemTokens > maxTokens) {
-                chunks.push(this.createObjectChunk(currentChunk, currentTokens, chunks.length));
-                currentChunk = {};
-                currentTokens = this.tokenCalculator.calculateTokens('{}');
-            }
-
-            currentChunk[key] = value;
-            currentTokens = this.tokenCalculator.calculateTokens(JSON.stringify(currentChunk));
-        }
-
-        // Add the last chunk if there is one
-        if (Object.keys(currentChunk).length > 0) {
-            chunks.push(this.createObjectChunk(currentChunk, currentTokens, chunks.length));
-        }
-
-        return this.finalizeChunks(chunks);
+        // Convert split objects to DataChunks
+        return this.finalizeChunks(splitObjects.map((obj, index) => ({
+            content: obj,
+            tokenCount: this.tokenCalculator.calculateTokens(JSON.stringify(obj)),
+            chunkIndex: index,
+            totalChunks: 0
+        })));
     }
 
     /**

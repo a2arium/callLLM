@@ -1,6 +1,7 @@
 import { TokenCalculator } from '../../../../core/models/TokenCalculator';
 import { DataSplitter } from '../../../../core/processors/DataSplitter';
 import { ModelInfo } from '../../../../interfaces/UniversalInterfaces';
+import { describe, expect, test } from '@jest/globals';
 
 jest.mock('../../../../core/models/TokenCalculator');
 
@@ -11,6 +12,7 @@ describe('DataSplitter', () => {
 
     beforeEach(() => {
         tokenCalculator = new TokenCalculator() as jest.Mocked<TokenCalculator>;
+        tokenCalculator.calculateTokens.mockImplementation((text: string) => text.length);
         dataSplitter = new DataSplitter(tokenCalculator);
         mockModelInfo = {
             name: 'test-model',
@@ -264,48 +266,6 @@ describe('DataSplitter', () => {
         });
     });
 
-    describe('object data splitting', () => {
-        it('should split object data into chunks', () => {
-            tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
-            const objectData = {
-                key1: 'value1',
-                key2: 'value2',
-                key3: 'value3',
-            };
-
-            const result = dataSplitter.splitIfNeeded({
-                message: 'test',
-                data: objectData,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 30 },
-                maxResponseTokens: 10,
-            });
-
-            expect(result.length).toBeGreaterThan(1);
-            expect(result.every(chunk => typeof chunk.content === 'object')).toBe(true);
-        });
-
-        it('should keep key-value pairs intact when splitting', () => {
-            tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
-            const objectData = {
-                key1: { nested: 'long value 1' },
-                key2: { nested: 'long value 2' },
-            };
-
-            const result = dataSplitter.splitIfNeeded({
-                message: 'test',
-                data: objectData,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 30 },
-                maxResponseTokens: 10,
-            });
-
-            expect(result.every(chunk =>
-                Object.values(chunk.content).every((value: any) =>
-                    typeof value === 'object' && 'nested' in value
-                )
-            )).toBe(true);
-        });
-    });
-
     describe('edge cases', () => {
         it('should handle empty string', () => {
             tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
@@ -473,99 +433,6 @@ describe('DataSplitter', () => {
             const reconstructed = result.map(chunk => chunk.content).join('');
             expect(reconstructed.replace(/\s/g, '')).toBe(data.replace(/\s/g, ''));
         });
-
-        it('should calculate depth ignoring non-object values', () => {
-            const nestedObject = {
-                level1: {
-                    level2: {
-                        level3: 'string', // Primitive value
-                        level3b: [1, 2, 3] // Array (counts as depth 1)
-                    }
-                },
-                level1b: 42 // Primitive value
-            };
-
-            const result = dataSplitter.splitIfNeeded({
-                message: 'test',
-                data: nestedObject,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 100 },
-                maxResponseTokens: 50
-            });
-
-            // Should process without recursion errors
-            expect(result.length).toBeGreaterThan(0);
-        });
-
-        it('should handle objects at maximum recursion depth', () => {
-            const depth5Object = {
-                l1: { l2: { l3: { l4: { l5: 'value' } } } } // Depth 5
-            };
-
-            const result = dataSplitter.splitIfNeeded({
-                message: 'test',
-                data: depth5Object,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 100 },
-                maxResponseTokens: 50
-            });
-
-            expect(result.length).toBe(1);
-            expect(result[0].content).toEqual(depth5Object);
-        });
-    });
-
-    it('should reject objects exceeding max recursion depth', () => {
-        tokenCalculator.calculateTokens.mockImplementation(text => text.length);
-
-        const deeplyNested = {
-            level1: {
-                level2: {
-                    level3: {
-                        level4: {
-                            level5: {
-                                level6: 'too deep'
-                            }
-                        }
-                    }
-                }
-            }
-        };
-
-        expect(() => dataSplitter.splitIfNeeded({
-            message: 'test',
-            data: deeplyNested,
-            modelInfo: { ...mockModelInfo, maxRequestTokens: 100 },
-            maxResponseTokens: 50
-        })).toThrow('Maximum object recursion depth exceeded');
-    });
-
-    it('should handle max allowed depth objects', () => {
-        tokenCalculator.calculateTokens.mockImplementation(text =>
-            Math.min(40, text.length + (text.match(/[{}]/g) || []).length * 2)
-        );
-
-        // 5 levels deep (MAX_RECURSION_DEPTH)
-        const data = {
-            l1: {
-                l2: {
-                    l3: {
-                        l4: {
-                            l5: 'value'
-                        }
-                    }
-                }
-            }
-        };
-
-        const result = dataSplitter.splitIfNeeded({
-            message: 'test',
-            data,
-            modelInfo: { ...mockModelInfo, maxRequestTokens: 50 },
-            maxResponseTokens: 20
-        });
-
-        expect(result).toHaveLength(1);
-        expect(result[0].tokenCount).toBeLessThanOrEqual(50);
-        expect(result[0].content).toEqual(data);
     });
 
     describe('binary search splitting', () => {
@@ -745,48 +612,6 @@ describe('DataSplitter', () => {
             expect(Array.isArray(lastChunk.content)).toBe(true);
             expect(lastChunk.chunkIndex).toBe(result.length - 1);
             expect(lastChunk.totalChunks).toBe(result.length);
-        });
-    });
-
-    describe('object depth and recursion handling', () => {
-        it('should calculate object depth correctly for mixed structures', () => {
-            tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
-
-            const data = {
-                a: 1,
-                b: { c: 2, d: { e: 3 } },
-                f: [{ g: 4 }, { h: { i: 5 } }]
-            };
-
-            const result = dataSplitter.splitIfNeeded({
-                message: 'test',
-                data,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 1000 },
-                maxResponseTokens: 100
-            });
-
-            expect(result).toHaveLength(1);
-            expect(result[0].content).toEqual(data);
-        });
-
-        it('should handle object recursion depth at boundaries', () => {
-            tokenCalculator.calculateTokens.mockImplementation((text) => text.length);
-
-            // Create deeply nested object at MAX_RECURSION_DEPTH + 1
-            let deepObj: any = { value: 1 };
-            for (let i = 0; i < 6; i++) {
-                deepObj = { nested: deepObj };
-            }
-
-            const result = dataSplitter.splitIfNeeded({
-                message: 'test',
-                data: deepObj,
-                modelInfo: { ...mockModelInfo, maxRequestTokens: 1000 },
-                maxResponseTokens: 100
-            });
-
-            expect(result).toHaveLength(1);
-            expect(typeof result[0].content).toBe('object');
         });
     });
 

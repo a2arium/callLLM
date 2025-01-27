@@ -94,52 +94,52 @@ async function main() {
     });
 
 
-    // // Example 1: Large Text Data (Regular Call)
-    // console.log('\n=== Example 1: Large Text Data (Regular Call) ===');
-    // console.log('Debug: Creating text with 25 paragraphs, 10 sentences each');
+    // Example 1: Large Text Data (Regular Call)
+    console.log('\n=== Example 1: Large Text Data (Regular Call) ===');
+    console.log('Debug: Creating text with 25 paragraphs, 10 sentences each');
 
-    // // Create a large text with multiple paragraphs
-    // const text = Array.from({ length: 25 }, (_, i) => {
-    //     const sentences = Array.from({ length: 10 }, () =>
-    //         'This is a detailed sentence that contains enough words to make the paragraph substantial and ensure we exceed token limits. ' +
-    //         'Adding more content to each sentence to increase token count significantly. ' +
-    //         'The more text we add, the more likely we are to see the splitting behavior in action.'
-    //     ).join(' ');
-    //     return `Paragraph ${i + 1}: ${sentences}`;
-    // }).join('\n\n');
+    // Create a large text with multiple paragraphs
+    const text = Array.from({ length: 25 }, (_, i) => {
+        const sentences = Array.from({ length: 10 }, () =>
+            'This is a detailed sentence that contains enough words to make the paragraph substantial and ensure we exceed token limits. ' +
+            'Adding more content to each sentence to increase token count significantly. ' +
+            'The more text we add, the more likely we are to see the splitting behavior in action.'
+        ).join(' ');
+        return `Paragraph ${i + 1}: ${sentences}`;
+    }).join('\n\n');
 
-    // await processRegularExample(caller, 'Please analyze each section:', text);
+    await processRegularExample(caller, 'Please analyze each section:', text);
 
-    // // Example 2: Large Array Data (Regular Call)
-    // console.log('\n=== Example 2: Array Data (Regular Call) ===');
-    // console.log('Debug: Creating array with 30 items');
+    // Example 2: Large Array Data (Regular Call)
+    console.log('\n=== Example 2: Array Data (Regular Call) ===');
+    console.log('Debug: Creating array with 30 items');
 
-    // // Create an array of items with detailed descriptions
-    // const items = Array.from({ length: 30 }, (_, i) => ({
-    //     id: i + 1,
-    //     title: `Item ${i + 1}`,
-    //     description: 'This is a detailed description with enough text to make each item substantial. ' +
-    //         'Adding more content to increase token count significantly. ' +
-    //         'The more text we add, the more likely we are to see the splitting behavior in action.',
-    //     metadata: {
-    //         created: new Date(),
-    //         category: `Category ${(i % 5) + 1}`,
-    //         tags: Array.from({ length: 30 }, (_, j) => `tag${i}_${j}`),
-    //         additionalInfo: {
-    //             details: 'Adding more detailed information to increase the token count. ' +
-    //                 'This helps demonstrate how the system handles large amounts of text. ' +
-    //                 'The more content we add, the better we can see the splitting behavior.',
-    //             extraData: {
-    //                 field1: 'Additional field content to increase token count further. ' +
-    //                     'This helps ensure we have enough text to demonstrate splitting.',
-    //                 field2: 'Even more content in another field to maximize token usage. ' +
-    //                     'This ensures we have plenty of text to work with.'
-    //             }
-    //         }
-    //     }
-    // }));
+    // Create an array of items with detailed descriptions
+    const items = Array.from({ length: 30 }, (_, i) => ({
+        id: i + 1,
+        title: `Item ${i + 1}`,
+        description: 'This is a detailed description with enough text to make each item substantial. ' +
+            'Adding more content to increase token count significantly. ' +
+            'The more text we add, the more likely we are to see the splitting behavior in action.',
+        metadata: {
+            created: new Date(),
+            category: `Category ${(i % 5) + 1}`,
+            tags: Array.from({ length: 30 }, (_, j) => `tag${i}_${j}`),
+            additionalInfo: {
+                details: 'Adding more detailed information to increase the token count. ' +
+                    'This helps demonstrate how the system handles large amounts of text. ' +
+                    'The more content we add, the better we can see the splitting behavior.',
+                extraData: {
+                    field1: 'Additional field content to increase token count further. ' +
+                        'This helps ensure we have enough text to demonstrate splitting.',
+                    field2: 'Even more content in another field to maximize token usage. ' +
+                        'This ensures we have plenty of text to work with.'
+                }
+            }
+        }
+    }));
 
-    // await processRegularExample(caller, 'Analyze these items:', items);
+    await processRegularExample(caller, 'Analyze these items:', items);
 
     // Example 3: Large object data split by properties (streaming)
     console.log('\n=== Example 3: Object Data (Streaming) ===');
