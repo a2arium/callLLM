@@ -99,7 +99,9 @@ export interface UniversalStreamResponse {
 export type ModelInfo = {
     name: string;
     inputPricePerMillion: number;
+    inputCachedPricePerMillion?: number;
     outputPricePerMillion: number;
+    // reasoningPricePerMillion?: number; TODO: We can add this if reasoning somewhere goes for a different price than output
     maxRequestTokens: number;
     maxResponseTokens: number;
     tokenizationModel?: string;

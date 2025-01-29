@@ -102,7 +102,7 @@ async function main() {
 
         // Example 4: Streaming JSON with schema
         console.log('\nExample 4: Streaming JSON with schema');
-        const stream = await caller.streamCall<typeof UserSchema>({
+        const stream = await caller.streamCall({
             message: 'Generate a profile for a fictional user named Bob who loves sports',
             settings: {
                 temperature: 0.7,

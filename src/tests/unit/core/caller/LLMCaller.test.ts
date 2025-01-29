@@ -30,55 +30,13 @@ const mockStreamHandler = {
         inputTokens: number,
         modelInfo: ModelInfo
     ): AsyncGenerator<UniversalStreamResponse> {
-        const chunks = ['chunk 1', ' chunk 2'];
-        for (const chunk of chunks) {
-            yield {
-                content: chunk,
-                role: 'assistant',
-                isComplete: chunk === ' chunk 2',
-                metadata: {
-                    usage: {
-                        inputTokens: 10,
-                        outputTokens: 20,
-                        totalTokens: 30,
-                        costs: {
-                            inputCost: 0.00001,
-                            outputCost: 0.00002,
-                            totalCost: 0.00003
-                        }
-                    }
-                }
-            };
+        // Pass through the provider's actual stream chunks
+        for await (const chunk of stream) {
+            yield chunk;
         }
     })
 } as unknown as jest.Mocked<StreamHandler>;
 
-const mockStreamHandlerForStreamTest = {
-    processStream: jest.fn(async function* () {
-        const chunks = ['chunk 1', ' chunk 2'];
-        let accumulatedContent = '';
-        for (const chunk of chunks) {
-            accumulatedContent = accumulatedContent ? `${accumulatedContent}${chunk}` : chunk;
-            yield {
-                content: accumulatedContent,
-                role: 'assistant',
-                isComplete: chunk === ' chunk 2',
-                metadata: {
-                    usage: {
-                        inputTokens: 10,
-                        outputTokens: 20,
-                        totalTokens: 30,
-                        costs: {
-                            inputCost: 0.00001,
-                            outputCost: 0.00002,
-                            totalCost: 0.00003
-                        }
-                    }
-                }
-            };
-        }
-    })
-} as unknown as jest.Mocked<StreamHandler>;
 
 // Define the mock chat call
 const mockChatCall = jest.fn().mockResolvedValue({
@@ -835,10 +793,11 @@ describe('LLMCaller', () => {
 
         it('should handle stream errors in ending message stream', async () => {
             const mockStreamCall = jest.fn()
+                .mockRejectedValueOnce(new Error('First failure'))
                 .mockImplementationOnce(async () => ({
                     [Symbol.asyncIterator]: async function* () {
                         yield {
-                            content: 'First chunk',
+                            content: 'First chunk before failure',
                             role: 'assistant',
                             isComplete: false,
                             metadata: { finishReason: FinishReason.NULL }
@@ -861,13 +820,15 @@ describe('LLMCaller', () => {
 
             const stream = await caller.streamCall({ message: 'test' });
             const chunks = [];
+            let attempt = 0;
+
             for await (const chunk of stream) {
                 chunks.push(chunk);
             }
 
-            expect(mockStreamCall).toHaveBeenCalledTimes(2);
+            expect(mockStreamCall).toHaveBeenCalledTimes(3);
             expect(chunks).toHaveLength(2);
-            expect(chunks[0].content).toBe('First chunk');
+            expect(chunks[0].content).toBe('First chunk before failure');
             expect(chunks[1].content).toBe('Success after retry');
         }, 15000);
 
@@ -894,7 +855,7 @@ describe('LLMCaller', () => {
             }
 
             expect(error).toBeDefined();
-            expect((error as Error).message).toContain('Failed to start stream after 2 retries');
+            expect((error as Error).message).toContain('Failed after 2 retries. Last error: Third failure');
             expect(mockStreamCall).toHaveBeenCalledTimes(3); // Initial + 2 retries
         }, 15000);
 
@@ -946,7 +907,7 @@ describe('LLMCaller', () => {
                             isComplete: false,
                             metadata: { finishReason: FinishReason.NULL }
                         };
-                        throw new Error('Mid-stream failure');
+                        throw new Error('Initial stream failure');
                     }
                 }))
                 .mockImplementationOnce(async () => ({

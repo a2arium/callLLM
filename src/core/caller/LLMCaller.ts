@@ -150,7 +150,10 @@ export class LLMCaller {
 
         // Validate JSON mode support
         const modelInfo = this.modelManager.getModel(this.model);
-        this.responseProcessor.validateJsonMode(modelInfo!, params);
+        if (!modelInfo) {
+            throw new Error(`Model ${this.model} not found`);
+        }
+        this.responseProcessor.validateJsonMode(modelInfo, params);
 
         // Make the call with retries
         const maxRetries = mergedSettings?.maxRetries ?? 3;
@@ -202,7 +205,9 @@ export class LLMCaller {
         throw lastError;
     }
 
-    // Basic streaming method
+    /**
+     * Streams a response from the LLM with retry logic and discards any partial data from failed attempts.
+     */
     public async streamCall({
         message,
         settings
@@ -210,11 +215,14 @@ export class LLMCaller {
         message: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<AsyncIterable<UniversalStreamResponse>> {
+        // Merge global and method-level settings
         const mergedSettings = this.mergeSettings(settings);
-        const systemMessage = mergedSettings?.responseFormat === 'json' || mergedSettings?.jsonSchema
-            ? `${this.systemMessage}\n Provide your response in valid JSON format.`
-            : this.systemMessage;
+        const systemMessage =
+            mergedSettings?.responseFormat === 'json' || mergedSettings?.jsonSchema
+                ? `${this.systemMessage}\n Provide your response in valid JSON format.`
+                : this.systemMessage;
 
+        // Prepare parameters
         const params: UniversalChatParams = {
             messages: [
                 { role: 'system', content: systemMessage },
@@ -223,74 +231,80 @@ export class LLMCaller {
             settings: mergedSettings
         };
 
-        // Validate JSON mode support
+        // Resolve model and validate JSON mode
         const modelInfo = this.modelManager.getModel(this.model);
-        this.responseProcessor.validateJsonMode(modelInfo!, params);
+        if (!modelInfo) {
+            throw new Error(`Model ${this.model} not found`);
+        }
+        this.responseProcessor.validateJsonMode(modelInfo, params);
 
-        // Make the call with retries
+        // Calculate input tokens
+        const inputTokens = this.tokenCalculator.calculateTokens(
+            this.systemMessage + '\n' + message
+        );
+
         const maxRetries = mergedSettings?.maxRetries ?? 3;
-        let lastError: Error | undefined;
         let attempt = 0;
 
-        const makeStreamRequest = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
-            try {
-                const provider = this.providerManager.getProvider();
-                const stream = await provider.streamCall(this.model, params);
+        const createRetryableStream = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
+            let retryCount = 0;
 
-                // Calculate input tokens
-                const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
+            const executeAttempt = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
+                try {
+                    const provider = this.providerManager.getProvider();
+                    const providerStream = await provider.streamCall(this.model, params);
+                    const processedStream = this.streamHandler.processStream(
+                        providerStream,
+                        params,
+                        inputTokens,
+                        modelInfo
+                    );
 
-                // Process the stream with retries
-                return {
-                    [Symbol.asyncIterator]() {
-                        const iterator = stream[Symbol.asyncIterator]();
-                        let accumulatedContent = '';
-                        let isFirstChunk = true;
+                    const buffer: UniversalStreamResponse[] = [];
 
-                        return {
-                            async next(): Promise<IteratorResult<UniversalStreamResponse>> {
-                                try {
-                                    const result = await iterator.next();
-                                    if (!result.done) {
-                                        accumulatedContent += result.value.content;
-                                        return result;
-                                    }
-                                    return { done: true, value: undefined };
-                                } catch (error: unknown) {
-                                    // If this is not the first chunk, we've already received some data
-                                    // We should preserve it and continue from where we left off
-                                    if (!isFirstChunk && accumulatedContent) {
-                                        if (attempt < maxRetries) {
-                                            attempt++;
-                                            // Wait with exponential backoff before retrying
-                                            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-                                            // Create a new stream starting from where we left off
-                                            const newStream = await makeStreamRequest();
-                                            const newIterator = newStream[Symbol.asyncIterator]();
-                                            return newIterator.next();
-                                        }
-                                    }
-                                    throw new Error(`Stream failed after ${attempt} retries. Last error: ${error instanceof Error ? error.message : String(error)}`);
-                                } finally {
-                                    isFirstChunk = false;
+                    return {
+                        async *[Symbol.asyncIterator]() {
+                            let hasErrored = false;
+                            try {
+                                for await (const chunk of processedStream) {
+                                    yield chunk;
+                                }
+                            } catch (error) {
+                                hasErrored = true;
+                                if (retryCount < maxRetries) {
+                                    retryCount++;
+                                    const delay = Math.pow(2, retryCount) * 1000;
+                                    await new Promise(resolve => setTimeout(resolve, delay));
+
+                                    // Retry with new stream
+                                    const newStream = await executeAttempt();
+                                    yield* newStream;
+                                } else {
+                                    throw new Error(`Failed after ${maxRetries} retries. Last error: ${(error as Error).message}`);
+                                }
+                            } finally {
+                                if (hasErrored) {
+                                    // Clear any pending chunks from failed stream
+                                    await processedStream[Symbol.asyncIterator]().return?.(undefined);
                                 }
                             }
-                        };
+                        }
+                    };
+                } catch (error) {
+                    if (attempt < maxRetries) {
+                        attempt++;
+                        const delay = Math.pow(2, attempt) * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return executeAttempt();
                     }
-                };
-            } catch (error) {
-                lastError = error as Error;
-                if (attempt >= maxRetries) {
-                    throw new Error(`Failed to start stream after ${maxRetries} retries. Last error: ${lastError.message}`);
+                    throw new Error(`Failed after ${maxRetries} retries. Last error: ${(error as Error).message}`);
                 }
-                attempt++;
-                // Wait with exponential backoff before retrying
-                await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-                return makeStreamRequest();
-            }
+            };
+
+            return executeAttempt();
         };
 
-        return makeStreamRequest();
+        return createRetryableStream();
     }
 
     // Extended call method with additional functionality

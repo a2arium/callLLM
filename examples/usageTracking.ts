@@ -36,10 +36,10 @@ async function main() {
     caller.setCallerId('streaming-conversation');
     console.log('\nTesting streaming call with usage tracking...');
     const stream = await caller.streamCall({
-        message: 'Tell me a short story about a programmer.',
+        message: 'Tell me a story about a programmer.',
         settings: {
             temperature: 0.9,
-            maxTokens: 100
+            maxTokens: 500
         }
     });
 
