@@ -8,6 +8,7 @@ async function main() {
             costs: usageData.usage.costs,
             tokens: {
                 input: usageData.usage.inputTokens,
+                inputCached: usageData.usage.inputCachedTokens,
                 output: usageData.usage.outputTokens,
                 total: usageData.usage.totalTokens
             },

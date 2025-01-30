@@ -42,6 +42,7 @@ export class StreamHandler {
             inputTokens,
             outputTokens: 0,
             totalTokens: inputTokens,
+            inputCachedTokens: params.inputCachedTokens ?? 0,  // Default to 0 if not provided
             costs: { inputCost: 0, outputCost: 0, totalCost: 0 }
         };
 
@@ -56,7 +57,9 @@ export class StreamHandler {
                     isFirstCallback ? inputTokens : 0,
                     currentOutputTokens - lastCallbackTokens,
                     modelInfo.inputPricePerMillion,
-                    modelInfo.outputPricePerMillion
+                    modelInfo.outputPricePerMillion,
+                    isFirstCallback ? params.inputCachedTokens ?? 0 : 0,  // Default to 0 if not provided
+                    isFirstCallback ? params.inputCachedPricePerMillion : undefined
                 );
 
                 // Update total usage for metadata
@@ -64,11 +67,14 @@ export class StreamHandler {
                     inputTokens,
                     outputTokens: currentOutputTokens,
                     totalTokens: inputTokens + currentOutputTokens,
+                    inputCachedTokens: params.inputCachedTokens ?? 0,  // Default to 0 if not provided
                     costs: this.tokenCalculator.calculateUsage(
                         inputTokens,
                         currentOutputTokens,
                         modelInfo.inputPricePerMillion,
-                        modelInfo.outputPricePerMillion
+                        modelInfo.outputPricePerMillion,
+                        params.inputCachedTokens ?? 0,  // Default to 0 if not provided
+                        params.inputCachedPricePerMillion
                     )
                 };
 
@@ -77,6 +83,7 @@ export class StreamHandler {
                     inputTokens: isFirstCallback ? inputTokens : 0,
                     outputTokens: currentOutputTokens - lastCallbackTokens,
                     totalTokens: (isFirstCallback ? inputTokens : 0) + (currentOutputTokens - lastCallbackTokens),
+                    inputCachedTokens: isFirstCallback ? (params.inputCachedTokens ?? 0) : 0,  // Default to 0 if not provided
                     costs: isFirstCallback ? incrementalCosts : {
                         inputCost: 0,
                         outputCost: incrementalCosts.outputCost,

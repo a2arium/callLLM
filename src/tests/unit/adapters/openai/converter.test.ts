@@ -267,25 +267,41 @@ describe('Converter', () => {
             } as OpenAIResponse;
 
             const result = converter.convertFromProviderResponse(response);
-            expect(result.metadata?.usage).toEqual({
-                inputTokens: 100,
-                outputTokens: 50,
-                totalTokens: 150,
-                costs: {
-                    inputCost: 0.003, // 100 tokens * $30 per million
-                    outputCost: 0.003, // 50 tokens * $60 per million
-                    totalCost: 0.006
-                }
+            expect(result.metadata?.usage?.costs).toEqual({
+                inputCost: 0.003, // 100 tokens * $30 per million
+                outputCost: 0.003, // 50 tokens * $60 per million
+                totalCost: 0.006
             });
         });
 
-        it('should handle usage without model info', () => {
+        it('should handle cached tokens in usage', () => {
+            const mockModel = {
+                name: 'gpt-4',
+                inputPricePerMillion: 30,
+                outputPricePerMillion: 60,
+                maxRequestTokens: 8192,
+                maxResponseTokens: 4096,
+                characteristics: {
+                    qualityIndex: 90,
+                    outputSpeed: 100,
+                    firstTokenLatency: 200
+                }
+            };
+            converter.setModel(mockModel);
+
+            const usageWithCached = {
+                ...mockUsage,
+                prompt_tokens_details: {
+                    cached_tokens: 20
+                }
+            };
+
             const response = {
                 choices: [{
                     message: { content: 'test', role: 'assistant' },
                     finish_reason: 'stop'
                 }],
-                usage: mockUsage
+                usage: usageWithCached
             } as OpenAIResponse;
 
             const result = converter.convertFromProviderResponse(response);
@@ -293,6 +309,73 @@ describe('Converter', () => {
                 inputTokens: 100,
                 outputTokens: 50,
                 totalTokens: 150,
+                inputCachedTokens: 20,
+                costs: {
+                    inputCost: 0.003,
+                    outputCost: 0.003,
+                    totalCost: 0.006
+                }
+            });
+        });
+
+        it('should handle usage without cached tokens', () => {
+            const mockModel = {
+                name: 'gpt-4',
+                inputPricePerMillion: 30,
+                outputPricePerMillion: 60,
+                maxRequestTokens: 8192,
+                maxResponseTokens: 4096,
+                characteristics: {
+                    qualityIndex: 90,
+                    outputSpeed: 100,
+                    firstTokenLatency: 200
+                }
+            };
+            converter.setModel(mockModel);
+
+            const response = {
+                choices: [{
+                    message: { content: 'test', role: 'assistant' },
+                    finish_reason: 'stop'
+                }],
+                usage: mockUsage // No cached tokens info
+            } as OpenAIResponse;
+
+            const result = converter.convertFromProviderResponse(response);
+            expect(result.metadata?.usage).toEqual({
+                inputTokens: 100,
+                outputTokens: 50,
+                totalTokens: 150,
+                costs: {
+                    inputCost: 0.003,
+                    outputCost: 0.003,
+                    totalCost: 0.006
+                }
+            });
+        });
+
+        it('should handle usage without model info', () => {
+            const usageWithCached = {
+                ...mockUsage,
+                prompt_tokens_details: {
+                    cached_tokens: 20
+                }
+            };
+
+            const response = {
+                choices: [{
+                    message: { content: 'test', role: 'assistant' },
+                    finish_reason: 'stop'
+                }],
+                usage: usageWithCached
+            } as OpenAIResponse;
+
+            const result = converter.convertFromProviderResponse(response);
+            expect(result.metadata?.usage).toEqual({
+                inputTokens: 100,
+                outputTokens: 50,
+                totalTokens: 150,
+                inputCachedTokens: 20,
                 costs: {
                     inputCost: 0,
                     outputCost: 0,

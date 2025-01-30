@@ -1,5 +1,5 @@
 import { UniversalChatParams, UniversalChatResponse, FinishReason, ModelInfo, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
-import { OpenAIModelParams, OpenAIResponse, OpenAIChatMessage } from './types';
+import { OpenAIModelParams, OpenAIResponse, OpenAIChatMessage, OpenAIUsage } from './types';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { ChatCompletionCreateParams } from 'openai/resources/chat';
 import { z } from 'zod';
@@ -97,12 +97,15 @@ export class Converter {
         }));
     }
 
-    private convertUsage(usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }) {
+    private convertUsage(usage: OpenAIUsage) {
         if (!this.currentModel) {
             return {
                 inputTokens: usage.prompt_tokens,
                 outputTokens: usage.completion_tokens,
                 totalTokens: usage.total_tokens,
+                ...(usage.prompt_tokens_details?.cached_tokens !== undefined && {
+                    inputCachedTokens: usage.prompt_tokens_details.cached_tokens
+                }),
                 costs: {
                     inputCost: 0,
                     outputCost: 0,
@@ -118,6 +121,9 @@ export class Converter {
             inputTokens: usage.prompt_tokens,
             outputTokens: usage.completion_tokens,
             totalTokens: usage.total_tokens,
+            ...(usage.prompt_tokens_details?.cached_tokens !== undefined && {
+                inputCachedTokens: usage.prompt_tokens_details.cached_tokens
+            }),
             costs: {
                 inputCost,
                 outputCost,

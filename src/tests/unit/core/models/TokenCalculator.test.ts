@@ -23,6 +23,58 @@ describe('TokenCalculator', () => {
             expect(result.totalCost).toBe(0.5);    // 0.1 + 0.4
         });
 
+        it('should calculate costs with cached tokens', () => {
+            const result = calculator.calculateUsage(
+                100,    // total input tokens
+                200,    // output tokens
+                1000,   // input price per million
+                2000,   // output price per million
+                20,     // cached tokens
+                500     // cached price per million
+            );
+
+            // Regular input cost: (100-20) * 1000 / 1_000_000 = 0.08
+            // Cached input cost: 20 * 500 / 1_000_000 = 0.01
+            // Output cost: 200 * 2000 / 1_000_000 = 0.4
+            expect(result.inputCost).toBe(0.08);
+            expect(result.inputCachedCost).toBe(0.01);
+            expect(result.outputCost).toBe(0.4);
+            expect(result.totalCost).toBe(0.49);  // 0.08 + 0.01 + 0.4
+        });
+
+        it('should handle cached tokens without cached price', () => {
+            const result = calculator.calculateUsage(
+                100,    // total input tokens
+                200,    // output tokens
+                1000,   // input price per million
+                2000,   // output price per million
+                20      // cached tokens, but no cached price
+            );
+
+            // All input tokens use regular price
+            expect(result.inputCost).toBe(0.1);    // 100 * 1000 / 1_000_000
+            expect(result.inputCachedCost).toBeUndefined();
+            expect(result.outputCost).toBe(0.4);   // 200 * 2000 / 1_000_000
+            expect(result.totalCost).toBe(0.5);    // 0.1 + 0.4
+        });
+
+        it('should handle cached price without cached tokens', () => {
+            const result = calculator.calculateUsage(
+                100,    // total input tokens
+                200,    // output tokens
+                1000,   // input price per million
+                2000,   // output price per million
+                undefined,  // no cached tokens
+                500        // cached price (should be ignored)
+            );
+
+            // All input tokens use regular price
+            expect(result.inputCost).toBe(0.1);    // 100 * 1000 / 1_000_000
+            expect(result.inputCachedCost).toBeUndefined();
+            expect(result.outputCost).toBe(0.4);   // 200 * 2000 / 1_000_000
+            expect(result.totalCost).toBe(0.5);    // 0.1 + 0.4
+        });
+
         it('should handle zero tokens', () => {
             const result = calculator.calculateUsage(0, 0, 1000, 2000);
 
@@ -37,6 +89,23 @@ describe('TokenCalculator', () => {
             expect(result.inputCost).toBe(1000);
             expect(result.outputCost).toBe(4000);
             expect(result.totalCost).toBe(5000);
+        });
+
+        it('should handle all cached tokens', () => {
+            const result = calculator.calculateUsage(
+                100,    // total input tokens
+                200,    // output tokens
+                1000,   // input price per million
+                2000,   // output price per million
+                100,    // all tokens are cached
+                500     // cached price per million
+            );
+
+            // All input tokens use cached price
+            expect(result.inputCost).toBe(0);      // no regular tokens
+            expect(result.inputCachedCost).toBe(0.05);  // 100 * 500 / 1_000_000
+            expect(result.outputCost).toBe(0.4);   // 200 * 2000 / 1_000_000
+            expect(result.totalCost).toBe(0.45);   // 0.05 + 0.4
         });
     });
 

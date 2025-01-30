@@ -30,11 +30,28 @@ describe('StreamHandler', () => {
 
         // Mock token calculator methods
         jest.spyOn(tokenCalculator, 'calculateTokens').mockImplementation((text) => text.length);
-        jest.spyOn(tokenCalculator, 'calculateUsage').mockImplementation((input, output) => ({
-            inputCost: input * 0.001,
-            outputCost: output * 0.002,
-            totalCost: input * 0.001 + output * 0.002
-        }));
+        jest.spyOn(tokenCalculator, 'calculateUsage').mockImplementation((input, output, inputPricePerMillion, outputPricePerMillion, inputCachedTokens, inputCachedPricePerMillion) => {
+            // Calculate non-cached input tokens
+            const nonCachedInputTokens = (inputCachedTokens !== undefined && inputCachedPricePerMillion !== undefined)
+                ? input - inputCachedTokens
+                : input;
+
+            // Calculate input costs
+            const regularInputCost = (nonCachedInputTokens * inputPricePerMillion) / 1_000_000;
+            const cachedInputCost = (inputCachedTokens !== undefined && inputCachedPricePerMillion !== undefined)
+                ? (inputCachedTokens * inputCachedPricePerMillion) / 1_000_000
+                : undefined;
+
+            const outputCost = (output * outputPricePerMillion) / 1_000_000;
+            const totalCost = (regularInputCost + (cachedInputCost || 0) + outputCost);
+
+            return {
+                inputCost: regularInputCost,
+                ...(cachedInputCost !== undefined ? { inputCachedCost: cachedInputCost } : {}),
+                outputCost,
+                totalCost
+            };
+        });
     });
 
     afterEach(() => {
@@ -120,8 +137,8 @@ describe('StreamHandler', () => {
                 inputTokens: 10,
                 outputTokens: 150,
                 costs: expect.objectContaining({
-                    inputCost: 0.01,
-                    outputCost: 0.3
+                    inputCost: 0.00001,  // 10 * 1 / 1_000_000
+                    outputCost: 0.0003   // 150 * 2 / 1_000_000
                 })
             })
         }));
@@ -132,7 +149,7 @@ describe('StreamHandler', () => {
                 outputTokens: 50,
                 costs: expect.objectContaining({
                     inputCost: 0,
-                    outputCost: 0.1
+                    outputCost: 0.0001   // 50 * 2 / 1_000_000
                 })
             })
         }));
@@ -640,5 +657,93 @@ describe('StreamHandler', () => {
                 })
             }));
         });
+    });
+
+    it('should handle cached tokens in usage calculation', async () => {
+        const mockStream = {
+            async *[Symbol.asyncIterator]() {
+                yield {
+                    content: 'test',
+                    role: 'assistant',
+                    isComplete: true
+                } as UniversalStreamResponse;
+            }
+        };
+
+        const params = {
+            messages: [],
+            settings: {},
+            inputCachedTokens: 20,
+            inputCachedPricePerMillion: 500
+        };
+
+        const generator = streamHandler.processStream(
+            mockStream,
+            params,
+            100,  // total input tokens
+            { ...mockModelInfo, inputPricePerMillion: 1000 }
+        );
+
+        for await (const chunk of generator) {
+            expect(chunk.metadata?.usage).toBeDefined();
+            expect(chunk.metadata?.usage?.inputCachedTokens).toBe(20);
+            expect(chunk.metadata?.usage?.costs.inputCost).toBe(0.08); // (100-20) * 1000 / 1_000_000
+            expect(chunk.metadata?.usage?.costs.inputCachedCost).toBe(0.01); // 20 * 500 / 1_000_000
+        }
+
+        expect(mockUsageCallback).toHaveBeenCalledWith(expect.objectContaining({
+            callerId: 'test-id',
+            usage: expect.objectContaining({
+                inputTokens: 100,
+                inputCachedTokens: 20,
+                costs: expect.objectContaining({
+                    inputCost: 0.08,
+                    inputCachedCost: 0.01
+                })
+            })
+        }));
+    });
+
+    it('should handle cached tokens without cached price', async () => {
+        const mockStream = {
+            async *[Symbol.asyncIterator]() {
+                yield {
+                    content: 'test',
+                    role: 'assistant',
+                    isComplete: true
+                } as UniversalStreamResponse;
+            }
+        };
+
+        const params = {
+            messages: [],
+            settings: {},
+            inputCachedTokens: 20  // no cached price provided
+        };
+
+        const generator = streamHandler.processStream(
+            mockStream,
+            params,
+            100,  // total input tokens
+            { ...mockModelInfo, inputPricePerMillion: 1000 }
+        );
+
+        for await (const chunk of generator) {
+            expect(chunk.metadata?.usage).toBeDefined();
+            expect(chunk.metadata?.usage?.inputCachedTokens).toBe(20);
+            expect(chunk.metadata?.usage?.costs.inputCost).toBe(0.1); // all tokens charged at regular price
+            expect(chunk.metadata?.usage?.costs.inputCachedCost).toBeUndefined();
+        }
+
+        expect(mockUsageCallback).toHaveBeenCalledWith(expect.objectContaining({
+            callerId: 'test-id',
+            usage: expect.objectContaining({
+                inputTokens: 100,
+                inputCachedTokens: 20,
+                costs: expect.objectContaining({
+                    inputCost: 0.1  // all tokens charged at regular price
+                })
+            })
+        }));
     });
 }); 

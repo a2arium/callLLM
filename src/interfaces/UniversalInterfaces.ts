@@ -9,55 +9,62 @@ export enum FinishReason {
     NULL = 'null'            // Stream not finished yet
 }
 
-// Universal interface for chat parameters
-export interface UniversalChatParams {
-    messages: Array<{
-        role: 'system' | 'user' | 'assistant';
-        content: string;
+export type UniversalMessage = {
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+    name?: string;
+};
+
+export type UniversalChatSettings = {
+    /**
+     * Controls randomness in the model's output.
+     * Range: 0.0 to 2.0
+     * - Lower values (e.g., 0.2) make the output more focused and deterministic
+     * - Higher values (e.g., 0.8) make the output more random and creative
+     * @default 1.0
+     */
+    temperature?: number;
+    maxTokens?: number;
+    topP?: number;
+    frequencyPenalty?: number;
+    presencePenalty?: number;
+    /**
+     * Maximum number of retries when the provider call fails
+     * @default 3
+     */
+    maxRetries?: number;
+    /**
+     * JSON schema for response validation and formatting
+     * Can be either a JSON Schema string or a Zod schema
+     */
+    jsonSchema?: {
         name?: string;
-    }>;
-    settings?: {
-        /**
-         * Controls randomness in the model's output.
-         * Range: 0.0 to 2.0
-         * - Lower values (e.g., 0.2) make the output more focused and deterministic
-         * - Higher values (e.g., 0.8) make the output more random and creative
-         * @default 1.0
-         */
-        temperature?: number;
-        maxTokens?: number;
-        topP?: number;
-        frequencyPenalty?: number;
-        presencePenalty?: number;
-        /**
-         * Maximum number of retries when the provider call fails
-         * @default 3
-         */
-        maxRetries?: number;
-        /**
-         * JSON schema for response validation and formatting
-         * Can be either a JSON Schema string or a Zod schema
-         */
-        jsonSchema?: {
-            name?: string;
-            schema: JSONSchemaDefinition;
-        };
-        /**
-         * Specify the response format
-         * @default 'text'
-         */
-        responseFormat?: ResponseFormat;
-        [key: string]: any;
+        schema: JSONSchemaDefinition;
     };
-}
+    /**
+     * Specify the response format
+     * @default 'text'
+     */
+    responseFormat?: ResponseFormat;
+    [key: string]: any;
+};
+
+export type UniversalChatParams = {
+    messages: Array<UniversalMessage>;
+    settings?: UniversalChatSettings;
+    inputCachedTokens?: number;
+    inputCachedPricePerMillion?: number;
+};
 
 // Universal interface for chat response
 export type Usage = {
     inputTokens: number;
     outputTokens: number;
     totalTokens: number;
+    inputCachedTokens?: number;  // Number of cached input tokens
     costs: {
         inputCost: number;
+        inputCachedCost?: number;  // Cost for cached input tokens
         outputCost: number;
         totalCost: number;
     };
