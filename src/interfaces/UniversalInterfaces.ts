@@ -14,6 +14,7 @@ export interface UniversalChatParams {
     messages: Array<{
         role: 'system' | 'user' | 'assistant';
         content: string;
+        name?: string;
     }>;
     settings?: {
         /**

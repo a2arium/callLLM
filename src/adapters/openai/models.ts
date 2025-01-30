@@ -30,7 +30,7 @@ export const defaultModels: ModelInfo[] = [
         }
     },
     {
-        name: "o1-preview",
+        name: "o1",
         inputPricePerMillion: 15.00,
         outputPricePerMillion: 60.00,
         maxRequestTokens: 200000,

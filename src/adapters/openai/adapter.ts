@@ -2,7 +2,6 @@ import { OpenAI } from 'openai';
 import { BaseAdapter, AdapterConfig } from '../base/baseAdapter';
 import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, ModelInfo } from '../../interfaces/UniversalInterfaces';
 import { LLMProvider } from '../../interfaces/LLMProvider';
-import { FinishReason } from '../../interfaces/UniversalInterfaces';
 import { Converter } from './converter';
 import { StreamHandler } from './stream';
 import { Validator } from './validator';
@@ -39,7 +38,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
             baseURL: this.config.baseUrl,
         });
         this.converter = new Converter();
-        this.streamHandler = new StreamHandler();
+        this.streamHandler = new StreamHandler(this.converter);
         this.validator = new Validator();
         this.models = new Map(defaultModels.map(model => [model.name, model]));
     }
@@ -78,26 +77,6 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
     }
 
     convertFromProviderStreamResponse(chunk: unknown): UniversalStreamResponse {
-        const streamChunk = chunk as OpenAIStreamResponse;
-        return {
-            content: streamChunk.choices[0]?.delta?.content || '',
-            role: streamChunk.choices[0]?.delta?.role || 'assistant',
-            isComplete: streamChunk.choices[0]?.finish_reason !== null,
-            metadata: {
-                finishReason: this.mapFinishReason(streamChunk.choices[0]?.finish_reason),
-                responseFormat: 'text',
-            },
-        };
-    }
-
-    private mapFinishReason(reason: string | null): FinishReason {
-        if (!reason) return FinishReason.NULL;
-        switch (reason) {
-            case 'stop': return FinishReason.STOP;
-            case 'length': return FinishReason.LENGTH;
-            case 'content_filter': return FinishReason.CONTENT_FILTER;
-            case 'tool_calls': return FinishReason.TOOL_CALLS;
-            default: return FinishReason.NULL;
-        }
+        return this.converter.convertStreamResponse(chunk as OpenAIStreamResponse, this.converter.getCurrentParams());
     }
 } 

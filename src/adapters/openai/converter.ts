@@ -1,8 +1,9 @@
-import { UniversalChatParams, UniversalChatResponse, FinishReason, ModelInfo } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, FinishReason, ModelInfo, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
 import { OpenAIModelParams, OpenAIResponse, OpenAIChatMessage } from './types';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { ChatCompletionCreateParams } from 'openai/resources/chat';
 import { z } from 'zod';
+import { OpenAIStreamResponse } from './types';
 
 export class Converter {
     private currentModel?: ModelInfo;
@@ -27,17 +28,23 @@ export class Converter {
                 return zodResponseFormat(schema, schemaName);
             }
 
-            // Handle JSON Schema string
-            if (typeof schema === 'string' || typeof schema === 'object') {
-                const jsonSchema = typeof schema === 'string' ? JSON.parse(schema) : schema;
-                return {
-                    type: 'json_schema',
-                    json_schema: {
-                        name: settings.jsonSchema.name || 'response',
-                        schema: jsonSchema
-                    }
-                };
+            // Handle JSON Schema string or object
+            if (typeof schema === 'string' || (typeof schema === 'object' && schema !== null && !(schema instanceof Date))) {
+                try {
+                    const jsonSchema = typeof schema === 'string' ? JSON.parse(schema) : schema;
+                    return {
+                        type: 'json_schema',
+                        json_schema: {
+                            name: settings.jsonSchema.name || 'response',
+                            schema: jsonSchema
+                        }
+                    };
+                } catch (error) {
+                    throw new Error('Invalid JSON schema string');
+                }
             }
+
+            throw new Error('Invalid schema type provided');
         }
 
         // Default JSON format if requested
@@ -119,14 +126,34 @@ export class Converter {
         };
     }
 
-    private mapFinishReason(reason: string | null): FinishReason {
+    public mapFinishReason(reason: string | null): FinishReason {
+        if (!reason) return FinishReason.NULL;
         switch (reason) {
             case 'stop': return FinishReason.STOP;
             case 'length': return FinishReason.LENGTH;
             case 'content_filter': return FinishReason.CONTENT_FILTER;
             case 'tool_calls': return FinishReason.TOOL_CALLS;
-            case null: return FinishReason.NULL;
-            default: return FinishReason.STOP;  // Default to STOP for unknown reasons
+            default: return FinishReason.NULL;
         }
+    }
+
+    public convertStreamResponse(chunk: OpenAIStreamResponse, params?: UniversalChatParams): UniversalStreamResponse {
+        const choices = chunk.choices || [];
+        const firstChoice = choices[0] || {};
+        const delta = firstChoice.delta || {};
+
+        return {
+            content: delta.content || '',
+            role: delta.role || 'assistant',
+            isComplete: firstChoice.finish_reason !== null,
+            metadata: {
+                finishReason: this.mapFinishReason(firstChoice.finish_reason),
+                responseFormat: params?.settings?.responseFormat || 'text',
+            },
+        };
+    }
+
+    public getCurrentParams(): UniversalChatParams | undefined {
+        return this.currentParams;
     }
 } 

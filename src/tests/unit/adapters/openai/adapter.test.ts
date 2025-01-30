@@ -18,11 +18,15 @@ describe('OpenAIAdapter', () => {
     const mockOrg = 'test-org';
     const mockBaseUrl = 'https://test.openai.com';
     const mockModel = 'gpt-4';
+    const mockParams: UniversalChatParams = {
+        messages: [{ role: 'user', content: 'test' }]
+    };
 
     let mockOpenAIClient: jest.MockedObject<OpenAI>;
     let mockConverter: jest.Mocked<Converter>;
     let mockStreamHandler: jest.Mocked<StreamHandler>;
     let mockValidator: jest.Mocked<Validator>;
+    let adapter: OpenAIAdapter;
 
     beforeEach(() => {
         // Reset all mocks
@@ -43,8 +47,10 @@ describe('OpenAIAdapter', () => {
         mockConverter = {
             convertToProviderParams: jest.fn(),
             convertFromProviderResponse: jest.fn(),
+            convertStreamResponse: jest.fn(),
             setModel: jest.fn(),
-            setParams: jest.fn()
+            setParams: jest.fn(),
+            getCurrentParams: jest.fn()
         } as unknown as jest.Mocked<Converter>;
         (Converter as jest.Mock).mockImplementation(() => mockConverter);
 
@@ -65,15 +71,52 @@ describe('OpenAIAdapter', () => {
         } as unknown as OpenAIModelParams);
         mockConverter.convertFromProviderResponse.mockReturnValue({
             content: 'test response',
-            role: 'assistant'
+            role: 'assistant',
+            metadata: {
+                finishReason: FinishReason.STOP,
+                responseFormat: 'text'
+            }
+        });
+        mockConverter.getCurrentParams.mockReturnValue(mockParams);
+        mockConverter.convertStreamResponse.mockReturnValue({
+            content: 'test stream',
+            role: 'assistant',
+            isComplete: true,
+            metadata: {
+                finishReason: FinishReason.STOP,
+                responseFormat: 'text'
+            }
         });
         mockStreamHandler.handleStream.mockImplementation(async function* () {
             yield {
                 content: 'test stream',
                 role: 'assistant',
-                isComplete: true
+                isComplete: true,
+                metadata: {
+                    finishReason: FinishReason.STOP,
+                    responseFormat: 'text'
+                }
             };
         });
+
+        // Create adapter instance
+        adapter = new OpenAIAdapter({ apiKey: mockApiKey });
+
+        // Mock the models map
+        (adapter as any).models = new Map([
+            ['gpt-4', {
+                name: 'gpt-4',
+                inputPricePerMillion: 30,
+                outputPricePerMillion: 60,
+                maxRequestTokens: 8192,
+                maxResponseTokens: 4096,
+                characteristics: {
+                    qualityIndex: 90,
+                    outputSpeed: 100,
+                    firstTokenLatency: 200
+                }
+            }]
+        ]);
     });
 
     describe('constructor', () => {
@@ -109,8 +152,17 @@ describe('OpenAIAdapter', () => {
 
     describe('chatCall', () => {
         let adapter: OpenAIAdapter;
-        const mockParams: UniversalChatParams = {
-            messages: [{ role: 'user', content: 'test' }]
+        const mockModelInfo = {
+            name: 'gpt-4',
+            inputPricePerMillion: 30,
+            outputPricePerMillion: 60,
+            maxRequestTokens: 8192,
+            maxResponseTokens: 4096,
+            characteristics: {
+                qualityIndex: 90,
+                outputSpeed: 100,
+                firstTokenLatency: 200
+            }
         };
 
         beforeEach(() => {
@@ -121,21 +173,28 @@ describe('OpenAIAdapter', () => {
                     finish_reason: 'stop'
                 }]
             });
+
             // Mock the models map
             (adapter as any).models = new Map([
-                ['gpt-4', { name: 'gpt-4', inputPricePerMillion: 1 }]
+                ['gpt-4', mockModelInfo]
             ]);
         });
 
         it('should make successful chat call', async () => {
             const response = await adapter.chatCall(mockModel, mockParams);
             expect(mockValidator.validateParams).toHaveBeenCalledWith(mockParams);
+            expect(mockConverter.setModel).toHaveBeenCalledWith(mockModelInfo);
+            expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
             expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith(mockParams);
             expect(mockOpenAIClient.chat.completions.create).toHaveBeenCalled();
             expect(mockConverter.convertFromProviderResponse).toHaveBeenCalled();
             expect(response).toEqual({
                 content: 'test response',
-                role: 'assistant'
+                role: 'assistant',
+                metadata: {
+                    finishReason: FinishReason.STOP,
+                    responseFormat: 'text'
+                }
             });
         });
 
@@ -146,7 +205,7 @@ describe('OpenAIAdapter', () => {
 
         it('should handle model info when available', async () => {
             await adapter.chatCall('gpt-4', mockParams);
-            expect(mockConverter.setModel).toHaveBeenCalledWith({ name: 'gpt-4', inputPricePerMillion: 1 });
+            expect(mockConverter.setModel).toHaveBeenCalledWith(mockModelInfo);
             expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
         });
 
@@ -159,25 +218,9 @@ describe('OpenAIAdapter', () => {
 
     describe('streamCall', () => {
         let adapter: OpenAIAdapter;
-        const mockParams: UniversalChatParams = {
-            messages: [{ role: 'user', content: 'test' }]
-        };
 
         beforeEach(() => {
             adapter = new OpenAIAdapter({ apiKey: mockApiKey });
-            (mockOpenAIClient.chat.completions.create as jest.Mock).mockResolvedValue({
-                choices: [{
-                    delta: { content: 'test stream', role: 'assistant' },
-                    finish_reason: 'stop'
-                }]
-            });
-            // Mock the models map
-            (adapter as any).models = new Map([
-                ['gpt-4', { name: 'gpt-4', inputPricePerMillion: 1 }]
-            ]);
-        });
-
-        it('should make successful stream call', async () => {
             const mockStream = {
                 async *[Symbol.asyncIterator]() {
                     yield {
@@ -190,12 +233,31 @@ describe('OpenAIAdapter', () => {
             };
             (mockOpenAIClient.chat.completions.create as jest.Mock).mockResolvedValue(mockStream);
 
+            // Mock the models map
+            (adapter as any).models = new Map([
+                ['gpt-4', {
+                    name: 'gpt-4',
+                    inputPricePerMillion: 30,
+                    outputPricePerMillion: 60,
+                    maxRequestTokens: 8192,
+                    maxResponseTokens: 4096,
+                    characteristics: {
+                        qualityIndex: 90,
+                        outputSpeed: 100,
+                        firstTokenLatency: 200
+                    }
+                }]
+            ]);
+        });
+
+        it('should make successful stream call', async () => {
             const stream = await adapter.streamCall(mockModel, mockParams);
             const chunks = [];
             for await (const chunk of stream) {
                 chunks.push(chunk);
             }
             expect(mockValidator.validateParams).toHaveBeenCalledWith(mockParams);
+            expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
             expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith(mockParams);
             expect(mockOpenAIClient.chat.completions.create).toHaveBeenCalledWith(
                 expect.objectContaining({ stream: true })
@@ -204,7 +266,11 @@ describe('OpenAIAdapter', () => {
             expect(chunks).toEqual([{
                 content: 'test stream',
                 role: 'assistant',
-                isComplete: true
+                isComplete: true,
+                metadata: {
+                    finishReason: FinishReason.STOP,
+                    responseFormat: 'text'
+                }
             }]);
         });
 
@@ -215,7 +281,18 @@ describe('OpenAIAdapter', () => {
 
         it('should handle model info when available', async () => {
             await adapter.streamCall('gpt-4', mockParams);
-            expect(mockConverter.setModel).toHaveBeenCalledWith({ name: 'gpt-4', inputPricePerMillion: 1 });
+            expect(mockConverter.setModel).toHaveBeenCalledWith({
+                name: 'gpt-4',
+                inputPricePerMillion: 30,
+                outputPricePerMillion: 60,
+                maxRequestTokens: 8192,
+                maxResponseTokens: 4096,
+                characteristics: {
+                    qualityIndex: 90,
+                    outputSpeed: 100,
+                    firstTokenLatency: 200
+                }
+            });
             expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
         });
 
@@ -231,17 +308,16 @@ describe('OpenAIAdapter', () => {
 
         beforeEach(() => {
             adapter = new OpenAIAdapter({ apiKey: mockApiKey });
-            // Mock converter to throw errors for invalid responses
-            mockConverter.convertFromProviderResponse
-                .mockImplementation((response) => {
-                    if (!response || !response.choices?.[0]?.message) {
-                        throw new Error('Invalid response');
-                    }
-                    return {
-                        content: 'test response',
-                        role: 'assistant'
-                    };
-                });
+            mockConverter.convertStreamResponse.mockReturnValue({
+                content: '',
+                role: 'assistant',
+                isComplete: true,
+                metadata: {
+                    finishReason: FinishReason.NULL,
+                    responseFormat: 'text'
+                }
+            });
+            mockConverter.getCurrentParams.mockReturnValue(mockParams);
         });
 
         it('should convert to provider params', () => {
@@ -263,6 +339,10 @@ describe('OpenAIAdapter', () => {
                     finish_reason: 'stop'
                 }]
             };
+            mockConverter.convertFromProviderResponse.mockReturnValue({
+                content: 'test response',
+                role: 'assistant'
+            });
             const result = adapter.convertFromProviderResponse(mockResponse);
             expect(mockConverter.convertFromProviderResponse).toHaveBeenCalledWith(mockResponse);
             expect(result).toEqual({
@@ -278,7 +358,17 @@ describe('OpenAIAdapter', () => {
                     finish_reason: 'stop'
                 }]
             };
+            mockConverter.convertStreamResponse.mockReturnValue({
+                content: 'test',
+                role: 'assistant',
+                isComplete: true,
+                metadata: {
+                    finishReason: FinishReason.STOP,
+                    responseFormat: 'text'
+                }
+            });
             const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+            expect(mockConverter.convertStreamResponse).toHaveBeenCalledWith(mockStreamResponse, mockParams);
             expect(result).toEqual({
                 content: 'test',
                 role: 'assistant',
@@ -297,7 +387,17 @@ describe('OpenAIAdapter', () => {
                     finish_reason: null
                 }]
             };
+            mockConverter.convertStreamResponse.mockReturnValue({
+                content: '',
+                role: 'assistant',
+                isComplete: false,
+                metadata: {
+                    finishReason: FinishReason.NULL,
+                    responseFormat: 'text'
+                }
+            });
             const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
+            expect(mockConverter.convertStreamResponse).toHaveBeenCalledWith(mockStreamResponse, mockParams);
             expect(result).toEqual({
                 content: '',
                 role: 'assistant',
@@ -309,39 +409,10 @@ describe('OpenAIAdapter', () => {
             });
         });
 
-        it('should map different finish reasons', () => {
-            const testCases = [
-                { input: 'stop', expected: FinishReason.STOP },
-                { input: 'length', expected: FinishReason.LENGTH },
-                { input: 'content_filter', expected: FinishReason.CONTENT_FILTER },
-                { input: 'tool_calls', expected: FinishReason.TOOL_CALLS },
-                { input: 'unknown', expected: FinishReason.NULL },
-                { input: null, expected: FinishReason.NULL }
-            ];
-
-            testCases.forEach(({ input, expected }) => {
-                const mockStreamResponse = {
-                    choices: [{
-                        delta: { content: 'test' },
-                        finish_reason: input
-                    }]
-                };
-                const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
-                expect(result.metadata?.finishReason).toBe(expected);
-            });
-        });
-
         describe('convertFromProviderStreamResponse edge cases', () => {
-            let adapter: OpenAIAdapter;
-
             beforeEach(() => {
                 adapter = new OpenAIAdapter({ apiKey: mockApiKey });
-            });
-
-            it('should handle missing choices array', () => {
-                const mockStreamResponse = { choices: [{}] };
-                const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
-                expect(result).toEqual({
+                mockConverter.convertStreamResponse.mockReturnValue({
                     content: '',
                     role: 'assistant',
                     isComplete: true,
@@ -350,26 +421,22 @@ describe('OpenAIAdapter', () => {
                         responseFormat: 'text'
                     }
                 });
-            });
-
-            it('should handle empty choices array', () => {
-                const mockStreamResponse = { choices: [{}] };
-                const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
-                expect(result).toEqual({
-                    content: '',
-                    role: 'assistant',
-                    isComplete: true,
-                    metadata: {
-                        finishReason: FinishReason.NULL,
-                        responseFormat: 'text'
-                    }
-                });
+                mockConverter.getCurrentParams.mockReturnValue(mockParams);
             });
 
             it('should handle missing delta in choice', () => {
                 const mockStreamResponse = {
                     choices: [{ finish_reason: 'stop' }]
                 };
+                mockConverter.convertStreamResponse.mockReturnValue({
+                    content: '',
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        finishReason: FinishReason.STOP,
+                        responseFormat: 'text'
+                    }
+                });
                 const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
                 expect(result).toEqual({
                     content: '',
@@ -389,6 +456,15 @@ describe('OpenAIAdapter', () => {
                         finish_reason: undefined
                     }]
                 };
+                mockConverter.convertStreamResponse.mockReturnValue({
+                    content: 'test',
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        finishReason: FinishReason.NULL,
+                        responseFormat: 'text'
+                    }
+                });
                 const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
                 expect(result).toEqual({
                     content: 'test',
@@ -408,6 +484,15 @@ describe('OpenAIAdapter', () => {
                         finish_reason: null
                     }]
                 };
+                mockConverter.convertStreamResponse.mockReturnValue({
+                    content: '',
+                    role: 'assistant',
+                    isComplete: false,
+                    metadata: {
+                        finishReason: FinishReason.NULL,
+                        responseFormat: 'text'
+                    }
+                });
                 const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
                 expect(result).toEqual({
                     content: '',
@@ -427,6 +512,15 @@ describe('OpenAIAdapter', () => {
                         finish_reason: null
                     }]
                 };
+                mockConverter.convertStreamResponse.mockReturnValue({
+                    content: 'test',
+                    role: 'assistant',
+                    isComplete: false,
+                    metadata: {
+                        finishReason: FinishReason.NULL,
+                        responseFormat: 'text'
+                    }
+                });
                 const result = adapter.convertFromProviderStreamResponse(mockStreamResponse);
                 expect(result).toEqual({
                     content: 'test',
