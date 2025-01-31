@@ -100,9 +100,9 @@ export class ResponseProcessor {
         }
     }
 
-    public validateJsonMode(model: { jsonMode?: boolean }, params: UniversalChatParams): void {
+    public validateJsonMode(model: { capabilities?: { jsonMode?: boolean } }, params: UniversalChatParams): void {
         if (params.settings?.jsonSchema || params.settings?.responseFormat === 'json') {
-            if (!model?.jsonMode) {
+            if (!model?.capabilities?.jsonMode) {
                 throw new Error('Selected model does not support JSON mode');
             }
         }

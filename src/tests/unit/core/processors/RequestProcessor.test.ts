@@ -10,7 +10,9 @@ describe('RequestProcessor', () => {
         maxRequestTokens: 4000,
         maxResponseTokens: 1000,
         tokenizationModel: 'gpt-4',
-        jsonMode: true,
+        capabilities: {
+            jsonMode: true
+        },
         characteristics: {
             qualityIndex: 80,
             outputSpeed: 50,

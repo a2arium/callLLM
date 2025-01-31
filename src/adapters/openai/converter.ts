@@ -1,7 +1,7 @@
-import { UniversalChatParams, UniversalChatResponse, FinishReason, ModelInfo, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
-import { OpenAIModelParams, OpenAIResponse, OpenAIChatMessage, OpenAIUsage } from './types';
+import { UniversalChatParams, UniversalChatResponse, FinishReason, ModelInfo, UniversalStreamResponse, UniversalMessage } from '../../interfaces/UniversalInterfaces';
+import { OpenAIModelParams, OpenAIResponse, OpenAIChatMessage, OpenAIUsage, OpenAIRole } from './types';
 import { zodResponseFormat } from 'openai/helpers/zod';
-import { ChatCompletionCreateParams } from 'openai/resources/chat';
+import { ChatCompletionCreateParams, ChatCompletionMessageParam } from 'openai/resources/chat';
 import { z } from 'zod';
 import { OpenAIStreamResponse } from './types';
 
@@ -55,29 +55,102 @@ export class Converter {
         return undefined;
     }
 
+    private convertMessages(messages: UniversalMessage[]): ChatCompletionMessageParam[] {
+        if (!this.currentModel) {
+            throw new Error('Model not set');
+        }
+
+        const systemMessagesDisabled = this.currentModel.capabilities?.systemMessages === false;
+
+        return messages.map(msg => {
+            let role = msg.role;
+
+            // Convert system messages based on capabilities
+            if (role === 'system' && systemMessagesDisabled) {
+                role = 'user';
+            }
+
+            // Create message based on role
+            const baseMessage = {
+                content: msg.content || '',
+                name: msg.name,
+                refusal: null
+            };
+
+            switch (role) {
+                case 'system':
+                    return { ...baseMessage, role: 'system' } as const;
+                case 'user':
+                    return { ...baseMessage, role: 'user' } as const;
+                case 'assistant':
+                    return { ...baseMessage, role: 'assistant' } as const;
+                case 'function':
+                    return { ...baseMessage, role: 'function', name: msg.name || 'function' } as const;
+                case 'tool':
+                    // Skip tool messages for now as they require tool_call_id which we don't have
+                    return { ...baseMessage, role: 'user' } as const;
+                case 'developer':
+                    return { ...baseMessage, role: 'developer' } as const;
+                default:
+                    return { ...baseMessage, role: 'user' } as const;
+            }
+        });
+    }
+
     convertToProviderParams(params: UniversalChatParams): Omit<OpenAIModelParams, 'model'> {
         this.currentParams = params;
         const messages = this.convertMessages(params.messages);
         const settings = params.settings || {};
 
+        if (!this.currentModel) {
+            throw new Error('Model not set');
+        }
+
+        // Handle capabilities with their new defaults
+        const shouldStream = this.currentModel.capabilities?.streaming !== false && settings.stream === true;  // Only stream if explicitly requested
+        const shouldSetTemperature = this.currentModel.capabilities?.temperature !== false;  // default true
+        const hasToolCalls = this.currentModel.capabilities?.toolCalls === true;  // default false
+        const hasParallelToolCalls = this.currentModel.capabilities?.parallelToolCalls === true;  // default false
+        const hasBatchProcessing = this.currentModel.capabilities?.batchProcessing === true;  // default false
+
         return {
             messages,
-            temperature: settings.temperature,
+            temperature: shouldSetTemperature ? settings.temperature : undefined,
             top_p: settings.topP,
-            n: 1,
-            stream: false,
+            n: hasBatchProcessing ? settings.n || 1 : 1,
+            stream: shouldStream,
             stop: undefined,
-            max_tokens: settings.maxTokens,
+            max_completion_tokens: settings.maxTokens,
             presence_penalty: settings.presencePenalty,
             frequency_penalty: settings.frequencyPenalty,
             response_format: this.getResponseFormat(settings),
+            // Only include tool-related fields if tool calls are enabled
+            ...(hasToolCalls && {
+                tool_choice: settings.toolChoice,
+                tools: settings.tools,
+                tool_calls: hasParallelToolCalls ? settings.toolCalls : undefined
+            })
         };
     }
 
     convertFromProviderResponse(response: OpenAIResponse): UniversalChatResponse {
+        // Validate OpenAI response structure
+        if (!response?.choices?.[0]?.message) {
+            throw new Error('Invalid OpenAI response structure: missing required fields');
+        }
+
+        const message = response.choices[0].message;
+        const content = message.content ?? '';  // Use empty string if content is null
+        const role = message.role;
+
+        // Check if we have a valid response
+        if (response.choices[0].finish_reason === 'length' && !content.trim()) {
+            throw new Error('Response was truncated before any content could be generated. Try reducing maxTokens or adjusting your prompt.');
+        }
+
         return {
-            content: response.choices[0].message.content || '',
-            role: response.choices[0].message.role,
+            content,
+            role,
             metadata: {
                 finishReason: this.mapFinishReason(response.choices[0].finish_reason),
                 created: response.created,
@@ -88,24 +161,24 @@ export class Converter {
         };
     }
 
-    private convertMessages(messages: Array<{ role: string; content: string; name?: string }>): OpenAIChatMessage[] {
-        return messages.map(msg => ({
-            role: msg.role as OpenAIChatMessage['role'],
-            content: msg.content,
-            name: msg.name,
-            refusal: null,
-        }));
-    }
-
     private convertUsage(usage: OpenAIUsage) {
+        if (!usage) {
+            return undefined;
+        }
+
+        const result = {
+            inputTokens: usage.prompt_tokens,
+            outputTokens: usage.completion_tokens,
+            totalTokens: usage.total_tokens,
+            ...(usage.prompt_tokens_details?.cached_tokens !== undefined && {
+                inputCachedTokens: usage.prompt_tokens_details.cached_tokens
+            })
+        };
+
+        // Always return zero costs when no model info is available
         if (!this.currentModel) {
             return {
-                inputTokens: usage.prompt_tokens,
-                outputTokens: usage.completion_tokens,
-                totalTokens: usage.total_tokens,
-                ...(usage.prompt_tokens_details?.cached_tokens !== undefined && {
-                    inputCachedTokens: usage.prompt_tokens_details.cached_tokens
-                }),
+                ...result,
                 costs: {
                     inputCost: 0,
                     outputCost: 0,
@@ -114,20 +187,17 @@ export class Converter {
             };
         }
 
-        const inputCost = (usage.prompt_tokens / 1_000_000) * this.currentModel.inputPricePerMillion;
-        const outputCost = (usage.completion_tokens / 1_000_000) * this.currentModel.outputPricePerMillion;
+        // Calculate costs with model info
+        const inputCost = Number(((usage.prompt_tokens / 1_000_000) * this.currentModel.inputPricePerMillion).toFixed(6));
+        const outputCost = Number(((usage.completion_tokens / 1_000_000) * this.currentModel.outputPricePerMillion).toFixed(6));
+        const totalCost = Number((inputCost + outputCost).toFixed(6));
 
         return {
-            inputTokens: usage.prompt_tokens,
-            outputTokens: usage.completion_tokens,
-            totalTokens: usage.total_tokens,
-            ...(usage.prompt_tokens_details?.cached_tokens !== undefined && {
-                inputCachedTokens: usage.prompt_tokens_details.cached_tokens
-            }),
+            ...result,
             costs: {
                 inputCost,
                 outputCost,
-                totalCost: inputCost + outputCost
+                totalCost
             }
         };
     }
@@ -161,5 +231,9 @@ export class Converter {
 
     public getCurrentParams(): UniversalChatParams | undefined {
         return this.currentParams;
+    }
+
+    public clearModel() {
+        this.currentModel = undefined;
     }
 } 

@@ -9,11 +9,16 @@ export const defaultModels: ModelInfo[] = [
         maxRequestTokens: 128000,
         maxResponseTokens: 16384,
         tokenizationModel: "gpt-4",
-        jsonMode: true,
         characteristics: {
             qualityIndex: 78,
             outputSpeed: 109.3,
-            firstTokenLatency: 720   // latency in ms
+            firstTokenLatency: 720 // latency in ms
+        },
+        capabilities: {
+            toolCalls: true,
+            parallelToolCalls: true,
+            batchProcessing: true,
+            jsonMode: true
         }
     },
     {
@@ -24,11 +29,16 @@ export const defaultModels: ModelInfo[] = [
         maxRequestTokens: 128000,
         maxResponseTokens: 16384,
         tokenizationModel: "gpt-4",
-        jsonMode: true,
         characteristics: {
             qualityIndex: 73,
             outputSpeed: 183.8,
-            firstTokenLatency: 730   // latency in ms
+            firstTokenLatency: 730 // latency in ms
+        },
+        capabilities: {
+            toolCalls: true,
+            parallelToolCalls: true,
+            batchProcessing: true,
+            jsonMode: true
         }
     },
     {
@@ -39,11 +49,19 @@ export const defaultModels: ModelInfo[] = [
         maxRequestTokens: 200000,
         maxResponseTokens: 100000,
         tokenizationModel: "gpt-4",
-        jsonMode: true,
         characteristics: {
             qualityIndex: 85,
             outputSpeed: 151.2,
             firstTokenLatency: 22490 // latency in ms
+        },
+        capabilities: {
+            streaming: true,
+            toolCalls: false,
+            parallelToolCalls: false,
+            batchProcessing: false,
+            systemMessages: false,
+            temperature: false,
+            jsonMode: true
         }
     },
     {
@@ -54,11 +72,19 @@ export const defaultModels: ModelInfo[] = [
         maxRequestTokens: 128000,
         maxResponseTokens: 65536,
         tokenizationModel: "gpt-4",
-        jsonMode: true,
         characteristics: {
             qualityIndex: 82,
             outputSpeed: 212.1,
             firstTokenLatency: 10890 // latency in ms
+        },
+        capabilities: {
+            streaming: true,
+            toolCalls: false,
+            parallelToolCalls: false,
+            batchProcessing: false,
+            systemMessages: false,
+            temperature: false,
+            jsonMode: true
         }
     }
 ];

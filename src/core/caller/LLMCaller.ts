@@ -163,6 +163,11 @@ export class LLMCaller {
             try {
                 const response = await this.providerManager.getProvider().chatCall(this.model, params);
 
+                // Validate basic response structure
+                if (!response || typeof response.content !== 'string' || typeof response.role !== 'string') {
+                    throw new Error('Invalid response structure from provider: missing required fields');
+                }
+
                 // Calculate usage if not provided
                 if (!response.metadata?.usage) {
                     const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
@@ -215,6 +220,17 @@ export class LLMCaller {
         message: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<AsyncIterable<UniversalStreamResponse>> {
+        // Resolve model and validate capabilities
+        const modelInfo = this.modelManager.getModel(this.model);
+        if (!modelInfo) {
+            throw new Error(`Model ${this.model} not found`);
+        }
+
+        // Check if streaming is supported
+        if (modelInfo.capabilities?.streaming === false) {
+            throw new Error(`Model ${this.model} does not support streaming. Use chatCall instead.`);
+        }
+
         // Merge global and method-level settings
         const mergedSettings = this.mergeSettings(settings);
         const systemMessage =
@@ -231,11 +247,6 @@ export class LLMCaller {
             settings: mergedSettings
         };
 
-        // Resolve model and validate JSON mode
-        const modelInfo = this.modelManager.getModel(this.model);
-        if (!modelInfo) {
-            throw new Error(`Model ${this.model} not found`);
-        }
         this.responseProcessor.validateJsonMode(modelInfo, params);
 
         // Calculate input tokens

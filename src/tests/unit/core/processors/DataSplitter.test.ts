@@ -16,16 +16,25 @@ describe('DataSplitter', () => {
         dataSplitter = new DataSplitter(tokenCalculator);
         mockModelInfo = {
             name: 'test-model',
+            inputPricePerMillion: 0.1,
+            outputPricePerMillion: 0.2,
             maxRequestTokens: 1000,
             maxResponseTokens: 500,
-            inputPricePerMillion: 0.01,
-            outputPricePerMillion: 0.02,
+            tokenizationModel: 'test',
             characteristics: {
                 qualityIndex: 80,
                 outputSpeed: 100,
-                firstTokenLatency: 100,
+                firstTokenLatency: 100
             },
-            jsonMode: true,
+            capabilities: {
+                streaming: true,
+                toolCalls: true,
+                parallelToolCalls: true,
+                batchProcessing: true,
+                systemMessages: true,
+                temperature: true,
+                jsonMode: true
+            }
         };
     });
 

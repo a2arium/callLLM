@@ -185,7 +185,12 @@ describe('OpenAIAdapter', () => {
             expect(mockValidator.validateParams).toHaveBeenCalledWith(mockParams);
             expect(mockConverter.setModel).toHaveBeenCalledWith(mockModelInfo);
             expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
-            expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith(mockParams);
+            expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith({
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    stream: false
+                }
+            });
             expect(mockOpenAIClient.chat.completions.create).toHaveBeenCalled();
             expect(mockConverter.convertFromProviderResponse).toHaveBeenCalled();
             expect(response).toEqual({
@@ -258,7 +263,12 @@ describe('OpenAIAdapter', () => {
             }
             expect(mockValidator.validateParams).toHaveBeenCalledWith(mockParams);
             expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
-            expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith(mockParams);
+            expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith({
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    stream: true
+                }
+            });
             expect(mockOpenAIClient.chat.completions.create).toHaveBeenCalledWith(
                 expect.objectContaining({ stream: true })
             );

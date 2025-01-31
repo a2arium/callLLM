@@ -59,18 +59,26 @@ const mockChatCall = jest.fn().mockResolvedValue({
 describe('LLMCaller', () => {
     const mockApiKey = 'test-api-key';
     const mockSystemMessage = 'You are a helpful assistant.';
-    const mockModel: ModelInfo = {
+    const mockModelInfo = {
         name: 'test-model',
-        inputPricePerMillion: 1,
-        outputPricePerMillion: 2,
+        inputPricePerMillion: 0.1,
+        outputPricePerMillion: 0.2,
         maxRequestTokens: 1000,
-        maxResponseTokens: 1000,
-        tokenizationModel: 'gpt-4',
-        jsonMode: true,
+        maxResponseTokens: 500,
+        tokenizationModel: 'test',
         characteristics: {
             qualityIndex: 80,
-            outputSpeed: 50,
-            firstTokenLatency: 0.5
+            outputSpeed: 100,
+            firstTokenLatency: 100
+        },
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            batchProcessing: true,
+            systemMessages: true,
+            temperature: true,
+            jsonMode: true
         }
     };
 
@@ -78,8 +86,8 @@ describe('LLMCaller', () => {
         jest.clearAllMocks();
         // Setup ModelManager mock
         (ModelManager as jest.Mock).mockImplementation(() => ({
-            getModel: jest.fn().mockReturnValue(mockModel),
-            getAvailableModels: jest.fn().mockReturnValue([mockModel]),
+            getModel: jest.fn().mockReturnValue(mockModelInfo),
+            getAvailableModels: jest.fn().mockReturnValue([mockModelInfo]),
             addModel: jest.fn(),
             updateModel: jest.fn()
         }));
@@ -175,18 +183,18 @@ describe('LLMCaller', () => {
 
         it('should get available models', () => {
             const models = caller.getAvailableModels();
-            expect(models).toEqual([mockModel]);
+            expect(models).toEqual([mockModelInfo]);
         });
 
         it('should add model', () => {
             const modelManagerInstance = (ModelManager as jest.Mock).mock.results[0].value;
-            caller.addModel(mockModel);
-            expect(modelManagerInstance.addModel).toHaveBeenCalledWith(mockModel);
+            caller.addModel(mockModelInfo);
+            expect(modelManagerInstance.addModel).toHaveBeenCalledWith(mockModelInfo);
         });
 
         it('should get model', () => {
             const model = caller.getModel('test-model');
-            expect(model).toEqual(mockModel);
+            expect(model).toEqual(mockModelInfo);
         });
 
         it('should update model', () => {

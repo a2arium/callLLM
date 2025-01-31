@@ -10,7 +10,7 @@ export enum FinishReason {
 }
 
 export type UniversalMessage = {
-    role: 'system' | 'user' | 'assistant';
+    role: 'system' | 'user' | 'assistant' | 'function' | 'tool' | 'developer';
     content: string;
     name?: string;
 };
@@ -104,20 +104,73 @@ export interface UniversalStreamResponse {
     };
 }
 
+/**
+ * Model capabilities configuration.
+ * Specific capabilities have different defaults.
+ */
+export type ModelCapabilities = {
+    /**
+     * Whether the model supports streaming responses.
+     * @default true
+     */
+    streaming?: boolean;
+
+    /**
+     * Whether the model supports tool/function calling.
+     * When false, any tool/function call requests will be rejected.
+     * @default false
+     */
+    toolCalls?: boolean;
+
+    /**
+     * Whether the model supports parallel tool/function calls.
+     * When false, only sequential tool calls are allowed.
+     * @default false
+     */
+    parallelToolCalls?: boolean;
+
+    /**
+     * Whether the model supports batch processing.
+     * When false, batch processing requests will be rejected.
+     * @default false
+     */
+    batchProcessing?: boolean;
+
+    /**
+     * Whether the model supports system messages.
+     * When false, system messages will be converted to user messages.
+     * @default true
+     */
+    systemMessages?: boolean;
+
+    /**
+     * Whether the model supports setting temperature.
+     * @default true
+     */
+    temperature?: boolean;
+
+    /**
+     * Whether the model supports JSON mode output.
+     * When true, the model can be instructed to return responses in JSON format.
+     * @default false
+     */
+    jsonMode?: boolean;
+};
+
 export type ModelInfo = {
     name: string;
     inputPricePerMillion: number;
     inputCachedPricePerMillion?: number;
     outputPricePerMillion: number;
-    // reasoningPricePerMillion?: number; TODO: We can add this if reasoning somewhere goes for a different price than output
     maxRequestTokens: number;
     maxResponseTokens: number;
     tokenizationModel?: string;
     /**
-     * Indicates if the model supports JSON mode output
-     * @default false
+     * Model capabilities configuration.
+     * Defines what features the model supports.
+     * All capabilities have their own default values.
      */
-    jsonMode?: boolean;
+    capabilities?: ModelCapabilities;
     characteristics: {
         qualityIndex: number;        // 0-100, higher means better quality
         outputSpeed: number;         // tokens per second

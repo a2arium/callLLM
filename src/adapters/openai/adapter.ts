@@ -50,7 +50,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
             this.converter.setModel(modelInfo);
         }
         this.converter.setParams(params);
-        const openAIParams = this.convertToProviderParams(model, params) as OpenAIModelParams;
+        const openAIParams = this.convertToProviderParams(model, { ...params, settings: { ...params.settings, stream: false } }) as OpenAIModelParams;
         const response = await this.client.chat.completions.create(openAIParams);
         return this.convertFromProviderResponse(response);
     }
@@ -62,7 +62,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
             this.converter.setModel(modelInfo);
         }
         this.converter.setParams(params);
-        const openAIParams = this.convertToProviderParams(model, params) as OpenAIModelParams;
+        const openAIParams = this.convertToProviderParams(model, { ...params, settings: { ...params.settings, stream: true } }) as OpenAIModelParams;
         const stream = await this.client.chat.completions.create({ ...openAIParams, stream: true });
         return this.streamHandler.handleStream(stream as AsyncIterable<OpenAIStreamResponse>, params);
     }

@@ -8,11 +8,7 @@ async function main() {
         // Test regular chat call
         console.log('Testing chat call...');
         const response = await caller.chatCall({
-            message: 'What is TypeScript and why should I use it?',
-            settings: {
-                temperature: 0.7,
-                maxTokens: 500
-            }
+            message: 'What is TypeScript and why should I use it?'
         });
         console.log('\nChat Response:', response.content);
         console.log('\nUsage Information:');

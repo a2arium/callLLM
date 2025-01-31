@@ -1,5 +1,5 @@
 import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
-import { UniversalChatResponse, UniversalChatParams, FinishReason } from '../../../../interfaces/UniversalInterfaces';
+import { UniversalChatResponse, UniversalChatParams, FinishReason, ResponseFormat } from '../../../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 
 // Mock SchemaValidator
@@ -262,46 +262,48 @@ describe('ResponseProcessor', () => {
     });
 
     describe('validateJsonMode', () => {
-        it('should not throw error when JSON mode is not required', () => {
-            const model = { jsonMode: false };
-            const params: UniversalChatParams = { messages: [] };
-
-            expect(() => processor.validateJsonMode(model, params)).not.toThrow();
-        });
-
-        it('should not throw error when model supports JSON mode', () => {
-            const model = { jsonMode: true };
-            const params: UniversalChatParams = {
-                messages: [],
-                settings: { responseFormat: 'json' }
+        it('should not throw for model with JSON mode capability', () => {
+            const model = {
+                capabilities: {
+                    jsonMode: true
+                }
             };
-
-            expect(() => processor.validateJsonMode(model, params)).not.toThrow();
-        });
-
-        it('should throw error when JSON mode is required but not supported', () => {
-            const model = { jsonMode: false };
-            const params: UniversalChatParams = {
-                messages: [],
-                settings: { responseFormat: 'json' }
-            };
-
-            expect(() => processor.validateJsonMode(model, params)).toThrow(
-                'Selected model does not support JSON mode'
-            );
-        });
-
-        it('should throw error when JSON schema is used but JSON mode not supported', () => {
-            const model = { jsonMode: false };
             const params: UniversalChatParams = {
                 messages: [],
                 settings: {
-                    jsonSchema: {
-                        schema: z.object({})
-                    }
+                    jsonSchema: { schema: z.object({}) }
                 }
             };
+            expect(() => processor.validateJsonMode(model, params)).not.toThrow();
+        });
 
+        it('should not throw for model with JSON response format', () => {
+            const model = {
+                capabilities: {
+                    jsonMode: true
+                }
+            };
+            const params: UniversalChatParams = {
+                messages: [],
+                settings: {
+                    responseFormat: 'json' as ResponseFormat
+                }
+            };
+            expect(() => processor.validateJsonMode(model, params)).not.toThrow();
+        });
+
+        it('should throw for model without JSON mode capability', () => {
+            const model = {
+                capabilities: {
+                    jsonMode: false
+                }
+            };
+            const params: UniversalChatParams = {
+                messages: [],
+                settings: {
+                    jsonSchema: { schema: z.object({}) }
+                }
+            };
             expect(() => processor.validateJsonMode(model, params)).toThrow(
                 'Selected model does not support JSON mode'
             );

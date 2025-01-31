@@ -13,6 +13,29 @@ describe('Converter', () => {
 
     beforeEach(() => {
         converter = new Converter();
+        const mockModel = {
+            name: 'test-model',
+            inputPricePerMillion: 0.1,
+            outputPricePerMillion: 0.2,
+            maxRequestTokens: 1000,
+            maxResponseTokens: 500,
+            tokenizationModel: 'test',
+            characteristics: {
+                qualityIndex: 80,
+                outputSpeed: 100,
+                firstTokenLatency: 100
+            },
+            capabilities: {
+                streaming: true,
+                toolCalls: true,
+                parallelToolCalls: true,
+                batchProcessing: true,
+                systemMessages: true,
+                temperature: true,
+                jsonMode: true
+            }
+        };
+        converter.setModel(mockModel);
     });
 
     describe('state management', () => {
@@ -355,6 +378,7 @@ describe('Converter', () => {
         });
 
         it('should handle usage without model info', () => {
+            converter.clearModel(); // Clear the model before testing
             const usageWithCached = {
                 ...mockUsage,
                 prompt_tokens_details: {
@@ -530,6 +554,21 @@ describe('Converter', () => {
         });
 
         it('should handle response with all metadata', () => {
+            // Set up a model with known pricing
+            const mockModel = {
+                name: 'test-model',
+                inputPricePerMillion: 0.1,
+                outputPricePerMillion: 0.2,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 500,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 100,
+                    firstTokenLatency: 100
+                }
+            };
+            converter.setModel(mockModel);
+
             const response = {
                 choices: [{
                     message: { content: 'test', role: 'assistant' },
@@ -563,9 +602,9 @@ describe('Converter', () => {
                         outputTokens: 20,
                         totalTokens: 30,
                         costs: {
-                            inputCost: 0,
-                            outputCost: 0,
-                            totalCost: 0
+                            inputCost: 0.000001, // 10 tokens * $0.1 per million
+                            outputCost: 0.000004, // 20 tokens * $0.2 per million
+                            totalCost: 0.000005
                         }
                     }
                 }

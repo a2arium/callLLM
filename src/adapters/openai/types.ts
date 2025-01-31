@@ -1,7 +1,17 @@
-import { ChatCompletionCreateParams, ChatCompletionMessage, ChatCompletion } from 'openai/resources/chat';
+import { ChatCompletionCreateParams, ChatCompletionMessage, ChatCompletion, ChatCompletionMessageParam } from 'openai/resources/chat';
+
+/**
+ * All possible message roles supported across different models
+ */
+export type OpenAIRole = ChatCompletionMessageParam['role'] | 'developer';
+
+/**
+ * Extended version of OpenAI's ChatCompletionMessage to support all role variants
+ */
+export type OpenAIChatMessage = ChatCompletionMessageParam;
 
 export type OpenAIModelParams = Omit<ChatCompletionCreateParams, 'messages'> & {
-    messages: ChatCompletionMessage[];
+    messages: ChatCompletionMessageParam[];
 };
 
 export type OpenAIUsage = {
@@ -17,8 +27,6 @@ export type OpenAIUsage = {
         rejected_prediction_tokens?: number;
     };
 };
-
-export type OpenAIChatMessage = ChatCompletionMessage;
 
 export type OpenAIResponse = ChatCompletion & {
     usage: OpenAIUsage;
