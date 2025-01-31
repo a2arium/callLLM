@@ -680,4 +680,353 @@ describe('Converter', () => {
             });
         });
     });
+
+    describe('additional edge cases', () => {
+        it('should handle model with disabled system messages', () => {
+            const modelWithoutSystem = {
+                name: 'test-model',
+                inputPricePerMillion: 0.1,
+                outputPricePerMillion: 0.2,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 500,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 100,
+                    firstTokenLatency: 100
+                },
+                capabilities: {
+                    systemMessages: false
+                }
+            };
+            converter.setModel(modelWithoutSystem);
+            const params: UniversalChatParams = {
+                messages: [
+                    { role: 'system', content: 'system message' }
+                ]
+            };
+            const result = converter.convertToProviderParams(params);
+            expect(result.messages[0].role).toBe('user');
+        });
+
+        it('should handle model without capabilities', () => {
+            const modelWithoutCapabilities = {
+                name: 'test-model',
+                inputPricePerMillion: 0.1,
+                outputPricePerMillion: 0.2,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 500,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 100,
+                    firstTokenLatency: 100
+                }
+            };
+            converter.setModel(modelWithoutCapabilities);
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    stream: true,
+                    temperature: 0.7,
+                    n: 3
+                }
+            };
+            const result = converter.convertToProviderParams(params);
+            // When capabilities are undefined, streaming should be enabled by default
+            expect(result.stream).toBe(true);
+            // Other settings should pass through
+            expect(result.temperature).toBe(0.7);
+            expect(result.n).toBe(1);
+        });
+
+        it('should handle function messages without name', () => {
+            const params: UniversalChatParams = {
+                messages: [
+                    { role: 'function', content: 'function result' }
+                ]
+            };
+            const result = converter.convertToProviderParams(params);
+            expect(result.messages[0]).toMatchObject({
+                role: 'function',
+                name: 'function'
+            });
+        });
+
+        it('should handle tool messages conversion', () => {
+            const params: UniversalChatParams = {
+                messages: [
+                    { role: 'tool', content: 'tool result' }
+                ]
+            };
+            const result = converter.convertToProviderParams(params);
+            expect(result.messages[0].role).toBe('user');
+        });
+
+        it('should handle developer messages', () => {
+            const params: UniversalChatParams = {
+                messages: [
+                    { role: 'developer', content: 'dev message' }
+                ]
+            };
+            const result = converter.convertToProviderParams(params);
+            expect(result.messages[0].role).toBe('developer');
+        });
+
+        it('should handle unknown message roles', () => {
+            const params: UniversalChatParams = {
+                messages: [
+                    { role: 'unknown' as any, content: 'test' }
+                ]
+            };
+            const result = converter.convertToProviderParams(params);
+            expect(result.messages[0].role).toBe('user');
+        });
+
+        it('should handle tool-related settings with capabilities', () => {
+            const modelWithTools = {
+                name: 'test-model',
+                inputPricePerMillion: 0.1,
+                outputPricePerMillion: 0.2,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 500,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 100,
+                    firstTokenLatency: 100
+                },
+                capabilities: {
+                    toolCalls: true,
+                    parallelToolCalls: true
+                }
+            };
+            converter.setModel(modelWithTools);
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    toolChoice: 'auto',
+                    tools: [{ type: 'function', function: { name: 'test' } }],
+                    toolCalls: 2
+                }
+            };
+            const result = converter.convertToProviderParams(params);
+            expect(result.tool_choice).toBe('auto');
+            expect(result.tools).toBeDefined();
+            expect(result).toHaveProperty('tool_calls', 2);
+        });
+
+        it('should handle tool settings without parallel capability', () => {
+            const modelWithLimitedTools = {
+                name: 'test-model',
+                inputPricePerMillion: 0.1,
+                outputPricePerMillion: 0.2,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 500,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 100,
+                    firstTokenLatency: 100
+                },
+                capabilities: {
+                    toolCalls: true,
+                    parallelToolCalls: false
+                }
+            };
+            converter.setModel(modelWithLimitedTools);
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    toolChoice: 'auto',
+                    tools: [{ type: 'function', function: { name: 'test' } }],
+                    toolCalls: 2
+                }
+            };
+            const result = converter.convertToProviderParams(params);
+            const resultAsAny = result as any;
+            expect(resultAsAny.tool_calls).toBeUndefined();
+        });
+
+        it('should handle response with length finish reason and empty content', () => {
+            const response = {
+                choices: [{
+                    message: { content: '   ', role: 'assistant' },
+                    finish_reason: 'length'
+                }]
+            } as OpenAIResponse;
+            expect(() => converter.convertFromProviderResponse(response))
+                .toThrow('Response was truncated before any content could be generated');
+        });
+
+        it('should handle model without streaming capability', () => {
+            const modelWithoutStreaming = {
+                name: 'test-model',
+                inputPricePerMillion: 0.1,
+                outputPricePerMillion: 0.2,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 500,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 100,
+                    firstTokenLatency: 100
+                },
+                capabilities: {
+                    streaming: false
+                }
+            };
+            converter.setModel(modelWithoutStreaming);
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    stream: true
+                }
+            };
+            const result = converter.convertToProviderParams(params);
+            expect(result.stream).toBe(false);
+        });
+
+        it('should handle model without temperature capability', () => {
+            const modelWithoutTemp = {
+                name: 'test-model',
+                inputPricePerMillion: 0.1,
+                outputPricePerMillion: 0.2,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 500,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 100,
+                    firstTokenLatency: 100
+                },
+                capabilities: {
+                    temperature: false
+                }
+            };
+            converter.setModel(modelWithoutTemp);
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    temperature: 0.7
+                }
+            };
+            const result = converter.convertToProviderParams(params);
+            expect(result.temperature).toBeUndefined();
+        });
+
+        it('should handle model without batch processing capability', () => {
+            const modelWithoutBatch = {
+                name: 'test-model',
+                inputPricePerMillion: 0.1,
+                outputPricePerMillion: 0.2,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 500,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 100,
+                    firstTokenLatency: 100
+                },
+                capabilities: {
+                    batchProcessing: false
+                }
+            };
+            converter.setModel(modelWithoutBatch);
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    n: 3
+                }
+            };
+            const result = converter.convertToProviderParams(params);
+            expect(result.n).toBe(1);
+        });
+
+        it('should handle model without any settings', () => {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test' }]
+            };
+            const result = converter.convertToProviderParams(params);
+            expect(result.response_format).toBeUndefined();
+            expect(result.temperature).toBeUndefined();
+            expect(result.top_p).toBeUndefined();
+            expect(result.n).toBe(1);
+            expect(result.stream).toBe(false);
+            expect(result.stop).toBeUndefined();
+            expect(result.max_completion_tokens).toBeUndefined();
+            expect(result.presence_penalty).toBeUndefined();
+            expect(result.frequency_penalty).toBeUndefined();
+        });
+
+        it('should handle model not set error', () => {
+            converter.clearModel();
+            expect(() => converter.convertToProviderParams(mockParams))
+                .toThrow('Model not set');
+        });
+
+        it('should handle invalid response structure', () => {
+            const response = {} as OpenAIResponse;
+            expect(() => converter.convertFromProviderResponse(response))
+                .toThrow('Invalid OpenAI response structure: missing required fields');
+        });
+
+        it('should handle response with missing choices', () => {
+            const response = {
+                id: 'test',
+                created: 123,
+                model: 'test',
+                object: 'chat.completion',
+                choices: [],
+                usage: {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    total_tokens: 0
+                }
+            } as OpenAIResponse;
+            expect(() => converter.convertFromProviderResponse(response))
+                .toThrow('Invalid OpenAI response structure: missing required fields');
+        });
+
+        it('should handle response with missing message', () => {
+            const response = {
+                id: 'test',
+                created: 123,
+                model: 'test',
+                object: 'chat.completion',
+                choices: [{}],
+                usage: {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    total_tokens: 0
+                }
+            } as OpenAIResponse;
+            expect(() => converter.convertFromProviderResponse(response))
+                .toThrow('Invalid OpenAI response structure: missing required fields');
+        });
+
+        it('should handle model without tool calls capability', () => {
+            const modelWithoutTools = {
+                name: 'test-model',
+                inputPricePerMillion: 0.1,
+                outputPricePerMillion: 0.2,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 500,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 100,
+                    firstTokenLatency: 100
+                },
+                capabilities: {
+                    toolCalls: false
+                }
+            };
+            converter.setModel(modelWithoutTools);
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    toolChoice: 'auto',
+                    tools: [{ type: 'function', function: { name: 'test' } }],
+                    toolCalls: 2
+                }
+            };
+            const result = converter.convertToProviderParams(params);
+            expect(result.tool_choice).toBeUndefined();
+            expect(result.tools).toBeUndefined();
+            expect(result).not.toHaveProperty('tool_calls');
+        });
+    });
 }); 
