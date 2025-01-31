@@ -1,4 +1,3 @@
-
 # callLLM - Unified LLM Orchestration for TypeScript
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
@@ -150,27 +149,53 @@ Each model includes the following information:
 type ModelInfo = {
     name: string;              // Model identifier
     inputPricePerMillion: number;   // Price per million input tokens
+    inputCachedPricePerMillion?: number;  // Price per million cached input tokens
     outputPricePerMillion: number;  // Price per million output tokens
     maxRequestTokens: number;  // Maximum tokens in request
     maxResponseTokens: number; // Maximum tokens in response
     tokenizationModel?: string;  // Optional model name to use for token counting
+    capabilities?: {
+        streaming?: boolean;        // Support for streaming responses (default: true)
+        toolCalls?: boolean;        // Support for tool/function calling (default: false)
+        parallelToolCalls?: boolean; // Support parallel tool calls (default: false)
+        batchProcessing?: boolean;   // Support for batch processing (default: false)
+        systemMessages?: boolean;    // Support for system messages (default: true)
+        temperature?: boolean;       // Support for temperature setting (default: true)
+        jsonMode?: boolean;         // Support for JSON mode output (default: false)
+    };
     characteristics: {
         qualityIndex: number;      // 0-100 quality score
         outputSpeed: number;       // Tokens per second
-        firstTokenLatency: number; // Seconds to first token
-    }
+        firstTokenLatency: number; // Time to first token in milliseconds
+    };
 };
 ```
 
-Model characteristics (quality index, output speed, and latency) are sourced from the [LLM Performance Leaderboard](https://huggingface.co/spaces/ArtificialAnalysis/LLM-Performance-Leaderboard), which provides comprehensive benchmarks for various language models.
-
 Default OpenAI Models:
-| Model | Input Price (per 1M) | Output Price (per 1M) | Quality Index | Output Speed | First Token Latency |
-|-------|---------------------|---------------------|---------------|--------------|-------------------|
-| gpt-4o | $30.00 | $60.00 | 90 | 40 | 0.8 |
-| gpt-4o-mini | $15.00 | $30.00 | 85 | 45 | 0.7 |
-| o1 | $150.00 | $300.00 | 95 | 35 | 1.0 |
-| o1-mini | $30.00 | $60.00 | 88 | 42 | 0.8 |
+| Model | Input Price (per 1M) | Cached Input Price (per 1M) | Output Price (per 1M) | Quality Index | Output Speed (t/s) | First Token Latency (ms) |
+|-------|---------------------|---------------------------|---------------------|---------------|-----------------|----------------------|
+| gpt-4o | $2.50 | $1.25 | $10.00 | 78 | 109.3 | 720 |
+| gpt-4o-mini | $0.15 | $0.075 | $0.60 | 73 | 183.8 | 730 |
+| o1 | $15.00 | $7.50 | $60.00 | 85 | 151.2 | 22490 |
+| o1-mini | $3.00 | $1.50 | $12.00 | 82 | 212.1 | 10890 |
+
+Model characteristics (quality index, output speed, and latency) are sourced from comprehensive benchmarks and real-world usage data.
+
+### Model Capabilities
+
+Each model defines its capabilities, which determine what features are supported:
+
+- **streaming**: Support for streaming responses (default: true)
+- **toolCalls**: Support for tool/function calling (default: false)
+- **parallelToolCalls**: Support for parallel tool calls (default: false)
+- **batchProcessing**: Support for batch processing (default: false)
+- **systemMessages**: Support for system messages (default: true)
+- **temperature**: Support for temperature setting (default: true)
+- **jsonMode**: Support for JSON mode output (default: false)
+
+The library automatically handles unsupported features:
+- Requests using unsupported features will be rejected with clear error messages
+- Some features (like system messages) will be gracefully degraded when unsupported
 
 ## Token Counting and Pricing
 
@@ -748,9 +773,15 @@ For streaming calls, the usage is tracked in chunks of 100 tokens and at the end
 ```typescript
 const usageCallback = (usageData: UsageData) => {
     console.log(`Usage for caller ${usageData.callerId}:`, {
-        costs: usageData.usage.costs,
+        costs: {
+            input: usageData.usage.costs.inputCost,
+            inputCached: usageData.usage.costs.inputCachedCost, // Cost for cached input tokens
+            output: usageData.usage.costs.outputCost,
+            total: usageData.usage.costs.totalCost
+        },
         tokens: {
             input: usageData.usage.inputTokens,
+            inputCached: usageData.usage.inputCachedTokens, // Number of cached input tokens
             output: usageData.usage.outputTokens,
             total: usageData.usage.totalTokens
         },
@@ -766,10 +797,11 @@ const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', 
 
 #### Why Usage Tracking?
 
-- **Cost Monitoring**: Track expenses in real-time for better budget management
+- **Cost Monitoring**: Track expenses in real-time for better budget management, including savings from cached inputs
 - **Usage Analytics**: Analyze token usage patterns across different conversations
 - **Billing Integration**: Easily integrate with billing systems by grouping costs by caller ID
 - **Debugging**: Monitor token usage to optimize prompts and prevent token limit issues
+- **Cache Performance**: Track cached input token usage to measure caching effectiveness
 
 The callback receives detailed usage data including:
 - Unique caller ID (automatically generated if not provided)
