@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces';
 import { RequestProcessor } from '../processors/RequestProcessor';
 import { DataSplitter } from '../processors/DataSplitter';
+import { RetryManager } from '../retry/RetryManager';
 
 export class LLMCaller {
     private providerManager: ProviderManager;
@@ -17,6 +18,7 @@ export class LLMCaller {
     private tokenCalculator: TokenCalculator;
     private responseProcessor: ResponseProcessor;
     private streamHandler: StreamHandler;
+    private retryManager: RetryManager;
     private model: string;
     private systemMessage: string;
     private callerId: string;
@@ -45,6 +47,10 @@ export class LLMCaller {
             options?.usageCallback,
             options?.callerId
         );
+        this.retryManager = new RetryManager({
+            baseDelay: 1000,
+            maxRetries: options?.settings?.maxRetries ?? 3
+        });
         this.systemMessage = systemMessage ?? 'You are a helpful assistant.';
         this.settings = options?.settings;
 
@@ -155,23 +161,28 @@ export class LLMCaller {
         }
         this.responseProcessor.validateJsonMode(modelInfo, params);
 
-        // Make the call with retries
-        const maxRetries = mergedSettings?.maxRetries ?? 3;
-        let lastError: Error | undefined;
+        // IMPORTANT: Use the effective maxRetries from mergedSettings
+        const effectiveMaxRetries = mergedSettings?.maxRetries ?? (this.settings?.maxRetries ?? 3);
+        // Create a local RetryManager instance using the effective maxRetries value
+        const localRetryManager = new RetryManager({
+            baseDelay: 1000,
+            maxRetries: effectiveMaxRetries
+        });
 
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-                const response = await this.providerManager.getProvider().chatCall(this.model, params);
+        // Use the local retry manager for the retry logic
+        const response = await localRetryManager.executeWithRetry(
+            async () => {
+                const resp = await this.providerManager.getProvider().chatCall(this.model, params);
 
                 // Validate basic response structure
-                if (!response || typeof response.content !== 'string' || typeof response.role !== 'string') {
+                if (!resp || typeof resp.content !== 'string' || typeof resp.role !== 'string') {
                     throw new Error('Invalid response structure from provider: missing required fields');
                 }
 
                 // Calculate usage if not provided
-                if (!response.metadata?.usage) {
+                if (!resp.metadata?.usage) {
                     const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
-                    const outputTokens = this.tokenCalculator.calculateTokens(response.content);
+                    const outputTokens = this.tokenCalculator.calculateTokens(resp.content);
                     const modelInfo = this.modelManager.getModel(this.model)!;
                     const costs = this.tokenCalculator.calculateUsage(
                         inputTokens,
@@ -185,29 +196,22 @@ export class LLMCaller {
                         totalTokens: inputTokens + outputTokens,
                         costs
                     };
-                    response.metadata = { ...response.metadata, usage };
+                    resp.metadata = { ...resp.metadata, usage };
 
                     // Notify about usage
                     await this.notifyUsage(usage);
                 } else {
                     // If usage was provided by the provider, still notify
-                    await this.notifyUsage(response.metadata.usage);
+                    await this.notifyUsage(resp.metadata.usage);
                 }
 
-                // Validate response against schema if provided
-                return this.responseProcessor.validateResponse<T>(response, mergedSettings);
-            } catch (error) {
-                lastError = error as Error;
-                if (attempt === maxRetries) {
-                    throw new Error(`Failed after ${maxRetries} retries. Last error: ${lastError.message}`);
-                }
-                // Wait with exponential backoff before retrying
-                await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-            }
-        }
+                return resp;
+            },
+            (error) => true // Temporary implementation: always retry on error
+        );
 
-        // This should never be reached due to the throw in the loop, but TypeScript needs it
-        throw lastError;
+        // Validate response against schema if provided
+        return this.responseProcessor.validateResponse<T>(response, mergedSettings);
     }
 
     /**
