@@ -13,6 +13,7 @@ import { DataSplitter } from '../processors/DataSplitter';
 import { RetryManager } from '../retry/RetryManager';
 import { UsageTracker } from '../telemetry/UsageTracker';
 import { StreamController } from '../streaming/StreamController';
+import { ChatController } from '../chat/ChatController';
 
 export class LLMCaller {
     private providerManager: ProviderManager;
@@ -30,6 +31,8 @@ export class LLMCaller {
     private settings?: UniversalChatParams['settings'];
     private usageTracker: UsageTracker;
     private streamController: StreamController;
+    private chatController: ChatController;
+
     constructor(
         providerName: SupportedProviders,
         modelOrAlias: string,
@@ -80,6 +83,18 @@ export class LLMCaller {
         );
         this.requestProcessor = new RequestProcessor();
         this.dataSplitter = new DataSplitter(this.tokenCalculator);
+
+        this.chatController = new ChatController(
+            this.providerManager,
+            this.modelManager,
+            this.responseProcessor,
+            this.retryManager,
+            this.usageTracker
+        );
+
+        this.chatCall = ((params: { message: string; settings?: UniversalChatParams['settings'] }) => {
+            return this.chatController.execute(this.model, this.systemMessage, params.message, this.mergeSettings(params.settings));
+        }).bind(this);
     }
 
     // Model management methods - delegated to ModelManager
@@ -134,6 +149,18 @@ export class LLMCaller {
             this.usageCallback,
             newId
         );
+        // Also update chatController with the new usageTracker.
+        this.chatController = new ChatController(
+            this.providerManager,
+            this.modelManager,
+            this.responseProcessor,
+            this.retryManager,
+            this.usageTracker
+        );
+        // Rebind chatCall using mergeSettings so that updated settings are used.
+        this.chatCall = ((params: { message: string; settings?: UniversalChatParams['settings'] }) => {
+            return this.chatController.execute(this.model, this.systemMessage, params.message, this.mergeSettings(params.settings));
+        }).bind(this);
     }
 
     public setUsageCallback(callback: UsageCallback): void {
@@ -155,66 +182,7 @@ export class LLMCaller {
     }
 
     // Basic chat completion method
-    public async chatCall<T extends z.ZodType | undefined = undefined>({
-        message,
-        settings
-    }: {
-        message: string;
-        settings?: UniversalChatParams['settings'];
-    }): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
-        const mergedSettings = this.mergeSettings(settings);
-        const systemMsg =
-            mergedSettings?.responseFormat === 'json' || mergedSettings?.jsonSchema
-                ? `${this.systemMessage}\n Provide your response in valid JSON format.`
-                : this.systemMessage;
-
-        const params: UniversalChatParams = {
-            messages: [
-                { role: 'system', content: systemMsg },
-                { role: 'user', content: message }
-            ],
-            settings: mergedSettings
-        };
-
-        const modelInfo = this.modelManager.getModel(this.model);
-        if (!modelInfo) {
-            throw new Error(`Model ${this.model} not found`);
-        }
-        this.responseProcessor.validateJsonMode(modelInfo, params);
-
-        const effectiveMaxRetries = mergedSettings?.maxRetries ?? (this.settings?.maxRetries ?? 3);
-        const localRetryManager = new RetryManager({
-            baseDelay: 1000,
-            maxRetries: effectiveMaxRetries
-        });
-
-        const response = await localRetryManager.executeWithRetry(
-            async () => {
-                const resp = await this.providerManager.getProvider().chatCall(this.model, params);
-                // Ensure metadata is defined before tracking usage:
-                if (!resp.metadata) {
-                    resp.metadata = {};
-                }
-                if (!resp.metadata.usage) {
-                    resp.metadata.usage = await this.usageTracker.trackUsage(
-                        this.systemMessage + '\n' + message,
-                        resp.content,
-                        modelInfo
-                    );
-                } else {
-                    await this.usageTracker.trackUsage(
-                        this.systemMessage + '\n' + message,
-                        resp.content,
-                        modelInfo
-                    );
-                }
-                return resp;
-            },
-            (error) => true  // retry on all errors (as before)
-        );
-
-        return this.responseProcessor.validateResponse<T>(response, mergedSettings);
-    }
+    public chatCall: (params: { message: string; settings?: UniversalChatParams['settings'] }) => Promise<UniversalChatResponse & { content: any }>;
 
     /**
      * Streams a response from the LLM.
@@ -372,16 +340,5 @@ export class LLMCaller {
                 };
             }
         };
-    }
-
-    private async notifyUsage(usage: UsageData['usage']): Promise<void> {
-        if (this.usageCallback) {
-            const usageData: UsageData = {
-                callerId: this.callerId,
-                usage,
-                timestamp: Date.now()
-            };
-            await Promise.resolve(this.usageCallback(usageData));
-        }
     }
 } 
