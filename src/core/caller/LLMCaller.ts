@@ -60,6 +60,7 @@ export class LLMCaller {
             this.providerManager,
             this.modelManager,
             this.streamHandler,
+            this.retryManager
         );
 
         // Initialize model

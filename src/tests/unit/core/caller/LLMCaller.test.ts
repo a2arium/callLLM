@@ -844,7 +844,8 @@ describe('LLMCaller', () => {
             const mockStreamCall = jest.fn()
                 .mockRejectedValueOnce(new Error('First failure'))
                 .mockRejectedValueOnce(new Error('Second failure'))
-                .mockRejectedValueOnce(new Error('Third failure'));
+                .mockRejectedValueOnce(new Error('Third failure'))
+                .mockRejectedValue(new Error('Third failure'));
 
             mockProviderManager.getProvider.mockReturnValue(createMockProvider(jest.fn(), mockStreamCall));
 
@@ -1168,16 +1169,15 @@ describe('LLMCaller', () => {
         });
 
         it('should apply settings to stream calls', async () => {
-            const stream = await caller.streamCall({
+            const streamIterable = await caller.streamCall({
                 message: 'test message',
                 settings: {
                     temperature: 0.5
                 }
             });
-
-            const providerManagerInstance = (ProviderManager as jest.Mock).mock.results[0].value;
-            const provider = providerManagerInstance.getProvider();
-
+            // Trigger the iteration (even if you ignore the value)
+            await streamIterable[Symbol.asyncIterator]().next();
+            const provider = (ProviderManager as jest.Mock).mock.results[0].value.getProvider();
             expect(provider.streamCall).toHaveBeenCalledWith('test-model', expect.objectContaining({
                 settings: expect.objectContaining({
                     temperature: 0.5,
