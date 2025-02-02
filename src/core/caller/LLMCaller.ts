@@ -12,6 +12,7 @@ import { RequestProcessor } from '../processors/RequestProcessor';
 import { DataSplitter } from '../processors/DataSplitter';
 import { RetryManager } from '../retry/RetryManager';
 import { UsageTracker } from '../telemetry/UsageTracker';
+import { StreamController } from '../streaming/StreamController';
 
 export class LLMCaller {
     private providerManager: ProviderManager;
@@ -28,7 +29,7 @@ export class LLMCaller {
     private dataSplitter: DataSplitter;
     private settings?: UniversalChatParams['settings'];
     private usageTracker: UsageTracker;
-
+    private streamController: StreamController;
     constructor(
         providerName: SupportedProviders,
         modelOrAlias: string,
@@ -55,6 +56,11 @@ export class LLMCaller {
         });
         this.systemMessage = systemMessage ?? 'You are a helpful assistant.';
         this.settings = options?.settings;
+        this.streamController = new StreamController(
+            this.providerManager,
+            this.modelManager,
+            this.streamHandler,
+        );
 
         // Initialize model
         const resolvedModel = this.modelManager.getModel(modelOrAlias);
@@ -156,46 +162,40 @@ export class LLMCaller {
         settings?: UniversalChatParams['settings'];
     }): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
         const mergedSettings = this.mergeSettings(settings);
-        const systemMessage = mergedSettings?.responseFormat === 'json' || mergedSettings?.jsonSchema
-            ? `${this.systemMessage}\n Provide your response in valid JSON format.`
-            : this.systemMessage;
+        const systemMsg =
+            mergedSettings?.responseFormat === 'json' || mergedSettings?.jsonSchema
+                ? `${this.systemMessage}\n Provide your response in valid JSON format.`
+                : this.systemMessage;
 
         const params: UniversalChatParams = {
             messages: [
-                { role: 'system', content: systemMessage },
+                { role: 'system', content: systemMsg },
                 { role: 'user', content: message }
             ],
             settings: mergedSettings
         };
 
-        // Validate JSON mode support
         const modelInfo = this.modelManager.getModel(this.model);
         if (!modelInfo) {
             throw new Error(`Model ${this.model} not found`);
         }
         this.responseProcessor.validateJsonMode(modelInfo, params);
 
-        // Use the effective maxRetries from mergedSettings
         const effectiveMaxRetries = mergedSettings?.maxRetries ?? (this.settings?.maxRetries ?? 3);
-        // Create a local RetryManager instance using the effective maxRetries value
         const localRetryManager = new RetryManager({
             baseDelay: 1000,
             maxRetries: effectiveMaxRetries
         });
 
-        // Use the local retry manager for the retry logic
         const response = await localRetryManager.executeWithRetry(
             async () => {
                 const resp = await this.providerManager.getProvider().chatCall(this.model, params);
-
-                // Validate basic response structure
-                if (!resp || typeof resp.content !== 'string' || typeof resp.role !== 'string') {
-                    throw new Error('Invalid response structure from provider: missing required fields');
+                // Ensure metadata is defined before tracking usage:
+                if (!resp.metadata) {
+                    resp.metadata = {};
                 }
-
-                // Replace inline usage calculation with the UsageTracker
-                if (!resp.metadata?.usage) {
-                    resp.metadata!.usage = await this.usageTracker.trackUsage(
+                if (!resp.metadata.usage) {
+                    resp.metadata.usage = await this.usageTracker.trackUsage(
                         this.systemMessage + '\n' + message,
                         resp.content,
                         modelInfo
@@ -207,122 +207,49 @@ export class LLMCaller {
                         modelInfo
                     );
                 }
-
                 return resp;
             },
-            (error) => true // Temporary implementation: always retry on error
+            (error) => true  // retry on all errors (as before)
         );
 
-        // Validate response against schema if provided
         return this.responseProcessor.validateResponse<T>(response, mergedSettings);
     }
 
     /**
-     * Streams a response from the LLM with retry logic and discards any partial data from failed attempts.
+     * Streams a response from the LLM.
      */
     public async streamCall({
         message,
-        settings
+        settings,
     }: {
         message: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<AsyncIterable<UniversalStreamResponse>> {
-        // Resolve model and validate capabilities
         const modelInfo = this.modelManager.getModel(this.model);
         if (!modelInfo) {
             throw new Error(`Model ${this.model} not found`);
         }
-
-        // Check if streaming is supported
         if (modelInfo.capabilities?.streaming === false) {
             throw new Error(`Model ${this.model} does not support streaming. Use chatCall instead.`);
         }
 
-        // Merge global and method-level settings
         const mergedSettings = this.mergeSettings(settings);
-        const systemMessage =
+        const systemMsg =
             mergedSettings?.responseFormat === 'json' || mergedSettings?.jsonSchema
                 ? `${this.systemMessage}\n Provide your response in valid JSON format.`
                 : this.systemMessage;
 
-        // Prepare parameters
         const params: UniversalChatParams = {
             messages: [
-                { role: 'system', content: systemMessage },
+                { role: 'system', content: systemMsg },
                 { role: 'user', content: message }
             ],
-            settings: mergedSettings
+            settings: mergedSettings,
         };
 
         this.responseProcessor.validateJsonMode(modelInfo, params);
-
-        // Calculate input tokens
-        const inputTokens = this.tokenCalculator.calculateTokens(
-            this.systemMessage + '\n' + message
-        );
-
-        const maxRetries = mergedSettings?.maxRetries ?? 3;
-        let attempt = 0;
-
-        const createRetryableStream = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
-            let retryCount = 0;
-
-            const executeAttempt = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
-                try {
-                    const provider = this.providerManager.getProvider();
-                    const providerStream = await provider.streamCall(this.model, params);
-                    const processedStream = this.streamHandler.processStream(
-                        providerStream,
-                        params,
-                        inputTokens,
-                        modelInfo
-                    );
-
-                    const buffer: UniversalStreamResponse[] = [];
-
-                    return {
-                        async *[Symbol.asyncIterator]() {
-                            let hasErrored = false;
-                            try {
-                                for await (const chunk of processedStream) {
-                                    yield chunk;
-                                }
-                            } catch (error) {
-                                hasErrored = true;
-                                if (retryCount < maxRetries) {
-                                    retryCount++;
-                                    const delay = Math.pow(2, retryCount) * 1000;
-                                    await new Promise(resolve => setTimeout(resolve, delay));
-
-                                    // Retry with new stream
-                                    const newStream = await executeAttempt();
-                                    yield* newStream;
-                                } else {
-                                    throw new Error(`Failed after ${maxRetries} retries. Last error: ${(error as Error).message}`);
-                                }
-                            } finally {
-                                if (hasErrored) {
-                                    // Clear any pending chunks from failed stream
-                                    await processedStream[Symbol.asyncIterator]().return?.(undefined);
-                                }
-                            }
-                        }
-                    };
-                } catch (error) {
-                    if (attempt < maxRetries) {
-                        attempt++;
-                        const delay = Math.pow(2, attempt) * 1000;
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        return executeAttempt();
-                    }
-                    throw new Error(`Failed after ${maxRetries} retries. Last error: ${(error as Error).message}`);
-                }
-            };
-
-            return executeAttempt();
-        };
-
-        return createRetryableStream();
+        const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
+        return this.streamController.createStream(this.model, params, inputTokens);
     }
 
     // Extended call method with additional functionality
