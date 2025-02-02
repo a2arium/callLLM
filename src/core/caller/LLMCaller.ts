@@ -11,6 +11,7 @@ import { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces';
 import { RequestProcessor } from '../processors/RequestProcessor';
 import { DataSplitter } from '../processors/DataSplitter';
 import { RetryManager } from '../retry/RetryManager';
+import { UsageTracker } from '../telemetry/UsageTracker';
 
 export class LLMCaller {
     private providerManager: ProviderManager;
@@ -26,6 +27,7 @@ export class LLMCaller {
     private requestProcessor: RequestProcessor;
     private dataSplitter: DataSplitter;
     private settings?: UniversalChatParams['settings'];
+    private usageTracker: UsageTracker;
 
     constructor(
         providerName: SupportedProviders,
@@ -63,6 +65,12 @@ export class LLMCaller {
 
         this.callerId = options?.callerId ?? uuidv4();
         this.usageCallback = options?.usageCallback;
+        // Initialize UsageTracker
+        this.usageTracker = new UsageTracker(
+            this.tokenCalculator,
+            this.usageCallback,
+            this.callerId
+        );
         this.requestProcessor = new RequestProcessor();
         this.dataSplitter = new DataSplitter(this.tokenCalculator);
     }
@@ -109,6 +117,12 @@ export class LLMCaller {
     public setCallerId(newId: string): void {
         this.callerId = newId;
         this.streamHandler = new StreamHandler(
+            this.tokenCalculator,
+            this.usageCallback,
+            newId
+        );
+        // Update the UsageTracker to use the new callerId
+        this.usageTracker = new UsageTracker(
             this.tokenCalculator,
             this.usageCallback,
             newId
@@ -161,7 +175,7 @@ export class LLMCaller {
         }
         this.responseProcessor.validateJsonMode(modelInfo, params);
 
-        // IMPORTANT: Use the effective maxRetries from mergedSettings
+        // Use the effective maxRetries from mergedSettings
         const effectiveMaxRetries = mergedSettings?.maxRetries ?? (this.settings?.maxRetries ?? 3);
         // Create a local RetryManager instance using the effective maxRetries value
         const localRetryManager = new RetryManager({
@@ -179,30 +193,19 @@ export class LLMCaller {
                     throw new Error('Invalid response structure from provider: missing required fields');
                 }
 
-                // Calculate usage if not provided
+                // Replace inline usage calculation with the UsageTracker
                 if (!resp.metadata?.usage) {
-                    const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
-                    const outputTokens = this.tokenCalculator.calculateTokens(resp.content);
-                    const modelInfo = this.modelManager.getModel(this.model)!;
-                    const costs = this.tokenCalculator.calculateUsage(
-                        inputTokens,
-                        outputTokens,
-                        modelInfo.inputPricePerMillion,
-                        modelInfo.outputPricePerMillion
+                    resp.metadata!.usage = await this.usageTracker.trackUsage(
+                        this.systemMessage + '\n' + message,
+                        resp.content,
+                        modelInfo
                     );
-                    const usage: Usage = {
-                        inputTokens,
-                        outputTokens,
-                        totalTokens: inputTokens + outputTokens,
-                        costs
-                    };
-                    resp.metadata = { ...resp.metadata, usage };
-
-                    // Notify about usage
-                    await this.notifyUsage(usage);
                 } else {
-                    // If usage was provided by the provider, still notify
-                    await this.notifyUsage(resp.metadata.usage);
+                    await this.usageTracker.trackUsage(
+                        this.systemMessage + '\n' + message,
+                        resp.content,
+                        modelInfo
+                    );
                 }
 
                 return resp;
