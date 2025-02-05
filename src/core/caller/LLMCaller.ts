@@ -1,4 +1,4 @@
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, Usage, FinishReason } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, Usage, FinishReason, UniversalMessage } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { ProviderManager } from './ProviderManager';
 import { SupportedProviders } from '../types';
@@ -93,7 +93,12 @@ export class LLMCaller {
         );
 
         this.chatCall = ((params: { message: string; settings?: UniversalChatParams['settings'] }) => {
-            return this.chatController.execute(this.model, this.systemMessage, params.message, this.mergeSettings(params.settings));
+            return this.chatController.execute({
+                model: this.model,
+                systemMessage: this.systemMessage,
+                message: params.message,
+                settings: this.mergeSettings(params.settings)
+            });
         }).bind(this);
     }
 
@@ -159,7 +164,12 @@ export class LLMCaller {
         );
         // Rebind chatCall using mergeSettings so that updated settings are used.
         this.chatCall = ((params: { message: string; settings?: UniversalChatParams['settings'] }) => {
-            return this.chatController.execute(this.model, this.systemMessage, params.message, this.mergeSettings(params.settings));
+            return this.chatController.execute({
+                model: this.model,
+                systemMessage: this.systemMessage,
+                message: params.message,
+                settings: this.mergeSettings(params.settings)
+            });
         }).bind(this);
     }
 
@@ -190,9 +200,11 @@ export class LLMCaller {
     public async streamCall({
         message,
         settings,
+        historicalMessages,
     }: {
         message: string;
         settings?: UniversalChatParams['settings'];
+        historicalMessages?: UniversalMessage[];
     }): Promise<AsyncIterable<UniversalStreamResponse>> {
         const modelInfo = this.modelManager.getModel(this.model);
         if (!modelInfo) {
@@ -211,6 +223,7 @@ export class LLMCaller {
         const params: UniversalChatParams = {
             messages: [
                 { role: 'system', content: systemMsg },
+                ...(historicalMessages || []),
                 { role: 'user', content: message }
             ],
             settings: mergedSettings,

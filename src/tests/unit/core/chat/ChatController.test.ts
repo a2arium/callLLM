@@ -3,7 +3,7 @@ import { ProviderManager } from '../../../../core/caller/ProviderManager';
 import { ModelManager } from '../../../../core/models/ModelManager';
 import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
 import { UsageTracker } from '../../../../core/telemetry/UsageTracker';
-import { UniversalChatParams, UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, UniversalMessage } from '../../../../interfaces/UniversalInterfaces';
 import { RetryManager } from '../../../../core/retry/RetryManager';
 import { z } from 'zod';
 
@@ -133,7 +133,7 @@ describe('ChatController', () => {
     });
 
     it('should execute chat call successfully with default settings', async () => {
-        const result = await chatController.execute(modelName, systemMessage, userMessage);
+        const result = await chatController.execute({ model: modelName, systemMessage, message: userMessage });
 
         // Verify that validateJsonMode has been called with the correct arguments.
         expect(responseProcessor.validateJsonMode).toHaveBeenCalledWith(fakeModel, {
@@ -173,14 +173,14 @@ describe('ChatController', () => {
 
     it('should throw an error if model is not found', async () => {
         modelManager.getModel.mockReturnValue(undefined);
-        await expect(chatController.execute(modelName, systemMessage, userMessage))
+        await expect(chatController.execute({ model: modelName, systemMessage, message: userMessage }))
             .rejects
             .toThrow(`Model ${modelName} not found`);
     });
 
     it('should append JSON instructions to the system message when responseFormat is json', async () => {
         const settings = { responseFormat: 'json' } as const;
-        await chatController.execute(modelName, systemMessage, userMessage, settings);
+        await chatController.execute({ model: modelName, systemMessage, message: userMessage, settings });
 
         const expectedSystemMessage = systemMessage + '\n Provide your response in valid JSON format.';
         const expectedParams: UniversalChatParams = {
@@ -214,7 +214,7 @@ describe('ChatController', () => {
         };
         providerManager.getProvider().chatCall.mockResolvedValueOnce(providerResponse);
 
-        const result = await chatController.execute(modelName, systemMessage, userMessage);
+        const result = await chatController.execute({ model: modelName, systemMessage, message: userMessage });
 
         // Even though metadata.usage exists, trackUsage should still be called.
         expect(usageTracker.trackUsage).toHaveBeenCalledWith(
@@ -225,5 +225,23 @@ describe('ChatController', () => {
 
         // Since validateResponse returns its input, the usage remains unchanged.
         expect(result.metadata?.usage).toEqual(providerResponse.metadata!.usage);
+    });
+
+    it('should include historical messages between system and user messages', async () => {
+        const historicalMessages: UniversalMessage[] = [
+            { role: 'assistant', content: 'previous answer' }
+        ];
+        await chatController.execute({ model: modelName, systemMessage, message: userMessage, historicalMessages });
+
+        const expectedParams: UniversalChatParams = {
+            messages: [
+                { role: 'system', content: systemMessage },
+                ...historicalMessages,
+                { role: 'user', content: userMessage }
+            ],
+            settings: undefined
+        };
+
+        expect(providerManager.getProvider().chatCall).toHaveBeenCalledWith(modelName, expectedParams);
     });
 });

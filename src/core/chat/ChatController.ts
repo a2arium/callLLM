@@ -5,7 +5,7 @@ import { ModelManager } from '../models/ModelManager';
 import { ResponseProcessor } from '../processors/ResponseProcessor';
 import { RetryManager } from '../retry/RetryManager';
 import { UsageTracker } from '../telemetry/UsageTracker';
-import { UniversalChatParams, UniversalChatResponse, FinishReason } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 
 export class ChatController {
@@ -20,34 +20,32 @@ export class ChatController {
     /**
      * Executes a chat call using the given parameters.
      *
-     * @param model - The model name to use.
-     * @param systemMessage - The system message to prepend.
-     * @param message - The user message.
-     * @param settings - Optional chat settings.
+     * @param params - An object containing the model, system message, user message, and optional settings and historical messages.
      * @returns A promise resolving to the processed chat response.
      */
-    async execute<T extends z.ZodType | undefined = undefined>(
+    async execute<T extends z.ZodType | undefined = undefined>(params: {
         model: string,
         systemMessage: string,
         message: string,
-        settings?: UniversalChatParams['settings']
-    ): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
-        // Use the incoming settings as-is (without defaulting to {}), so that if undefined, it remains undefined.
+        settings?: UniversalChatParams['settings'],
+        historicalMessages?: UniversalMessage[]
+    }): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
+        const { model, systemMessage, message, settings, historicalMessages } = params;
         const mergedSettings = settings;
 
-        // Compute the full system message. (Check if mergedSettings is defined first.)
         const fullSystemMessage =
             mergedSettings && (mergedSettings.responseFormat === 'json' || mergedSettings.jsonSchema)
                 ? `${systemMessage}\n Provide your response in valid JSON format.`
                 : systemMessage;
 
-        // Build the chat parameters.
-        const params: UniversalChatParams = {
+        // Build the chat parameters with historical messages inserted
+        const chatParams: UniversalChatParams = {
             messages: [
                 { role: 'system', content: fullSystemMessage },
+                ...(historicalMessages || []),
                 { role: 'user', content: message }
             ],
-            settings: mergedSettings // will be undefined if no settings were provided
+            settings: mergedSettings
         };
 
         const modelInfo = this.modelManager.getModel(model);
@@ -56,7 +54,7 @@ export class ChatController {
         }
 
         // Validate JSON mode if needed.
-        this.responseProcessor.validateJsonMode(modelInfo, params);
+        this.responseProcessor.validateJsonMode(modelInfo, chatParams);
 
         // Determine effective maxRetries from merged settings.
         const effectiveMaxRetries = mergedSettings && mergedSettings.maxRetries !== undefined ? mergedSettings.maxRetries : 3;
@@ -70,20 +68,20 @@ export class ChatController {
         // Execute the provider chat call with retry logic.
         const response = await localRetryManager.executeWithRetry(
             async () => {
-                const resp = await this.providerManager.getProvider().chatCall(model, params);
+                const resp = await this.providerManager.getProvider().chatCall(model, chatParams);
                 if (!resp.metadata) {
                     resp.metadata = {};
                 }
                 // Track usage if needed.
                 if (!resp.metadata.usage) {
                     resp.metadata.usage = await this.usageTracker.trackUsage(
-                        fullSystemMessage + '\n' + message,
+                        systemMessage + '\n' + message,
                         resp.content,
                         modelInfo
                     );
                 } else {
                     await this.usageTracker.trackUsage(
-                        fullSystemMessage + '\n' + message,
+                        systemMessage + '\n' + message,
                         resp.content,
                         modelInfo
                     );

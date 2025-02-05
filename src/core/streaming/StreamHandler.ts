@@ -55,7 +55,7 @@ export class StreamHandler {
                 // Calculate incremental costs for callback
                 const incrementalCosts = this.tokenCalculator.calculateUsage(
                     isFirstCallback ? inputTokens : 0,
-                    currentOutputTokens - lastCallbackTokens,
+                    incrementalTokens,
                     modelInfo.inputPricePerMillion,
                     modelInfo.outputPricePerMillion,
                     isFirstCallback ? params.inputCachedTokens ?? 0 : 0,  // Default to 0 if not provided
