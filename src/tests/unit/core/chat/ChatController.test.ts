@@ -7,15 +7,6 @@ import { UniversalChatParams, UniversalChatResponse, UniversalMessage } from '..
 import { RetryManager } from '../../../../core/retry/RetryManager';
 import { z } from 'zod';
 
-// Mock the RetryManager so that the local instance created inside ChatController#execute executes the call immediately.
-jest.mock('../../../../core/retry/RetryManager', () => {
-    return {
-        RetryManager: jest.fn().mockImplementation((_config: { baseDelay: number; maxRetries: number }) => ({
-            executeWithRetry: <T>(fn: () => Promise<T>, _shouldRetry: (err: unknown) => boolean): Promise<T> => fn()
-        }))
-    };
-});
-
 type ModelInfo = {
     name: string;
     inputPricePerMillion: number;
@@ -61,12 +52,13 @@ type UsageTrackerMock = {
     trackUsage: jest.Mock<Promise<Usage>, [string, string, ModelInfo]>;
 };
 
-describe('ChatController', () => {
+describe("ChatController", () => {
     let providerManager: ProviderManagerMock;
     let modelManager: ModelManagerMock;
     let responseProcessor: ResponseProcessorMock;
     let usageTracker: UsageTrackerMock;
     let chatController: ChatController;
+    let retryManager: RetryManager;
     const modelName = 'openai-model';
     const systemMessage = 'system message';
     const userMessage = 'user message';
@@ -120,14 +112,14 @@ describe('ChatController', () => {
             trackUsage: jest.fn().mockResolvedValue(usage)
         };
 
-        // Instead of using a placeholder, create a dummy RetryManager instance with minimal config.
-        const dummyRetryManager = new RetryManager({ baseDelay: 1000, maxRetries: 0 });
+        // Create a RetryManager instance with minimal config
+        retryManager = new RetryManager({ baseDelay: 1, maxRetries: 0 });
 
         chatController = new ChatController(
             providerManager as unknown as ProviderManager,
             modelManager as unknown as ModelManager,
             responseProcessor as unknown as ResponseProcessor,
-            dummyRetryManager,
+            retryManager,
             usageTracker as unknown as UsageTracker
         );
     });
@@ -243,5 +235,83 @@ describe('ChatController', () => {
         };
 
         expect(providerManager.getProvider().chatCall).toHaveBeenCalledWith(modelName, expectedParams);
+    });
+
+    describe("Content-based retry", () => {
+        let shouldRetryDueToContentSpy: jest.SpyInstance;
+
+        beforeEach(() => {
+            // Create a new RetryManager with retry settings
+            retryManager = new RetryManager({
+                baseDelay: 1,
+                maxRetries: 3,
+            });
+
+            shouldRetryDueToContentSpy = jest.spyOn(require("../../../../core/retry/utils/ShouldRetryDueToContent"), "shouldRetryDueToContent");
+
+            chatController = new ChatController(
+                providerManager as unknown as ProviderManager,
+                modelManager as unknown as ModelManager,
+                responseProcessor as unknown as ResponseProcessor,
+                retryManager,
+                usageTracker as unknown as UsageTracker
+            );
+        });
+
+        afterEach(() => {
+            shouldRetryDueToContentSpy.mockRestore();
+        });
+
+        it("should retry on unsatisfactory responses and eventually succeed", async () => {
+            const unsatisfactoryResponse = { content: "I am not sure about that", role: 'assistant', metadata: {} };
+            const satisfactoryResponse = { content: "Here is a complete answer", role: 'assistant', metadata: {} };
+
+            // Mock shouldRetryDueToContent to return true twice (triggering retries) and then false
+            shouldRetryDueToContentSpy
+                .mockReturnValueOnce(true)  // First attempt - retry
+                .mockReturnValueOnce(true)  // Second attempt - retry
+                .mockReturnValueOnce(false); // Third attempt - succeed
+
+            // Mock the provider's chat call to return different responses
+            const mockProvider = {
+                chatCall: jest.fn()
+                    .mockResolvedValueOnce(unsatisfactoryResponse)
+                    .mockResolvedValueOnce(unsatisfactoryResponse)
+                    .mockResolvedValueOnce(satisfactoryResponse)
+            };
+            (providerManager.getProvider as jest.Mock).mockReturnValue(mockProvider);
+
+            const result = await chatController.execute({
+                model: modelName,
+                systemMessage,
+                message: userMessage,
+            });
+
+            expect(result).toEqual(satisfactoryResponse);
+            expect(mockProvider.chatCall).toHaveBeenCalledTimes(3);
+            expect(shouldRetryDueToContentSpy).toHaveBeenCalledTimes(3);
+        });
+
+        it("should fail after max retries if responses remain unsatisfactory", async () => {
+            const unsatisfactoryResponse = { content: "I am not sure about that", role: 'assistant', metadata: {} };
+
+            // Mock shouldRetryDueToContent to always return true (always unsatisfactory)
+            shouldRetryDueToContentSpy.mockReturnValue(true);
+
+            // Mock the provider's chat call to always return unsatisfactory response
+            const mockProvider = {
+                chatCall: jest.fn().mockResolvedValue(unsatisfactoryResponse)
+            };
+            (providerManager.getProvider as jest.Mock).mockReturnValue(mockProvider);
+
+            await expect(chatController.execute({
+                model: modelName,
+                systemMessage,
+                message: userMessage,
+            })).rejects.toThrow(/Failed after 3 retries.*Response content triggered retry due to unsatisfactory answer/);
+
+            expect(mockProvider.chatCall).toHaveBeenCalledTimes(4); // Initial + 3 retries
+            expect(shouldRetryDueToContentSpy).toHaveBeenCalledTimes(4);
+        });
     });
 });

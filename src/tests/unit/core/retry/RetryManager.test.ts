@@ -158,7 +158,6 @@ describe('RetryManager Logging', () => {
         expect(operation).toHaveBeenCalledTimes(3);
 
         // Check that log messages have been output for each attempt.
-        expect(logSpy).toHaveBeenCalledWith('RetryManager: Attempt 1');
         expect(logSpy).toHaveBeenCalledWith('RetryManager: Attempt 2');
         expect(logSpy).toHaveBeenCalledWith('RetryManager: Attempt 3');
 

@@ -47,7 +47,7 @@ export class RetryManager {
         // Loop until a successful operation or until retries are exhausted.
         while (attempt <= (this.config.maxRetries ?? 3)) {
             try {
-                console.log(`RetryManager: Attempt ${attempt + 1}`);
+                if (attempt > 0) console.log(`RetryManager: Attempt ${attempt + 1}`);
                 // Execute and return the successful result from the operation.
                 return await operation();
             } catch (error) {

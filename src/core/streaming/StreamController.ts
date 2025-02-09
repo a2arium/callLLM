@@ -3,6 +3,7 @@ import { ModelManager } from '../models/ModelManager';
 import { StreamHandler } from './StreamHandler';
 import { UniversalChatParams, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
 import { RetryManager } from '../retry/RetryManager';
+import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent";
 
 export class StreamController {
     constructor(
@@ -56,8 +57,14 @@ export class StreamController {
         const outerRetryStream = async function* (this: StreamController, attempt: number): AsyncGenerator<UniversalStreamResponse> {
             try {
                 const stream = await acquireStream();
+                let accumulatedContent = "";
                 for await (const chunk of stream) {
+                    accumulatedContent += chunk.content;
                     yield chunk;
+                }
+                // After the stream is complete, check if the accumulated content triggers a retry
+                if (shouldRetryDueToContent(accumulatedContent)) {
+                    throw new Error("Stream response content triggered retry due to unsatisfactory answer");
                 }
                 return;
             } catch (error) {

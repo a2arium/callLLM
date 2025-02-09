@@ -255,7 +255,10 @@ export class LLMCaller {
 
         // Call for each message
         const responses: UniversalChatResponse[] = [];
-        for (const msg of messages) {
+        for (const [index, msg] of messages.entries()) {
+            if (messages.length > 1) {
+                console.log(`Processing message ${index + 1} of ${messages.length} chunks`);
+            }
             const response = await this.chatCall({
                 message: msg,
                 settings
@@ -298,6 +301,9 @@ export class LLMCaller {
                     async next(): Promise<IteratorResult<UniversalStreamResponse>> {
                         while (currentMessageIndex < totalMessages) {
                             if (!currentStream) {
+                                if (messages.length > 1) {
+                                    console.log(`Processing message ${currentMessageIndex + 1} of ${totalMessages} chunks`);
+                                }
                                 const processedMessage = messages[currentMessageIndex];
                                 const stream = await self.streamCall({
                                     message: processedMessage,

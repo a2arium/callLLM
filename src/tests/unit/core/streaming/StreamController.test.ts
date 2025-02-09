@@ -221,4 +221,76 @@ describe('StreamController', () => {
         expect(error).toBeTruthy();
         expect(error!.message).toMatch(/Processed stream is undefined/);
     });
+
+    // New tests for content-based retry in streams
+    describe('Content-based retry', () => {
+        let processStreamSpy: jest.SpyInstance;
+
+        beforeEach(() => {
+            let attempt = 0;
+            processStreamSpy = jest.spyOn(streamHandler, 'processStream').mockImplementation((providerStream, params, inputTokens, model) => {
+                attempt++;
+                if (attempt < 3) {
+                    return (async function* (): AsyncGenerator<UniversalStreamResponse> {
+                        yield {
+                            content: "I cannot assist with that",
+                            role: "assistant",
+                            isComplete: true,
+                            metadata: { finishReason: FinishReason.STOP, responseFormat: "text" }
+                        };
+                    })();
+                } else {
+                    return (async function* (): AsyncGenerator<UniversalStreamResponse> {
+                        yield {
+                            content: "Here is a complete answer",
+                            role: "assistant",
+                            isComplete: true,
+                            metadata: { finishReason: FinishReason.STOP, responseFormat: "text" }
+                        };
+                    })();
+                }
+            });
+        });
+
+        afterEach(() => {
+            processStreamSpy.mockRestore();
+        });
+
+        it('should retry on unsatisfactory stream responses and eventually succeed', async () => {
+            const resultIterable = await streamController.createStream('test-model', dummyParams, 10);
+            const chunks: UniversalStreamResponse[] = [];
+            for await (const chunk of resultIterable) {
+                chunks.push(chunk);
+            }
+            expect(chunks).toHaveLength(3);
+            expect(chunks[0].content).toBe("I cannot assist with that");
+            expect(chunks[1].content).toBe("I cannot assist with that");
+            expect(chunks[2].content).toBe("Here is a complete answer");
+            expect(processStreamSpy).toHaveBeenCalledTimes(3);
+        });
+
+        it('should fail after max retries if stream responses remain unsatisfactory', async () => {
+            processStreamSpy.mockImplementation((): AsyncIterable<UniversalStreamResponse> => {
+                return (async function* (): AsyncGenerator<UniversalStreamResponse> {
+                    yield {
+                        content: "I cannot assist with that",
+                        role: "assistant",
+                        isComplete: true,
+                        metadata: { finishReason: FinishReason.STOP, responseFormat: "text" }
+                    };
+                })();
+            });
+            const paramsWithRetries: UniversalChatParams = { messages: dummyParams.messages, settings: { maxRetries: 2 } };
+            const resultIterable = await streamController.createStream('test-model', paramsWithRetries, 10);
+            let error: Error | null = null;
+            try {
+                for await (const _ of resultIterable) { }
+            } catch (err) {
+                error = err as Error;
+            }
+            expect(error).toBeTruthy();
+            expect(error!.message).toMatch(/Failed after 2 retries\. Last error: Stream response content triggered retry due to unsatisfactory answer/);
+            expect(processStreamSpy).toHaveBeenCalledTimes(3);
+        });
+    });
 });

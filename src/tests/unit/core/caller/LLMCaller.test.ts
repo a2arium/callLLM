@@ -1205,4 +1205,29 @@ describe('LLMCaller', () => {
             }));
         });
     });
+
+    describe("Logging", () => {
+        it("should log processing message chunks in call() method when processing multiple chunks", async () => {
+            const logSpy = jest.spyOn(console, "log").mockImplementation(() => { });
+            const caller = new LLMCaller("openai", "dummy-model", "dummy system message", {});
+
+            // Override the requestProcessor to return multiple chunks
+            Reflect.set(caller, "requestProcessor", {
+                processRequest: async () => ["chunk1", "chunk2", "chunk3"]
+            });
+
+            // Override chatCall to return a dummy response
+            Reflect.set(caller, "chatCall", async ({ message, settings }: { message: string; settings?: unknown }) => {
+                return { content: message, role: "assistant", metadata: {} };
+            });
+
+            await caller.call({ message: "test", data: undefined, endingMessage: undefined, settings: undefined });
+
+            expect(logSpy).toHaveBeenCalledTimes(3);
+            expect(logSpy).toHaveBeenCalledWith("Processing message 1 of 3 chunks");
+            expect(logSpy).toHaveBeenCalledWith("Processing message 2 of 3 chunks");
+            expect(logSpy).toHaveBeenCalledWith("Processing message 3 of 3 chunks");
+            logSpy.mockRestore();
+        });
+    });
 }); 

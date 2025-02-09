@@ -7,6 +7,7 @@ import { RetryManager } from '../retry/RetryManager';
 import { UsageTracker } from '../telemetry/UsageTracker';
 import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
+import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent";
 
 export class ChatController {
     constructor(
@@ -85,6 +86,10 @@ export class ChatController {
                         resp.content,
                         modelInfo
                     );
+                }
+                // Check if the response content triggers a retry
+                if (shouldRetryDueToContent(resp.content)) {
+                    throw new Error("Response content triggered retry due to unsatisfactory answer");
                 }
                 return resp;
             },
