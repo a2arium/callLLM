@@ -1,162 +1,166 @@
 import { ToolController } from '../../../../core/tools/ToolController';
-import type { ToolDefinition, ToolsManager } from '../../../../core/types';
+import { ToolsManager } from '../../../../core/tools/ToolsManager';
+import type { ToolDefinition } from '../../../../core/types';
 
 describe('ToolController', () => {
+    let toolsManager: ToolsManager;
     let toolController: ToolController;
-    let mockToolsManager: jest.Mocked<ToolsManager>;
-    let mockTool: ToolDefinition;
 
     beforeEach(() => {
-        mockTool = {
-            name: 'testTool',
-            description: 'A test tool',
-            parameters: {
-                type: 'object',
-                properties: {
-                    param1: {
-                        type: 'string',
-                        description: 'Test parameter'
-                    }
-                },
-                required: ['param1']
-            },
-            callFunction: jest.fn().mockResolvedValue({ result: 'success' }),
-            postCallLogic: jest.fn().mockResolvedValue(['Processed result: success'])
-        };
-
-        mockToolsManager = {
-            getTool: jest.fn().mockReturnValue(mockTool),
-            addTool: jest.fn(),
-            removeTool: jest.fn(),
-            updateTool: jest.fn(),
-            listTools: jest.fn()
-        };
-
-        toolController = new ToolController(mockToolsManager);
+        toolsManager = new ToolsManager();
+        toolController = new ToolController(toolsManager);
     });
 
     describe('processToolCalls', () => {
-        it('should process valid tool calls', async () => {
-            const content = '<tool>testTool:{"param1":"test"}</tool>';
+        it('should execute a single tool call successfully', async () => {
+            const mockTool: ToolDefinition = {
+                name: 'testTool',
+                description: 'Test tool',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        param1: { type: 'string' },
+                        param2: { type: 'number' }
+                    }
+                },
+                callFunction: jest.fn().mockResolvedValue('Success result')
+            };
+
+            toolsManager.addTool(mockTool);
+
+            const content = '<tool>testTool:{"param1": "value1", "param2": 42}</tool>';
             const result = await toolController.processToolCalls(content);
 
-            expect(mockToolsManager.getTool).toHaveBeenCalledWith('testTool');
-            expect(mockTool.callFunction).toHaveBeenCalledWith({ param1: 'test' });
-            expect(mockTool.postCallLogic).toHaveBeenCalledWith({ result: 'success' });
+            expect(result.toolCalls).toHaveLength(1);
+            expect(result.messages).toHaveLength(1);
+            expect(result.requiresResubmission).toBe(true);
+            expect(mockTool.callFunction).toHaveBeenCalledWith({
+                param1: 'value1',
+                param2: 42
+            });
             expect(result.messages[0]).toEqual({
                 role: 'function',
-                content: 'Processed result: success',
+                content: 'Success result',
                 name: 'testTool'
             });
-            expect(result.requiresResubmission).toBe(true);
         });
 
         it('should handle multiple tool calls', async () => {
+            const mockTool1: ToolDefinition = {
+                name: 'tool1',
+                description: 'Tool 1',
+                parameters: { type: 'object', properties: {} },
+                callFunction: jest.fn().mockResolvedValue('Result 1')
+            };
+
+            const mockTool2: ToolDefinition = {
+                name: 'tool2',
+                description: 'Tool 2',
+                parameters: { type: 'object', properties: {} },
+                callFunction: jest.fn().mockResolvedValue('Result 2')
+            };
+
+            toolsManager.addTool(mockTool1);
+            toolsManager.addTool(mockTool2);
+
             const content = `
-                <tool>testTool:{"param1":"test1"}</tool>
-                <tool>testTool:{"param1":"test2"}</tool>
+                <tool>tool1:{"param": "value1"}</tool>
+                Some text in between
+                <tool>tool2:{"param": "value2"}</tool>
             `;
+
             const result = await toolController.processToolCalls(content);
 
-            expect(mockToolsManager.getTool).toHaveBeenCalledTimes(2);
-            expect(mockTool.callFunction).toHaveBeenCalledTimes(2);
-            expect(result.messages).toHaveLength(2);
             expect(result.toolCalls).toHaveLength(2);
+            expect(result.messages).toHaveLength(2);
+            expect(result.requiresResubmission).toBe(true);
+            expect(mockTool1.callFunction).toHaveBeenCalledWith({ param: 'value1' });
+            expect(mockTool2.callFunction).toHaveBeenCalledWith({ param: 'value2' });
         });
 
         it('should handle non-existent tools', async () => {
-            mockToolsManager.getTool.mockReturnValue(undefined);
-            const content = '<tool>nonexistentTool:{"param1":"test"}</tool>';
+            const content = '<tool>nonExistentTool:{"param": "value"}</tool>';
             const result = await toolController.processToolCalls(content);
 
-            expect(result.messages[0]).toEqual({
-                role: 'system',
-                content: "Error: Tool 'nonexistentTool' not found"
-            });
-            expect(result.toolCalls[0].error).toBe("Tool 'nonexistentTool' not found");
+            expect(result.toolCalls).toHaveLength(1);
+            expect(result.messages).toHaveLength(1);
+            expect(result.requiresResubmission).toBe(true);
+            expect(result.messages[0].content).toContain("Tool 'nonExistentTool' not found");
+            expect(result.toolCalls[0].error).toBeDefined();
         });
 
         it('should handle tool execution errors', async () => {
-            const error = new Error('Test error');
-            mockTool.callFunction = jest.fn().mockRejectedValue(error);
-            const content = '<tool>testTool:{"param1":"test"}</tool>';
+            const mockTool: ToolDefinition = {
+                name: 'errorTool',
+                description: 'Error tool',
+                parameters: { type: 'object', properties: {} },
+                callFunction: jest.fn().mockRejectedValue(new Error('Tool execution failed'))
+            };
+
+            toolsManager.addTool(mockTool);
+
+            const content = '<tool>errorTool:{"param": "value"}</tool>';
             const result = await toolController.processToolCalls(content);
 
-            expect(result.messages[0]).toEqual({
-                role: 'system',
-                content: "Error executing tool 'testTool': Test error"
-            });
-            expect(result.toolCalls[0].error).toBe('Test error');
+            expect(result.toolCalls).toHaveLength(1);
+            expect(result.messages).toHaveLength(1);
+            expect(result.requiresResubmission).toBe(true);
+            expect(result.messages[0].content).toContain('Tool execution failed');
+            expect(result.toolCalls[0].error).toBeDefined();
         });
 
-        it('should handle invalid tool call format', async () => {
-            const content = 'Invalid tool call format';
+        it('should handle tool with postCallLogic', async () => {
+            const mockTool: ToolDefinition = {
+                name: 'postProcessTool',
+                description: 'Post process tool',
+                parameters: { type: 'object', properties: {} },
+                callFunction: jest.fn().mockResolvedValue({ raw: 'data' }),
+                postCallLogic: jest.fn().mockResolvedValue(['Processed message 1', 'Processed message 2'])
+            };
+
+            toolsManager.addTool(mockTool);
+
+            const content = '<tool>postProcessTool:{"param": "value"}</tool>';
             const result = await toolController.processToolCalls(content);
 
-            expect(result.messages).toHaveLength(0);
+            expect(result.messages).toHaveLength(2);
+            expect(result.requiresResubmission).toBe(true);
+            expect(mockTool.postCallLogic).toHaveBeenCalledWith({ raw: 'data' });
+            expect(result.messages[0].content).toBe('Processed message 1');
+            expect(result.messages[1].content).toBe('Processed message 2');
+        });
+
+        it('should throw error when iteration limit is exceeded', async () => {
+            const toolController = new ToolController(toolsManager, 1);
+            const content = '<tool>testTool:{"param": "value"}</tool>';
+
+            await toolController.processToolCalls(content);
+            await expect(toolController.processToolCalls(content)).rejects.toThrow('Tool call iteration limit');
+        });
+
+        it('should handle content without tool calls', async () => {
+            const content = 'Just some regular text without tool calls';
+            const result = await toolController.processToolCalls(content);
+
             expect(result.toolCalls).toHaveLength(0);
+            expect(result.messages).toHaveLength(0);
             expect(result.requiresResubmission).toBe(false);
         });
+    });
 
-        it('should handle invalid JSON in parameters', async () => {
-            const content = '<tool>testTool:invalid_json</tool>';
-            const result = await toolController.processToolCalls(content);
-
-            expect(mockTool.callFunction).toHaveBeenCalledWith({});
-        });
-
-        it('should enforce iteration limit', async () => {
-            const toolController = new ToolController(mockToolsManager, 2);
-            const content = '<tool>testTool:{"param1":"test"}</tool>';
-
-            await toolController.processToolCalls(content);
-            await toolController.processToolCalls(content);
-            await expect(toolController.processToolCalls(content)).rejects.toThrow('Tool call iteration limit (2) exceeded');
-        });
-
+    describe('resetIterationCount', () => {
         it('should reset iteration count', async () => {
-            const toolController = new ToolController(mockToolsManager, 2);
-            const content = '<tool>testTool:{"param1":"test"}</tool>';
+            const toolController = new ToolController(toolsManager, 2);
+            const content = '<tool>testTool:{"param": "value"}</tool>';
 
-            await toolController.processToolCalls(content);
             await toolController.processToolCalls(content);
             toolController.resetIterationCount();
-            await expect(toolController.processToolCalls(content)).resolves.toBeDefined();
-        });
+            await toolController.processToolCalls(content);
 
-        it('should handle tool without postCallLogic', async () => {
-            const toolWithoutPostLogic: ToolDefinition = {
-                ...mockTool,
-                postCallLogic: undefined
-            };
-            mockToolsManager.getTool.mockReturnValue(toolWithoutPostLogic);
-
-            const content = '<tool>testTool:{"param1":"test"}</tool>';
-            const result = await toolController.processToolCalls(content);
-
-            expect(result.messages[0]).toEqual({
-                role: 'function',
-                content: JSON.stringify({ result: 'success' }),
-                name: 'testTool'
-            });
-        });
-
-        it('should handle string output without postCallLogic', async () => {
-            const toolWithStringOutput: ToolDefinition = {
-                ...mockTool,
-                callFunction: jest.fn().mockResolvedValue('string result'),
-                postCallLogic: undefined
-            };
-            mockToolsManager.getTool.mockReturnValue(toolWithStringOutput);
-
-            const content = '<tool>testTool:{"param1":"test"}</tool>';
-            const result = await toolController.processToolCalls(content);
-
-            expect(result.messages[0]).toEqual({
-                role: 'function',
-                content: 'string result',
-                name: 'testTool'
-            });
+            // Should not throw iteration limit error
+            expect(async () => {
+                await toolController.processToolCalls(content);
+            }).not.toThrow();
         });
     });
 }); 

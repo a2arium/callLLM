@@ -1,56 +1,94 @@
 import type { ToolDefinition, ToolsManager } from '../types';
-import type { UniversalMessage } from '../../interfaces/UniversalInterfaces';
+import type { UniversalMessage, UniversalChatResponse } from '../../interfaces/UniversalInterfaces';
+import { ToolCallParser } from './ToolCallParser';
+import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from './types';
 
 export class ToolController {
     private toolsManager: ToolsManager;
     private iterationCount: number = 0;
     private maxIterations: number;
+    private toolCallParser: ToolCallParser;
 
+    /**
+     * Creates a new ToolController instance
+     * @param toolsManager - The ToolsManager instance to use for tool management
+     * @param maxIterations - Maximum number of tool call iterations allowed (default: 5)
+     */
     constructor(toolsManager: ToolsManager, maxIterations: number = 5) {
         this.toolsManager = toolsManager;
         this.maxIterations = maxIterations;
+        this.toolCallParser = new ToolCallParser();
+        if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Initialized with maxIterations: ${maxIterations}`); }
     }
 
-    async processToolCalls(content: string) {
+    /**
+     * Processes tool calls found in the content
+     * @param content - The content to process for tool calls
+     * @param response - The response object containing tool calls (optional)
+     * @returns Object containing messages, tool calls, and resubmission flag
+     * @throws {ToolIterationLimitError} When iteration limit is exceeded
+     * @throws {ToolNotFoundError} When a requested tool is not found
+     * @throws {ToolExecutionError} When tool execution fails
+     */
+    async processToolCalls(content: string, response?: UniversalChatResponse): Promise<{
+        messages: UniversalMessage[];
+        toolCalls: { name: string; parameters: Record<string, unknown>; result?: string; error?: string }[];
+        requiresResubmission: boolean;
+    }> {
+        if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing tool calls (iteration ${this.iterationCount + 1}/${this.maxIterations})`); }
+
         if (this.iterationCount >= this.maxIterations) {
-            throw new Error(`Tool call iteration limit (${this.maxIterations}) exceeded`);
+            if (process.env.NODE_ENV !== 'test') { console.warn(`[ToolController] Iteration limit exceeded: ${this.maxIterations}`); }
+            throw new ToolIterationLimitError(this.maxIterations);
         }
         this.iterationCount++;
 
-        const toolCalls: { name: string; parameters: Record<string, unknown>; error?: string }[] = [];
-        const messages: UniversalMessage[] = [];
-        const toolCallRegex = /<tool>([^:]+):([^<]+)<\/tool>/g;
+        // First check for direct tool calls in the response
+        let parsedToolCalls: { toolName: string; parameters: Record<string, unknown> }[] = [];
         let requiresResubmission = false;
 
-        let match;
-        while ((match = toolCallRegex.exec(content)) !== null) {
-            const toolCall = {
-                name: match[1],
-                parameters: {}
-            };
+        if (response?.toolCalls?.length) {
+            if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Found ${response.toolCalls.length} direct tool calls`); }
+            parsedToolCalls = response.toolCalls.map((tc: { name: string; arguments: Record<string, unknown> }) => ({
+                toolName: tc.name,
+                parameters: tc.arguments || {}
+            }));
+            requiresResubmission = true;
+        } else {
+            // Fall back to parsing content if no direct tool calls
+            const parseResult = this.toolCallParser.parse(content);
+            parsedToolCalls = parseResult.toolCalls;
+            requiresResubmission = parseResult.requiresResubmission;
+        }
 
-            try {
-                toolCall.parameters = JSON.parse(match[2]);
-            } catch {
-                // If JSON parsing fails, use empty object as parameters
-            }
+        if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing ${parsedToolCalls.length} tool calls`); }
 
-            const tool = this.toolsManager.getTool(toolCall.name);
+        const messages: UniversalMessage[] = [];
+        const toolCalls: { name: string; parameters: Record<string, unknown>; result?: string; error?: string }[] = [];
+
+        for (const { toolName, parameters } of parsedToolCalls) {
+            if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing tool call: ${toolName}`); }
+            const toolCall = { name: toolName, parameters };
+            const tool = this.toolsManager.getTool(toolName);
+
             if (!tool) {
-                const error = `Tool '${toolCall.name}' not found`;
+                if (process.env.NODE_ENV !== 'test') { console.warn(`[ToolController] Tool not found: ${toolName}`); }
+                const error = new ToolNotFoundError(toolName);
                 messages.push({
                     role: 'system',
-                    content: `Error: ${error}`
+                    content: `Error: ${error.message}`
                 });
-                toolCalls.push({ ...toolCall, error });
+                toolCalls.push({ ...toolCall, error: error.message });
                 continue;
             }
 
             try {
-                const result = await tool.callFunction(toolCall.parameters);
+                if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Executing tool: ${toolName}`); }
+                const result = await tool.callFunction(parameters);
                 let processedMessages: string[];
 
                 if (tool.postCallLogic) {
+                    if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Running post-call logic for: ${toolName}`); }
                     processedMessages = await tool.postCallLogic(result);
                 } else {
                     processedMessages = [typeof result === 'string' ? result : JSON.stringify(result)];
@@ -59,21 +97,23 @@ export class ToolController {
                 messages.push(...processedMessages.map(content => ({
                     role: 'function' as const,
                     content,
-                    name: toolCall.name
+                    name: toolName
                 })));
 
-                toolCalls.push(toolCall);
-                requiresResubmission = true;
+                toolCalls.push({ ...toolCall, result: typeof result === 'string' ? result : JSON.stringify(result) });
+                if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Successfully executed tool: ${toolName}`); }
             } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : String(error);
+                console.error(`[ToolController] Error executing tool ${toolName}:`, error);
+                const toolError = new ToolExecutionError(toolName, error);
                 messages.push({
                     role: 'system',
-                    content: `Error executing tool '${toolCall.name}': ${errorMessage}`
+                    content: `Error: ${toolError.message}`
                 });
-                toolCalls.push({ ...toolCall, error: errorMessage });
+                toolCalls.push({ ...toolCall, error: toolError.message });
             }
         }
 
+        if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Completed processing ${parsedToolCalls.length} tool calls`); }
         return {
             messages,
             toolCalls,
@@ -81,7 +121,11 @@ export class ToolController {
         };
     }
 
-    resetIterationCount() {
+    /**
+     * Resets the iteration count to 0
+     */
+    resetIterationCount(): void {
+        if (process.env.NODE_ENV !== 'test') { console.log('[ToolController] Resetting iteration count'); }
         this.iterationCount = 0;
     }
 } 

@@ -16,6 +16,8 @@ import { StreamController } from '../streaming/StreamController';
 import { ChatController } from '../chat/ChatController';
 import { ToolsManager } from '../tools/ToolsManager';
 import type { ToolDefinition } from '../types';
+import { ToolController } from '../tools/ToolController';
+import { ToolOrchestrator } from '../tools/ToolOrchestrator';
 
 export class LLMCaller {
     private providerManager: ProviderManager;
@@ -35,11 +37,13 @@ export class LLMCaller {
     private streamController: StreamController;
     private chatController: ChatController;
     private toolsManager: ToolsManager;
+    private toolController: ToolController;
+    private toolOrchestrator: ToolOrchestrator;
 
     constructor(
         providerName: SupportedProviders,
         modelOrAlias: string,
-        systemMessage?: string,
+        systemMessage = 'You are a helpful assistant.',
         options?: {
             apiKey?: string;
             callerId?: string;
@@ -60,7 +64,7 @@ export class LLMCaller {
             baseDelay: 1000,
             maxRetries: options?.settings?.maxRetries ?? 3
         });
-        this.systemMessage = systemMessage ?? 'You are a helpful assistant.';
+        this.systemMessage = systemMessage;
         this.settings = options?.settings;
         this.streamController = new StreamController(
             this.providerManager,
@@ -95,16 +99,39 @@ export class LLMCaller {
             this.usageTracker
         );
 
-        this.chatCall = ((params: { message: string; settings?: UniversalChatParams['settings'] }) => {
-            return this.chatController.execute({
+        this.toolsManager = new ToolsManager();
+        this.toolController = new ToolController(this.toolsManager);
+        this.toolOrchestrator = new ToolOrchestrator(this.toolController, this.chatController);
+
+        this.chatCall = (async (params: {
+            message: string;
+            settings?: UniversalChatParams['settings'];
+            historicalMessages?: UniversalMessage[];
+        }) => {
+            const initialResponse = await this.chatController.execute({
                 model: this.model,
                 systemMessage: this.systemMessage,
                 message: params.message,
-                settings: this.mergeSettings(params.settings)
+                settings: this.mergeSettings(params.settings),
+                historicalMessages: params.historicalMessages
             });
-        }).bind(this);
 
-        this.toolsManager = new ToolsManager();
+            // If tools are enabled in settings and we have registered tools
+            if (this.mergeSettings(params.settings)?.tools && this.toolsManager.listTools().length > 0) {
+                const orchestrationResult = await this.toolOrchestrator.processResponse(
+                    initialResponse,
+                    {
+                        model: this.model,
+                        systemMessage: this.systemMessage,
+                        historicalMessages: params.historicalMessages,
+                        settings: this.mergeSettings(params.settings)
+                    }
+                );
+                return orchestrationResult.finalResponse;
+            }
+
+            return initialResponse;
+        }).bind(this);
     }
 
     // Model management methods - delegated to ModelManager
@@ -197,7 +224,7 @@ export class LLMCaller {
     }
 
     // Basic chat completion method
-    public chatCall: (params: { message: string; settings?: UniversalChatParams['settings'] }) => Promise<UniversalChatResponse & { content: any }>;
+    public chatCall: (params: { message: string; settings?: UniversalChatParams['settings']; historicalMessages?: UniversalMessage[] }) => Promise<UniversalChatResponse & { content: any }>;
 
     /**
      * Streams a response from the LLM.
@@ -306,9 +333,6 @@ export class LLMCaller {
                     async next(): Promise<IteratorResult<UniversalStreamResponse>> {
                         while (currentMessageIndex < totalMessages) {
                             if (!currentStream) {
-                                if (messages.length > 1) {
-                                    console.log(`Processing message ${currentMessageIndex + 1} of ${totalMessages} chunks`);
-                                }
                                 const processedMessage = messages[currentMessageIndex];
                                 const stream = await self.streamCall({
                                     message: processedMessage,

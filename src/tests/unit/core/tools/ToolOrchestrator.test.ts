@@ -1,183 +1,323 @@
 import { ToolOrchestrator } from '../../../../core/tools/ToolOrchestrator';
-import type { ToolController } from '../../../../core/tools/ToolController';
-import type { ChatController } from '../../../../core/chat/ChatController';
-import type { UniversalChatResponse, UniversalMessage } from '../../../../interfaces/UniversalInterfaces';
-import type { ToolsManager } from '../../../../core/tools/ToolsManager';
+import { ToolController } from '../../../../core/tools/ToolController';
+import { ChatController } from '../../../../core/chat/ChatController';
+import { ToolsManager } from '../../../../core/tools/ToolsManager';
+import type { ToolDefinition } from '../../../../core/types';
+import type { UniversalChatResponse, UniversalMessage, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
 import type { ProviderManager } from '../../../../core/caller/ProviderManager';
 import type { ModelManager } from '../../../../core/models/ModelManager';
 import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
 import type { RetryManager } from '../../../../core/retry/RetryManager';
 import type { UsageTracker } from '../../../../core/telemetry/UsageTracker';
 
-jest.mock('../../../../core/tools/ToolController', () => {
-    return {
-        ToolController: jest.fn().mockImplementation(() => ({
-            processToolCalls: jest.fn(),
-            resetIterationCount: jest.fn()
-        }))
-    };
-});
-
-jest.mock('../../../../core/chat/ChatController', () => {
-    return {
-        ChatController: jest.fn().mockImplementation(() => ({
-            execute: jest.fn()
-        }))
-    };
-});
-
 describe('ToolOrchestrator', () => {
     let toolOrchestrator: ToolOrchestrator;
-    let mockToolController: jest.Mocked<ToolController>;
-    let mockChatController: jest.Mocked<ChatController>;
+    let chatController: jest.Mocked<ChatController>;
+    let toolController: jest.Mocked<ToolController>;
 
     beforeEach(() => {
-        const mockToolsManager = {} as ToolsManager;
-        const mockProviderManager = {} as ProviderManager;
-        const mockModelManager = {} as ModelManager;
-        const mockResponseProcessor = {} as ResponseProcessor;
-        const mockRetryManager = {} as RetryManager;
-        const mockUsageTracker = {} as UsageTracker;
-
-        mockToolController = {
-            processToolCalls: jest.fn(),
-            resetIterationCount: jest.fn()
-        } as unknown as jest.Mocked<ToolController>;
-
-        mockChatController = {
-            execute: jest.fn()
+        chatController = {
+            execute: jest.fn(),
         } as unknown as jest.Mocked<ChatController>;
 
-        toolOrchestrator = new ToolOrchestrator(mockToolController, mockChatController);
+        toolController = {
+            processToolCalls: jest.fn(),
+            resetIterationCount: jest.fn(),
+            toolsManager: {} as any,
+            iterationCount: 0,
+            maxIterations: 10,
+            toolCallParser: {} as any,
+        } as unknown as jest.Mocked<ToolController>;
+
+        toolOrchestrator = new ToolOrchestrator(toolController, chatController);
     });
 
     describe('processResponse', () => {
-        const mockResponse: UniversalChatResponse = {
-            role: 'assistant',
-            content: 'test content',
-            metadata: {}
-        };
+        it('should handle a complete tool execution cycle', async () => {
+            const initialResponse: UniversalChatResponse = {
+                role: 'assistant',
+                content: '<tool>testTool:{}</tool>',
+                metadata: {},
+            };
 
-        const mockParams = {
-            model: 'test-model',
-            systemMessage: 'test system message',
-            historicalMessages: [],
-            settings: {}
-        };
-
-        it('should return original response when no tool calls are found', async () => {
-            mockToolController.processToolCalls.mockResolvedValue({
-                requiresResubmission: false,
-                messages: [],
-                toolCalls: []
+            toolController.processToolCalls.mockResolvedValueOnce({
+                toolCalls: [{
+                    name: 'testTool',
+                    parameters: {},
+                    result: 'Tool execution successful',
+                }],
+                messages: [{ role: 'tool', content: 'Tool execution successful' }],
+                requiresResubmission: true,
             });
 
-            const result = await toolOrchestrator.processResponse(mockResponse, mockParams);
+            const finalResponse: UniversalChatResponse = {
+                role: 'assistant',
+                content: 'Final response',
+                metadata: {},
+            };
+            chatController.execute.mockResolvedValueOnce(finalResponse);
 
-            expect(result).toBe(mockResponse);
-            expect(mockToolController.processToolCalls).toHaveBeenCalledWith(mockResponse.content);
-            expect(mockChatController.execute).not.toHaveBeenCalled();
-            expect(mockToolController.resetIterationCount).not.toHaveBeenCalled();
+            const result = await toolOrchestrator.processResponse(initialResponse, {
+                model: 'gpt-4',
+                systemMessage: 'System message',
+                historicalMessages: [{ role: 'system', content: 'System message' }],
+            });
+
+            expect(result.toolExecutions).toHaveLength(1);
+            expect(result.toolExecutions[0].result).toBe('Tool execution successful');
+            expect(result.finalResponse.content).toBe('Final response');
         });
 
-        it('should process tool calls and make new chat call when tools are executed', async () => {
-            const toolMessages: UniversalMessage[] = [
-                { role: 'function', content: 'tool result 1' },
-                { role: 'function', content: 'tool result 2' }
+        it('should handle history trimming when exceeding maxHistoryLength', async () => {
+            const historicalMessages: UniversalMessage[] = [
+                { role: 'system', content: 'System message' },
+                ...Array.from({ length: 20 }, (_, i) => ({
+                    role: (i % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
+                    content: `Message ${i}`,
+                })),
             ];
 
-            mockToolController.processToolCalls.mockResolvedValue({
-                requiresResubmission: true,
-                messages: toolMessages,
-                toolCalls: [
-                    { name: 'tool1', parameters: {} },
-                    { name: 'tool2', parameters: {} }
-                ]
-            });
-
-            const newResponse: UniversalChatResponse = {
+            const initialResponse: UniversalChatResponse = {
                 role: 'assistant',
-                content: 'new response',
-                metadata: {}
-            };
-            mockChatController.execute.mockResolvedValue(newResponse);
-
-            const result = await toolOrchestrator.processResponse(mockResponse, mockParams);
-
-            expect(result).toBe(newResponse);
-            expect(mockToolController.processToolCalls).toHaveBeenCalledWith(mockResponse.content);
-            expect(mockChatController.execute).toHaveBeenCalledWith({
-                model: mockParams.model,
-                systemMessage: mockParams.systemMessage,
-                message: 'Please continue based on the tool execution results above.',
-                settings: mockParams.settings,
-                historicalMessages: [
-                    ...mockParams.historicalMessages,
-                    { role: 'assistant' as const, content: mockResponse.content },
-                    ...toolMessages
-                ]
-            });
-            expect(mockToolController.resetIterationCount).toHaveBeenCalled();
-        });
-
-        it('should handle errors from tool processing', async () => {
-            const error = new Error('Tool processing failed');
-            mockToolController.processToolCalls.mockRejectedValue(error);
-
-            await expect(toolOrchestrator.processResponse(mockResponse, mockParams))
-                .rejects.toThrow('Tool processing failed');
-
-            expect(mockChatController.execute).not.toHaveBeenCalled();
-            expect(mockToolController.resetIterationCount).not.toHaveBeenCalled();
-        });
-
-        it('should handle errors from chat controller', async () => {
-            mockToolController.processToolCalls.mockResolvedValue({
-                requiresResubmission: true,
-                messages: [{ role: 'function', content: 'tool result' }],
-                toolCalls: [{ name: 'tool1', parameters: {} }]
-            });
-
-            const error = new Error('Chat execution failed');
-            mockChatController.execute.mockRejectedValue(error);
-
-            await expect(toolOrchestrator.processResponse(mockResponse, mockParams))
-                .rejects.toThrow('Chat execution failed');
-
-            expect(mockToolController.resetIterationCount).not.toHaveBeenCalled();
-        });
-
-        it('should work with undefined historical messages', async () => {
-            const paramsWithoutHistory = {
-                ...mockParams,
-                historicalMessages: undefined
+                content: '<tool>testTool:{}</tool>',
+                metadata: {},
             };
 
-            mockToolController.processToolCalls.mockResolvedValue({
+            toolController.processToolCalls.mockResolvedValueOnce({
+                toolCalls: [{
+                    name: 'testTool',
+                    parameters: {},
+                    result: 'Tool execution successful',
+                }],
+                messages: [{ role: 'tool', content: 'Tool execution successful' }],
                 requiresResubmission: true,
-                messages: [{ role: 'function', content: 'tool result' }],
-                toolCalls: [{ name: 'tool1', parameters: {} }]
             });
 
-            const newResponse: UniversalChatResponse = {
+            const finalResponse: UniversalChatResponse = {
                 role: 'assistant',
-                content: 'new response',
-                metadata: {}
+                content: 'Final response',
+                metadata: {},
             };
-            mockChatController.execute.mockResolvedValue(newResponse);
+            chatController.execute.mockResolvedValueOnce(finalResponse);
 
-            const result = await toolOrchestrator.processResponse(mockResponse, paramsWithoutHistory);
+            await toolOrchestrator.processResponse(initialResponse, {
+                model: 'gpt-4',
+                systemMessage: 'System message',
+                historicalMessages,
+                maxHistoryLength: 10,
+            });
 
-            expect(result).toBe(newResponse);
-            expect(mockChatController.execute).toHaveBeenCalledWith({
-                model: paramsWithoutHistory.model,
-                systemMessage: paramsWithoutHistory.systemMessage,
-                message: 'Please continue based on the tool execution results above.',
-                settings: paramsWithoutHistory.settings,
-                historicalMessages: [
-                    { role: 'assistant' as const, content: mockResponse.content },
-                    { role: 'function' as const, content: 'tool result' }
-                ]
+            expect(chatController.execute).toHaveBeenCalled();
+            const executeCall = chatController.execute.mock.calls[0]?.[0];
+            expect(executeCall?.historicalMessages).toBeDefined();
+            expect(executeCall?.historicalMessages?.length).toBeLessThanOrEqual(11); // 10 + system message
+            expect(executeCall?.historicalMessages?.[0].role).toBe('system');
+        });
+
+        it('should handle errors and clean up resources', async () => {
+            const initialResponse: UniversalChatResponse = {
+                role: 'assistant',
+                content: '<tool>testTool:{"shouldFail": true}</tool>',
+                metadata: {},
+            };
+
+            const error = new Error('Tool error');
+            toolController.processToolCalls.mockRejectedValueOnce(error);
+
+            const result = await toolOrchestrator.processResponse(initialResponse, {
+                model: 'gpt-4',
+                systemMessage: 'System message',
+                historicalMessages: [{ role: 'system', content: 'System message' }],
+            });
+
+            expect(result.toolExecutions).toHaveLength(1);
+            expect(result.toolExecutions[0].error).toBe('Tool error');
+            expect(result.finalResponse.content).toBe('An error occurred during tool execution: Tool error');
+            expect(toolController.resetIterationCount).toHaveBeenCalled();
+        });
+
+        it('should handle null/undefined tool result', async () => {
+            const initialResponse: UniversalChatResponse = {
+                role: 'assistant',
+                content: '<tool>testTool:{}</tool>',
+                metadata: {},
+            };
+
+            toolController.processToolCalls.mockResolvedValueOnce({
+                toolCalls: [],
+                messages: [],
+                requiresResubmission: false,
+            });
+
+            const result = await toolOrchestrator.processResponse(initialResponse, {
+                model: 'gpt-4',
+                systemMessage: 'System message',
+                historicalMessages: [{ role: 'system', content: 'System message' }],
+            });
+
+            expect(result.toolExecutions).toHaveLength(0);
+            expect(result.finalResponse.content).toBe('<tool>testTool:{}</tool>');
+        });
+
+        it('should handle tool result without toolCalls or messages', async () => {
+            const initialResponse: UniversalChatResponse = {
+                role: 'assistant',
+                content: '<tool>testTool:{}</tool>',
+                metadata: {},
+            };
+
+            toolController.processToolCalls.mockResolvedValueOnce({
+                toolCalls: [],
+                messages: [],
+                requiresResubmission: false,
+            });
+
+            const result = await toolOrchestrator.processResponse(initialResponse, {
+                model: 'gpt-4',
+                systemMessage: 'System message',
+                historicalMessages: [{ role: 'system', content: 'System message' }],
+            });
+
+            expect(result.toolExecutions).toHaveLength(0);
+            expect(result.finalResponse.content).toBe('<tool>testTool:{}</tool>');
+        });
+
+        it('should handle non-Error errors', async () => {
+            const initialResponse: UniversalChatResponse = {
+                role: 'assistant',
+                content: '<tool>testTool:{}</tool>',
+                metadata: {},
+            };
+
+            toolController.processToolCalls.mockRejectedValueOnce('String error');
+
+            const result = await toolOrchestrator.processResponse(initialResponse, {
+                model: 'gpt-4',
+                systemMessage: 'System message',
+                historicalMessages: [{ role: 'system', content: 'System message' }],
+            });
+
+            expect(result.toolExecutions).toHaveLength(1);
+            expect(result.toolExecutions[0].error).toBe('String error');
+            expect(result.finalResponse.content).toBe('An error occurred during tool execution: String error');
+        });
+
+        describe('trimHistory', () => {
+            it('should handle empty messages array', async () => {
+                const initialResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: '<tool>testTool:{}</tool>',
+                    metadata: {},
+                };
+
+                toolController.processToolCalls.mockResolvedValueOnce({
+                    toolCalls: [{
+                        name: 'testTool',
+                        parameters: {},
+                        result: 'Tool execution successful',
+                    }],
+                    messages: [{ role: 'tool', content: 'Tool execution successful' }],
+                    requiresResubmission: true,
+                });
+
+                const finalResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: 'Final response',
+                    metadata: {},
+                };
+                chatController.execute.mockResolvedValueOnce(finalResponse);
+
+                await toolOrchestrator.processResponse(initialResponse, {
+                    model: 'gpt-4',
+                    systemMessage: '',
+                    historicalMessages: [],
+                });
+
+                expect(chatController.execute).toHaveBeenCalled();
+                const executeCall = chatController.execute.mock.calls[0]?.[0];
+                expect(executeCall?.historicalMessages).toBeDefined();
+                expect(executeCall?.historicalMessages?.length).toBe(2); // Assistant + tool message
+            });
+
+            it('should handle only system messages', async () => {
+                const messages: UniversalMessage[] = [
+                    { role: 'system', content: 'System 1' },
+                    { role: 'system', content: 'System 2' },
+                ];
+
+                const initialResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: '<tool>testTool:{}</tool>',
+                    metadata: {},
+                };
+
+                toolController.processToolCalls.mockResolvedValueOnce({
+                    toolCalls: [{
+                        name: 'testTool',
+                        parameters: {},
+                        result: 'Tool execution successful',
+                    }],
+                    messages: [{ role: 'tool', content: 'Tool execution successful' }],
+                    requiresResubmission: true,
+                });
+
+                const finalResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: 'Final response',
+                    metadata: {},
+                };
+                chatController.execute.mockResolvedValueOnce(finalResponse);
+
+                await toolOrchestrator.processResponse(initialResponse, {
+                    model: 'gpt-4',
+                    systemMessage: '',
+                    historicalMessages: messages,
+                });
+
+                const executeCall = chatController.execute.mock.calls[0]?.[0];
+                expect(executeCall?.historicalMessages).toBeDefined();
+                expect(executeCall?.historicalMessages?.length).toBe(4); // 2 system + assistant + tool message
+            });
+
+            it('should handle no system messages', async () => {
+                const messages: UniversalMessage[] = [
+                    { role: 'user', content: 'User 1' },
+                    { role: 'assistant', content: 'Assistant 1' },
+                    { role: 'user', content: 'User 2' },
+                ];
+
+                const initialResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: '<tool>testTool:{}</tool>',
+                    metadata: {},
+                };
+
+                toolController.processToolCalls.mockResolvedValueOnce({
+                    toolCalls: [{
+                        name: 'testTool',
+                        parameters: {},
+                        result: 'Tool execution successful',
+                    }],
+                    messages: [{ role: 'tool', content: 'Tool execution successful' }],
+                    requiresResubmission: true,
+                });
+
+                const finalResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: 'Final response',
+                    metadata: {},
+                };
+                chatController.execute.mockResolvedValueOnce(finalResponse);
+
+                await toolOrchestrator.processResponse(initialResponse, {
+                    model: 'gpt-4',
+                    systemMessage: '',
+                    historicalMessages: messages,
+                });
+
+                const executeCall = chatController.execute.mock.calls[0]?.[0];
+                expect(executeCall?.historicalMessages).toBeDefined();
+                expect(executeCall?.historicalMessages?.length).toBe(5); // 3 original + assistant + tool message
             });
         });
     });
