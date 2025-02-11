@@ -1,4 +1,5 @@
 import { ChatCompletionCreateParams, ChatCompletionMessage, ChatCompletion, ChatCompletionMessageParam } from 'openai/resources/chat';
+import { ToolDefinition, ToolChoice } from '../../core/types';
 
 /**
  * All possible message roles supported across different models
@@ -10,8 +11,30 @@ export type OpenAIRole = ChatCompletionMessageParam['role'] | 'developer';
  */
 export type OpenAIChatMessage = ChatCompletionMessageParam;
 
+export type OpenAIToolCall = {
+    id: string;
+    type: 'function';
+    function: {
+        name: string;
+        arguments: string;
+    };
+};
+
+export type OpenAIAssistantMessage = ChatCompletionMessage & {
+    tool_calls?: OpenAIToolCall[];
+};
+
 export type OpenAIModelParams = Omit<ChatCompletionCreateParams, 'messages'> & {
     messages: ChatCompletionMessageParam[];
+    tools?: Array<{
+        type: 'function';
+        function: {
+            name: string;
+            description: string;
+            parameters: Record<string, unknown>;
+        };
+    }>;
+    tool_choice?: ToolChoice;
 };
 
 export type OpenAIUsage = {
@@ -30,6 +53,12 @@ export type OpenAIUsage = {
 
 export type OpenAIResponse = ChatCompletion & {
     usage: OpenAIUsage;
+    choices: Array<{
+        index: number;
+        logprobs: null;
+        message: OpenAIAssistantMessage;
+        finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
+    }>;
 };
 
 export type OpenAIStreamResponse = {

@@ -1,5 +1,6 @@
 import { UniversalChatParams, UniversalChatResponse, FinishReason, ModelInfo, UniversalStreamResponse, UniversalMessage } from '../../interfaces/UniversalInterfaces';
-import { OpenAIModelParams, OpenAIResponse, OpenAIChatMessage, OpenAIUsage, OpenAIRole } from './types';
+import { OpenAIModelParams, OpenAIResponse, OpenAIChatMessage, OpenAIUsage, OpenAIRole, OpenAIToolCall } from './types';
+import { ToolDefinition } from '../../core/types';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { ChatCompletionCreateParams, ChatCompletionMessageParam } from 'openai/resources/chat';
 import { z } from 'zod';
@@ -97,13 +98,56 @@ export class Converter {
         });
     }
 
+    private convertToolCalls(toolCalls?: OpenAIToolCall[]): Array<{
+        name: string;
+        arguments: Record<string, unknown>;
+    }> | undefined {
+        if (!toolCalls?.length) {
+            return undefined;
+        }
+
+        try {
+            return toolCalls.map(call => ({
+                name: call.function.name,
+                arguments: JSON.parse(call.function.arguments)
+            }));
+        } catch (error) {
+            throw new Error(`Failed to parse tool call arguments: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    private convertToolCallDeltas(toolCalls?: Partial<OpenAIToolCall>[]): Array<{
+        id: string;
+        name?: string;
+        arguments?: Record<string, unknown>;
+    }> | undefined {
+        if (!toolCalls?.length) {
+            return undefined;
+        }
+
+        const validToolCalls = toolCalls.filter(call => !!call.id);
+        if (validToolCalls.length === 0) {
+            return undefined;
+        }
+
+        try {
+            return validToolCalls.map(call => ({
+                id: call.id!,
+                ...(call.function?.name && { name: call.function.name }),
+                ...(call.function?.arguments && { arguments: JSON.parse(call.function.arguments) })
+            }));
+        } catch (error) {
+            throw new Error(`Failed to parse tool call delta: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
     convertToProviderParams(params: UniversalChatParams): Omit<OpenAIModelParams, 'model'> {
         this.currentParams = params;
         const messages = this.convertMessages(params.messages);
         const settings = params.settings || {};
 
         if (!this.currentModel) {
-            throw new Error('Model not set');
+            throw new Error('Model not found');
         }
 
         // Handle capabilities with their new defaults
@@ -112,6 +156,23 @@ export class Converter {
         const hasToolCalls = this.currentModel.capabilities?.toolCalls === true;  // default false
         const hasParallelToolCalls = this.currentModel.capabilities?.parallelToolCalls === true;  // default false
         const hasBatchProcessing = this.currentModel.capabilities?.batchProcessing === true;  // default false
+
+        // Convert tool settings if tool calls are enabled
+        const toolSettings = hasToolCalls ? {
+            tools: settings.tools?.map((tool: ToolDefinition) => ({
+                type: 'function' as const,
+                function: {
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: tool.parameters
+                }
+            })),
+            tool_choice: settings.toolChoice,
+            // Only include tool_calls if parallel tool calls are supported
+            ...(hasParallelToolCalls && settings.toolCalls && {
+                tool_calls: settings.toolCalls
+            })
+        } : {};
 
         return {
             messages,
@@ -124,12 +185,7 @@ export class Converter {
             presence_penalty: settings.presencePenalty,
             frequency_penalty: settings.frequencyPenalty,
             response_format: this.getResponseFormat(settings),
-            // Only include tool-related fields if tool calls are enabled
-            ...(hasToolCalls && {
-                tool_choice: settings.toolChoice,
-                tools: settings.tools,
-                tool_calls: hasParallelToolCalls ? settings.toolCalls : undefined
-            })
+            ...toolSettings
         };
     }
 
@@ -148,9 +204,12 @@ export class Converter {
             throw new Error('Response was truncated before any content could be generated. Try reducing maxTokens or adjusting your prompt.');
         }
 
+        const toolCalls = this.convertToolCalls(message.tool_calls);
+
         return {
             content,
             role,
+            ...(toolCalls && { toolCalls }),
             metadata: {
                 finishReason: this.mapFinishReason(response.choices[0].finish_reason),
                 created: response.created,
@@ -218,9 +277,13 @@ export class Converter {
         const firstChoice = choices[0] || {};
         const delta = firstChoice.delta || {};
 
+        // Handle tool call deltas
+        const toolCallDeltas = delta.tool_calls ? this.convertToolCallDeltas(delta.tool_calls) : undefined;
+
         return {
             content: delta.content || '',
             role: delta.role || 'assistant',
+            ...(toolCallDeltas && { toolCallDeltas }),
             isComplete: firstChoice.finish_reason !== null,
             metadata: {
                 finishReason: this.mapFinishReason(firstChoice.finish_reason),

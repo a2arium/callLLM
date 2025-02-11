@@ -815,3 +815,144 @@ caller.setCallerId('new-conversation-id');
 ```
 
 ## Error Handling 
+
+## Tool Calling
+
+The library now supports OpenAI's function calling feature through a unified tool calling interface. This allows you to define tools (functions) that the model can use to perform actions or retrieve information.
+
+## Overview
+
+The library now supports OpenAI's function calling feature through a unified tool calling interface. This allows you to define tools (functions) that the model can use to perform actions or retrieve information.
+
+## Basic Usage
+
+```typescript
+// Define your tools
+const tools = [{
+    name: 'get_weather',
+    description: 'Get the current weather',
+    parameters: {
+        type: 'object',
+        properties: {
+            location: {
+                type: 'string',
+                description: 'The city and state'
+            }
+        },
+        required: ['location']
+    }
+}];
+
+// Make a chat call with tool definitions
+const response = await adapter.chatCall({
+    messages: [
+        { role: 'user', content: 'What\'s the weather in New York?' }
+    ],
+    settings: {
+        tools,
+        toolChoice: 'auto' // Let the model decide when to use tools
+    }
+});
+
+// Handle tool calls in the response
+if (response.toolCalls) {
+    for (const call of response.toolCalls) {
+        if (call.name === 'get_weather') {
+            const weather = await getWeather(call.arguments.location);
+            // Send the tool's response back to continue the conversation
+            const followUpResponse = await adapter.chatCall({
+                messages: [
+                    ...previousMessages,
+                    { role: 'assistant', content: response.content, toolCalls: response.toolCalls },
+                    { role: 'tool', name: 'get_weather', content: JSON.stringify(weather) }
+                ]
+            });
+        }
+    }
+}
+```
+
+## Streaming Support
+
+Tool calls are also supported in streaming mode:
+
+```typescript
+const stream = await adapter.streamCall({
+    messages: [
+        { role: 'user', content: 'What\'s the weather in New York?' }
+    ],
+    settings: {
+        tools,
+        toolChoice: 'auto',
+        stream: true
+    }
+});
+
+for await (const chunk of stream) {
+    if (chunk.toolCallDeltas) {
+        // Handle partial tool calls
+        console.log('Partial tool call:', chunk.toolCallDeltas);
+    }
+    if (chunk.toolCalls) {
+        // Handle complete tool calls
+        console.log('Complete tool calls:', chunk.toolCalls);
+    }
+    if (chunk.content) {
+        console.log('Content:', chunk.content);
+    }
+}
+```
+
+## Parallel Tool Calls
+
+For models that support it, you can make parallel tool calls:
+
+```typescript
+const response = await adapter.chatCall({
+    messages: [
+        { role: 'user', content: 'Get weather for multiple cities' }
+    ],
+    settings: {
+        tools,
+        toolCalls: [
+            { name: 'get_weather', arguments: { location: 'New York, NY' } },
+            { name: 'get_weather', arguments: { location: 'Los Angeles, CA' } }
+        ]
+    }
+});
+```
+
+## Best Practices
+
+### Tool Definition
+
+1. Keep tool names concise and descriptive
+2. Use clear parameter names and descriptions
+3. Specify required parameters
+4. Use appropriate JSON Schema types
+5. Include examples in descriptions when helpful
+
+### Tool Call Handling
+
+1. Always validate tool call arguments
+2. Implement proper error handling for tool execution
+3. Format tool responses as JSON strings
+4. Include relevant context in tool responses
+5. Handle streaming tool calls appropriately
+
+### Error Handling
+
+The library includes built-in error handling for tool calls:
+
+```typescript
+try {
+    const response = await adapter.chatCall({
+        messages: [{ role: 'user', content: 'Check weather' }],
+        settings: { tools }
+    });
+} catch (error) {
+    if (error instanceof ToolCallError) {
+        console.error('Tool call failed:', error.message);
+    }
+}
+```

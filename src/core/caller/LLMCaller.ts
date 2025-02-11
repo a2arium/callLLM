@@ -14,6 +14,8 @@ import { RetryManager } from '../retry/RetryManager';
 import { UsageTracker } from '../telemetry/UsageTracker';
 import { StreamController } from '../streaming/StreamController';
 import { ChatController } from '../chat/ChatController';
+import { ToolsManager } from '../tools/ToolsManager';
+import type { ToolDefinition } from '../types';
 
 export class LLMCaller {
     private providerManager: ProviderManager;
@@ -32,6 +34,7 @@ export class LLMCaller {
     private usageTracker: UsageTracker;
     private streamController: StreamController;
     private chatController: ChatController;
+    private toolsManager: ToolsManager;
 
     constructor(
         providerName: SupportedProviders,
@@ -100,6 +103,8 @@ export class LLMCaller {
                 settings: this.mergeSettings(params.settings)
             });
         }).bind(this);
+
+        this.toolsManager = new ToolsManager();
     }
 
     // Model management methods - delegated to ModelManager
@@ -359,5 +364,26 @@ export class LLMCaller {
                 };
             }
         };
+    }
+
+    // Tool management methods
+    public addTool(tool: ToolDefinition): void {
+        this.toolsManager.addTool(tool);
+    }
+
+    public removeTool(name: string): void {
+        this.toolsManager.removeTool(name);
+    }
+
+    public updateTool(name: string, updated: Partial<ToolDefinition>): void {
+        this.toolsManager.updateTool(name, updated);
+    }
+
+    public listTools(): ToolDefinition[] {
+        return this.toolsManager.listTools();
+    }
+
+    public getTool(name: string): ToolDefinition | undefined {
+        return this.toolsManager.getTool(name);
     }
 } 

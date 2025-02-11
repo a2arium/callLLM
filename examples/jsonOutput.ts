@@ -29,7 +29,7 @@ async function main() {
     try {
         // Example 1: Using Zod schema
         console.log('\nExample 1: Using Zod schema for structured output');
-        const response1 = await caller.chatCall<typeof UserSchema>({
+        const response1 = await caller.chatCall({
             message: 'Generate a profile for a fictional user named Alice who loves technology',
             settings: {
                 temperature: 0.7,

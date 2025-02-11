@@ -11,8 +11,11 @@ export class Validator {
             if (!message.role || !message.content) {
                 throw new AdapterError('Each message must have a role and content');
             }
-            if (!['system', 'user', 'assistant'].includes(message.role)) {
-                throw new AdapterError('Invalid message role. Must be one of: system, user, assistant');
+            if (!['system', 'user', 'assistant', 'function'].includes(message.role)) {
+                throw new AdapterError('Invalid message role. Must be one of: system, user, assistant, function');
+            }
+            if (message.role === 'function' && !message.name) {
+                throw new AdapterError('Function messages must have a name');
             }
         }
 

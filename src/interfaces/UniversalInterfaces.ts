@@ -73,6 +73,10 @@ export type Usage = {
 export interface UniversalChatResponse {
     content: string;
     role: string;
+    toolCalls?: Array<{
+        name: string;
+        arguments: Record<string, unknown>;
+    }>;
     metadata?: {
         finishReason?: FinishReason;
         created?: number;
@@ -89,6 +93,15 @@ export interface UniversalStreamResponse {
     content: string;
     role: string;
     isComplete: boolean;
+    toolCallDeltas?: Array<{
+        id: string;
+        name?: string;
+        arguments?: Record<string, unknown>;
+    }>;
+    toolCalls?: Array<{
+        name: string;
+        arguments: Record<string, unknown>;
+    }>;
     metadata?: {
         finishReason?: FinishReason;
         usage?: Usage;

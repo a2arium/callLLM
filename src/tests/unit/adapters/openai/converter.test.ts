@@ -1,19 +1,31 @@
 import { z } from 'zod';
 import { Converter } from '../../../../adapters/openai/converter';
 import { FinishReason } from '../../../../interfaces/UniversalInterfaces';
-import type { UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
-import type { OpenAIResponse, OpenAIStreamResponse } from '../../../../adapters/openai/types';
-import type { ChatCompletion } from 'openai/resources/chat';
+import type { UniversalChatParams, UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces';
+import type { OpenAIResponse, OpenAIStreamResponse, OpenAIToolCall } from '../../../../adapters/openai/types';
+import type { ChatCompletion, ChatCompletionMessage } from 'openai/resources/chat';
+import type { ModelInfo } from '../../../../interfaces/UniversalInterfaces';
 
 describe('Converter', () => {
     let converter: Converter;
+    let mockModel: ModelInfo;
     const mockParams: UniversalChatParams = {
         messages: [{ role: 'user', content: 'test message' }]
     };
 
+    // Define mockToolCall at the top level for reuse across test cases
+    const mockToolCall: OpenAIToolCall = {
+        id: 'call_123',
+        type: 'function',
+        function: {
+            name: 'test_tool',
+            arguments: '{"test": "value"}'
+        }
+    };
+
     beforeEach(() => {
         converter = new Converter();
-        const mockModel = {
+        mockModel = {
             name: 'test-model',
             inputPricePerMillion: 0.1,
             outputPricePerMillion: 0.2,
@@ -569,19 +581,28 @@ describe('Converter', () => {
             };
             converter.setModel(mockModel);
 
-            const response = {
+            const response: OpenAIResponse = {
+                id: 'response_123',
+                object: 'chat.completion',
                 choices: [{
-                    message: { content: 'test', role: 'assistant' },
-                    finish_reason: 'stop'
+                    index: 0,
+                    logprobs: null,
+                    message: {
+                        role: 'assistant',
+                        content: 'Using tool',
+                        tool_calls: [mockToolCall],
+                        refusal: null
+                    } as ChatCompletionMessage,
+                    finish_reason: 'tool_calls'
                 }],
-                created: 1234567890,
+                created: 123,
                 model: 'gpt-4',
                 usage: {
                     prompt_tokens: 10,
                     completion_tokens: 20,
                     total_tokens: 30
                 }
-            } as OpenAIResponse;
+            };
 
             converter.setParams({
                 ...mockParams,
@@ -590,11 +611,15 @@ describe('Converter', () => {
 
             const result = converter.convertFromProviderResponse(response);
             expect(result).toEqual({
-                content: 'test',
+                content: 'Using tool',
                 role: 'assistant',
+                toolCalls: [{
+                    name: 'test_tool',
+                    arguments: { test: 'value' }
+                }],
                 metadata: {
-                    finishReason: FinishReason.STOP,
-                    created: 1234567890,
+                    finishReason: FinishReason.TOOL_CALLS,
+                    created: 123,
                     model: 'gpt-4',
                     responseFormat: 'json',
                     usage: {
@@ -602,8 +627,8 @@ describe('Converter', () => {
                         outputTokens: 20,
                         totalTokens: 30,
                         costs: {
-                            inputCost: 0.000001, // 10 tokens * $0.1 per million
-                            outputCost: 0.000004, // 20 tokens * $0.2 per million
+                            inputCost: 0.000001,
+                            outputCost: 0.000004,
                             totalCost: 0.000005
                         }
                     }
@@ -1027,6 +1052,157 @@ describe('Converter', () => {
             expect(result.tool_choice).toBeUndefined();
             expect(result.tools).toBeUndefined();
             expect(result).not.toHaveProperty('tool_calls');
+        });
+    });
+
+    describe('tool calling', () => {
+        it('should convert tool settings when tool calls are enabled', () => {
+            const mockTool = {
+                name: 'test_tool',
+                description: 'A test tool',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        test: {
+                            type: 'string',
+                            description: 'A test parameter'
+                        }
+                    },
+                    required: ['test']
+                },
+                callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                    return {} as T;
+                }
+            };
+
+            const paramsWithTools: UniversalChatParams = {
+                ...mockParams,
+                settings: {
+                    tools: [mockTool],
+                    toolChoice: 'auto'
+                }
+            };
+
+            const result = converter.convertToProviderParams(paramsWithTools);
+            expect(result.tools).toEqual([{
+                type: 'function',
+                function: {
+                    name: 'test_tool',
+                    description: 'A test tool',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            test: {
+                                type: 'string',
+                                description: 'A test parameter'
+                            }
+                        },
+                        required: ['test']
+                    }
+                }
+            }]);
+            expect(result.tool_choice).toBe('auto');
+        });
+
+        it('should handle tool calls in response', () => {
+            const response: OpenAIResponse = {
+                id: 'response_123',
+                object: 'chat.completion',
+                choices: [{
+                    index: 0,
+                    logprobs: null,
+                    message: {
+                        role: 'assistant',
+                        content: 'Using tool',
+                        tool_calls: [mockToolCall],
+                        refusal: null
+                    } as ChatCompletionMessage,
+                    finish_reason: 'tool_calls'
+                }],
+                created: 123,
+                model: 'gpt-4',
+                usage: {
+                    prompt_tokens: 10,
+                    completion_tokens: 20,
+                    total_tokens: 30
+                }
+            };
+
+            const result = converter.convertFromProviderResponse(response);
+            expect(result.toolCalls).toEqual([{
+                name: 'test_tool',
+                arguments: { test: 'value' }
+            }]);
+            expect(result.metadata?.finishReason).toBe(FinishReason.TOOL_CALLS);
+        });
+
+        it('should handle parallel tool calls when supported', () => {
+            const mockToolCalls: OpenAIToolCall[] = [{
+                id: 'call_1',
+                type: 'function',
+                function: { name: 'tool1', arguments: '{}' }
+            }, {
+                id: 'call_2',
+                type: 'function',
+                function: { name: 'tool2', arguments: '{}' }
+            }];
+
+            const paramsWithParallelTools: UniversalChatParams = {
+                ...mockParams,
+                settings: {
+                    tools: [{
+                        name: 'tool1',
+                        description: 'Tool 1',
+                        parameters: { type: 'object', properties: {} },
+                        callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                            return {} as T;
+                        }
+                    }, {
+                        name: 'tool2',
+                        description: 'Tool 2',
+                        parameters: { type: 'object', properties: {} },
+                        callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                            return {} as T;
+                        }
+                    }],
+                    toolChoice: 'auto',
+                    toolCalls: mockToolCalls
+                }
+            };
+
+            const result = converter.convertToProviderParams(paramsWithParallelTools);
+            expect(result.tools).toBeDefined();
+            expect(result.tool_choice).toBe('auto');
+        });
+
+        it('should not include tool settings when tool calls are disabled', () => {
+            const modelWithoutTools = {
+                ...mockModel,
+                capabilities: {
+                    ...mockModel.capabilities,
+                    toolCalls: false
+                }
+            };
+            converter.setModel(modelWithoutTools);
+
+            const paramsWithTools: UniversalChatParams = {
+                ...mockParams,
+                settings: {
+                    tools: [{
+                        name: 'test_tool',
+                        description: 'A test tool',
+                        parameters: { type: 'object', properties: {} },
+                        callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                            return {} as T;
+                        }
+                    }],
+                    toolChoice: 'auto'
+                }
+            };
+
+            const result = converter.convertToProviderParams(paramsWithTools);
+            expect(result.tools).toBeUndefined();
+            expect(result.tool_choice).toBeUndefined();
         });
     });
 }); 

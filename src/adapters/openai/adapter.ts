@@ -44,15 +44,39 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
     }
 
     async chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse> {
-        this.validator.validateParams(params);
-        const modelInfo = this.models.get(model);
-        if (modelInfo) {
-            this.converter.setModel(modelInfo);
+        try {
+            this.validator.validateParams(params);
+            const modelInfo = this.models.get(model);
+            if (modelInfo) {
+                this.converter.setModel(modelInfo);
+                // Validate tool calling capabilities
+                if (params.settings?.tools && !modelInfo.capabilities?.toolCalls) {
+                    throw new Error('Model does not support tool calls');
+                }
+                if (params.settings?.toolCalls && !modelInfo.capabilities?.parallelToolCalls) {
+                    throw new Error('Model does not support parallel tool calls');
+                }
+            }
+            this.converter.setParams(params);
+            const openAIParams = this.convertToProviderParams(model, {
+                ...params,
+                settings: {
+                    ...params.settings,
+                    stream: false,
+                    // Tool calling settings are passed through as-is
+                    tools: params.settings?.tools,
+                    toolChoice: params.settings?.toolChoice,
+                    toolCalls: params.settings?.toolCalls
+                }
+            }) as OpenAIModelParams;
+            const response = await this.client.chat.completions.create(openAIParams);
+            return this.convertFromProviderResponse(response);
+        } catch (error) {
+            if (error instanceof Error && error.message === 'Model not set') {
+                throw new Error('Model not found');
+            }
+            throw error;
         }
-        this.converter.setParams(params);
-        const openAIParams = this.convertToProviderParams(model, { ...params, settings: { ...params.settings, stream: false } }) as OpenAIModelParams;
-        const response = await this.client.chat.completions.create(openAIParams);
-        return this.convertFromProviderResponse(response);
     }
 
     async streamCall(model: string, params: UniversalChatParams): Promise<AsyncIterable<UniversalStreamResponse>> {
@@ -60,9 +84,26 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
         const modelInfo = this.models.get(model);
         if (modelInfo) {
             this.converter.setModel(modelInfo);
+            // Validate tool calling capabilities
+            if (params.settings?.tools && !modelInfo.capabilities?.toolCalls) {
+                throw new Error('Model does not support tool calls');
+            }
+            if (params.settings?.toolCalls && !modelInfo.capabilities?.parallelToolCalls) {
+                throw new Error('Model does not support parallel tool calls');
+            }
         }
         this.converter.setParams(params);
-        const openAIParams = this.convertToProviderParams(model, { ...params, settings: { ...params.settings, stream: true } }) as OpenAIModelParams;
+        const openAIParams = this.convertToProviderParams(model, {
+            ...params,
+            settings: {
+                ...params.settings,
+                stream: true,
+                // Tool calling settings are passed through as-is
+                tools: params.settings?.tools,
+                toolChoice: params.settings?.toolChoice,
+                toolCalls: params.settings?.toolCalls
+            }
+        }) as OpenAIModelParams;
         const stream = await this.client.chat.completions.create({ ...openAIParams, stream: true });
         return this.streamHandler.handleStream(stream as AsyncIterable<OpenAIStreamResponse>, params);
     }
@@ -78,5 +119,13 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
 
     convertFromProviderStreamResponse(chunk: unknown): UniversalStreamResponse {
         return this.converter.convertStreamResponse(chunk as OpenAIStreamResponse, this.converter.getCurrentParams());
+    }
+
+    // For testing purposes only
+    setModelForTesting(name: string, model: ModelInfo): void {
+        if (process.env.NODE_ENV !== 'test') {
+            throw new Error('This method is only available in test environment');
+        }
+        this.models.set(name, model);
     }
 } 

@@ -280,6 +280,244 @@ describe('StreamHandler', () => {
                 }
             ]);
         });
+
+        it('should handle tool call streaming', async () => {
+            const mockStream = {
+                async *[Symbol.asyncIterator]() {
+                    // First chunk: Tool call start
+                    yield {
+                        choices: [{
+                            delta: {
+                                content: 'Using tool',
+                                role: 'assistant',
+                                tool_calls: [{
+                                    id: 'call_123',
+                                    type: 'function',
+                                    function: { name: 'test_tool' }
+                                }]
+                            },
+                            finish_reason: null
+                        }]
+                    };
+                    // Second chunk: Tool call arguments
+                    yield {
+                        choices: [{
+                            delta: {
+                                tool_calls: [{
+                                    id: 'call_123',
+                                    type: 'function',
+                                    function: { arguments: '{"test": "value"}' }
+                                }]
+                            },
+                            finish_reason: 'tool_calls'
+                        }]
+                    };
+                }
+            };
+
+            // Mock converter responses for each chunk
+            mockConverter.convertStreamResponse
+                .mockReturnValueOnce({
+                    content: 'Using tool',
+                    role: 'assistant',
+                    isComplete: false,
+                    toolCallDeltas: [{
+                        id: 'call_123',
+                        name: 'test_tool'
+                    }],
+                    metadata: {
+                        finishReason: FinishReason.NULL,
+                        responseFormat: 'text'
+                    }
+                })
+                .mockReturnValueOnce({
+                    content: '',
+                    role: 'assistant',
+                    isComplete: true,
+                    toolCallDeltas: [{
+                        id: 'call_123',
+                        arguments: { test: 'value' }
+                    }],
+                    metadata: {
+                        finishReason: FinishReason.TOOL_CALLS,
+                        responseFormat: 'text'
+                    }
+                });
+
+            const result = handler.handleStream(mockStream as AsyncIterable<OpenAIStreamResponse>, mockParams);
+            const chunks = [];
+            for await (const chunk of result) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks).toHaveLength(2);
+            // First chunk should have partial tool call
+            expect(chunks[0]).toEqual({
+                content: 'Using tool',
+                role: 'assistant',
+                isComplete: false,
+                toolCallDeltas: [{
+                    id: 'call_123',
+                    name: 'test_tool'
+                }],
+                metadata: {
+                    finishReason: FinishReason.NULL,
+                    responseFormat: 'text'
+                }
+            });
+            // Final chunk should have complete tool call
+            expect(chunks[1]).toEqual({
+                content: '',
+                role: 'assistant',
+                isComplete: true,
+                toolCallDeltas: [{
+                    id: 'call_123',
+                    arguments: { test: 'value' }
+                }],
+                toolCalls: [{
+                    name: 'test_tool',
+                    arguments: { test: 'value' }
+                }],
+                metadata: {
+                    finishReason: FinishReason.TOOL_CALLS,
+                    responseFormat: 'text'
+                }
+            });
+        });
+
+        it('should handle multiple tool calls in stream', async () => {
+            const mockStream = {
+                async *[Symbol.asyncIterator]() {
+                    // First chunk: Start of multiple tool calls
+                    yield {
+                        choices: [{
+                            delta: {
+                                content: 'Using tools',
+                                role: 'assistant',
+                                tool_calls: [
+                                    {
+                                        id: 'call_1',
+                                        type: 'function',
+                                        function: { name: 'tool_1' }
+                                    },
+                                    {
+                                        id: 'call_2',
+                                        type: 'function',
+                                        function: { name: 'tool_2' }
+                                    }
+                                ]
+                            },
+                            finish_reason: null
+                        }]
+                    };
+                    // Second chunk: Arguments for both tools
+                    yield {
+                        choices: [{
+                            delta: {
+                                tool_calls: [
+                                    {
+                                        id: 'call_1',
+                                        type: 'function',
+                                        function: { arguments: '{"param1": "value1"}' }
+                                    },
+                                    {
+                                        id: 'call_2',
+                                        type: 'function',
+                                        function: { arguments: '{"param2": "value2"}' }
+                                    }
+                                ]
+                            },
+                            finish_reason: 'tool_calls'
+                        }]
+                    };
+                }
+            };
+
+            mockConverter.convertStreamResponse
+                .mockReturnValueOnce({
+                    content: 'Using tools',
+                    role: 'assistant',
+                    isComplete: false,
+                    toolCallDeltas: [
+                        { id: 'call_1', name: 'tool_1' },
+                        { id: 'call_2', name: 'tool_2' }
+                    ],
+                    metadata: {
+                        finishReason: FinishReason.NULL,
+                        responseFormat: 'text'
+                    }
+                })
+                .mockReturnValueOnce({
+                    content: '',
+                    role: 'assistant',
+                    isComplete: true,
+                    toolCallDeltas: [
+                        { id: 'call_1', arguments: { param1: 'value1' } },
+                        { id: 'call_2', arguments: { param2: 'value2' } }
+                    ],
+                    metadata: {
+                        finishReason: FinishReason.TOOL_CALLS,
+                        responseFormat: 'text'
+                    }
+                });
+
+            const result = handler.handleStream(mockStream as AsyncIterable<OpenAIStreamResponse>, mockParams);
+            const chunks = [];
+            for await (const chunk of result) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks).toHaveLength(2);
+            // Final chunk should have both complete tool calls
+            expect(chunks[1].toolCalls).toEqual([
+                { name: 'tool_1', arguments: { param1: 'value1' } },
+                { name: 'tool_2', arguments: { param2: 'value2' } }
+            ]);
+        });
+
+        it('should handle tool call parsing errors', async () => {
+            const mockStream = {
+                async *[Symbol.asyncIterator]() {
+                    yield {
+                        choices: [{
+                            delta: {
+                                tool_calls: [{
+                                    id: 'call_123',
+                                    type: 'function',
+                                    function: { arguments: 'invalid json' }
+                                }]
+                            },
+                            finish_reason: 'tool_calls'
+                        }]
+                    };
+                }
+            };
+
+            mockConverter.convertStreamResponse.mockReturnValue({
+                content: '',
+                role: 'assistant',
+                isComplete: true,
+                toolCallDeltas: [{
+                    id: 'call_123',
+                    arguments: { invalid: 'json' }
+                }],
+                metadata: {
+                    finishReason: FinishReason.TOOL_CALLS,
+                    responseFormat: 'text'
+                }
+            });
+
+            const result = handler.handleStream(mockStream as AsyncIterable<OpenAIStreamResponse>, mockParams);
+            const chunks = [];
+            try {
+                for await (const chunk of result) {
+                    chunks.push(chunk);
+                }
+            } catch (error) {
+                expect(error).toBeDefined();
+                expect((error as Error).message).toContain('Failed to parse');
+            }
+        });
     });
 });
 

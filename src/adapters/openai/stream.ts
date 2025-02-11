@@ -2,12 +2,49 @@ import { UniversalStreamResponse, UniversalChatParams } from '../../interfaces/U
 import { OpenAIStreamResponse } from './types';
 import { Converter } from './converter';
 
+type AccumulatedToolCall = {
+    id: string;
+    name?: string;
+    arguments?: string;
+};
+
 export class StreamHandler {
     constructor(private converter: Converter) { }
 
     async *handleStream(stream: AsyncIterable<OpenAIStreamResponse>, params?: UniversalChatParams): AsyncGenerator<UniversalStreamResponse> {
+        // Initialize tool call accumulator
+        const toolCallAccumulator = new Map<string, AccumulatedToolCall>();
+
         for await (const chunk of stream) {
-            yield this.converter.convertStreamResponse(chunk, params);
+            const response = this.converter.convertStreamResponse(chunk, params);
+
+            // If there are tool call deltas, accumulate them
+            if (response.toolCallDeltas) {
+                for (const delta of response.toolCallDeltas) {
+                    const existing = toolCallAccumulator.get(delta.id) || { id: delta.id };
+                    toolCallAccumulator.set(delta.id, {
+                        ...existing,
+                        ...(delta.name && { name: delta.name }),
+                        ...(delta.arguments && { arguments: JSON.stringify(delta.arguments) })
+                    });
+                }
+
+                // If this is the final chunk, convert accumulated tool calls to the final format
+                if (response.isComplete) {
+                    const accumulatedCalls = Array.from(toolCallAccumulator.values())
+                        .filter(call => call.name && call.arguments) // Only include complete tool calls
+                        .map(call => ({
+                            name: call.name!,
+                            arguments: JSON.parse(call.arguments!)
+                        }));
+
+                    if (accumulatedCalls.length > 0) {
+                        response.toolCalls = accumulatedCalls;
+                    }
+                }
+            }
+
+            yield response;
         }
     }
 }

@@ -9,7 +9,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "example": "ts-node examples/simpleChat.ts"
+    "example": "ts-node examples/toolCalling.ts",
+    "example2": "ts-node examples/jsonOutput.ts"
   },
   "author": "",
   "license": "MIT",

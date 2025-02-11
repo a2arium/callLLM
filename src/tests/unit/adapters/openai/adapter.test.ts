@@ -66,9 +66,8 @@ describe('OpenAIAdapter', () => {
 
         // Mock implementations
         mockConverter.convertToProviderParams.mockReturnValue({
-            model: mockModel,
             messages: [{ role: 'user', content: 'test' }]
-        } as unknown as OpenAIModelParams);
+        });
         mockConverter.convertFromProviderResponse.mockReturnValue({
             content: 'test response',
             role: 'assistant',
@@ -102,21 +101,26 @@ describe('OpenAIAdapter', () => {
         // Create adapter instance
         adapter = new OpenAIAdapter({ apiKey: mockApiKey });
 
-        // Mock the models map
-        (adapter as any).models = new Map([
-            ['gpt-4', {
-                name: 'gpt-4',
-                inputPricePerMillion: 30,
-                outputPricePerMillion: 60,
-                maxRequestTokens: 8192,
-                maxResponseTokens: 4096,
-                characteristics: {
-                    qualityIndex: 90,
-                    outputSpeed: 100,
-                    firstTokenLatency: 200
-                }
-            }]
-        ]);
+        // Set up models for testing
+        adapter.setModelForTesting(mockModel, {
+            name: mockModel,
+            inputPricePerMillion: 30,
+            outputPricePerMillion: 60,
+            maxRequestTokens: 8192,
+            maxResponseTokens: 4096,
+            capabilities: {
+                toolCalls: true,
+                parallelToolCalls: true,
+                streaming: true,
+                temperature: true,
+                systemMessages: true
+            },
+            characteristics: {
+                qualityIndex: 90,
+                outputSpeed: 100,
+                firstTokenLatency: 200
+            }
+        });
     });
 
     describe('constructor', () => {
@@ -215,7 +219,17 @@ describe('OpenAIAdapter', () => {
         });
 
         it('should work without model info', async () => {
-            await adapter.chatCall('non-existent-model', mockParams);
+            // For this test, we'll use a model that's not in the models map
+            mockConverter.convertToProviderParams.mockReturnValue({
+                messages: [{ role: 'user', content: 'test' }]
+            });
+            mockConverter.convertFromProviderResponse.mockReturnValue({
+                content: 'test response',
+                role: 'assistant'
+            });
+
+            const response = await adapter.chatCall('non-existent-model', mockParams);
+            expect(response.content).toBe('test response');
             expect(mockConverter.setModel).not.toHaveBeenCalled();
             expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
         });
@@ -307,7 +321,18 @@ describe('OpenAIAdapter', () => {
         });
 
         it('should work without model info', async () => {
-            await adapter.streamCall('non-existent-model', mockParams);
+            // For this test, we'll use a model that's not in the models map
+            mockConverter.convertToProviderParams.mockReturnValue({
+                messages: [{ role: 'user', content: 'test' }]
+            });
+
+            const stream = await adapter.streamCall('non-existent-model', mockParams);
+            const chunks = [];
+            for await (const chunk of stream) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks).toHaveLength(1);
             expect(mockConverter.setModel).not.toHaveBeenCalled();
             expect(mockConverter.setParams).toHaveBeenCalledWith(mockParams);
         });
@@ -589,6 +614,163 @@ describe('OpenAIAdapter', () => {
                         responseFormat: 'text'
                     }
                 });
+            });
+        });
+    });
+
+    describe('tool calling', () => {
+        const mockTool = {
+            name: 'test_tool',
+            description: 'A test tool',
+            parameters: {
+                type: 'object',
+                properties: {
+                    test: {
+                        type: 'string',
+                        description: 'A test parameter'
+                    }
+                },
+                required: ['test']
+            },
+            callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                return {} as T;
+            }
+        };
+
+        const mockToolCallParams: UniversalChatParams = {
+            messages: [{ role: 'user', content: 'test' }],
+            settings: {
+                tools: [mockTool],
+                toolChoice: 'auto'
+            }
+        };
+
+        it('should handle tool calling in chat call', async () => {
+            const mockResponse = {
+                choices: [{
+                    message: {
+                        content: 'Using tool',
+                        role: 'assistant',
+                        tool_calls: [{
+                            id: 'call_123',
+                            type: 'function',
+                            function: {
+                                name: 'test_tool',
+                                arguments: '{"test": "value"}'
+                            }
+                        }]
+                    },
+                    finish_reason: 'tool_calls'
+                }]
+            };
+
+            (mockOpenAIClient.chat.completions.create as jest.Mock).mockResolvedValue(mockResponse);
+
+            const response = await adapter.chatCall(mockModel, mockToolCallParams);
+
+            expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith({
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    stream: false,
+                    tools: [mockTool],
+                    toolChoice: 'auto'
+                }
+            });
+
+            expect(response).toEqual({
+                content: 'test response',
+                role: 'assistant',
+                metadata: {
+                    finishReason: FinishReason.STOP,
+                    responseFormat: 'text'
+                }
+            });
+        });
+
+        it('should handle tool calling in stream call', async () => {
+            const mockStream = {
+                async *[Symbol.asyncIterator]() {
+                    yield {
+                        choices: [{
+                            delta: {
+                                content: 'Using tool',
+                                role: 'assistant',
+                                tool_calls: [{
+                                    id: 'call_123',
+                                    type: 'function',
+                                    function: {
+                                        name: 'test_tool',
+                                        arguments: '{"test": "value"}'
+                                    }
+                                }]
+                            },
+                            finish_reason: 'tool_calls'
+                        }]
+                    };
+                }
+            };
+
+            (mockOpenAIClient.chat.completions.create as jest.Mock).mockResolvedValue(mockStream);
+
+            const stream = await adapter.streamCall(mockModel, mockToolCallParams);
+
+            expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith({
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    stream: true,
+                    tools: [mockTool],
+                    toolChoice: 'auto'
+                }
+            });
+
+            for await (const chunk of stream) {
+                expect(chunk).toEqual({
+                    content: 'test stream',
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        finishReason: FinishReason.STOP,
+                        responseFormat: 'text'
+                    }
+                });
+            }
+        });
+
+        it('should preserve existing behavior when no tool settings are present', async () => {
+            const regularParams: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test' }]
+            };
+
+            await adapter.chatCall(mockModel, regularParams);
+
+            expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith({
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    stream: false
+                }
+            });
+        });
+
+        it('should handle parallel tool calls', async () => {
+            const paramsWithParallelTools: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    tools: [mockTool],
+                    toolChoice: 'auto',
+                    toolCalls: 2
+                }
+            };
+
+            await adapter.chatCall(mockModel, paramsWithParallelTools);
+
+            expect(mockConverter.convertToProviderParams).toHaveBeenCalledWith({
+                messages: [{ role: 'user', content: 'test' }],
+                settings: {
+                    stream: false,
+                    tools: [mockTool],
+                    toolChoice: 'auto',
+                    toolCalls: 2
+                }
             });
         });
     });
