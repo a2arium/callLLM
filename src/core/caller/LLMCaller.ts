@@ -108,12 +108,18 @@ export class LLMCaller {
             settings?: UniversalChatParams['settings'];
             historicalMessages?: UniversalMessage[];
         }) => {
+            // Enrich historicalMessages by ensuring the user's message is included
+            const enrichedHistory: UniversalMessage[] = [
+                ...(params.historicalMessages || []),
+                { role: 'user' as const, content: params.message }
+            ];
+
             const initialResponse = await this.chatController.execute({
                 model: this.model,
                 systemMessage: this.systemMessage,
                 message: params.message,
                 settings: this.mergeSettings(params.settings),
-                historicalMessages: params.historicalMessages
+                historicalMessages: enrichedHistory
             });
 
             // If tools are enabled in settings and we have registered tools
@@ -123,7 +129,7 @@ export class LLMCaller {
                     {
                         model: this.model,
                         systemMessage: this.systemMessage,
-                        historicalMessages: params.historicalMessages,
+                        historicalMessages: enrichedHistory,
                         settings: this.mergeSettings(params.settings)
                     }
                 );

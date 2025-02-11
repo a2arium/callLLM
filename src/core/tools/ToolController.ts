@@ -100,7 +100,13 @@ export class ToolController {
                     name: toolName
                 })));
 
-                toolCalls.push({ ...toolCall, result: typeof result === 'string' ? result : JSON.stringify(result) });
+                let finalResult: string;
+                if (typeof result === 'string') {
+                    finalResult = JSON.stringify(result);
+                } else {
+                    finalResult = JSON.stringify(result);
+                }
+                toolCalls.push({ name: toolCall.name, parameters: toolCall.parameters, result: finalResult });
                 if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Successfully executed tool: ${toolName}`); }
             } catch (error) {
                 console.error(`[ToolController] Error executing tool ${toolName}:`, error);

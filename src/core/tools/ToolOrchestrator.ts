@@ -57,7 +57,10 @@ export class ToolOrchestrator {
         // Keep system messages and last maxLength messages
         const systemMessages = messages.filter(msg => msg.role === 'system');
         const nonSystemMessages = messages.filter(msg => msg.role !== 'system');
-        const recentMessages = nonSystemMessages.slice(-maxLength);
+
+        // Calculate how many non-system messages we can keep
+        const availableSlots = maxLength - systemMessages.length;
+        const recentMessages = nonSystemMessages.slice(-availableSlots);
 
         return [...systemMessages, ...recentMessages];
     }
@@ -111,16 +114,39 @@ export class ToolOrchestrator {
                     break;
                 }
 
-                // Only add assistant message if currentResponse.content is non-empty
-                const assistantMessage = currentResponse.content.trim()
-                    ? [{ role: 'assistant' as const, content: currentResponse.content as string }]
-                    : [];
+                // Prepare messages to add
+                const newMessages: UniversalMessage[] = [];
 
-                // Add assistant response and tool messages to historical messages
+                // Only add assistant message if it contains meaningful content beyond tool calls
+                const content = currentResponse.content.trim();
+                const hasToolCall = content.includes('<tool>') || (currentResponse.toolCalls?.length ?? 0) > 0;
+                const hasNonToolContent = content.replace(/<tool>.*?<\/tool>/g, '').trim().length > 0;
+
+                if (hasNonToolContent || (!hasToolCall && content.length > 0)) {
+                    newMessages.push({ role: 'assistant' as const, content: currentResponse.content as string });
+                }
+
+                // Add tool call context messages for successful tool calls
+                if (toolResult?.toolCalls) {
+                    toolResult.toolCalls.forEach(call => {
+                        if (!call.error) {
+                            newMessages.push({
+                                role: 'system',
+                                content: `Tool ${call.name} was called with parameters: ${JSON.stringify(call.parameters)}`
+                            });
+                        }
+                    });
+                }
+
+                // Add tool messages
+                if (toolResult.messages) {
+                    newMessages.push(...toolResult.messages);
+                }
+
+                // Add all messages in the correct order and trim
                 updatedHistoricalMessages = this.trimHistory([
                     ...updatedHistoricalMessages,
-                    ...assistantMessage,
-                    ...(toolResult.messages || [])
+                    ...newMessages
                 ], maxHistory);
 
                 // Make a new chat call with the updated context

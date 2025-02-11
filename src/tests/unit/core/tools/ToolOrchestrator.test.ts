@@ -320,5 +320,168 @@ describe('ToolOrchestrator', () => {
                 expect(executeCall?.historicalMessages?.length).toBe(5); // 3 original + assistant + tool message
             });
         });
+
+        describe('Assistant Message Handling', () => {
+            it('should not add assistant message when content only contains tool calls', async () => {
+                const initialResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: '<tool>testTool:{}</tool>',
+                    metadata: {},
+                };
+
+                toolController.processToolCalls.mockResolvedValueOnce({
+                    toolCalls: [{
+                        name: 'testTool',
+                        parameters: {},
+                        result: 'Tool execution successful',
+                    }],
+                    messages: [{ role: 'tool', content: 'Tool execution successful' }],
+                    requiresResubmission: true,
+                });
+
+                const finalResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: 'Final response',
+                    metadata: {},
+                };
+                chatController.execute.mockResolvedValueOnce(finalResponse);
+
+                await toolOrchestrator.processResponse(initialResponse, {
+                    model: 'gpt-4',
+                    systemMessage: '',
+                    historicalMessages: [],
+                });
+
+                const executeCall = chatController.execute.mock.calls[0]?.[0];
+                expect(executeCall?.historicalMessages).toBeDefined();
+                // Should only have tool messages, no assistant message
+                expect(executeCall?.historicalMessages?.filter(m => m.role === 'assistant')).toHaveLength(0);
+            });
+
+            it('should add assistant message when content has text besides tool calls', async () => {
+                const initialResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: 'Let me check that for you.\n<tool>testTool:{}</tool>',
+                    metadata: {},
+                };
+
+                toolController.processToolCalls.mockResolvedValueOnce({
+                    toolCalls: [{
+                        name: 'testTool',
+                        parameters: {},
+                        result: 'Tool execution successful',
+                    }],
+                    messages: [{ role: 'tool', content: 'Tool execution successful' }],
+                    requiresResubmission: true,
+                });
+
+                const finalResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: 'Final response',
+                    metadata: {},
+                };
+                chatController.execute.mockResolvedValueOnce(finalResponse);
+
+                await toolOrchestrator.processResponse(initialResponse, {
+                    model: 'gpt-4',
+                    systemMessage: '',
+                    historicalMessages: [],
+                });
+
+                const executeCall = chatController.execute.mock.calls[0]?.[0];
+                expect(executeCall?.historicalMessages).toBeDefined();
+                // Should have the assistant message because it contains meaningful text
+                const assistantMessages = executeCall?.historicalMessages?.filter(m => m.role === 'assistant');
+                expect(assistantMessages).toHaveLength(1);
+                expect(assistantMessages?.[0].content).toBe('Let me check that for you.\n<tool>testTool:{}</tool>');
+            });
+
+            it('should handle multiple tool calls without adding assistant message', async () => {
+                const initialResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: '<tool>testTool1:{}</tool>\n<tool>testTool2:{}</tool>',
+                    metadata: {},
+                };
+
+                toolController.processToolCalls.mockResolvedValueOnce({
+                    toolCalls: [
+                        {
+                            name: 'testTool1',
+                            parameters: {},
+                            result: 'Tool 1 execution successful',
+                        },
+                        {
+                            name: 'testTool2',
+                            parameters: {},
+                            result: 'Tool 2 execution successful',
+                        }
+                    ],
+                    messages: [
+                        { role: 'tool', content: 'Tool 1 execution successful' },
+                        { role: 'tool', content: 'Tool 2 execution successful' }
+                    ],
+                    requiresResubmission: true,
+                });
+
+                const finalResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: 'Final response',
+                    metadata: {},
+                };
+                chatController.execute.mockResolvedValueOnce(finalResponse);
+
+                await toolOrchestrator.processResponse(initialResponse, {
+                    model: 'gpt-4',
+                    systemMessage: '',
+                    historicalMessages: [],
+                });
+
+                const executeCall = chatController.execute.mock.calls[0]?.[0];
+                expect(executeCall?.historicalMessages).toBeDefined();
+                // Should have no assistant messages as content only contains tool calls
+                expect(executeCall?.historicalMessages?.filter(m => m.role === 'assistant')).toHaveLength(0);
+                // Should have both tool messages
+                expect(executeCall?.historicalMessages?.filter(m => m.role === 'tool')).toHaveLength(2);
+            });
+
+            it('should handle OpenAI format tool calls', async () => {
+                const initialResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: '',
+                    metadata: {},
+                    toolCalls: [
+                        { name: 'testTool', arguments: { param: 'value' } }
+                    ]
+                };
+
+                toolController.processToolCalls.mockResolvedValueOnce({
+                    toolCalls: [{
+                        name: 'testTool',
+                        parameters: { param: 'value' },
+                        result: 'Tool execution successful',
+                    }],
+                    messages: [{ role: 'tool', content: 'Tool execution successful' }],
+                    requiresResubmission: true,
+                });
+
+                const finalResponse: UniversalChatResponse = {
+                    role: 'assistant',
+                    content: 'Final response',
+                    metadata: {},
+                };
+                chatController.execute.mockResolvedValueOnce(finalResponse);
+
+                await toolOrchestrator.processResponse(initialResponse, {
+                    model: 'gpt-4',
+                    systemMessage: '',
+                    historicalMessages: [],
+                });
+
+                const executeCall = chatController.execute.mock.calls[0]?.[0];
+                expect(executeCall?.historicalMessages).toBeDefined();
+                // Should have no assistant messages as it's a pure tool call
+                expect(executeCall?.historicalMessages?.filter(m => m.role === 'assistant')).toHaveLength(0);
+            });
+        });
     });
 }); 

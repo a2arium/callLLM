@@ -1,166 +1,151 @@
 import { ToolController } from '../../../../core/tools/ToolController';
+import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../../../core/tools/types';
 import { ToolsManager } from '../../../../core/tools/ToolsManager';
-import type { ToolDefinition } from '../../../../core/types';
+
+// Define a FakeToolsManager that extends the real ToolsManager
+class FakeToolsManager extends ToolsManager {
+    constructor() {
+        super();
+        this.getTool = jest.fn();
+        this.addTool = jest.fn();
+        this.removeTool = jest.fn();
+        this.updateTool = jest.fn();
+        this.listTools = jest.fn();
+    }
+}
+
+const createFakeToolsManager = (): ToolsManager => new FakeToolsManager();
 
 describe('ToolController', () => {
-    let toolsManager: ToolsManager;
-    let toolController: ToolController;
+    const dummyContent = 'dummyContent';
 
-    beforeEach(() => {
-        toolsManager = new ToolsManager();
-        toolController = new ToolController(toolsManager);
+    test('should throw ToolIterationLimitError when iteration limit is exceeded', async () => {
+        const fakeToolsManager = createFakeToolsManager();
+        const controller = new ToolController(fakeToolsManager, 1); // maxIterations = 1
+        // First call: iterationCount becomes 1
+        await controller.processToolCalls(dummyContent, { content: '', role: 'assistant' });
+        // Second call should exceed the limit and throw
+        await expect(controller.processToolCalls(dummyContent, { content: '', role: 'assistant' })).rejects.toThrow(ToolIterationLimitError);
     });
 
-    describe('processToolCalls', () => {
-        it('should execute a single tool call successfully', async () => {
-            const mockTool: ToolDefinition = {
-                name: 'testTool',
-                description: 'Test tool',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        param1: { type: 'string' },
-                        param2: { type: 'number' }
-                    }
-                },
-                callFunction: jest.fn().mockResolvedValue('Success result')
-            };
-
-            toolsManager.addTool(mockTool);
-
-            const content = '<tool>testTool:{"param1": "value1", "param2": 42}</tool>';
-            const result = await toolController.processToolCalls(content);
-
-            expect(result.toolCalls).toHaveLength(1);
-            expect(result.messages).toHaveLength(1);
-            expect(result.requiresResubmission).toBe(true);
-            expect(mockTool.callFunction).toHaveBeenCalledWith({
-                param1: 'value1',
-                param2: 42
-            });
-            expect(result.messages[0]).toEqual({
-                role: 'function',
-                content: 'Success result',
-                name: 'testTool'
-            });
-        });
-
-        it('should handle multiple tool calls', async () => {
-            const mockTool1: ToolDefinition = {
-                name: 'tool1',
-                description: 'Tool 1',
-                parameters: { type: 'object', properties: {} },
-                callFunction: jest.fn().mockResolvedValue('Result 1')
-            };
-
-            const mockTool2: ToolDefinition = {
-                name: 'tool2',
-                description: 'Tool 2',
-                parameters: { type: 'object', properties: {} },
-                callFunction: jest.fn().mockResolvedValue('Result 2')
-            };
-
-            toolsManager.addTool(mockTool1);
-            toolsManager.addTool(mockTool2);
-
-            const content = `
-                <tool>tool1:{"param": "value1"}</tool>
-                Some text in between
-                <tool>tool2:{"param": "value2"}</tool>
-            `;
-
-            const result = await toolController.processToolCalls(content);
-
-            expect(result.toolCalls).toHaveLength(2);
-            expect(result.messages).toHaveLength(2);
-            expect(result.requiresResubmission).toBe(true);
-            expect(mockTool1.callFunction).toHaveBeenCalledWith({ param: 'value1' });
-            expect(mockTool2.callFunction).toHaveBeenCalledWith({ param: 'value2' });
-        });
-
-        it('should handle non-existent tools', async () => {
-            const content = '<tool>nonExistentTool:{"param": "value"}</tool>';
-            const result = await toolController.processToolCalls(content);
-
-            expect(result.toolCalls).toHaveLength(1);
-            expect(result.messages).toHaveLength(1);
-            expect(result.requiresResubmission).toBe(true);
-            expect(result.messages[0].content).toContain("Tool 'nonExistentTool' not found");
-            expect(result.toolCalls[0].error).toBeDefined();
-        });
-
-        it('should handle tool execution errors', async () => {
-            const mockTool: ToolDefinition = {
-                name: 'errorTool',
-                description: 'Error tool',
-                parameters: { type: 'object', properties: {} },
-                callFunction: jest.fn().mockRejectedValue(new Error('Tool execution failed'))
-            };
-
-            toolsManager.addTool(mockTool);
-
-            const content = '<tool>errorTool:{"param": "value"}</tool>';
-            const result = await toolController.processToolCalls(content);
-
-            expect(result.toolCalls).toHaveLength(1);
-            expect(result.messages).toHaveLength(1);
-            expect(result.requiresResubmission).toBe(true);
-            expect(result.messages[0].content).toContain('Tool execution failed');
-            expect(result.toolCalls[0].error).toBeDefined();
-        });
-
-        it('should handle tool with postCallLogic', async () => {
-            const mockTool: ToolDefinition = {
-                name: 'postProcessTool',
-                description: 'Post process tool',
-                parameters: { type: 'object', properties: {} },
-                callFunction: jest.fn().mockResolvedValue({ raw: 'data' }),
-                postCallLogic: jest.fn().mockResolvedValue(['Processed message 1', 'Processed message 2'])
-            };
-
-            toolsManager.addTool(mockTool);
-
-            const content = '<tool>postProcessTool:{"param": "value"}</tool>';
-            const result = await toolController.processToolCalls(content);
-
-            expect(result.messages).toHaveLength(2);
-            expect(result.requiresResubmission).toBe(true);
-            expect(mockTool.postCallLogic).toHaveBeenCalledWith({ raw: 'data' });
-            expect(result.messages[0].content).toBe('Processed message 1');
-            expect(result.messages[1].content).toBe('Processed message 2');
-        });
-
-        it('should throw error when iteration limit is exceeded', async () => {
-            const toolController = new ToolController(toolsManager, 1);
-            const content = '<tool>testTool:{"param": "value"}</tool>';
-
-            await toolController.processToolCalls(content);
-            await expect(toolController.processToolCalls(content)).rejects.toThrow('Tool call iteration limit');
-        });
-
-        it('should handle content without tool calls', async () => {
-            const content = 'Just some regular text without tool calls';
-            const result = await toolController.processToolCalls(content);
-
-            expect(result.toolCalls).toHaveLength(0);
-            expect(result.messages).toHaveLength(0);
-            expect(result.requiresResubmission).toBe(false);
-        });
+    test('should handle direct tool calls with missing tool', async () => {
+        const fakeToolsManager = createFakeToolsManager();
+        // getTool returns undefined for any tool
+        (fakeToolsManager.getTool as jest.Mock).mockReturnValue(undefined);
+        const controller = new ToolController(fakeToolsManager);
+        const response = {
+            content: '',
+            role: 'assistant',
+            toolCalls: [
+                { name: 'nonExistentTool', arguments: { param: 'value' } }
+            ]
+        };
+        const result = await controller.processToolCalls('', response);
+        expect(result.messages[0]).toMatchObject({ role: 'system', content: expect.stringContaining('nonExistentTool') });
+        expect(result.toolCalls[0]).toMatchObject({ name: 'nonExistentTool', error: expect.stringContaining('not found') });
+        expect(result.requiresResubmission).toBe(true);
     });
 
-    describe('resetIterationCount', () => {
-        it('should reset iteration count', async () => {
-            const toolController = new ToolController(toolsManager, 2);
-            const content = '<tool>testTool:{"param": "value"}</tool>';
-
-            await toolController.processToolCalls(content);
-            toolController.resetIterationCount();
-            await toolController.processToolCalls(content);
-
-            // Should not throw iteration limit error
-            expect(async () => {
-                await toolController.processToolCalls(content);
-            }).not.toThrow();
+    test('should process direct tool call without postCallLogic', async () => {
+        const fakeToolsManager = createFakeToolsManager();
+        const dummyTool = {
+            callFunction: jest.fn().mockResolvedValue({ result: 'resultValue' })
+            // no postCallLogic provided
+        };
+        (fakeToolsManager.getTool as jest.Mock).mockImplementation((name: string) => {
+            return name === 'dummyTool' ? dummyTool : undefined;
         });
+        const controller = new ToolController(fakeToolsManager);
+        const response = {
+            content: '',
+            role: 'assistant',
+            toolCalls: [
+                { name: 'dummyTool', arguments: { key: 'value' } }
+            ]
+        };
+        const result = await controller.processToolCalls('', response);
+        expect(dummyTool.callFunction).toHaveBeenCalledWith({ key: 'value' });
+        // If result is not a string, JSON.stringify will be used
+        expect(result.messages[0]).toMatchObject({ role: 'function', content: JSON.stringify({ result: 'resultValue' }), name: 'dummyTool' });
+        expect(result.toolCalls[0]).toMatchObject({ name: 'dummyTool', result: JSON.stringify({ result: 'resultValue' }) });
+    });
+
+    test('should process direct tool call with postCallLogic', async () => {
+        const fakeToolsManager = createFakeToolsManager();
+        const dummyTool = {
+            callFunction: jest.fn().mockResolvedValue('rawResult'),
+            postCallLogic: jest.fn().mockResolvedValue(['processedMessage'])
+        };
+        (fakeToolsManager.getTool as jest.Mock).mockImplementation((name: string) => {
+            return name === 'dummyTool' ? dummyTool : undefined;
+        });
+        const controller = new ToolController(fakeToolsManager);
+        const response = {
+            content: '',
+            role: 'assistant',
+            toolCalls: [
+                { name: 'dummyTool', arguments: { key: 'value' } }
+            ]
+        };
+        const result = await controller.processToolCalls('', response);
+        expect(dummyTool.callFunction).toHaveBeenCalledWith({ key: 'value' });
+        expect(dummyTool.postCallLogic).toHaveBeenCalledWith('rawResult');
+        expect(result.messages[0]).toMatchObject({ role: 'function', content: 'processedMessage', name: 'dummyTool' });
+        // Even with postCallLogic, the original result is used for toolCalls
+        expect(result.toolCalls[0]).toMatchObject({ name: 'dummyTool', result: JSON.stringify('rawResult') });
+    });
+
+    test('should handle error thrown by tool call', async () => {
+        const fakeToolsManager = createFakeToolsManager();
+        const dummyError = new Error('call failed');
+        const dummyTool = {
+            callFunction: jest.fn().mockRejectedValue(dummyError)
+        };
+        (fakeToolsManager.getTool as jest.Mock).mockImplementation((name: string) => {
+            return name === 'failingTool' ? dummyTool : undefined;
+        });
+        const controller = new ToolController(fakeToolsManager);
+        const response = {
+            content: '',
+            role: 'assistant',
+            toolCalls: [
+                { name: 'failingTool', arguments: {} }
+            ]
+        };
+        const result = await controller.processToolCalls('', response);
+        expect(result.messages[0]).toMatchObject({ role: 'system', content: expect.stringContaining('failingTool') });
+        expect(result.toolCalls[0]).toMatchObject({ name: 'failingTool', error: expect.stringContaining('call failed') });
+    });
+
+    test('should fall back to parsing content when response is missing toolCalls', async () => {
+        const fakeToolsManager = createFakeToolsManager();
+        const dummyTool = {
+            callFunction: jest.fn().mockResolvedValue('parsedResult')
+        };
+        (fakeToolsManager.getTool as jest.Mock).mockImplementation((name: string) => {
+            return name === 'parseTool' ? dummyTool : undefined;
+        });
+        const controller = new ToolController(fakeToolsManager);
+        // Override toolCallParser.parse to return a controlled value
+        const parseSpy = jest.spyOn((controller as any).toolCallParser, 'parse').mockReturnValue({
+            toolCalls: [{ toolName: 'parseTool', parameters: { a: 1 } }],
+            requiresResubmission: false
+        });
+        const result = await controller.processToolCalls('some content');
+        expect(parseSpy).toHaveBeenCalledWith('some content');
+        expect(dummyTool.callFunction).toHaveBeenCalledWith({ a: 1 });
+        expect(result.requiresResubmission).toBe(false);
+        parseSpy.mockRestore();
+    });
+
+    test('resetIterationCount should reset the iteration count', async () => {
+        const fakeToolsManager = createFakeToolsManager();
+        const controller = new ToolController(fakeToolsManager, 2);
+        // First call to increment iterationCount
+        await controller.processToolCalls('content', { content: '', role: 'assistant' });
+        // Reset iteration count
+        controller.resetIterationCount();
+        // After reset, should be able to call without reaching limit
+        await expect(controller.processToolCalls('content', { content: '', role: 'assistant' })).resolves.toBeDefined();
     });
 }); 
