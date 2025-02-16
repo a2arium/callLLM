@@ -323,6 +323,7 @@ describe('StreamHandler', () => {
                     isComplete: false,
                     toolCallDeltas: [{
                         id: 'call_123',
+                        index: 0,
                         name: 'test_tool'
                     }],
                     metadata: {
@@ -336,6 +337,7 @@ describe('StreamHandler', () => {
                     isComplete: true,
                     toolCallDeltas: [{
                         id: 'call_123',
+                        index: 0,
                         arguments: { test: 'value' }
                     }],
                     metadata: {
@@ -358,6 +360,7 @@ describe('StreamHandler', () => {
                 isComplete: false,
                 toolCallDeltas: [{
                     id: 'call_123',
+                    index: 0,
                     name: 'test_tool'
                 }],
                 metadata: {
@@ -372,6 +375,7 @@ describe('StreamHandler', () => {
                 isComplete: true,
                 toolCallDeltas: [{
                     id: 'call_123',
+                    index: 0,
                     arguments: { test: 'value' }
                 }],
                 toolCalls: [{
@@ -438,10 +442,15 @@ describe('StreamHandler', () => {
                     content: 'Using tools',
                     role: 'assistant',
                     isComplete: false,
-                    toolCallDeltas: [
-                        { id: 'call_1', name: 'tool_1' },
-                        { id: 'call_2', name: 'tool_2' }
-                    ],
+                    toolCallDeltas: [{
+                        id: 'call_1',
+                        index: 0,
+                        name: 'tool_1'
+                    }, {
+                        id: 'call_2',
+                        index: 1,
+                        name: 'tool_2'
+                    }],
                     metadata: {
                         finishReason: FinishReason.NULL,
                         responseFormat: 'text'
@@ -451,10 +460,15 @@ describe('StreamHandler', () => {
                     content: '',
                     role: 'assistant',
                     isComplete: true,
-                    toolCallDeltas: [
-                        { id: 'call_1', arguments: { param1: 'value1' } },
-                        { id: 'call_2', arguments: { param2: 'value2' } }
-                    ],
+                    toolCallDeltas: [{
+                        id: 'call_1',
+                        index: 0,
+                        arguments: { param1: 'value1' }
+                    }, {
+                        id: 'call_2',
+                        index: 1,
+                        arguments: { param2: 'value2' }
+                    }],
                     metadata: {
                         finishReason: FinishReason.TOOL_CALLS,
                         responseFormat: 'text'
@@ -499,6 +513,7 @@ describe('StreamHandler', () => {
                 isComplete: true,
                 toolCallDeltas: [{
                     id: 'call_123',
+                    index: 0,
                     arguments: { invalid: 'json' }
                 }],
                 metadata: {

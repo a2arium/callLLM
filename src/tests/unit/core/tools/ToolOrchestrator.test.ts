@@ -9,6 +9,12 @@ import type { ModelManager } from '../../../../core/models/ModelManager';
 import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
 import type { RetryManager } from '../../../../core/retry/RetryManager';
 import type { UsageTracker } from '../../../../core/telemetry/UsageTracker';
+import { StreamController } from '../../../../core/streaming/StreamController';
+
+const dummyStreamController: StreamController = {
+    // Provide minimal stub implementations if any methods are required
+    createStream: jest.fn()
+} as unknown as StreamController;
 
 describe('ToolOrchestrator', () => {
     let toolOrchestrator: ToolOrchestrator;
@@ -29,7 +35,7 @@ describe('ToolOrchestrator', () => {
             toolCallParser: {} as any,
         } as unknown as jest.Mocked<ToolController>;
 
-        toolOrchestrator = new ToolOrchestrator(toolController, chatController);
+        toolOrchestrator = new ToolOrchestrator(toolController, chatController, dummyStreamController);
     });
 
     describe('processResponse', () => {

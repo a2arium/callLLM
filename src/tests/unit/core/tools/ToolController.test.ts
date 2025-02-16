@@ -117,7 +117,7 @@ describe('ToolController', () => {
         expect(result.toolCalls[0]).toMatchObject({ name: 'failingTool', error: expect.stringContaining('call failed') });
     });
 
-    test('should fall back to parsing content when response is missing toolCalls', async () => {
+    test('should not fall back to parsing content when response is missing toolCalls', async () => {
         const fakeToolsManager = createFakeToolsManager();
         const dummyTool = {
             callFunction: jest.fn().mockResolvedValue('parsedResult')
@@ -126,14 +126,14 @@ describe('ToolController', () => {
             return name === 'parseTool' ? dummyTool : undefined;
         });
         const controller = new ToolController(fakeToolsManager);
-        // Override toolCallParser.parse to return a controlled value
         const parseSpy = jest.spyOn((controller as any).toolCallParser, 'parse').mockReturnValue({
             toolCalls: [{ toolName: 'parseTool', parameters: { a: 1 } }],
             requiresResubmission: false
         });
         const result = await controller.processToolCalls('some content');
-        expect(parseSpy).toHaveBeenCalledWith('some content');
-        expect(dummyTool.callFunction).toHaveBeenCalledWith({ a: 1 });
+        expect(parseSpy).not.toHaveBeenCalled();
+        expect(dummyTool.callFunction).not.toHaveBeenCalled();
+        expect(result.toolCalls).toEqual([]);
         expect(result.requiresResubmission).toBe(false);
         parseSpy.mockRestore();
     });

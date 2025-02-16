@@ -223,7 +223,7 @@ describe('OpenAIAdapter Integration Tests', () => {
             }
 
             expect(chunks.length).toBe(2);
-            expect(chunks[1].toolCallDeltas?.[0].arguments).toEqual({ location: 'San Francisco, CA' });
+            expect(JSON.parse(chunks[1].toolCallDeltas?.[0].arguments as string)).toEqual({ location: 'San Francisco, CA' });
         });
 
         it('should maintain backward compatibility when no tool settings provided', async () => {
@@ -550,7 +550,7 @@ describe('OpenAIAdapter Integration Tests', () => {
                 chunks.push(chunk);
             }
 
-            expect(chunks[0].toolCallDeltas?.[0].arguments).toEqual({ test: 'value' });
+            expect(JSON.parse(chunks[0].toolCallDeltas?.[0].arguments as string)).toEqual({ test: 'value' });
         });
 
         it('should handle model without tool calling capability', async () => {

@@ -4,6 +4,7 @@ import { ChatController } from '../../../core/chat/ChatController';
 import { ToolsManager } from '../../../core/tools/ToolsManager';
 import type { ToolDefinition } from '../../../core/types';
 import type { UniversalChatResponse, UniversalMessage } from '../../../interfaces/UniversalInterfaces';
+import { StreamController } from '../../../core/streaming/StreamController';
 
 // Mock ChatController
 class MockChatController {
@@ -16,6 +17,11 @@ class MockChatController {
         return { role: 'assistant', content, metadata: {} };
     }
 }
+
+// Add mock StreamController
+const mockStreamController: StreamController = {
+    createStream: jest.fn()
+} as unknown as StreamController;
 
 describe('ToolOrchestrator Integration', () => {
     let toolsManager: ToolsManager;
@@ -65,7 +71,8 @@ describe('ToolOrchestrator Integration', () => {
 
             orchestrator = new ToolOrchestrator(
                 toolController,
-                mockChatController as unknown as ChatController
+                mockChatController as unknown as ChatController,
+                mockStreamController
             );
 
             // Initial response with tool calls
@@ -117,7 +124,8 @@ describe('ToolOrchestrator Integration', () => {
 
             orchestrator = new ToolOrchestrator(
                 toolController,
-                mockChatController as unknown as ChatController
+                mockChatController as unknown as ChatController,
+                mockStreamController
             );
 
             const initialResponse: UniversalChatResponse = {
@@ -163,7 +171,8 @@ describe('ToolOrchestrator Integration', () => {
 
             orchestrator = new ToolOrchestrator(
                 toolController,
-                mockChatController as unknown as ChatController
+                mockChatController as unknown as ChatController,
+                mockStreamController
             );
 
             const initialResponse: UniversalChatResponse = {
@@ -207,7 +216,8 @@ describe('ToolOrchestrator Integration', () => {
 
             orchestrator = new ToolOrchestrator(
                 toolController,
-                mockChatController as unknown as ChatController
+                mockChatController as unknown as ChatController,
+                mockStreamController
             );
 
             const initialResponse: UniversalChatResponse = {
