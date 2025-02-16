@@ -18,6 +18,7 @@ export type OpenAIToolCall = {
         name: string;
         arguments: string;
     };
+    index?: number;
 };
 
 export type OpenAIAssistantMessage = ChatCompletionMessage & {

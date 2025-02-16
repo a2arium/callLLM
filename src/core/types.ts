@@ -66,4 +66,17 @@ export type ToolCallResponse = {
         name: string;
         arguments: string;
     };
+};
+
+export type ToolCall = {
+    name: string;
+    arguments: Record<string, unknown>;
+};
+
+export type UniversalMessage = {
+    role: 'system' | 'user' | 'assistant' | 'function';
+    content: string;
+    name?: string;
+    toolCalls?: ToolCall[];
+    metadata?: Record<string, unknown>;
 }; 

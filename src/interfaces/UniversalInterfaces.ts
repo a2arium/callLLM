@@ -94,9 +94,10 @@ export interface UniversalStreamResponse {
     role: string;
     isComplete: boolean;
     toolCallDeltas?: Array<{
-        id: string;
+        id?: string;
+        index: number;
         name?: string;
-        arguments?: Record<string, unknown>;
+        arguments?: string | Record<string, unknown>;
     }>;
     toolCalls?: Array<{
         name: string;

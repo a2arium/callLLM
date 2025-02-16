@@ -117,28 +117,22 @@ export class Converter {
     }
 
     private convertToolCallDeltas(toolCalls?: Partial<OpenAIToolCall>[]): Array<{
-        id: string;
+        id?: string;
+        index: number;
         name?: string;
-        arguments?: Record<string, unknown>;
+        arguments?: string | Record<string, unknown>;
     }> | undefined {
         if (!toolCalls?.length) {
             return undefined;
         }
+        // console.log('toolCalls for openai converter', toolCalls);
 
-        const validToolCalls = toolCalls.filter(call => !!call.id);
-        if (validToolCalls.length === 0) {
-            return undefined;
-        }
-
-        try {
-            return validToolCalls.map(call => ({
-                id: call.id!,
-                ...(call.function?.name && { name: call.function.name }),
-                ...(call.function?.arguments && { arguments: JSON.parse(call.function.arguments) })
-            }));
-        } catch (error) {
-            throw new Error(`Failed to parse tool call delta: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
+        return toolCalls.map((call, index) => ({
+            index,
+            ...(call.id && { id: call.id }),
+            ...(call.function?.name && { name: call.function.name }),
+            ...(call.function?.arguments && { arguments: call.function.arguments })
+        }));
     }
 
     convertToProviderParams(params: UniversalChatParams): Omit<OpenAIModelParams, 'model'> {

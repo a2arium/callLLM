@@ -35,10 +35,12 @@ export class ToolController {
         toolCalls: { name: string; parameters: Record<string, unknown>; result?: string; error?: string }[];
         requiresResubmission: boolean;
     }> {
-        if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing tool calls (iteration ${this.iterationCount + 1}/${this.maxIterations})`); }
+        // console.log('[ToolController] Raw content for tool calls:', content);
+
+        // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing tool calls (iteration ${this.iterationCount + 1}/${this.maxIterations})`); }
 
         if (this.iterationCount >= this.maxIterations) {
-            if (process.env.NODE_ENV !== 'test') { console.warn(`[ToolController] Iteration limit exceeded: ${this.maxIterations}`); }
+            // if (process.env.NODE_ENV !== 'test') { console.warn(`[ToolController] Iteration limit exceeded: ${this.maxIterations}`); }
             throw new ToolIterationLimitError(this.maxIterations);
         }
         this.iterationCount++;
@@ -48,7 +50,7 @@ export class ToolController {
         let requiresResubmission = false;
 
         if (response?.toolCalls?.length) {
-            if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Found ${response.toolCalls.length} direct tool calls`); }
+            // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Found ${response.toolCalls.length} direct tool calls`); }
             parsedToolCalls = response.toolCalls.map((tc: { name: string; arguments: Record<string, unknown> }) => ({
                 toolName: tc.name,
                 parameters: tc.arguments || {}
@@ -56,23 +58,25 @@ export class ToolController {
             requiresResubmission = true;
         } else {
             // Fall back to parsing content if no direct tool calls
-            const parseResult = this.toolCallParser.parse(content);
-            parsedToolCalls = parseResult.toolCalls;
-            requiresResubmission = parseResult.requiresResubmission;
+            const parser = new ToolCallParser();
+            const parsedResult = parser.parse(content);
+            // console.log('[ToolController] Parsed tool calls:', parsedResult);
+            parsedToolCalls = parsedResult.toolCalls;
+            requiresResubmission = parsedResult.requiresResubmission;
         }
 
-        if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing ${parsedToolCalls.length} tool calls`); }
+        // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing ${parsedToolCalls.length} tool calls`); }
 
         const messages: UniversalMessage[] = [];
         const toolCalls: { name: string; parameters: Record<string, unknown>; result?: string; error?: string }[] = [];
 
         for (const { toolName, parameters } of parsedToolCalls) {
-            if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing tool call: ${toolName}`); }
+            // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing tool call: ${toolName}`); }
             const toolCall = { name: toolName, parameters };
             const tool = this.toolsManager.getTool(toolName);
 
             if (!tool) {
-                if (process.env.NODE_ENV !== 'test') { console.warn(`[ToolController] Tool not found: ${toolName}`); }
+                // if (process.env.NODE_ENV !== 'test') { console.warn(`[ToolController] Tool not found: ${toolName}`); }
                 const error = new ToolNotFoundError(toolName);
                 messages.push({
                     role: 'system',
@@ -83,12 +87,12 @@ export class ToolController {
             }
 
             try {
-                if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Executing tool: ${toolName}`); }
+                // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Executing tool: ${toolName}`); }
                 const result = await tool.callFunction(parameters);
                 let processedMessages: string[];
 
                 if (tool.postCallLogic) {
-                    if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Running post-call logic for: ${toolName}`); }
+                    // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Running post-call logic for: ${toolName}`); }
                     processedMessages = await tool.postCallLogic(result);
                 } else {
                     processedMessages = [typeof result === 'string' ? result : JSON.stringify(result)];
@@ -107,7 +111,7 @@ export class ToolController {
                     finalResult = JSON.stringify(result);
                 }
                 toolCalls.push({ name: toolCall.name, parameters: toolCall.parameters, result: finalResult });
-                if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Successfully executed tool: ${toolName}`); }
+                // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Successfully executed tool: ${toolName}`); }
             } catch (error) {
                 console.error(`[ToolController] Error executing tool ${toolName}:`, error);
                 const toolError = new ToolExecutionError(toolName, error);
@@ -119,7 +123,7 @@ export class ToolController {
             }
         }
 
-        if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Completed processing ${parsedToolCalls.length} tool calls`); }
+        // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Completed processing ${parsedToolCalls.length} tool calls`); }
         return {
             messages,
             toolCalls,

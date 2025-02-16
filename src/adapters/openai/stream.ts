@@ -3,7 +3,7 @@ import { OpenAIStreamResponse } from './types';
 import { Converter } from './converter';
 
 type AccumulatedToolCall = {
-    id: string;
+    id?: string;
     name?: string;
     arguments?: string;
 };
@@ -21,11 +21,13 @@ export class StreamHandler {
             // If there are tool call deltas, accumulate them
             if (response.toolCallDeltas) {
                 for (const delta of response.toolCallDeltas) {
-                    const existing = toolCallAccumulator.get(delta.id) || { id: delta.id };
-                    toolCallAccumulator.set(delta.id, {
+                    const key = `call_${delta.index}`;
+                    const existing = toolCallAccumulator.get(key) || {};
+                    toolCallAccumulator.set(key, {
                         ...existing,
+                        ...(delta.id && { id: delta.id }),
                         ...(delta.name && { name: delta.name }),
-                        ...(delta.arguments && { arguments: JSON.stringify(delta.arguments) })
+                        ...(delta.arguments && { arguments: typeof delta.arguments === 'string' ? delta.arguments : JSON.stringify(delta.arguments) })
                     });
                 }
 

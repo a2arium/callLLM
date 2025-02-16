@@ -134,26 +134,17 @@ async function main() {
     // });
     // console.log('Response:', timeResponse);
 
-    // 5. Tool Call with Conversation Context
-    console.log('\n5. Tool Call with Conversation Context');
-    console.log('------------------------------------');
+    // 5. Tool Call Stream Demonstration
+    console.log('\n5. Tool Call Stream Demonstration');
+    console.log('---------------------------------------------------------------');
     const stream = await caller.streamCall({
-        message: 'And what time is it there?',
-        historicalMessages: [
-            { role: 'user', content: 'What\'s the weather in London?' },
-            { role: 'assistant', content: 'Let me check the weather for London using the weather tool.' },
-            { role: 'function', name: 'get_weather', content: JSON.stringify({ temperature: 18, conditions: 'cloudy', humidity: 75 }) },
-            { role: 'assistant', content: 'The weather in London is cloudy with a temperature of 18°C and 75% humidity.' }
-        ],
+        message: 'What is the current time in Tokyo?',
         settings: {
-            tools: [weatherTool, timeTool],
+            tools: [timeTool],
             toolChoice: 'auto',
             stream: true
         }
     });
-
-    // Process the stream
-    let currentToolCall: { id?: string; name?: string; arguments?: Record<string, unknown> } | null = null;
 
     try {
         for await (const chunk of stream) {
@@ -162,29 +153,16 @@ async function main() {
                 process.stdout.write(chunk.content);
             }
 
-            // Handle tool call deltas
-            if (chunk.toolCallDeltas?.length) {
-                const delta = chunk.toolCallDeltas[0];
-                if (!currentToolCall) {
-                    currentToolCall = { id: delta.id };
-                }
-                if (delta.name) {
-                    currentToolCall.name = delta.name;
-                }
-                if (delta.arguments) {
-                    currentToolCall.arguments = delta.arguments;
-                }
-                console.log('\nTool Call Delta:', JSON.stringify(currentToolCall, null, 2));
-            }
-
-            // Handle complete tool calls
+            // Handle tool calls
             if (chunk.toolCalls?.length) {
-                console.log('\nComplete Tool Calls:', JSON.stringify(chunk.toolCalls, null, 2));
-                currentToolCall = null;
+                console.log('\nTool Calls:', JSON.stringify(chunk.toolCalls, null, 2));
             }
 
-            // Handle completion
+            // Indicate completion if flagged
             if (chunk.isComplete) {
+                if (chunk.content) {
+                    console.log('\nFinal response:', chunk.content);
+                }
                 console.log('\nStream completed');
             }
         }
@@ -192,7 +170,43 @@ async function main() {
         console.error('\nError processing stream:', error);
         throw error;
     }
-    console.log('\n');
+
+    // 6. Multi-Tool Call Stream Demonstration
+    console.log('\n6. Multi-Tool Call Stream Demonstration');
+    console.log('---------------------------------------------------------------');
+    const multiToolStream = await caller.streamCall({
+        message: 'What is the current time and weather in Tokyo?',
+        settings: {
+            tools: [timeTool, weatherTool],
+            toolChoice: 'auto',
+            stream: true
+        }
+    });
+
+    try {
+        for await (const chunk of multiToolStream) {
+            // Handle content
+            if (chunk.content) {
+                process.stdout.write(chunk.content);
+            }
+
+            // Handle tool calls
+            if (chunk.toolCalls?.length) {
+                console.log('\nTool Calls:', JSON.stringify(chunk.toolCalls, null, 2));
+            }
+
+            // Indicate completion if flagged
+            if (chunk.isComplete) {
+                if (chunk.content) {
+                    console.log('\nFinal response:', chunk.content);
+                }
+                console.log('\nStream completed');
+            }
+        }
+    } catch (error) {
+        console.error('\nError processing stream:', error);
+        throw error;
+    }
 }
 
 main().catch(console.error);

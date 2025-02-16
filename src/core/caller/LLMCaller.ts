@@ -15,7 +15,7 @@ import { UsageTracker } from '../telemetry/UsageTracker';
 import { StreamController } from '../streaming/StreamController';
 import { ChatController } from '../chat/ChatController';
 import { ToolsManager } from '../tools/ToolsManager';
-import type { ToolDefinition } from '../types';
+import type { ToolDefinition, ToolCall } from '../types';
 import { ToolController } from '../tools/ToolController';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator';
 
@@ -101,7 +101,7 @@ export class LLMCaller {
 
         this.toolsManager = new ToolsManager();
         this.toolController = new ToolController(this.toolsManager);
-        this.toolOrchestrator = new ToolOrchestrator(this.toolController, this.chatController);
+        this.toolOrchestrator = new ToolOrchestrator(this.toolController, this.chatController, this.streamController);
 
         this.chatCall = (async (params: {
             message: string;
@@ -234,6 +234,8 @@ export class LLMCaller {
 
     /**
      * Streams a response from the LLM.
+     * If tools are enabled, the response will be processed through the tool orchestrator
+     * similar to chatCall, but returned as a stream.
      */
     public async streamCall({
         message,
@@ -252,6 +254,12 @@ export class LLMCaller {
             throw new Error(`Model ${this.model} does not support streaming. Use chatCall instead.`);
         }
 
+        // Enrich historicalMessages by ensuring the user's message is included
+        const enrichedHistory: UniversalMessage[] = [
+            ...(historicalMessages || []),
+            { role: 'user', content: message }
+        ];
+
         const mergedSettings = this.mergeSettings(settings);
         const systemMsg =
             mergedSettings?.responseFormat === 'json' || mergedSettings?.jsonSchema
@@ -261,15 +269,138 @@ export class LLMCaller {
         const params: UniversalChatParams = {
             messages: [
                 { role: 'system', content: systemMsg },
-                ...(historicalMessages || []),
-                { role: 'user', content: message }
+                ...enrichedHistory
             ],
             settings: mergedSettings,
         };
 
         this.responseProcessor.validateJsonMode(modelInfo, params);
         const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
+
+        // If tool support is enabled and we have registered tools
+        if (mergedSettings?.tools && this.toolsManager.listTools().length > 0) {
+            // Create initial stream
+            const stream = await this.streamController.createStream(this.model, params, inputTokens);
+
+            // Accumulate the entire streamed output and track tool calls
+            let accumulatedContent = "";
+            let accumulatedToolCalls: Record<string, { id?: string; name: string; argBuffer: string }> = {};
+            let currentToolCallId: string | null = null;
+
+            const self = this;
+            return {
+                [Symbol.asyncIterator]: async function* () {
+                    try {
+                        for await (const chunk of stream) {
+                            // Handle tool call deltas
+                            if (chunk.toolCallDeltas?.length) {
+                                for (const delta of chunk.toolCallDeltas) {
+                                    if (delta.id) {
+                                        // New tool call started
+                                        currentToolCallId = delta.id;
+                                        if (!accumulatedToolCalls[currentToolCallId]) {
+                                            accumulatedToolCalls[currentToolCallId] = {
+                                                id: delta.id,
+                                                name: delta.name || '',
+                                                argBuffer: ''
+                                            };
+                                        }
+                                    }
+
+                                    // If we have a current tool call ID, accumulate to it
+                                    if (currentToolCallId) {
+                                        if (delta.name) {
+                                            accumulatedToolCalls[currentToolCallId].name = delta.name;
+                                        }
+                                        if (delta.arguments) {
+                                            accumulatedToolCalls[currentToolCallId].argBuffer += (
+                                                typeof delta.arguments === 'string'
+                                                    ? delta.arguments
+                                                    : JSON.stringify(delta.arguments)
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+
+                            // If this chunk signals completion with tool calls
+                            if (chunk.isComplete && (chunk.metadata?.finishReason === 'tool_calls' || Object.keys(accumulatedToolCalls).length > 0)) {
+                                if (Object.keys(accumulatedToolCalls).length > 0) {
+                                    const requestedToolCalls = Object.values(accumulatedToolCalls).map(acc => ({
+                                        name: acc.name,
+                                        arguments: JSON.parse(acc.argBuffer.trim())
+                                    }));
+                                    yield {
+                                        ...chunk,
+                                        toolCalls: requestedToolCalls
+                                    };
+
+                                    for (const key in accumulatedToolCalls) {
+                                        const acc = accumulatedToolCalls[key];
+                                        const marker = `<tool>${acc.name}:${acc.argBuffer.trim()}</tool>`;
+                                        accumulatedContent += marker;
+                                    }
+                                }
+                                const newStream = await self.handleAccumulatedToolCalls(accumulatedContent, enrichedHistory, mergedSettings, inputTokens);
+                                for await (const streamChunk of newStream) {
+                                    yield streamChunk;
+                                }
+                                return;
+                            }
+
+                            // Normal streaming of content
+                            if (chunk.content) {
+                                accumulatedContent += chunk.content;
+                                yield {
+                                    ...chunk,
+                                    content: chunk.content
+                                };
+                            }
+
+                            // If this chunk signals completion without tool calls
+                            if (chunk.isComplete && !chunk.metadata?.finishReason?.includes('tool_calls')) {
+                                yield {
+                                    role: 'assistant',
+                                    content: accumulatedContent,
+                                    isComplete: true,
+                                    metadata: chunk.metadata
+                                };
+                                return;
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error in stream processing:', error);
+                        throw error;
+                    }
+                }
+            };
+        }
+
+        // If no tools enabled, return the raw stream
         return this.streamController.createStream(this.model, params, inputTokens);
+    }
+
+    // New helper method to handle accumulated tool calls using orchestration logic
+    private async handleAccumulatedToolCalls(
+        initialContent: string,
+        historicalMessages: UniversalMessage[],
+        settings: UniversalChatParams['settings'] | undefined,
+        inputTokens: number
+    ): Promise<AsyncIterable<UniversalStreamResponse>> {
+        // Create a synthetic initial response containing the accumulated content and tool call markers
+        const initialResponse: UniversalChatResponse = {
+            role: 'assistant',
+            content: initialContent,
+            metadata: { finishReason: 'tool_calls' as FinishReason }
+        };
+
+        // Use the streaming analog of processResponse
+        return await this.toolOrchestrator.streamProcessResponse(initialResponse, {
+            model: this.model,
+            systemMessage: this.systemMessage,
+            historicalMessages: historicalMessages,
+            settings: this.mergeSettings(settings)
+        }, inputTokens);
     }
 
     // Extended call method with additional functionality

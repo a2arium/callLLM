@@ -25,8 +25,23 @@ export class StreamController {
         const getStream = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
             const provider = this.providerManager.getProvider();
             const providerStream = await provider.streamCall(model, params);
+
+            // Wrap providerStream in a debug wrapper to log raw chunks as they are received
+            const debugProviderStream = (async function* () {
+                for await (const chunk of providerStream) {
+                    // if (process.env.NODE_ENV !== 'test' && chunk.toolCallDeltas?.length) {
+                    //     console.log('[StreamController] Tool call delta:', {
+                    //         id: chunk.toolCallDeltas[0].id,
+                    //         name: chunk.toolCallDeltas[0].name,
+                    //         arguments: chunk.toolCallDeltas[0].arguments
+                    //     });
+                    // }
+                    yield chunk;
+                }
+            })();
+
             const result = this.streamHandler.processStream(
-                providerStream,
+                debugProviderStream,
                 params,
                 inputTokens,
                 this.modelManager.getModel(model)!

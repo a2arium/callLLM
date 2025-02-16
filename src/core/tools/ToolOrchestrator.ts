@@ -1,7 +1,8 @@
 import { ToolController } from './ToolController';
 import { ChatController } from '../chat/ChatController';
-import type { UniversalChatResponse, UniversalMessage } from '../../interfaces/UniversalInterfaces';
+import type { UniversalChatResponse, UniversalMessage, UniversalChatParams, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
 import { ToolError, ToolIterationLimitError } from './types';
+import { StreamController } from '../streaming/StreamController';
 
 export type ToolOrchestrationParams = {
     model: string;
@@ -20,6 +21,7 @@ export type ToolOrchestrationResult = {
         error?: string;
     }[];
     finalResponse: UniversalChatResponse;
+    updatedHistoricalMessages: UniversalMessage[];
 };
 
 /**
@@ -28,16 +30,20 @@ export type ToolOrchestrationResult = {
 export class ToolOrchestrator {
     private readonly DEFAULT_MAX_HISTORY = 100;
     private readonly MAX_TOOL_ITERATIONS = 10;
+    private streamController: StreamController;
 
     /**
      * Creates a new ToolOrchestrator instance
      * @param toolController - The ToolController instance to use for tool execution
      * @param chatController - The ChatController instance to use for conversation management
+     * @param streamController - The StreamController instance to use for streaming responses
      */
     constructor(
         private toolController: ToolController,
-        private chatController: ChatController
+        private chatController: ChatController,
+        streamController: StreamController
     ) {
+        this.streamController = streamController;
         if (process.env.NODE_ENV !== 'test') { console.log('[ToolOrchestrator] Initialized'); }
     }
 
@@ -63,6 +69,29 @@ export class ToolOrchestrator {
         const recentMessages = nonSystemMessages.slice(-availableSlots);
 
         return [...systemMessages, ...recentMessages];
+    }
+
+    private async *accumulateStream(stream: AsyncIterable<UniversalStreamResponse>): AsyncIterable<UniversalStreamResponse> {
+        let totalContent = "";
+        for await (const chunk of stream) {
+            // console.log('[ToolOrchestrator] [accumulateStream] Raw chunk received:', JSON.stringify(chunk));
+            if (chunk.content) {
+                totalContent += chunk.content;
+            }
+            // Yield chunks as they come; when a chunk signals completion, yield the final accumulated chunk
+            if (chunk.isComplete) {
+                // console.log('[ToolOrchestrator] [accumulateStream] Final accumulated content:', totalContent);
+                yield {
+                    role: chunk.role,
+                    content: totalContent,
+                    isComplete: true,
+                    metadata: chunk.metadata
+                };
+                return;
+            } else {
+                yield { ...chunk, content: chunk.content };
+            }
+        }
     }
 
     /**
@@ -167,7 +196,8 @@ export class ToolOrchestrator {
             return {
                 response,
                 toolExecutions,
-                finalResponse: currentResponse
+                finalResponse: currentResponse,
+                updatedHistoricalMessages: updatedHistoricalMessages
             };
         } catch (error) {
             console.error('[ToolOrchestrator] Error during response processing:', error);
@@ -190,8 +220,115 @@ export class ToolOrchestrator {
                     role: 'assistant',
                     content: `An error occurred during tool execution: ${errorMessage}`,
                     metadata: {}
-                }
+                },
+                updatedHistoricalMessages: params.historicalMessages || []
             };
         }
+    }
+
+    /**
+     * Stream processes a response that may contain tool calls and returns a streaming response.
+     * This is the streaming analog of processResponse which uses the streamController.
+     * @param response - The initial assistant response containing tool call markers
+     * @param params - The orchestration parameters
+     * @param inputTokens - The estimated input tokens for the prompt
+     * @returns An async iterable streaming the final response
+     */
+    async streamProcessResponse(
+        response: UniversalChatResponse,
+        params: ToolOrchestrationParams,
+        inputTokens: number
+    ): Promise<AsyncIterable<UniversalStreamResponse>> {
+        let currentResponse = response;
+        let updatedHistoricalMessages: UniversalMessage[] = params.historicalMessages ? [...params.historicalMessages] : [];
+        const toolExecutions: { toolName: string; parameters: Record<string, unknown>; result?: string; error?: string }[] = [];
+        const maxHistory = params.maxHistoryLength ?? this.DEFAULT_MAX_HISTORY;
+        let iterationCount = 0;
+
+        while (true) {
+            iterationCount++;
+            if (iterationCount > this.MAX_TOOL_ITERATIONS) {
+                throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
+            }
+
+            // console.log(`[ToolOrchestrator] [Streaming] Iteration ${iterationCount} starting. Current response content: ${currentResponse.content.substring(0, 100)}...`);
+
+            const toolResult = await this.toolController.processToolCalls(currentResponse.content as string, currentResponse);
+            // console.log(`[ToolOrchestrator] [Streaming] toolResult: `, toolResult);
+
+            if (toolResult?.toolCalls) {
+                toolResult.toolCalls.forEach(call => {
+                    toolExecutions.push({
+                        toolName: call.name,
+                        parameters: call.parameters,
+                        result: call.result,
+                        error: call.error
+                    });
+                });
+            }
+
+            if (!toolResult?.requiresResubmission) {
+                break;
+            }
+
+            // Prepare new messages based on current response and tool call results
+            const newMessages: UniversalMessage[] = [];
+            const content = currentResponse.content.trim();
+            const hasToolCall = content.includes('<tool>') || (((currentResponse as any).toolCalls)?.length ?? 0) > 0;
+            const hasNonToolContent = content.replace(/<tool>.*?<\/tool>/g, '').trim().length > 0;
+
+            if (hasNonToolContent || (!hasToolCall && content.length > 0)) {
+                newMessages.push({ role: 'assistant', content: currentResponse.content });
+            }
+            if (toolResult?.toolCalls) {
+                toolResult.toolCalls.forEach(call => {
+                    if (!call.error) {
+                        newMessages.push({
+                            role: 'system',
+                            content: `Tool ${call.name} was called with parameters: ${JSON.stringify(call.parameters)}`
+                        });
+                    }
+                });
+            }
+            if (toolResult.messages) {
+                newMessages.push(...toolResult.messages);
+            }
+
+            // console.log(`[ToolOrchestrator] [Streaming] New messages: `, newMessages);
+
+            updatedHistoricalMessages = this.trimHistory([...updatedHistoricalMessages, ...newMessages], maxHistory);
+
+            // console.log(`[ToolOrchestrator] [Streaming] Updated historical messages: `, updatedHistoricalMessages);
+
+            // Build new chat parameters for streaming
+            const newParams: UniversalChatParams = {
+                messages: [
+                    { role: 'system', content: params.systemMessage },
+                    ...updatedHistoricalMessages,
+                    { role: 'assistant', content: 'Please continue based on the tool execution results above.' }
+                ],
+                settings: params.settings
+            };
+
+            // console.log('[ToolOrchestrator] [Streaming] New chat parameters: ', newParams);
+
+            // Start a new streaming session with updated context and wrap it with accumulation
+            const newStream = await this.streamController.createStream(params.model, newParams, inputTokens);
+            // console.log('[ToolOrchestrator] [Streaming] New streaming session started.');
+            return this.accumulateStream(newStream);
+        }
+
+        // If no tool calls require resubmission, create a final streaming session with accumulation
+        const finalParams: UniversalChatParams = {
+            messages: [
+                { role: 'system', content: params.systemMessage },
+                ...updatedHistoricalMessages,
+                { role: 'assistant', content: 'Please continue based on the tool execution results above.' }
+            ],
+            settings: params.settings
+        };
+
+        const finalStreamIterable = await this.streamController.createStream(params.model, finalParams, inputTokens);
+        return this.accumulateStream(finalStreamIterable);
     }
 } 
