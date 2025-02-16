@@ -55,16 +55,21 @@ export class StreamController {
         // A wrapper that uses RetryManager to call getStream exactly once per attempt.
         // (By setting shouldRetry to always return false, no internal retries occur.)
         const acquireStream = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
-            return await this.retryManager.executeWithRetry(
-                async () => {
-                    const res = await getStream();
-                    if (res == null) {
-                        throw new Error("Processed stream is undefined");
-                    }
-                    return res;
-                },
-                () => false // Do not retry internally.
-            );
+            try {
+                return await this.retryManager.executeWithRetry(
+                    async () => {
+                        const res = await getStream();
+                        if (res == null) {
+                            throw new Error("Processed stream is undefined");
+                        }
+                        return res;
+                    },
+                    () => false // Do not retry internally.
+                );
+            } catch (error) {
+                // Ensure errors from processStream are propagated
+                throw error;
+            }
         };
 
         // Outer recursive async generator: if an error occurs during acquisition or iteration,
@@ -73,16 +78,31 @@ export class StreamController {
             try {
                 const stream = await acquireStream();
                 let accumulatedContent = "";
-                for await (const chunk of stream) {
-                    accumulatedContent += chunk.content;
-                    yield chunk;
+
+                try {
+                    for await (const chunk of stream) {
+                        accumulatedContent += chunk.content;
+                        yield chunk;
+                    }
+                } catch (streamError) {
+                    // Propagate validation errors immediately without retry
+                    if (streamError instanceof Error && streamError.message.includes('validation error')) {
+                        throw streamError;
+                    }
+                    throw streamError;
                 }
+
                 // After the stream is complete, check if the accumulated content triggers a retry
                 if (shouldRetryDueToContent(accumulatedContent)) {
                     throw new Error("Stream response content triggered retry due to unsatisfactory answer");
                 }
                 return;
             } catch (error) {
+                // Propagate validation errors immediately without retry
+                if (error instanceof Error && error.message.includes('validation error')) {
+                    throw error;
+                }
+
                 if (attempt >= maxRetries) {
                     // Extract underlying error message if present.
                     const errMsg = (error as Error).message;

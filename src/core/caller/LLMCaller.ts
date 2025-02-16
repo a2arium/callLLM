@@ -111,9 +111,10 @@ export class LLMCaller {
             // Enrich historicalMessages by ensuring the user's message is included
             const enrichedHistory: UniversalMessage[] = [
                 ...(params.historicalMessages || []),
-                { role: 'user' as const, content: params.message }
+                { role: 'user', content: params.message }
             ];
 
+            // Execute the base chat call
             const initialResponse = await this.chatController.execute({
                 model: this.model,
                 systemMessage: this.systemMessage,
@@ -122,21 +123,17 @@ export class LLMCaller {
                 historicalMessages: enrichedHistory
             });
 
-            // If tools are enabled in settings and we have registered tools
-            if (this.mergeSettings(params.settings)?.tools && this.toolsManager.listTools().length > 0) {
-                const orchestrationResult = await this.toolOrchestrator.processResponse(
-                    initialResponse,
-                    {
-                        model: this.model,
-                        systemMessage: this.systemMessage,
-                        historicalMessages: enrichedHistory,
-                        settings: this.mergeSettings(params.settings)
-                    }
-                );
-                return orchestrationResult.finalResponse;
-            }
-
-            return initialResponse;
+            // Delegate tool orchestration completely to ToolOrchestrator
+            const orchestrationResult = await this.toolOrchestrator.processResponse(
+                initialResponse,
+                {
+                    model: this.model,
+                    systemMessage: this.systemMessage,
+                    historicalMessages: enrichedHistory,
+                    settings: this.mergeSettings(params.settings)
+                }
+            );
+            return orchestrationResult.finalResponse;
         }).bind(this);
     }
 
@@ -234,172 +231,51 @@ export class LLMCaller {
 
     /**
      * Streams a response from the LLM.
-     * If tools are enabled, the response will be processed through the tool orchestrator
-     * similar to chatCall, but returned as a stream.
+     * If legacy parameters are provided (message and historicalMessages), they will be converted to a messages array
+     * with the system message prepended, historical messages in the middle, and the user message appended.
      */
-    public async streamCall({
-        message,
-        settings,
-        historicalMessages,
-    }: {
-        message: string;
-        settings?: UniversalChatParams['settings'];
-        historicalMessages?: UniversalMessage[];
-    }): Promise<AsyncIterable<UniversalStreamResponse>> {
-        const modelInfo = this.modelManager.getModel(this.model);
-        if (!modelInfo) {
-            throw new Error(`Model ${this.model} not found`);
-        }
-        if (modelInfo.capabilities?.streaming === false) {
-            throw new Error(`Model ${this.model} does not support streaming. Use chatCall instead.`);
-        }
+    public async streamCall(params: Omit<UniversalChatParams, 'messages'> & { message?: string; historicalMessages?: UniversalMessage[]; messages?: UniversalMessage[] }): Promise<AsyncIterable<UniversalStreamResponse>> {
+        let finalParams: UniversalChatParams;
 
-        // Enrich historicalMessages by ensuring the user's message is included
-        const enrichedHistory: UniversalMessage[] = [
-            ...(historicalMessages || []),
-            { role: 'user', content: message }
+        // Build messages: system message, historical messages, then user message (or last message from params.messages if provided)
+        const userMsg: string = params.message ?? "";
+        const history: UniversalMessage[] = params.historicalMessages ?? [];
+        const messages: UniversalMessage[] = [
+            { role: 'system', content: this.systemMessage },
+            ...history
         ];
 
-        const mergedSettings = this.mergeSettings(settings);
-        const systemMsg =
-            mergedSettings?.responseFormat === 'json' || mergedSettings?.jsonSchema
-                ? `${this.systemMessage}\n Provide your response in valid JSON format.`
-                : this.systemMessage;
-
-        const params: UniversalChatParams = {
-            messages: [
-                { role: 'system', content: systemMsg },
-                ...enrichedHistory
-            ],
-            settings: mergedSettings,
-        };
-
-        this.responseProcessor.validateJsonMode(modelInfo, params);
-        const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + '\n' + message);
-
-        // If tool support is enabled and we have registered tools
-        if (mergedSettings?.tools && this.toolsManager.listTools().length > 0) {
-            // Create initial stream
-            const stream = await this.streamController.createStream(this.model, params, inputTokens);
-
-            // Accumulate the entire streamed output and track tool calls
-            let accumulatedContent = "";
-            let accumulatedToolCalls: Record<string, { id?: string; name: string; argBuffer: string }> = {};
-            let currentToolCallId: string | null = null;
-
-            const self = this;
-            return {
-                [Symbol.asyncIterator]: async function* () {
-                    try {
-                        for await (const chunk of stream) {
-                            // Handle tool call deltas
-                            if (chunk.toolCallDeltas?.length) {
-                                for (const delta of chunk.toolCallDeltas) {
-                                    if (delta.id) {
-                                        // New tool call started
-                                        currentToolCallId = delta.id;
-                                        if (!accumulatedToolCalls[currentToolCallId]) {
-                                            accumulatedToolCalls[currentToolCallId] = {
-                                                id: delta.id,
-                                                name: delta.name || '',
-                                                argBuffer: ''
-                                            };
-                                        }
-                                    }
-
-                                    // If we have a current tool call ID, accumulate to it
-                                    if (currentToolCallId) {
-                                        if (delta.name) {
-                                            accumulatedToolCalls[currentToolCallId].name = delta.name;
-                                        }
-                                        if (delta.arguments) {
-                                            accumulatedToolCalls[currentToolCallId].argBuffer += (
-                                                typeof delta.arguments === 'string'
-                                                    ? delta.arguments
-                                                    : JSON.stringify(delta.arguments)
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-
-                            // If this chunk signals completion with tool calls
-                            if (chunk.isComplete && (chunk.metadata?.finishReason === 'tool_calls' || Object.keys(accumulatedToolCalls).length > 0)) {
-                                if (Object.keys(accumulatedToolCalls).length > 0) {
-                                    const requestedToolCalls = Object.values(accumulatedToolCalls).map(acc => ({
-                                        name: acc.name,
-                                        arguments: JSON.parse(acc.argBuffer.trim())
-                                    }));
-                                    yield {
-                                        ...chunk,
-                                        toolCalls: requestedToolCalls
-                                    };
-
-                                    for (const key in accumulatedToolCalls) {
-                                        const acc = accumulatedToolCalls[key];
-                                        const marker = `<tool>${acc.name}:${acc.argBuffer.trim()}</tool>`;
-                                        accumulatedContent += marker;
-                                    }
-                                }
-                                const newStream = await self.handleAccumulatedToolCalls(accumulatedContent, enrichedHistory, mergedSettings, inputTokens);
-                                for await (const streamChunk of newStream) {
-                                    yield streamChunk;
-                                }
-                                return;
-                            }
-
-                            // Normal streaming of content
-                            if (chunk.content) {
-                                accumulatedContent += chunk.content;
-                                yield {
-                                    ...chunk,
-                                    content: chunk.content
-                                };
-                            }
-
-                            // If this chunk signals completion without tool calls
-                            if (chunk.isComplete && !chunk.metadata?.finishReason?.includes('tool_calls')) {
-                                yield {
-                                    role: 'assistant',
-                                    content: accumulatedContent,
-                                    isComplete: true,
-                                    metadata: chunk.metadata
-                                };
-                                return;
-                            }
-                        }
-                    } catch (error) {
-                        console.error('Error in stream processing:', error);
-                        throw error;
-                    }
-                }
-            };
+        if (userMsg) {
+            messages.push({ role: 'user', content: userMsg });
+        } else if (params.messages?.length) {
+            messages.push(params.messages[params.messages.length - 1]);
         }
 
-        // If no tools enabled, return the raw stream
-        return this.streamController.createStream(this.model, params, inputTokens);
-    }
+        const { message: _, historicalMessages: __, messages: ___, ...rest } = params;
+        finalParams = { ...rest, messages } as UniversalChatParams;
 
-    // New helper method to handle accumulated tool calls using orchestration logic
-    private async handleAccumulatedToolCalls(
-        initialContent: string,
-        historicalMessages: UniversalMessage[],
-        settings: UniversalChatParams['settings'] | undefined,
-        inputTokens: number
-    ): Promise<AsyncIterable<UniversalStreamResponse>> {
-        // Create a synthetic initial response containing the accumulated content and tool call markers
-        const initialResponse: UniversalChatResponse = {
-            role: 'assistant',
-            content: initialContent,
-            metadata: { finishReason: 'tool_calls' as FinishReason }
-        };
+        // Merge settings and add defaults
+        const modelInfo = this.modelManager.getModel(this.model)!;
+        finalParams.settings = { maxTokens: modelInfo.maxResponseTokens, ...this.mergeSettings(finalParams.settings) };
 
-        // Use the streaming analog of processResponse
-        return await this.toolOrchestrator.streamProcessResponse(initialResponse, {
+        const inputText = finalParams.messages.map(msg => msg.content).join("\n");
+        const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + "\n" + inputText);
+
+        // Obtain an initial response from chatController (non-streaming) to extract tool call markers
+        const initialResponse = await this.chatController.execute({
             model: this.model,
             systemMessage: this.systemMessage,
-            historicalMessages: historicalMessages,
-            settings: this.mergeSettings(settings)
+            message: userMsg,
+            settings: finalParams.settings,
+            historicalMessages: messages
+        });
+
+        // Delegate the streaming tool orchestration to ToolOrchestrator
+        return this.toolOrchestrator.streamProcessResponse(initialResponse, {
+            model: this.model,
+            systemMessage: this.systemMessage,
+            historicalMessages: messages,
+            settings: finalParams.settings
         }, inputTokens);
     }
 
@@ -472,13 +348,13 @@ export class LLMCaller {
                             if (!currentStream) {
                                 const processedMessage = messages[currentMessageIndex];
                                 const stream = await self.streamCall({
-                                    message: processedMessage,
+                                    messages: [{ role: 'user', content: processedMessage }],
                                     settings: settings
                                 });
                                 currentStream = stream[Symbol.asyncIterator]();
                             }
 
-                            const result = await currentStream!.next();
+                            const result = await currentStream.next();
                             if (!result.done) {
                                 const newContent = result.value.content + (result.value.isComplete && currentMessageIndex !== totalMessages - 1 ? '\n' : '');
                                 accumulatedContent += newContent;
@@ -501,7 +377,7 @@ export class LLMCaller {
                             currentStream = null;
 
                             // Add newline after each message is complete
-                            if (currentMessageIndex !== totalMessages - 1) accumulatedContent += '\n';
+                            if (currentMessageIndex !== totalMessages) accumulatedContent += '\n';
 
                             // If this was the last message, return the final accumulated content
                             if (currentMessageIndex === totalMessages) {
@@ -516,11 +392,11 @@ export class LLMCaller {
                                         }
                                     }
                                 };
-                                return { done: true, value: finalResponse };
+                                return { done: true } as IteratorResult<UniversalStreamResponse, void>;
                             }
                         }
 
-                        return { done: true, value: undefined };
+                        return { done: true, value: undefined as any };
                     }
                 };
             }

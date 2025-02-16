@@ -1,7 +1,7 @@
 import { ToolController } from './ToolController';
 import { ChatController } from '../chat/ChatController';
 import type { UniversalChatResponse, UniversalMessage, UniversalChatParams, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
-import { ToolError, ToolIterationLimitError } from './types';
+import { ToolError, ToolIterationLimitError } from '../../types/tooling';
 import { StreamController } from '../streaming/StreamController';
 
 export type ToolOrchestrationParams = {
@@ -25,8 +25,23 @@ export type ToolOrchestrationResult = {
 };
 
 /**
- * Orchestrates the execution of tools and manages the conversation flow
+ * ToolOrchestrator is responsible for managing the entire lifecycle of tool execution.
+ * It processes tool calls embedded within assistant responses, delegates their execution to the ToolController,
+ * handles any tool call deltas, and aggregates the final response after tool invocations.
+ *
+ * All tool orchestration logic is fully contained within the src/core/tools folder. This ensures that
+ * LLMCaller and other high-level modules interact with tooling exclusively via this simplified API.
+ *
+ * The primary method, processResponse, accepts an initial assistant response and a context object containing
+ * model, systemMessage, historicalMessages, and settings. It returns an object with two main properties:
+ *
+ * - toolExecutions: An array of tool execution results (or errors if any occurred during tool execution).
+ * - finalResponse: The final assistant response after all tool calls have been processed.
+ *
+ * Error Handling: If any tool call fails, the error is captured and reflected in the corresponding tool execution
+ * result. Critical errors (such as validation errors) are propagated immediately to prevent further execution.
  */
+
 export class ToolOrchestrator {
     private readonly DEFAULT_MAX_HISTORY = 100;
     private readonly MAX_TOOL_ITERATIONS = 10;
@@ -208,7 +223,7 @@ export class ToolOrchestrator {
             // Add error to tool executions
             const errorMessage = error instanceof Error ? error.message : String(error);
             toolExecutions.push({
-                toolName: error instanceof ToolError ? error.name : 'unknown',
+                toolName: (() => { if (error instanceof ToolError) { return error.name; } return 'unknown'; })(),
                 parameters: {},
                 error: errorMessage
             });

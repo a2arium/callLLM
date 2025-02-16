@@ -1,7 +1,7 @@
 import type { ToolDefinition, ToolsManager } from '../types';
 import type { UniversalMessage, UniversalChatResponse } from '../../interfaces/UniversalInterfaces';
 import { ToolCallParser } from './ToolCallParser';
-import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from './types';
+import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../types/tooling';
 
 export class ToolController {
     private toolsManager: ToolsManager;
@@ -114,7 +114,8 @@ export class ToolController {
                 // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Successfully executed tool: ${toolName}`); }
             } catch (error) {
                 console.error(`[ToolController] Error executing tool ${toolName}:`, error);
-                const toolError = new ToolExecutionError(toolName, error);
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                const toolError = new ToolExecutionError(toolName, errorMessage);
                 messages.push({
                     role: 'system',
                     content: `Error: ${toolError.message}`

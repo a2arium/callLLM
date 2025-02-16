@@ -495,15 +495,35 @@ describe('LLMCaller', () => {
         });
 
         it('should handle stream JSON mode validation error', async () => {
-            const responseProcessorInstance = (ResponseProcessor as jest.Mock).mock.results[0].value;
-            responseProcessorInstance.validateJsonMode.mockImplementationOnce(() => {
-                throw new Error('JSON mode not supported');
+            const mockStreamCall = jest.fn().mockImplementation(async () => ({
+                [Symbol.asyncIterator]: async function* () {
+                    yield {
+                        content: 'invalid json',
+                        role: 'assistant',
+                        isComplete: true,
+                        metadata: {
+                            finishReason: FinishReason.STOP,
+                            responseFormat: 'json'
+                        }
+                    };
+                }
+            }));
+
+            mockProviderManager.getProvider.mockReturnValue(createMockProvider(jest.fn(), mockStreamCall));
+            mockStreamHandler.processStream.mockImplementationOnce(async function* () {
+                throw new Error('JSON validation error');
             });
 
-            await expect(caller.streamCall({
+            const stream = await caller.streamCall({
                 message: 'test message',
                 settings: { responseFormat: 'json' }
-            })).rejects.toThrow('JSON mode not supported');
+            });
+
+            await expect(async () => {
+                for await (const chunk of stream) {
+                    // This should throw
+                }
+            }).rejects.toThrow('JSON validation error');
         });
 
         it('should handle response with undefined metadata', async () => {
@@ -787,11 +807,22 @@ describe('LLMCaller', () => {
                 }));
 
             mockProviderManager.getProvider.mockReturnValue(createMockProvider(jest.fn(), mockStreamCall));
+            mockStreamHandler.processStream.mockImplementation(async function* (stream) {
+                for await (const chunk of stream) {
+                    yield chunk;
+                }
+            });
 
             const stream = await caller.streamCall({ message: 'test' });
             const chunks = [];
-            for await (const chunk of stream) {
-                chunks.push(chunk);
+
+            try {
+                for await (const chunk of stream) {
+                    chunks.push(chunk);
+                }
+            } catch (error) {
+                // We don't expect to catch an error here since we're mocking success after retries
+                throw error;
             }
 
             expect(mockStreamCall).toHaveBeenCalledTimes(3);

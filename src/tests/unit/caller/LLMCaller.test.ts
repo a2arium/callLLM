@@ -33,7 +33,10 @@ describe('LLMCaller streamCall', () => {
         const userMessage = 'user message test';
 
         // Call streamCall with historicalMessages provided
-        await llmCaller.streamCall({ message: userMessage, historicalMessages });
+        await llmCaller.streamCall({
+            message: userMessage,
+            historicalMessages
+        });
 
         // Verify that streamController.createStream was called once
         expect(llmCaller['streamController'].createStream).toHaveBeenCalledTimes(1);

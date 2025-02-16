@@ -1,4 +1,4 @@
-import { ParsedToolCall, ToolCallParserOptions, ToolCallParserResult } from './types';
+import { ParsedToolCall, ToolCallParserOptions, ToolCallParserResult } from '../../types/tooling';
 
 export class ToolCallParser {
     private readonly toolCallPattern: RegExp;
@@ -13,8 +13,30 @@ export class ToolCallParser {
      * @returns ToolCallParserResult containing parsed tool calls and resubmission flag
      */
     public parse(content: string): ToolCallParserResult {
+        // Ensure content is a string
+        if (typeof content !== 'string') {
+            try {
+                content = JSON.stringify(content);
+            } catch (error) {
+                console.warn('ToolCallParser: Failed to stringify content', error);
+                content = '';
+            }
+        }
+
         const toolCalls: ParsedToolCall[] = [];
-        const matches = content.matchAll(this.toolCallPattern);
+        let matches: IterableIterator<RegExpMatchArray>;
+        if (typeof content.matchAll === 'function') {
+            matches = content.matchAll(this.toolCallPattern);
+        } else {
+            // Fallback using RegExp.exec in a loop for environments without String.prototype.matchAll
+            const re = new RegExp(this.toolCallPattern.source, this.toolCallPattern.flags);
+            matches = (function* () {
+                let match;
+                while ((match = re.exec(content)) !== null) {
+                    yield match;
+                }
+            })();
+        }
 
         for (const match of matches) {
             const [, toolName, parametersStr] = match;

@@ -1,5 +1,5 @@
 import { ToolController } from '../../../../core/tools/ToolController';
-import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../../../core/tools/types';
+import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../../../types/tooling';
 import { ToolsManager } from '../../../../core/tools/ToolsManager';
 
 // Define a FakeToolsManager that extends the real ToolsManager
