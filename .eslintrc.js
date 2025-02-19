@@ -18,6 +18,7 @@ module.exports = {
       destructuredArrayIgnorePattern: '^_',
       ignoreRestSiblings: true
     }],
-    '@typescript-eslint/no-non-null-assertion': 'off'
+    '@typescript-eslint/no-non-null-assertion': 'off',
+    '@typescript-eslint/ban-types': 'off'
   }
 };
