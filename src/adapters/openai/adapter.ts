@@ -69,6 +69,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
                     toolCalls: params.settings?.toolCalls
                 }
             }) as OpenAIModelParams;
+            console.log('openAIParams', JSON.stringify(openAIParams, null, 2));
             const response = await this.client.chat.completions.create(openAIParams);
             return this.convertFromProviderResponse(response);
         } catch (error) {

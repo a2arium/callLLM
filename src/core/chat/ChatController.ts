@@ -21,17 +21,16 @@ export class ChatController {
     /**
      * Executes a chat call using the given parameters.
      *
-     * @param params - An object containing the model, system message, user message, and optional settings and historical messages.
+     * @param params - An object containing the model, system message, and optional settings and historical messages.
      * @returns A promise resolving to the processed chat response.
      */
     async execute<T extends z.ZodType | undefined = undefined>(params: {
         model: string,
         systemMessage: string,
-        message: string,
         settings?: UniversalChatParams['settings'],
-        historicalMessages?: UniversalMessage[]
+        historicalMessages: UniversalMessage[]
     }): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
-        const { model, systemMessage, message, settings, historicalMessages } = params;
+        const { model, systemMessage, settings, historicalMessages } = params;
         const mergedSettings = settings;
 
         const fullSystemMessage =
@@ -39,12 +38,11 @@ export class ChatController {
                 ? `${systemMessage}\n Provide your response in valid JSON format.`
                 : systemMessage;
 
-        // Build the chat parameters with historical messages inserted
+        // Build the chat parameters
         const chatParams: UniversalChatParams = {
             messages: [
                 { role: 'system', content: fullSystemMessage },
-                ...(historicalMessages || []),
-                { role: 'user', content: message }
+                ...historicalMessages
             ],
             settings: mergedSettings
         };
@@ -53,6 +51,11 @@ export class ChatController {
         if (!modelInfo) {
             throw new Error(`Model ${model} not found`);
         }
+
+        // Get the last user message for usage tracking
+        const lastUserMessage = [...historicalMessages]
+            .reverse()
+            .find((msg: UniversalMessage) => msg.role === 'user')?.content || '';
 
         // Validate JSON mode if needed.
         this.responseProcessor.validateJsonMode(modelInfo, chatParams);
@@ -76,13 +79,13 @@ export class ChatController {
                 // Track usage if needed.
                 if (!resp.metadata.usage) {
                     resp.metadata.usage = await this.usageTracker.trackUsage(
-                        systemMessage + '\n' + message,
+                        systemMessage + '\n' + lastUserMessage,
                         resp.content,
                         modelInfo
                     );
                 } else {
                     await this.usageTracker.trackUsage(
-                        systemMessage + '\n' + message,
+                        systemMessage + '\n' + lastUserMessage,
                         resp.content,
                         modelInfo
                     );

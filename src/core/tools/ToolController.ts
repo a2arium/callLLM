@@ -1,13 +1,11 @@
 import type { ToolDefinition, ToolsManager } from '../types';
 import type { UniversalMessage, UniversalChatResponse } from '../../interfaces/UniversalInterfaces';
-import { ToolCallParser } from './ToolCallParser';
 import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../types/tooling';
 
 export class ToolController {
     private toolsManager: ToolsManager;
     private iterationCount: number = 0;
     private maxIterations: number;
-    private toolCallParser: ToolCallParser;
 
     /**
      * Creates a new ToolController instance
@@ -17,7 +15,6 @@ export class ToolController {
     constructor(toolsManager: ToolsManager, maxIterations: number = 5) {
         this.toolsManager = toolsManager;
         this.maxIterations = maxIterations;
-        this.toolCallParser = new ToolCallParser();
         if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Initialized with maxIterations: ${maxIterations}`); }
     }
 
@@ -50,19 +47,15 @@ export class ToolController {
         let requiresResubmission = false;
 
         if (response?.toolCalls?.length) {
-            // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Found ${response.toolCalls.length} direct tool calls`); }
+            if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Found ${response.toolCalls.length} direct tool calls`); }
             parsedToolCalls = response.toolCalls.map((tc: { name: string; arguments: Record<string, unknown> }) => ({
                 toolName: tc.name,
                 parameters: tc.arguments || {}
             }));
             requiresResubmission = true;
         } else {
-            // Fall back to parsing content if no direct tool calls
-            const parser = new ToolCallParser();
-            const parsedResult = parser.parse(content);
-            // console.log('[ToolController] Parsed tool calls:', parsedResult);
-            parsedToolCalls = parsedResult.toolCalls;
-            requiresResubmission = parsedResult.requiresResubmission;
+            parsedToolCalls = [];
+            requiresResubmission = false;
         }
 
         // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing ${parsedToolCalls.length} tool calls`); }

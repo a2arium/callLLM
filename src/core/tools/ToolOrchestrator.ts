@@ -198,9 +198,11 @@ export class ToolOrchestrator {
                 currentResponse = await this.chatController.execute({
                     model: params.model,
                     systemMessage: params.systemMessage,
-                    message: 'Please continue based on the tool execution results above.',
                     settings: params.settings,
-                    historicalMessages: [...updatedHistoricalMessages]
+                    historicalMessages: [
+                        ...updatedHistoricalMessages,
+                        { role: 'user', content: 'Please continue based on the tool execution results above.' }
+                    ]
                 });
             }
 
@@ -320,7 +322,7 @@ export class ToolOrchestrator {
                 messages: [
                     { role: 'system', content: params.systemMessage },
                     ...updatedHistoricalMessages,
-                    { role: 'assistant', content: 'Please continue based on the tool execution results above.' }
+                    { role: 'user', content: 'Please continue based on the tool execution results above.' }
                 ],
                 settings: params.settings
             };
@@ -338,7 +340,7 @@ export class ToolOrchestrator {
             messages: [
                 { role: 'system', content: params.systemMessage },
                 ...updatedHistoricalMessages,
-                { role: 'assistant', content: 'Please continue based on the tool execution results above.' }
+                { role: 'user', content: 'Please continue based on the tool execution results above.' }
             ],
             settings: params.settings
         };

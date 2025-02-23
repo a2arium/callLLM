@@ -108,8 +108,8 @@ export class LLMCaller {
             settings?: UniversalChatParams['settings'];
             historicalMessages?: UniversalMessage[];
         }) => {
-            // Enrich historicalMessages by ensuring the user's message is included
-            const enrichedHistory: UniversalMessage[] = [
+            // Create messages array with historical messages and the current message
+            const messages: UniversalMessage[] = [
                 ...(params.historicalMessages || []),
                 { role: 'user', content: params.message }
             ];
@@ -118,9 +118,8 @@ export class LLMCaller {
             const initialResponse = await this.chatController.execute({
                 model: this.model,
                 systemMessage: this.systemMessage,
-                message: params.message,
                 settings: this.mergeSettings(params.settings),
-                historicalMessages: enrichedHistory
+                historicalMessages: messages
             });
 
             // Delegate tool orchestration completely to ToolOrchestrator
@@ -129,7 +128,7 @@ export class LLMCaller {
                 {
                     model: this.model,
                     systemMessage: this.systemMessage,
-                    historicalMessages: enrichedHistory,
+                    historicalMessages: messages,
                     settings: this.mergeSettings(params.settings)
                 }
             );
@@ -202,8 +201,8 @@ export class LLMCaller {
             return this.chatController.execute({
                 model: this.model,
                 systemMessage: this.systemMessage,
-                message: params.message,
-                settings: this.mergeSettings(params.settings)
+                settings: this.mergeSettings(params.settings),
+                historicalMessages: [{ role: 'user', content: params.message }]
             });
         }).bind(this);
     }
@@ -265,7 +264,6 @@ export class LLMCaller {
         const initialResponse = await this.chatController.execute({
             model: this.model,
             systemMessage: this.systemMessage,
-            message: userMsg,
             settings: finalParams.settings,
             historicalMessages: messages
         });

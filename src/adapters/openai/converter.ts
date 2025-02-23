@@ -99,6 +99,7 @@ export class Converter {
     }
 
     private convertToolCalls(toolCalls?: OpenAIToolCall[]): Array<{
+        id?: string;
         name: string;
         arguments: Record<string, unknown>;
     }> | undefined {
@@ -108,6 +109,7 @@ export class Converter {
 
         try {
             return toolCalls.map(call => ({
+                id: call.id,
                 name: call.function.name,
                 arguments: JSON.parse(call.function.arguments)
             }));
