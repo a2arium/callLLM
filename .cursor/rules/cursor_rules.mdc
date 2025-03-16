@@ -1,12 +1,7 @@
 ---
 description: Guidelines for creating and maintaining Cursor rules in the project
-globs: 
-alwaysApply: false
----
----
-description: Guidelines for creating and maintaining Cursor rules in the project
 globs: [".cursor/rules/*.mdc"]
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Cursor Rules Guide
@@ -225,5 +220,4 @@ alwaysApply: false
 - See @.cursor/rules/global.mdc for core rule example
 - See @.cursor/rules/typescript.mdc for technical rule example
 - See @.cursor/rules/streaming.mdc for feature-specific rule example
-- See @.cursor/rules/architecture.mdc for component documentation example
-
+- See @.cursor/rules/architecture.mdc for component documentation example 

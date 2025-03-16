@@ -1,10 +1,5 @@
 ---
 description: Architectural guidelines and component responsibilities that should be considered when modifying or extending the codebase structure
-globs: 
-alwaysApply: false
----
----
-description: Architectural guidelines and component responsibilities that should be considered when modifying or extending the codebase structure
 globs: ["src/**/*"]
 alwaysApply: false
 ---
@@ -114,6 +109,12 @@ alwaysApply: false
 4. Add necessary tests
 5. Update documentation
 
+## Current Development Focus
+1. Tool calling support
+2. Request chunking for large payloads
+3. Additional provider adapters
+4. Enhanced streaming capabilities
+
 ## Modifications
 1. Understand existing component relationships
 2. Preserve architectural boundaries
@@ -128,6 +129,6 @@ alwaysApply: false
 - Type-safe error handling
 
 # References
-- See @.notes/design_document.md for detailed design decisions
-- See @src/core/types.ts for core type definitions
 - See @src/adapters/base/baseAdapter.ts for adapter patterns
+- See @src/adapters/openai/adapter.ts for OpenAI implementation
+- See @src/core/types.ts for core type definitions
