@@ -1,4 +1,9 @@
 ---
+description: 
+globs: 
+alwaysApply: true
+---
+---
 description: Core project rules that should always be considered when working with this codebase
 globs: ["**/*"]
 alwaysApply: true
@@ -67,4 +72,4 @@ This is a universal LLM caller library designed to provide a unified interface f
 # References
 - See @.cursor/rules/architecture.mdc for detailed architectural decisions
 - See @.cursor/rules/testing.mdc for testing conventions
-- See @src/core/types.ts for type definitions 
+- See @src/core/types.ts for type definitions

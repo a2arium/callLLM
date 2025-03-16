@@ -1,0 +1,105 @@
+---
+description: Core rules to prevent hardcoding and mocking in production code
+globs: ["src/**/*"]
+alwaysApply: true
+---
+
+# No Hardcoding or Mocking in Production Code
+
+## Core Principles
+
+1. **No Response Hardcoding**
+   - NEVER hardcode or template responses that should come from the LLM
+   - NEVER bypass the LLM for response generation
+   - Let the LLM handle all natural language generation
+
+2. **No Tool-Specific Logic**
+   - Core components must remain tool-agnostic
+   - No special cases for specific tools
+   - Tools should be treated as black boxes by the orchestration layer
+
+3. **Clean Abstraction Boundaries**
+   - Keep layers separate and focused
+   - No leaking of tool-specific knowledge into orchestration
+   - No mixing of concerns between layers
+
+4. **Testing and Mocking**
+   - All mocks belong in test files only
+   - Use proper test doubles and mocking frameworks
+   - No mock logic in production code
+
+## Specific Prohibitions
+
+### Response Generation
+- ❌ No hardcoded response templates
+- ❌ No bypassing LLM for response generation
+- ❌ No tool-specific response formatting
+- ✅ Always let LLM handle response generation
+- ✅ Pass tool results to LLM for formatting
+
+### Tool Handling
+- ❌ No tool-specific logic in orchestration layer
+- ❌ No hardcoded tool names or behaviors
+- ❌ No special cases for specific tools
+- ✅ Use generic tool interfaces
+- ✅ Keep tool implementation details isolated
+
+### Mocking
+- ❌ No mocks in production code
+- ❌ No hardcoded test data in production
+- ❌ No conditional logic for test/mock scenarios
+- ✅ Use proper test frameworks
+- ✅ Keep mocks in test files
+
+## Examples
+
+### ❌ Prohibited: Hardcoded Responses
+```typescript
+if (toolName === 'get_weather') {
+    return `The weather in ${location} is ${temp}°C`;
+}
+```
+
+### ✅ Correct: LLM Response Generation
+```typescript
+return await llm.complete({
+    messages: [
+        ...previousMessages,
+        { role: 'tool', content: JSON.stringify(toolResult) }
+    ]
+});
+```
+
+### ❌ Prohibited: Tool-Specific Logic
+```typescript
+if (tool.name === 'specific_tool') {
+    // Special handling
+}
+```
+
+### ✅ Correct: Generic Tool Handling
+```typescript
+const result = await tool.execute(params);
+```
+
+## Implementation Guidelines
+
+1. **Response Generation**
+   - Always use LLM for text generation
+   - Pass complete context to LLM
+   - Let LLM handle formatting
+
+2. **Tool Integration**
+   - Use interfaces and abstractions
+   - Keep tool implementations isolated
+   - No tool-specific knowledge in core components
+
+3. **Testing**
+   - Mock at boundaries using test frameworks
+   - Keep test code separate
+   - Use dependency injection
+
+## References
+- See @src/core/tools/ToolOrchestrator.ts for orchestration patterns
+- See @src/core/chat/ChatController.ts for LLM interaction
+- See @tests/ for proper mocking examples 
