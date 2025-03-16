@@ -185,35 +185,47 @@ export class Converter {
         };
     }
 
+    private extractMessageFromResponse(response: OpenAIResponse): UniversalMessage {
+        if (!response.choices || response.choices.length === 0 || !response.choices[0].message) {
+            throw new Error('Invalid OpenAI response structure: missing choices or message');
+        }
+        return response.choices[0].message as unknown as UniversalMessage;
+    }
+
     convertFromProviderResponse(response: OpenAIResponse): UniversalChatResponse {
-        // Validate OpenAI response structure
-        if (!response?.choices?.[0]?.message) {
-            throw new Error('Invalid OpenAI response structure: missing required fields');
+        const message = this.extractMessageFromResponse(response);
+        console.log('[Converter] Original message from LLM:', JSON.stringify(message, null, 2));
+
+        if (message.type === 'function' && message.content) {
+            // Keep the original function call message exactly as received
+            const originalMessage = { ...message };
+            // Get the result content before we clear it from original message
+            const resultContent = originalMessage.content;
+            // Clear content from original message as it should only contain function call details
+            originalMessage.content = '';
+
+            const toolResponse: UniversalChatResponse = {
+                content: resultContent,
+                role: 'tool' as const,
+                messages: [
+                    originalMessage,
+                    {
+                        role: 'tool' as const,
+                        tool_call_id: originalMessage.id,
+                        content: resultContent
+                    }
+                ]
+            };
+            console.log('[Converter] Preparing tool result response:', JSON.stringify(toolResponse, null, 2));
+            return toolResponse;
         }
 
-        const message = response.choices[0].message;
-        const content = message.content ?? '';  // Use empty string if content is null
-        const role = message.role;
-
-        // Check if we have a valid response
-        if (response.choices[0].finish_reason === 'length' && !content.trim()) {
-            throw new Error('Response was truncated before any content could be generated. Try reducing maxTokens or adjusting your prompt.');
-        }
-
-        const toolCalls = this.convertToolCalls(message.tool_calls);
-
-        return {
-            content,
-            role,
-            ...(toolCalls && { toolCalls }),
-            metadata: {
-                finishReason: this.mapFinishReason(response.choices[0].finish_reason),
-                created: response.created,
-                model: response.model,
-                usage: this.convertUsage(response.usage),
-                responseFormat: this.currentParams?.settings?.responseFormat || 'text'
-            }
+        const normalResponse: UniversalChatResponse = {
+            content: message.content || '',
+            role: message.role
         };
+        console.log('[Converter] Regular message response:', JSON.stringify(normalResponse, null, 2));
+        return normalResponse;
     }
 
     private convertUsage(usage: OpenAIUsage) {
@@ -268,24 +280,55 @@ export class Converter {
         }
     }
 
-    public convertStreamResponse(chunk: OpenAIStreamResponse, params?: UniversalChatParams): UniversalStreamResponse {
-        const choices = chunk.choices || [];
-        const firstChoice = choices[0] || {};
-        const delta = firstChoice.delta || {};
+    async *convertStreamResponse(stream: AsyncIterable<OpenAIStreamResponse>, params: UniversalChatParams): AsyncIterable<UniversalStreamResponse> {
+        for await (const chunk of stream) {
+            const message = this.convertStreamChunk(chunk);
+            console.log('[Converter] Stream chunk message:', JSON.stringify(message, null, 2));
 
-        // Handle tool call deltas
-        const toolCallDeltas = delta.tool_calls ? this.convertToolCallDeltas(delta.tool_calls) : undefined;
+            if (message.type === 'function' && message.content) {
+                // Keep the original function call message exactly as received
+                const originalMessage = { ...message };
+                // Get the result content before we clear it from original message
+                const resultContent = originalMessage.content;
+                // Clear content from original message as it should only contain function call details
+                originalMessage.content = '';
 
-        return {
-            content: delta.content || '',
-            role: delta.role || 'assistant',
-            ...(toolCallDeltas && { toolCallDeltas }),
-            isComplete: firstChoice.finish_reason !== null,
-            metadata: {
-                finishReason: this.mapFinishReason(firstChoice.finish_reason),
-                responseFormat: params?.settings?.responseFormat || 'text',
-            },
-        };
+                const streamToolResponse: UniversalStreamResponse = {
+                    content: resultContent,
+                    role: 'tool' as const,
+                    isComplete: false,
+                    messages: [
+                        originalMessage,
+                        {
+                            role: 'tool' as const,
+                            tool_call_id: originalMessage.id,
+                            content: resultContent
+                        }
+                    ]
+                };
+                console.log('[Converter] Preparing stream tool result response:', JSON.stringify(streamToolResponse, null, 2));
+                yield streamToolResponse;
+            } else {
+                const streamResponse: UniversalStreamResponse = {
+                    content: message.content || '',
+                    role: message.role,
+                    isComplete: false
+                };
+                console.log('[Converter] Regular stream response:', JSON.stringify(streamResponse, null, 2));
+                yield streamResponse;
+            }
+        }
+    }
+
+    private convertStreamChunk(chunk: OpenAIStreamResponse): UniversalMessage {
+        if (!chunk.choices || chunk.choices.length === 0) {
+            throw new Error('Invalid stream chunk: missing choices');
+        }
+        const delta = chunk.choices[0].delta;
+        if (!delta) {
+            throw new Error('Invalid stream chunk: missing delta');
+        }
+        return delta as unknown as UniversalMessage;
     }
 
     public getCurrentParams(): UniversalChatParams | undefined {
@@ -295,4 +338,30 @@ export class Converter {
     public clearModel() {
         this.currentModel = undefined;
     }
-} 
+}
+
+// New extended type definitions for the converter output
+
+type ExtendedUniversalChatMessage = {
+    id: string;
+    type: string;
+    role: string;
+    content?: string;
+    function?: {
+        name: string;
+        arguments: string;
+    };
+    tool_call_id?: string;
+    // ... other possible fields ...
+};
+
+type ExtendedUniversalChatResponse = {
+    messages: ExtendedUniversalChatMessage[];
+};
+
+type ExtendedUniversalStreamResponse = {
+    messages: ExtendedUniversalChatMessage[];
+};
+
+// The following types (OpenAIResponse, OpenAIStreamResponse, UniversalChatParams) are assumed
+// to be imported from the respective modules, so we do not redeclare them here. 

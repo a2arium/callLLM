@@ -1,6 +1,6 @@
 import { OpenAI } from 'openai';
 import { BaseAdapter, AdapterConfig } from '../base/baseAdapter';
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, ModelInfo } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason, ModelInfo } from '../../interfaces/UniversalInterfaces';
 import { LLMProvider } from '../../interfaces/LLMProvider';
 import { Converter } from './converter';
 import { StreamHandler } from './stream';
@@ -9,9 +9,15 @@ import { OpenAIResponse, OpenAIStreamResponse, OpenAIModelParams } from './types
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { defaultModels } from './models';
+import { ChatCompletionChunk, ChatCompletionMessage } from 'openai/resources/chat';
+import { Stream } from 'openai/streaming';
 
 // Load environment variables
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
+type Delta = ChatCompletionChunk['choices'][number]['delta'];
+type ToolCallFunction = { name: string; arguments: string };
+type ValidToolCall = { function: ToolCallFunction; index: number; id?: string };
 
 export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
     private client: OpenAI;
@@ -43,6 +49,56 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
         this.models = new Map(defaultModels.map(model => [model.name, model]));
     }
 
+    private mapFinishReason(reason: string | null): FinishReason {
+        if (!reason) return FinishReason.NULL;
+        switch (reason) {
+            case 'stop': return FinishReason.STOP;
+            case 'length': return FinishReason.LENGTH;
+            case 'content_filter': return FinishReason.CONTENT_FILTER;
+            case 'tool_calls': return FinishReason.TOOL_CALLS;
+            case 'function_call': return FinishReason.TOOL_CALLS;
+            default: return FinishReason.NULL;
+        }
+    }
+
+    private isValidToolCallFunction(func: unknown): func is ToolCallFunction {
+        return !!func &&
+            typeof func === 'object' &&
+            'name' in func &&
+            'arguments' in func &&
+            typeof (func as any).name === 'string' &&
+            typeof (func as any).arguments === 'string';
+    }
+
+    private processToolCalls(delta: Delta): { name: string; arguments: Record<string, unknown>; }[] | undefined {
+        if (!delta.tool_calls?.length && !delta.function_call) {
+            return undefined;
+        }
+
+        if (delta.tool_calls?.length) {
+            const validCalls = delta.tool_calls
+                .filter((call): call is ValidToolCall =>
+                    typeof call.index === 'number' &&
+                    !!call.function &&
+                    this.isValidToolCallFunction(call.function)
+                )
+                .map(call => ({
+                    name: call.function.name,
+                    arguments: JSON.parse(call.function.arguments)
+                }));
+            return validCalls.length > 0 ? validCalls : undefined;
+        }
+
+        if (delta.function_call && this.isValidToolCallFunction(delta.function_call)) {
+            return [{
+                name: delta.function_call.name,
+                arguments: JSON.parse(delta.function_call.arguments)
+            }];
+        }
+
+        return undefined;
+    }
+
     async chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse> {
         try {
             this.validator.validateParams(params);
@@ -63,7 +119,6 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
                 settings: {
                     ...params.settings,
                     stream: false,
-                    // Tool calling settings are passed through as-is
                     tools: params.settings?.tools,
                     toolChoice: params.settings?.toolChoice,
                     toolCalls: params.settings?.toolCalls
@@ -71,7 +126,9 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
             }) as OpenAIModelParams;
             console.log('openAIParams', JSON.stringify(openAIParams, null, 2));
             const response = await this.client.chat.completions.create(openAIParams);
-            return this.convertFromProviderResponse(response);
+            const convResponse = this.converter.convertFromProviderResponse(response as unknown as OpenAIResponse);
+            // Response now directly contains content, role and toolCalls if present
+            return convResponse;
         } catch (error) {
             if (error instanceof Error && error.message === 'Model not set') {
                 throw new Error('Model not found');
@@ -99,14 +156,45 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
             settings: {
                 ...params.settings,
                 stream: true,
-                // Tool calling settings are passed through as-is
                 tools: params.settings?.tools,
                 toolChoice: params.settings?.toolChoice,
                 toolCalls: params.settings?.toolCalls
             }
         }) as OpenAIModelParams;
-        const stream = await this.client.chat.completions.create({ ...openAIParams, stream: true });
-        return this.streamHandler.handleStream(stream as AsyncIterable<OpenAIStreamResponse>, params);
+
+        const stream = await this.client.chat.completions.create({ ...openAIParams, stream: true }) as Stream<ChatCompletionChunk>;
+
+        const self = this;
+        async function* transformStream(stream: Stream<ChatCompletionChunk>): AsyncIterable<UniversalStreamResponse> {
+            for await (const chunk of stream) {
+                const delta = chunk.choices[0]?.delta;
+                if (!delta) continue;
+
+                // Handle function calls
+                if (delta.function_call || (delta as any).tool_calls) {
+                    const toolCalls = self.processToolCalls(delta);
+                    yield {
+                        content: '',
+                        role: 'assistant',
+                        isComplete: false,
+                        toolCalls
+                    };
+                    continue;
+                }
+
+                // Handle regular content
+                yield {
+                    content: delta.content || '',
+                    role: delta.role || 'assistant',
+                    isComplete: chunk.choices[0]?.finish_reason !== null,
+                    metadata: {
+                        finishReason: self.mapFinishReason(chunk.choices[0]?.finish_reason)
+                    }
+                };
+            }
+        }
+
+        return transformStream(stream);
     }
 
     convertToProviderParams(model: string, params: UniversalChatParams): OpenAIModelParams {
@@ -115,11 +203,36 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
     }
 
     convertFromProviderResponse(response: unknown): UniversalChatResponse {
+        // Response now directly contains content, role and toolCalls if present
         return this.converter.convertFromProviderResponse(response as OpenAIResponse);
     }
 
     convertFromProviderStreamResponse(chunk: unknown): UniversalStreamResponse {
-        return this.converter.convertStreamResponse(chunk as OpenAIStreamResponse, this.converter.getCurrentParams());
+        if (!chunk || typeof chunk !== 'object') {
+            throw new Error('Invalid chunk format');
+        }
+
+        const typedChunk = chunk as ChatCompletionChunk;
+        const delta = typedChunk.choices[0]?.delta;
+
+        if (!delta) {
+            return {
+                content: '',
+                role: 'assistant',
+                isComplete: false
+            };
+        }
+
+        const toolCalls = this.processToolCalls(delta);
+        return {
+            content: delta.content || '',
+            role: delta.role || 'assistant',
+            isComplete: typedChunk.choices[0]?.finish_reason !== null,
+            ...(toolCalls && { toolCalls }),
+            metadata: {
+                finishReason: this.mapFinishReason(typedChunk.choices[0]?.finish_reason)
+            }
+        };
     }
 
     // For testing purposes only

@@ -13,6 +13,13 @@ export type UniversalMessage = {
     role: 'system' | 'user' | 'assistant' | 'function' | 'tool' | 'developer';
     content: string;
     name?: string;
+    id?: string;
+    type?: string;
+    function?: {
+        name: string;
+        arguments: string;
+    };
+    tool_call_id?: string;  // ID linking a tool result to its original function call
 };
 
 export type UniversalChatSettings = {
@@ -73,6 +80,7 @@ export type Usage = {
 export interface UniversalChatResponse {
     content: string;
     role: string;
+    messages?: UniversalMessage[];  // Array of messages for tool call responses
     toolCalls?: Array<{
         name: string;
         arguments: Record<string, unknown>;
@@ -93,6 +101,7 @@ export interface UniversalStreamResponse {
     content: string;
     role: string;
     isComplete: boolean;
+    messages?: UniversalMessage[];  // Array of messages for tool call responses
     toolCallDeltas?: Array<{
         id?: string;
         index: number;
