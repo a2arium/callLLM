@@ -93,7 +93,8 @@ export class StreamController {
                 }
 
                 // After the stream is complete, check if the accumulated content triggers a retry
-                if (shouldRetryDueToContent(accumulatedContent)) {
+                // Only check content if shouldRetryDueToContent is not explicitly disabled
+                if (params.settings?.shouldRetryDueToContent !== false && shouldRetryDueToContent({ content: accumulatedContent })) {
                     throw new Error("Stream response content triggered retry due to unsatisfactory answer");
                 }
                 return;

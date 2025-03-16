@@ -90,22 +90,43 @@ export class ToolOrchestrator {
 
     private async *accumulateStream(stream: AsyncIterable<UniversalStreamResponse>): AsyncIterable<UniversalStreamResponse> {
         let totalContent = "";
+        let toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> | undefined;
+        let lastYieldedContent = "";
+
         for await (const chunk of stream) {
-            // console.log('[ToolOrchestrator] [accumulateStream] Raw chunk received:', JSON.stringify(chunk));
+            // Track tool calls
+            if (chunk.toolCalls?.length) {
+                toolCalls = chunk.toolCalls;
+                // Yield tool call chunk immediately
+                yield {
+                    role: chunk.role,
+                    content: '',
+                    toolCalls: chunk.toolCalls,
+                    isComplete: false,
+                    metadata: chunk.metadata
+                };
+                continue;
+            }
+
+            // Accumulate content
             if (chunk.content) {
                 totalContent += chunk.content;
             }
+
             // Yield chunks as they come; when a chunk signals completion, yield the final accumulated chunk
             if (chunk.isComplete) {
-                // console.log('[ToolOrchestrator] [accumulateStream] Final accumulated content:', totalContent);
-                yield {
-                    role: chunk.role,
-                    content: totalContent,
-                    isComplete: true,
-                    metadata: chunk.metadata
-                };
+                if (totalContent !== lastYieldedContent) {
+                    yield {
+                        role: chunk.role,
+                        content: totalContent,
+                        toolCalls,
+                        isComplete: true,
+                        metadata: chunk.metadata
+                    };
+                }
                 return;
-            } else {
+            } else if (chunk.content && chunk.content !== lastYieldedContent) {
+                lastYieldedContent = chunk.content;
                 yield { ...chunk, content: chunk.content };
             }
         }
@@ -313,20 +334,22 @@ export class ToolOrchestrator {
      * @param inputTokens - The estimated input tokens for the prompt
      * @returns An async iterable streaming the final response
      */
-    async streamProcessResponse(
+    async *streamProcessResponse(
         response: UniversalChatResponse,
         params: ToolOrchestrationParams,
         inputTokens: number
-    ): Promise<AsyncIterable<UniversalStreamResponse>> {
+    ): AsyncIterable<UniversalStreamResponse> {
         let currentResponse = response;
         let updatedHistoricalMessages: UniversalMessage[] = params.historicalMessages ? [...params.historicalMessages] : [];
         const toolExecutions: ToolCallResult[] = [];
         const maxHistory = params.maxHistoryLength ?? this.DEFAULT_MAX_HISTORY;
         let iterationCount = 0;
 
+        // Process all tool calls first
         while (true) {
             iterationCount++;
             if (iterationCount > this.MAX_TOOL_ITERATIONS) {
+                if (process.env.NODE_ENV !== 'test') { console.warn(`[ToolOrchestrator] Iteration limit exceeded: ${this.MAX_TOOL_ITERATIONS}`); }
                 throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
             }
 
@@ -335,7 +358,9 @@ export class ToolOrchestrator {
                 currentResponse
             );
 
+            // If no tool calls were found or processed, break the loop
             if (!toolResult?.requiresResubmission) {
+                if (process.env.NODE_ENV !== 'test') { console.log('[ToolOrchestrator] No more tool calls to process'); }
                 break;
             }
 
@@ -374,94 +399,137 @@ export class ToolOrchestrator {
                         updatedHistoricalMessages.push(toolMessage);
                     }
                 });
+
+                // Yield tool calls immediately
+                yield {
+                    role: 'assistant',
+                    content: '',
+                    toolCalls: toolResult.toolCalls.map(call => ({
+                        name: call.toolName,
+                        arguments: call.arguments
+                    })),
+                    isComplete: false,
+                    metadata: {}
+                };
             }
 
             // Trim history to maintain max length
             updatedHistoricalMessages = this.trimHistory(updatedHistoricalMessages, maxHistory);
 
-            // Validate that each message has either non-empty content or tool calls
-            const validatedMessages = updatedHistoricalMessages.map(msg => {
-                if (process.env.NODE_ENV !== 'test') {
-                    console.log('[ToolOrchestrator] Validating message:', {
-                        role: msg.role,
-                        hasContent: Boolean(msg.content),
-                        contentLength: msg.content?.length,
-                        hasToolCalls: Boolean(msg.toolCalls),
-                        hasToolCallId: Boolean(msg.toolCallId)
-                    });
-                }
-
-                // If message has neither content nor tool calls, provide default content
-                const hasValidContent = msg.content && msg.content.trim().length > 0;
-                const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
-
-                if (process.env.NODE_ENV !== 'test') {
-                    console.log('[ToolOrchestrator] Validation results:', {
-                        hasValidContent,
-                        hasToolCalls,
-                        willUseDefaultContent: !hasValidContent && !hasToolCalls
-                    });
-                }
-
-                const base = {
-                    role: msg.role || 'user',
-                    content: hasValidContent || hasToolCalls ? (msg.content || '') : 'No content provided'
-                };
-
-                if (msg.toolCalls) {
-                    return { ...base, toolCalls: msg.toolCalls };
-                }
-                if (msg.toolCallId) {
-                    return { ...base, toolCallId: msg.toolCallId };
-                }
-                return base;
-            });
-
-            if (process.env.NODE_ENV !== 'test') {
-                console.log('[ToolOrchestrator] Final validated messages:', validatedMessages.map(msg => {
-                    const messageInfo: Record<string, unknown> = {
-                        role: msg.role,
-                        contentLength: msg.content?.length
-                    };
-
-                    // Safely check for optional properties
-                    if ('toolCalls' in msg) {
-                        messageInfo.hasToolCalls = Boolean(msg.toolCalls);
-                    }
-                    if ('toolCallId' in msg) {
-                        messageInfo.hasToolCallId = Boolean(msg.toolCallId);
-                    }
-
-                    return messageInfo;
-                }));
-            }
-
-            // Build new chat parameters for streaming
-            const newParams: UniversalChatParams = {
-                messages: [
-                    { role: 'system', content: params.systemMessage },
-                    ...validatedMessages,
-                    { role: 'user', content: 'Please continue based on the tool execution results above.' }
-                ],
-                settings: params.settings
+            // Get a non-streaming response to check for more tool calls
+            const newParams = {
+                model: params.model,
+                systemMessage: params.systemMessage,
+                settings: {
+                    ...params.settings,
+                    stream: false,
+                    tools: params.settings?.tools,
+                    toolChoice: params.settings?.toolChoice,
+                    toolCalls: params.settings?.toolCalls
+                },
+                historicalMessages: [
+                    ...updatedHistoricalMessages,
+                    { role: 'user' as const, content: 'Please continue based on the tool execution results above.' }
+                ]
             };
 
-            // Start a new streaming session with updated context and wrap it with accumulation
-            const newStream = await this.streamController.createStream(params.model, newParams, inputTokens);
-            return this.accumulateStream(newStream);
+            currentResponse = await this.chatController.execute(newParams);
         }
 
-        // If no tool calls require resubmission, create a final streaming session with accumulation
+        // Final streaming session with complete context
         const finalParams: UniversalChatParams = {
             messages: [
                 { role: 'system', content: params.systemMessage },
-                ...updatedHistoricalMessages,
-                { role: 'user', content: 'Please continue based on the tool execution results above.' }
+                ...updatedHistoricalMessages
             ],
-            settings: params.settings
+            settings: {
+                ...params.settings,
+                stream: true,
+                tools: params.settings?.tools,
+                toolChoice: params.settings?.toolChoice,
+                toolCalls: params.settings?.toolCalls,
+                shouldRetryDueToContent: false // Disable content-based retries for streaming
+            }
         };
 
-        const finalStreamIterable = await this.streamController.createStream(params.model, finalParams, inputTokens);
-        return this.accumulateStream(finalStreamIterable);
+        const finalStream = await this.streamController.createStream(params.model, finalParams, inputTokens);
+        let accumulatedContent = '';
+        let lastToolCalls: Array<{ name: string; arguments: Record<string, unknown> }> | undefined;
+
+        for await (const chunk of finalStream) {
+            // Track tool calls
+            if (chunk.toolCalls?.length) {
+                lastToolCalls = chunk.toolCalls;
+                // Yield tool call chunk immediately
+                yield {
+                    role: chunk.role,
+                    content: '',
+                    toolCalls: chunk.toolCalls,
+                    isComplete: false,
+                    metadata: chunk.metadata
+                };
+                continue;
+            }
+
+            // Accumulate content
+            if (chunk.content) {
+                accumulatedContent += chunk.content;
+            }
+
+            // For intermediate chunks, yield with isComplete false
+            if (!chunk.isComplete && chunk.content) {
+                yield {
+                    role: chunk.role,
+                    content: chunk.content,
+                    toolCalls: lastToolCalls,
+                    isComplete: false,
+                    metadata: chunk.metadata
+                };
+            }
+
+            // For the final chunk, yield the complete accumulated content
+            if (chunk.isComplete) {
+                yield {
+                    role: chunk.role,
+                    content: accumulatedContent,
+                    toolCalls: lastToolCalls,
+                    isComplete: true,
+                    metadata: chunk.metadata
+                };
+            }
+        }
+    }
+
+    private async getFirstCompleteResponse(stream: AsyncIterable<UniversalStreamResponse>): Promise<UniversalChatResponse> {
+        let totalContent = '';
+        let role = 'assistant';
+        let toolCalls;
+
+        for await (const chunk of stream) {
+            if (chunk.content) {
+                totalContent += chunk.content;
+            }
+            if (chunk.role) {
+                role = chunk.role;
+            }
+            if (chunk.toolCalls) {
+                toolCalls = chunk.toolCalls;
+            }
+            if (chunk.isComplete) {
+                return {
+                    content: totalContent,
+                    role,
+                    toolCalls,
+                    metadata: chunk.metadata
+                };
+            }
+        }
+
+        return {
+            content: totalContent,
+            role,
+            toolCalls,
+            metadata: {}
+        };
     }
 } 

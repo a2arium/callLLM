@@ -187,7 +187,10 @@ async function main() {
         for await (const chunk of multiToolStream) {
             // Handle content
             if (chunk.content) {
-                process.stdout.write(chunk.content);
+                // For non-complete chunks, write incrementally
+                if (!chunk.isComplete) {
+                    process.stdout.write(chunk.content);
+                }
             }
 
             // Handle tool calls
@@ -195,11 +198,9 @@ async function main() {
                 console.log('\nTool Calls:', JSON.stringify(chunk.toolCalls, null, 2));
             }
 
-            // Indicate completion if flagged
+            // For the final chunk, write the complete content
             if (chunk.isComplete) {
-                if (chunk.content) {
-                    console.log('\nFinal response:', chunk.content);
-                }
+                console.log('\nFinal response:', chunk.content);
                 console.log('\nStream completed');
             }
         }
