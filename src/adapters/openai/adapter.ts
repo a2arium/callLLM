@@ -9,15 +9,22 @@ import { OpenAIResponse, OpenAIStreamResponse, OpenAIModelParams } from './types
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { defaultModels } from './models';
-import { ChatCompletionChunk, ChatCompletionMessage } from 'openai/resources/chat';
+import { ChatCompletionChunk, ChatCompletionMessage, ChatCompletionMessageToolCall } from 'openai/resources/chat';
 import { Stream } from 'openai/streaming';
 
 // Load environment variables
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
-type Delta = ChatCompletionChunk['choices'][number]['delta'];
 type ToolCallFunction = { name: string; arguments: string };
-type ValidToolCall = { function: ToolCallFunction; index: number; id?: string };
+type ValidToolCall = { function: ToolCallFunction; type: 'function'; id: string };
+
+type StreamDelta = Partial<ChatCompletionMessage> & {
+    finish_reason?: string | null;
+    created?: number;
+    model?: string;
+    function_call?: ToolCallFunction;
+    tool_calls?: Array<ChatCompletionMessageToolCall>;
+};
 
 export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
     private client: OpenAI;
@@ -70,15 +77,15 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
             typeof (func as any).arguments === 'string';
     }
 
-    private processToolCalls(delta: Delta): { name: string; arguments: Record<string, unknown>; }[] | undefined {
+    private processToolCalls(delta: StreamDelta): { name: string; arguments: Record<string, unknown>; }[] | undefined {
         if (!delta.tool_calls?.length && !delta.function_call) {
             return undefined;
         }
 
         if (delta.tool_calls?.length) {
             const validCalls = delta.tool_calls
-                .filter((call): call is ValidToolCall =>
-                    typeof call.index === 'number' &&
+                .filter((call): call is ChatCompletionMessageToolCall =>
+                    call.type === 'function' &&
                     !!call.function &&
                     this.isValidToolCallFunction(call.function)
                 )
@@ -167,23 +174,29 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
         const self = this;
         async function* transformStream(stream: Stream<ChatCompletionChunk>): AsyncIterable<UniversalStreamResponse> {
             for await (const chunk of stream) {
-                const delta = chunk.choices[0]?.delta;
+                const delta = chunk.choices[0]?.delta as StreamDelta;
                 if (!delta) continue;
 
                 // Handle function calls
-                if (delta.function_call || (delta as any).tool_calls) {
+                if (delta.function_call || delta.tool_calls) {
                     const toolCalls = self.processToolCalls(delta);
-                    yield {
+                    const response: UniversalStreamResponse = {
                         content: '',
                         role: 'assistant',
                         isComplete: false,
-                        toolCalls
+                        toolCalls: toolCalls,
+                        metadata: {
+                            finishReason: self.mapFinishReason(delta.finish_reason || null),
+                            created: delta.created,
+                            model: delta.model
+                        }
                     };
+                    yield response;
                     continue;
                 }
 
                 // Handle regular content
-                yield {
+                const response: UniversalStreamResponse = {
                     content: delta.content || '',
                     role: delta.role || 'assistant',
                     isComplete: chunk.choices[0]?.finish_reason !== null,
@@ -191,6 +204,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
                         finishReason: self.mapFinishReason(chunk.choices[0]?.finish_reason)
                     }
                 };
+                yield response;
             }
         }
 
@@ -213,26 +227,25 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
         }
 
         const typedChunk = chunk as ChatCompletionChunk;
-        const delta = typedChunk.choices[0]?.delta;
+        const delta = typedChunk.choices[0]?.delta as StreamDelta;
 
         if (!delta) {
-            return {
-                content: '',
-                role: 'assistant',
-                isComplete: false
-            };
+            throw new Error('No delta in chunk');
         }
 
         const toolCalls = this.processToolCalls(delta);
-        return {
+        const response: UniversalStreamResponse = {
             content: delta.content || '',
             role: delta.role || 'assistant',
-            isComplete: typedChunk.choices[0]?.finish_reason !== null,
-            ...(toolCalls && { toolCalls }),
+            isComplete: true,
+            toolCalls: toolCalls,
             metadata: {
-                finishReason: this.mapFinishReason(typedChunk.choices[0]?.finish_reason)
+                finishReason: this.mapFinishReason(delta.finish_reason || null),
+                created: delta.created,
+                model: delta.model
             }
         };
+        return response;
     }
 
     // For testing purposes only

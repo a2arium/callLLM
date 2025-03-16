@@ -54,9 +54,11 @@ export type UniversalChatParams = {
 };
 
 export type ToolCallResult = {
-    name: string;
+    id: string;
+    toolName: string;
     arguments: Record<string, unknown>;
-    output?: string;
+    result?: string;
+    error?: string;
 };
 
 export type ToolCallResponse = {
@@ -69,6 +71,7 @@ export type ToolCallResponse = {
 };
 
 export type ToolCall = {
+    id: string;
     name: string;
     arguments: Record<string, unknown>;
 };

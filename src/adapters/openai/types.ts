@@ -4,7 +4,7 @@ import { ToolDefinition, ToolChoice } from '../../core/types';
 /**
  * All possible message roles supported across different models
  */
-export type OpenAIRole = ChatCompletionMessageParam['role'] | 'developer';
+export type OpenAIRole = ChatCompletionMessageParam['role'] | 'developer' | 'tool';
 
 /**
  * Extended version of OpenAI's ChatCompletionMessage to support all role variants

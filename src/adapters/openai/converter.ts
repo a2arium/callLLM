@@ -1,10 +1,11 @@
 import { UniversalChatParams, UniversalChatResponse, FinishReason, ModelInfo, UniversalStreamResponse, UniversalMessage } from '../../interfaces/UniversalInterfaces';
-import { OpenAIModelParams, OpenAIResponse, OpenAIChatMessage, OpenAIUsage, OpenAIRole, OpenAIToolCall } from './types';
+import { OpenAIModelParams, OpenAIResponse, OpenAIChatMessage, OpenAIUsage, OpenAIRole, OpenAIToolCall, OpenAIAssistantMessage } from './types';
 import { ToolDefinition } from '../../core/types';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { ChatCompletionCreateParams, ChatCompletionMessageParam } from 'openai/resources/chat';
 import { z } from 'zod';
 import { OpenAIStreamResponse } from './types';
+import { ToolCall } from '../../core/types';
 
 export class Converter {
     private currentModel?: ModelInfo;
@@ -75,47 +76,52 @@ export class Converter {
             const baseMessage = {
                 content: msg.content || '',
                 name: msg.name,
-                refusal: null
             };
 
             switch (role) {
                 case 'system':
-                    return { ...baseMessage, role: 'system' } as const;
+                    return { ...baseMessage, role: 'system' } as ChatCompletionMessageParam;
                 case 'user':
-                    return { ...baseMessage, role: 'user' } as const;
+                    return { ...baseMessage, role: 'user' } as ChatCompletionMessageParam;
                 case 'assistant':
-                    return { ...baseMessage, role: 'assistant' } as const;
+                    if (msg.toolCalls) {
+                        return {
+                            ...baseMessage,
+                            role: 'assistant',
+                            tool_calls: msg.toolCalls.map(call => ({
+                                id: call.id,
+                                type: 'function' as const,
+                                function: {
+                                    name: call.name,
+                                    arguments: JSON.stringify(call.arguments)
+                                }
+                            }))
+                        } as ChatCompletionMessageParam;
+                    }
+                    return { ...baseMessage, role: 'assistant' } as ChatCompletionMessageParam;
                 case 'function':
-                    return { ...baseMessage, role: 'function', name: msg.name || 'function' } as const;
+                    return { ...baseMessage, role: 'function', name: msg.name || 'function' } as ChatCompletionMessageParam;
                 case 'tool':
-                    // Skip tool messages for now as they require tool_call_id which we don't have
-                    return { ...baseMessage, role: 'user' } as const;
+                    return {
+                        role: 'tool',
+                        content: msg.content || '',
+                        tool_call_id: msg.toolCallId || ''
+                    } as ChatCompletionMessageParam;
                 case 'developer':
-                    return { ...baseMessage, role: 'developer' } as const;
+                    return { ...baseMessage, role: 'user' } as ChatCompletionMessageParam; // OpenAI doesn't support developer role
                 default:
-                    return { ...baseMessage, role: 'user' } as const;
+                    return { ...baseMessage, role: 'user' } as ChatCompletionMessageParam;
             }
         });
     }
 
-    private convertToolCalls(toolCalls?: OpenAIToolCall[]): Array<{
-        id?: string;
-        name: string;
-        arguments: Record<string, unknown>;
-    }> | undefined {
-        if (!toolCalls?.length) {
-            return undefined;
-        }
+    private convertToolCalls(toolCalls?: OpenAIToolCall[]): UniversalChatResponse['toolCalls'] | undefined {
+        if (!toolCalls?.length) return undefined;
 
-        try {
-            return toolCalls.map(call => ({
-                id: call.id,
-                name: call.function.name,
-                arguments: JSON.parse(call.function.arguments)
-            }));
-        } catch (error) {
-            throw new Error(`Failed to parse tool call arguments: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
+        return toolCalls.map(call => ({
+            name: call.function.name,
+            arguments: JSON.parse(call.function.arguments)
+        }));
     }
 
     private convertToolCallDeltas(toolCalls?: Partial<OpenAIToolCall>[]): Array<{
@@ -166,7 +172,10 @@ export class Converter {
             tool_choice: settings.toolChoice,
             // Only include tool_calls if parallel tool calls are supported
             ...(hasParallelToolCalls && settings.toolCalls && {
-                tool_calls: settings.toolCalls
+                tool_calls: settings.toolCalls.map((call: { name: string; arguments: Record<string, unknown> }) => ({
+                    name: call.name,
+                    arguments: call.arguments
+                }))
             })
         } : {};
 
@@ -185,34 +194,56 @@ export class Converter {
         };
     }
 
-    private extractMessageFromResponse(response: OpenAIResponse): UniversalMessage {
+    private extractMessageFromResponse(response: OpenAIResponse): OpenAIAssistantMessage {
         if (!response.choices || response.choices.length === 0 || !response.choices[0].message) {
             throw new Error('Invalid OpenAI response structure: missing choices or message');
         }
-        return response.choices[0].message as unknown as UniversalMessage;
+        const message = response.choices[0].message;
+
+        return {
+            ...message,
+            content: message.content || '',
+            tool_calls: message.tool_calls
+        };
     }
 
     convertFromProviderResponse(response: OpenAIResponse): UniversalChatResponse {
         const message = this.extractMessageFromResponse(response);
         console.log('[Converter] Original message from LLM:', JSON.stringify(message, null, 2));
 
-        if (message.type === 'function' && message.content) {
+        // Convert role to UniversalMessage role type
+        const role: UniversalMessage['role'] =
+            message.role === 'assistant' ? 'assistant' :
+                message.role === 'system' ? 'system' :
+                    message.role === 'function' ? 'function' : 'user';
+
+        if (role === 'function' && message.content) {
             // Keep the original function call message exactly as received
             const originalMessage = { ...message };
             // Get the result content before we clear it from original message
-            const resultContent = originalMessage.content;
+            const resultContent = originalMessage.content || '';
             // Clear content from original message as it should only contain function call details
             originalMessage.content = '';
 
+            // Convert OpenAI's snake_case to our camelCase
             const toolResponse: UniversalChatResponse = {
                 content: resultContent,
-                role: 'tool' as const,
+                role: 'function',
                 messages: [
-                    originalMessage,
+                    // Convert the original message to our format
                     {
-                        role: 'tool' as const,
-                        tool_call_id: originalMessage.id,
-                        content: resultContent
+                        role: 'function',
+                        content: originalMessage.content || ''
+                    },
+                    // Convert the tool message to our format using camelCase property names
+                    {
+                        role: 'function',
+                        content: resultContent,
+                        toolCalls: originalMessage.tool_calls?.map(call => ({
+                            name: call.function.name,
+                            arguments: JSON.parse(call.function.arguments),
+                            id: call.id
+                        }))
                     }
                 ]
             };
@@ -220,11 +251,14 @@ export class Converter {
             return toolResponse;
         }
 
+        // Handle tool calls in the response
+        const toolCalls = this.convertToolCalls(message.tool_calls);
         const normalResponse: UniversalChatResponse = {
             content: message.content || '',
-            role: message.role
+            role,
+            toolCalls
         };
-        console.log('[Converter] Regular message response:', JSON.stringify(normalResponse, null, 2));
+        console.log('[Converter] Regular response:', JSON.stringify(normalResponse, null, 2));
         return normalResponse;
     }
 
@@ -285,7 +319,13 @@ export class Converter {
             const message = this.convertStreamChunk(chunk);
             console.log('[Converter] Stream chunk message:', JSON.stringify(message, null, 2));
 
-            if (message.type === 'function' && message.content) {
+            // Convert role to UniversalMessage role type
+            const role: UniversalMessage['role'] =
+                message.role === 'assistant' ? 'assistant' :
+                    message.role === 'system' ? 'system' :
+                        message.role === 'function' ? 'function' : 'user';
+
+            if (role === 'function' && message.content) {
                 // Keep the original function call message exactly as received
                 const originalMessage = { ...message };
                 // Get the result content before we clear it from original message
@@ -295,14 +335,18 @@ export class Converter {
 
                 const streamToolResponse: UniversalStreamResponse = {
                     content: resultContent,
-                    role: 'tool' as const,
+                    role: 'function',
                     isComplete: false,
                     messages: [
                         originalMessage,
                         {
-                            role: 'tool' as const,
-                            tool_call_id: originalMessage.id,
-                            content: resultContent
+                            role: 'function',
+                            content: resultContent,
+                            toolCalls: message.toolCalls?.map((call, index) => ({
+                                id: call.id || `tool-${index}`,
+                                name: call.name,
+                                arguments: call.arguments
+                            }))
                         }
                     ]
                 };
@@ -311,7 +355,7 @@ export class Converter {
             } else {
                 const streamResponse: UniversalStreamResponse = {
                     content: message.content || '',
-                    role: message.role,
+                    role,
                     isComplete: false
                 };
                 console.log('[Converter] Regular stream response:', JSON.stringify(streamResponse, null, 2));
@@ -351,7 +395,7 @@ type ExtendedUniversalChatMessage = {
         name: string;
         arguments: string;
     };
-    tool_call_id?: string;
+    toolCallId?: string;
     // ... other possible fields ...
 };
 

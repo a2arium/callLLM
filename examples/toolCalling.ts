@@ -87,16 +87,16 @@ async function main() {
     caller.addTool(calculateTool);
 
     // 1. Basic Tool Call
-    console.log('1. Basic Tool Call');
-    console.log('------------------');
-    const weatherResponse = await caller.chatCall({
-        message: 'What\'s the weather like in San Francisco?',
-        settings: {
-            tools: [weatherTool],
-            toolChoice: 'auto'
-        }
-    });
-    console.log('Response:', weatherResponse);
+    // console.log('1. Basic Tool Call');
+    // console.log('------------------');
+    // const weatherResponse = await caller.chatCall({
+    //     message: 'What\'s the weather like in San Francisco?',
+    //     settings: {
+    //         tools: [weatherTool],
+    //         toolChoice: 'auto'
+    //     }
+    // });
+    // console.log('Response:', weatherResponse);
 
     // // 2. Multi-Tool Call
     // console.log('\n2. Multi-Tool Call');
@@ -138,7 +138,7 @@ async function main() {
     // console.log('\n5. Tool Call Stream Demonstration');
     // console.log('---------------------------------------------------------------');
     // const stream = await caller.streamCall({
-    //     message: 'What is the current time in Tokyo?',
+    //     message: 'What is the current time in Tokyo? write a poem about it',
     //     settings: {
     //         tools: [timeTool],
     //         toolChoice: 'auto',
@@ -172,41 +172,41 @@ async function main() {
     // }
 
     // // 6. Multi-Tool Call Stream Demonstration
-    // console.log('\n6. Multi-Tool Call Stream Demonstration');
-    // console.log('---------------------------------------------------------------');
-    // const multiToolStream = await caller.streamCall({
-    //     message: 'What is the current time and weather in Tokyo?',
-    //     settings: {
-    //         tools: [timeTool, weatherTool],
-    //         toolChoice: 'auto',
-    //         stream: true
-    //     }
-    // });
+    console.log('\n6. Multi-Tool Call Stream Demonstration');
+    console.log('---------------------------------------------------------------');
+    const multiToolStream = await caller.streamCall({
+        message: 'What is the current time and weather in Tokyo?',
+        settings: {
+            tools: [timeTool, weatherTool],
+            toolChoice: 'auto',
+            stream: true
+        }
+    });
 
-    // try {
-    //     for await (const chunk of multiToolStream) {
-    //         // Handle content
-    //         if (chunk.content) {
-    //             process.stdout.write(chunk.content);
-    //         }
+    try {
+        for await (const chunk of multiToolStream) {
+            // Handle content
+            if (chunk.content) {
+                process.stdout.write(chunk.content);
+            }
 
-    //         // Handle tool calls
-    //         if (chunk.toolCalls?.length) {
-    //             console.log('\nTool Calls:', JSON.stringify(chunk.toolCalls, null, 2));
-    //         }
+            // Handle tool calls
+            if (chunk.toolCalls?.length) {
+                console.log('\nTool Calls:', JSON.stringify(chunk.toolCalls, null, 2));
+            }
 
-    //         // Indicate completion if flagged
-    //         if (chunk.isComplete) {
-    //             if (chunk.content) {
-    //                 console.log('\nFinal response:', chunk.content);
-    //             }
-    //             console.log('\nStream completed');
-    //         }
-    //     }
-    // } catch (error) {
-    //     console.error('\nError processing stream:', error);
-    //     throw error;
-    // }
+            // Indicate completion if flagged
+            if (chunk.isComplete) {
+                if (chunk.content) {
+                    console.log('\nFinal response:', chunk.content);
+                }
+                console.log('\nStream completed');
+            }
+        }
+    } catch (error) {
+        console.error('\nError processing stream:', error);
+        throw error;
+    }
 }
 
 main().catch(console.error);

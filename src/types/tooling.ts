@@ -24,6 +24,7 @@ export type ToolDefinition = {
 };
 
 export type ToolCall = {
+    id?: string;  // Optional ID for the tool call
     name: string;
     parameters: Record<string, unknown>;
     result?: string;

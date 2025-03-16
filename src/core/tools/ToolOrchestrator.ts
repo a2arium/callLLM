@@ -3,6 +3,7 @@ import { ChatController } from '../chat/ChatController';
 import type { UniversalChatResponse, UniversalMessage, UniversalChatParams, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
 import { ToolError, ToolIterationLimitError } from '../../types/tooling';
 import { StreamController } from '../streaming/StreamController';
+import { ToolCallResult } from '../types';
 
 export type ToolOrchestrationParams = {
     model: string;
@@ -15,8 +16,9 @@ export type ToolOrchestrationParams = {
 export type ToolOrchestrationResult = {
     response: UniversalChatResponse;
     toolExecutions: {
+        id: string;
         toolName: string;
-        parameters: Record<string, unknown>;
+        arguments: Record<string, unknown>;
         result?: string;
         error?: string;
     }[];
@@ -129,7 +131,6 @@ export class ToolOrchestrator {
         try {
             let iterationCount = 0;
 
-            // Process tool calls and handle resubmissions
             while (true) {
                 iterationCount++;
                 if (iterationCount > this.MAX_TOOL_ITERATIONS) {
@@ -138,19 +139,10 @@ export class ToolOrchestrator {
                 }
 
                 if (process.env.NODE_ENV !== 'test') { console.log(`[ToolOrchestrator] Processing iteration ${iterationCount}/${this.MAX_TOOL_ITERATIONS}`); }
-                const toolResult = await this.toolController.processToolCalls(currentResponse.content as string, currentResponse);
-
-                // Add tool executions to the tracking array
-                if (toolResult?.toolCalls) {
-                    toolResult.toolCalls.forEach(call => {
-                        toolExecutions.push({
-                            toolName: call.name,
-                            parameters: call.parameters,
-                            result: call.result,
-                            error: call.error
-                        });
-                    });
-                }
+                const toolResult = await this.toolController.processToolCalls(
+                    currentResponse.content || '',
+                    currentResponse
+                );
 
                 // If no tool calls were found or processed, break the loop
                 if (!toolResult?.requiresResubmission) {
@@ -158,52 +150,121 @@ export class ToolOrchestrator {
                     break;
                 }
 
-                // Prepare messages to add
-                const newMessages: UniversalMessage[] = [];
-
-                // Only add assistant message if it contains meaningful content beyond tool calls
-                const content = currentResponse.content.trim();
-                const hasToolCall = content.includes('<tool>') || (currentResponse.toolCalls?.length ?? 0) > 0;
-                const hasNonToolContent = content.replace(/<tool>.*?<\/tool>/g, '').trim().length > 0;
-
-                if (hasNonToolContent || (!hasToolCall && content.length > 0)) {
-                    newMessages.push({ role: 'assistant' as const, content: currentResponse.content as string });
-                }
-
-                // Add tool call context messages for successful tool calls
+                // Add tool executions to the tracking array and prepare messages
                 if (toolResult?.toolCalls) {
+                    // First, add the assistant's message with tool calls
+                    const assistantMessage: UniversalMessage = {
+                        role: 'assistant',
+                        content: currentResponse.content || '',
+                        toolCalls: toolResult.toolCalls.map(call => ({
+                            id: call.id,
+                            name: call.toolName,
+                            arguments: call.arguments
+                        }))
+                    };
+                    updatedHistoricalMessages.push(assistantMessage);
+
+                    // Then add each tool result
                     toolResult.toolCalls.forEach(call => {
-                        if (!call.error) {
-                            newMessages.push({
-                                role: 'system',
-                                content: `Tool ${call.name} was called with parameters: ${JSON.stringify(call.parameters)}`
-                            });
+                        // Track execution
+                        toolExecutions.push({
+                            id: call.id,
+                            toolName: call.toolName,
+                            arguments: call.arguments,
+                            result: call.result,
+                            error: call.error
+                        });
+
+                        // Add tool result message if successful
+                        if (!call.error && call.result) {
+                            const toolMessage: UniversalMessage = {
+                                role: 'tool',
+                                content: typeof call.result === 'string' ? call.result : JSON.stringify(call.result),
+                                toolCallId: call.id
+                            };
+                            updatedHistoricalMessages.push(toolMessage);
                         }
                     });
                 }
 
-                // Add tool messages
-                if (toolResult.messages) {
-                    newMessages.push(...toolResult.messages);
+                // Trim history to maintain max length
+                updatedHistoricalMessages = this.trimHistory(updatedHistoricalMessages, maxHistory);
+
+                // Validate that each message has either non-empty content or tool calls
+                const validatedMessages = updatedHistoricalMessages.map(msg => {
+                    if (process.env.NODE_ENV !== 'test') {
+                        console.log('[ToolOrchestrator] Validating message:', {
+                            role: msg.role,
+                            hasContent: Boolean(msg.content),
+                            contentLength: msg.content?.length,
+                            hasToolCalls: Boolean(msg.toolCalls),
+                            hasToolCallId: Boolean(msg.toolCallId)
+                        });
+                    }
+
+                    // If message has neither content nor tool calls, provide default content
+                    const hasValidContent = msg.content && msg.content.trim().length > 0;
+                    const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+
+                    if (process.env.NODE_ENV !== 'test') {
+                        console.log('[ToolOrchestrator] Validation results:', {
+                            hasValidContent,
+                            hasToolCalls,
+                            willUseDefaultContent: !hasValidContent && !hasToolCalls
+                        });
+                    }
+
+                    const base = {
+                        role: msg.role || 'user',
+                        content: hasValidContent || hasToolCalls ? (msg.content || '') : 'No content provided'
+                    };
+
+                    if (msg.toolCalls) {
+                        return { ...base, toolCalls: msg.toolCalls };
+                    }
+                    if (msg.toolCallId) {
+                        return { ...base, toolCallId: msg.toolCallId };
+                    }
+                    return base;
+                });
+
+                if (process.env.NODE_ENV !== 'test') {
+                    console.log('[ToolOrchestrator] Final validated messages:', validatedMessages.map(msg => {
+                        const messageInfo: Record<string, unknown> = {
+                            role: msg.role,
+                            contentLength: msg.content?.length
+                        };
+
+                        // Safely check for optional properties
+                        if ('toolCalls' in msg) {
+                            messageInfo.hasToolCalls = Boolean(msg.toolCalls);
+                        }
+                        if ('toolCallId' in msg) {
+                            messageInfo.hasToolCallId = Boolean(msg.toolCallId);
+                        }
+
+                        return messageInfo;
+                    }));
                 }
 
-                // Add all messages in the correct order and trim
-                updatedHistoricalMessages = this.trimHistory([
-                    ...updatedHistoricalMessages,
-                    ...newMessages
-                ], maxHistory);
-
-                // Make a new chat call with the updated context
-                if (process.env.NODE_ENV !== 'test') { console.log('[ToolOrchestrator] Making new chat call with updated context'); }
+                // Get response from LLM based on tool results
                 currentResponse = await this.chatController.execute({
                     model: params.model,
                     systemMessage: params.systemMessage,
                     settings: params.settings,
                     historicalMessages: [
-                        ...updatedHistoricalMessages,
-                        { role: 'user', content: 'Please continue based on the tool execution results above.' }
+                        ...validatedMessages,
+                        { role: 'user', content: 'Please provide a natural response based on the tool execution results above.' }
                     ]
                 });
+
+                // Add the assistant's response to the historical messages
+                if (currentResponse.content) {
+                    updatedHistoricalMessages.push({
+                        role: 'assistant',
+                        content: currentResponse.content || ''
+                    });
+                }
             }
 
             // Reset tool iteration count after successful processing
@@ -214,7 +275,7 @@ export class ToolOrchestrator {
                 response,
                 toolExecutions,
                 finalResponse: currentResponse,
-                updatedHistoricalMessages: updatedHistoricalMessages
+                updatedHistoricalMessages
             };
         } catch (error) {
             console.error('[ToolOrchestrator] Error during response processing:', error);
@@ -225,8 +286,9 @@ export class ToolOrchestrator {
             // Add error to tool executions
             const errorMessage = error instanceof Error ? error.message : String(error);
             toolExecutions.push({
+                id: '',
                 toolName: (() => { if (error instanceof ToolError) { return error.name; } return 'unknown'; })(),
-                parameters: {},
+                arguments: {},
                 error: errorMessage
             });
 
@@ -258,7 +320,7 @@ export class ToolOrchestrator {
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
         let currentResponse = response;
         let updatedHistoricalMessages: UniversalMessage[] = params.historicalMessages ? [...params.historicalMessages] : [];
-        const toolExecutions: { toolName: string; parameters: Record<string, unknown>; result?: string; error?: string }[] = [];
+        const toolExecutions: ToolCallResult[] = [];
         const maxHistory = params.maxHistoryLength ?? this.DEFAULT_MAX_HISTORY;
         let iterationCount = 0;
 
@@ -268,70 +330,124 @@ export class ToolOrchestrator {
                 throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
             }
 
-            // console.log(`[ToolOrchestrator] [Streaming] Iteration ${iterationCount} starting. Current response content: ${currentResponse.content.substring(0, 100)}...`);
-
-            const toolResult = await this.toolController.processToolCalls(currentResponse.content as string, currentResponse);
-            // console.log(`[ToolOrchestrator] [Streaming] toolResult: `, toolResult);
-
-            if (toolResult?.toolCalls) {
-                toolResult.toolCalls.forEach(call => {
-                    toolExecutions.push({
-                        toolName: call.name,
-                        parameters: call.parameters,
-                        result: call.result,
-                        error: call.error
-                    });
-                });
-            }
+            const toolResult = await this.toolController.processToolCalls(
+                currentResponse.content || '',
+                currentResponse
+            );
 
             if (!toolResult?.requiresResubmission) {
                 break;
             }
 
-            // Prepare new messages based on current response and tool call results
-            const newMessages: UniversalMessage[] = [];
-            const content = currentResponse.content.trim();
-            const hasToolCall = content.includes('<tool>') || (((currentResponse as any).toolCalls)?.length ?? 0) > 0;
-            const hasNonToolContent = content.replace(/<tool>.*?<\/tool>/g, '').trim().length > 0;
-
-            if (hasNonToolContent || (!hasToolCall && content.length > 0)) {
-                newMessages.push({ role: 'assistant', content: currentResponse.content });
-            }
+            // Add tool executions and prepare messages
             if (toolResult?.toolCalls) {
+                // First, add the assistant's message with tool calls
+                const assistantMessage: UniversalMessage = {
+                    role: 'assistant',
+                    content: currentResponse.content || '',
+                    toolCalls: toolResult.toolCalls.map(call => ({
+                        id: call.id,
+                        name: call.toolName,
+                        arguments: call.arguments
+                    }))
+                };
+                updatedHistoricalMessages.push(assistantMessage);
+
+                // Then add each tool result
                 toolResult.toolCalls.forEach(call => {
-                    if (!call.error) {
-                        newMessages.push({
-                            role: 'system',
-                            content: `Tool ${call.name} was called with parameters: ${JSON.stringify(call.parameters)}`
-                        });
+                    // Track execution
+                    toolExecutions.push({
+                        id: call.id,
+                        toolName: call.toolName,
+                        arguments: call.arguments,
+                        result: call.result,
+                        error: call.error
+                    });
+
+                    // Add tool result message if successful
+                    if (!call.error && call.result) {
+                        const toolMessage: UniversalMessage = {
+                            role: 'tool',
+                            content: typeof call.result === 'string' ? call.result : JSON.stringify(call.result),
+                            toolCallId: call.id
+                        };
+                        updatedHistoricalMessages.push(toolMessage);
                     }
                 });
             }
-            if (toolResult.messages) {
-                newMessages.push(...toolResult.messages);
+
+            // Trim history to maintain max length
+            updatedHistoricalMessages = this.trimHistory(updatedHistoricalMessages, maxHistory);
+
+            // Validate that each message has either non-empty content or tool calls
+            const validatedMessages = updatedHistoricalMessages.map(msg => {
+                if (process.env.NODE_ENV !== 'test') {
+                    console.log('[ToolOrchestrator] Validating message:', {
+                        role: msg.role,
+                        hasContent: Boolean(msg.content),
+                        contentLength: msg.content?.length,
+                        hasToolCalls: Boolean(msg.toolCalls),
+                        hasToolCallId: Boolean(msg.toolCallId)
+                    });
+                }
+
+                // If message has neither content nor tool calls, provide default content
+                const hasValidContent = msg.content && msg.content.trim().length > 0;
+                const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+
+                if (process.env.NODE_ENV !== 'test') {
+                    console.log('[ToolOrchestrator] Validation results:', {
+                        hasValidContent,
+                        hasToolCalls,
+                        willUseDefaultContent: !hasValidContent && !hasToolCalls
+                    });
+                }
+
+                const base = {
+                    role: msg.role || 'user',
+                    content: hasValidContent || hasToolCalls ? (msg.content || '') : 'No content provided'
+                };
+
+                if (msg.toolCalls) {
+                    return { ...base, toolCalls: msg.toolCalls };
+                }
+                if (msg.toolCallId) {
+                    return { ...base, toolCallId: msg.toolCallId };
+                }
+                return base;
+            });
+
+            if (process.env.NODE_ENV !== 'test') {
+                console.log('[ToolOrchestrator] Final validated messages:', validatedMessages.map(msg => {
+                    const messageInfo: Record<string, unknown> = {
+                        role: msg.role,
+                        contentLength: msg.content?.length
+                    };
+
+                    // Safely check for optional properties
+                    if ('toolCalls' in msg) {
+                        messageInfo.hasToolCalls = Boolean(msg.toolCalls);
+                    }
+                    if ('toolCallId' in msg) {
+                        messageInfo.hasToolCallId = Boolean(msg.toolCallId);
+                    }
+
+                    return messageInfo;
+                }));
             }
-
-            // console.log(`[ToolOrchestrator] [Streaming] New messages: `, newMessages);
-
-            updatedHistoricalMessages = this.trimHistory([...updatedHistoricalMessages, ...newMessages], maxHistory);
-
-            // console.log(`[ToolOrchestrator] [Streaming] Updated historical messages: `, updatedHistoricalMessages);
 
             // Build new chat parameters for streaming
             const newParams: UniversalChatParams = {
                 messages: [
                     { role: 'system', content: params.systemMessage },
-                    ...updatedHistoricalMessages,
+                    ...validatedMessages,
                     { role: 'user', content: 'Please continue based on the tool execution results above.' }
                 ],
                 settings: params.settings
             };
 
-            // console.log('[ToolOrchestrator] [Streaming] New chat parameters: ', newParams);
-
             // Start a new streaming session with updated context and wrap it with accumulation
             const newStream = await this.streamController.createStream(params.model, newParams, inputTokens);
-            // console.log('[ToolOrchestrator] [Streaming] New streaming session started.');
             return this.accumulateStream(newStream);
         }
 

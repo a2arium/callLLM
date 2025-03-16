@@ -38,14 +38,38 @@ export class ChatController {
                 ? `${systemMessage}\n Provide your response in valid JSON format.`
                 : systemMessage;
 
+        // Validate all messages have role and content
+        const validatedMessages = historicalMessages.map(msg => {
+            // If message has tool calls or is a tool response, empty content is valid
+            if (msg.toolCalls?.length || msg.role === 'tool') {
+                return {
+                    ...msg,
+                    role: msg.role || 'assistant',
+                    content: msg.content || ''
+                };
+            }
+
+            // Otherwise, both role and non-empty content are required
+            if (!msg.role || !msg.content?.trim()) {
+                console.warn('[ChatController] Message missing role or content:', msg);
+                throw new Error('Each message must have a role and non-empty content unless it contains tool calls or is a tool response');
+            }
+            return msg;
+        });
+
         // Build the chat parameters
         const chatParams: UniversalChatParams = {
             messages: [
                 { role: 'system', content: fullSystemMessage },
-                ...historicalMessages
+                ...validatedMessages
             ],
             settings: mergedSettings
         };
+
+        // Log the messages for debugging
+        if (process.env.NODE_ENV !== 'test') {
+            console.log('[ChatController] Sending messages:', JSON.stringify(chatParams.messages, null, 2));
+        }
 
         const modelInfo = this.modelManager.getModel(model);
         if (!modelInfo) {
@@ -53,7 +77,7 @@ export class ChatController {
         }
 
         // Get the last user message for usage tracking
-        const lastUserMessage = [...historicalMessages]
+        const lastUserMessage = [...validatedMessages]
             .reverse()
             .find((msg: UniversalMessage) => msg.role === 'user')?.content || '';
 
@@ -91,7 +115,7 @@ export class ChatController {
                     );
                 }
                 // Check if the response content triggers a retry
-                if (shouldRetryDueToContent(resp.content)) {
+                if (shouldRetryDueToContent(resp)) {
                     throw new Error("Response content triggered retry due to unsatisfactory answer");
                 }
                 return resp;

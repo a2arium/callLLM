@@ -8,11 +8,17 @@ export class Validator {
         }
 
         for (const message of params.messages) {
-            if (!message.role || !message.content) {
-                throw new AdapterError('Each message must have a role and content');
+            if (!message.role) {
+                throw new AdapterError('Each message must have a role');
             }
-            if (!['system', 'user', 'assistant', 'function'].includes(message.role)) {
-                throw new AdapterError('Invalid message role. Must be one of: system, user, assistant, function');
+
+            // Allow empty content only if message has tool calls
+            if (!message.content && !message.toolCalls) {
+                throw new AdapterError('Each message must have either content or tool calls');
+            }
+
+            if (!['system', 'user', 'assistant', 'function', 'tool'].includes(message.role)) {
+                throw new AdapterError('Invalid message role. Must be one of: system, user, assistant, function, tool');
             }
             if (message.role === 'function' && !message.name) {
                 throw new AdapterError('Function messages must have a name');

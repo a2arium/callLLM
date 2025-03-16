@@ -10,16 +10,15 @@ export enum FinishReason {
 }
 
 export type UniversalMessage = {
-    role: 'system' | 'user' | 'assistant' | 'function' | 'tool' | 'developer';
+    role: 'system' | 'user' | 'assistant' | 'tool' | 'function' | 'developer';
     content: string;
     name?: string;
-    id?: string;
-    type?: string;
-    function?: {
+    toolCallId?: string;  // ID linking a tool result to its original tool call
+    toolCalls?: Array<{
+        id: string;
         name: string;
-        arguments: string;
-    };
-    tool_call_id?: string;  // ID linking a tool result to its original function call
+        arguments: Record<string, unknown>;
+    }>;
 };
 
 export type UniversalChatSettings = {

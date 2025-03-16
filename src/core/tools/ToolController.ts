@@ -29,7 +29,13 @@ export class ToolController {
      */
     async processToolCalls(content: string, response?: UniversalChatResponse): Promise<{
         messages: UniversalMessage[];
-        toolCalls: { name: string; parameters: Record<string, unknown>; result?: string; error?: string }[];
+        toolCalls: {
+            id: string;
+            toolName: string;
+            arguments: Record<string, unknown>;
+            result?: string;
+            error?: string;
+        }[];
         requiresResubmission: boolean;
     }> {
         // console.log('[ToolController] Raw content for tool calls:', content);
@@ -43,14 +49,15 @@ export class ToolController {
         this.iterationCount++;
 
         // First check for direct tool calls in the response
-        let parsedToolCalls: { toolName: string; parameters: Record<string, unknown> }[] = [];
+        let parsedToolCalls: { id?: string; name: string; arguments: Record<string, unknown> }[] = [];
         let requiresResubmission = false;
 
         if (response?.toolCalls?.length) {
             if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Found ${response.toolCalls.length} direct tool calls`); }
-            parsedToolCalls = response.toolCalls.map((tc: { name: string; arguments: Record<string, unknown> }) => ({
-                toolName: tc.name,
-                parameters: tc.arguments || {}
+            parsedToolCalls = response.toolCalls.map((tc: { id?: string; name: string; arguments: Record<string, unknown> }) => ({
+                id: tc.id,
+                name: tc.name,
+                arguments: tc.arguments
             }));
             requiresResubmission = true;
         } else {
@@ -61,16 +68,29 @@ export class ToolController {
         // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing ${parsedToolCalls.length} tool calls`); }
 
         const messages: UniversalMessage[] = [];
-        const toolCalls: { name: string; parameters: Record<string, unknown>; result?: string; error?: string }[] = [];
+        const toolCalls: {
+            id: string;
+            toolName: string;
+            arguments: Record<string, unknown>;
+            result?: string;
+            error?: string;
+        }[] = [];
 
-        for (const { toolName, parameters } of parsedToolCalls) {
-            // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing tool call: ${toolName}`); }
-            const toolCall = { name: toolName, parameters };
-            const tool = this.toolsManager.getTool(toolName);
+        for (const { id, name, arguments: args } of parsedToolCalls) {
+            // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Processing tool call: ${name}`); }
+            // Get the tool call ID from the response if available
+            const toolCallId = id || `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+            const toolCall = {
+                id: toolCallId,
+                toolName: name,
+                arguments: args
+            };
+            const tool = this.toolsManager.getTool(name);
 
             if (!tool) {
-                // if (process.env.NODE_ENV !== 'test') { console.warn(`[ToolController] Tool not found: ${toolName}`); }
-                const error = new ToolNotFoundError(toolName);
+                // if (process.env.NODE_ENV !== 'test') { console.warn(`[ToolController] Tool not found: ${name}`); }
+                const error = new ToolNotFoundError(name);
                 messages.push({
                     role: 'system',
                     content: `Error: ${error.message}`
@@ -80,12 +100,12 @@ export class ToolController {
             }
 
             try {
-                // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Executing tool: ${toolName}`); }
-                const result = await tool.callFunction(parameters);
+                // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Executing tool: ${name}`); }
+                const result = await tool.callFunction(args);
                 let processedMessages: string[];
 
                 if (tool.postCallLogic) {
-                    // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Running post-call logic for: ${toolName}`); }
+                    // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Running post-call logic for: ${name}`); }
                     processedMessages = await tool.postCallLogic(result);
                 } else {
                     processedMessages = [typeof result === 'string' ? result : JSON.stringify(result)];
@@ -94,21 +114,21 @@ export class ToolController {
                 messages.push(...processedMessages.map(content => ({
                     role: 'function' as const,
                     content,
-                    name: toolName
+                    name
                 })));
 
                 let finalResult: string;
                 if (typeof result === 'string') {
-                    finalResult = JSON.stringify(result);
+                    finalResult = result;
                 } else {
                     finalResult = JSON.stringify(result);
                 }
-                toolCalls.push({ name: toolCall.name, parameters: toolCall.parameters, result: finalResult });
-                // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Successfully executed tool: ${toolName}`); }
+                toolCalls.push({ ...toolCall, result: finalResult });
+                // if (process.env.NODE_ENV !== 'test') { console.log(`[ToolController] Successfully executed tool: ${name}`); }
             } catch (error) {
-                console.error(`[ToolController] Error executing tool ${toolName}:`, error);
+                console.error(`[ToolController] Error executing tool ${name}:`, error);
                 const errorMessage = error instanceof Error ? error.message : String(error);
-                const toolError = new ToolExecutionError(toolName, errorMessage);
+                const toolError = new ToolExecutionError(name, errorMessage);
                 messages.push({
                     role: 'system',
                     content: `Error: ${toolError.message}`
