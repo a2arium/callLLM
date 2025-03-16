@@ -1,0 +1,187 @@
+---
+description: Documentation standards and requirements that should be followed when writing or modifying code documentation
+globs: 
+alwaysApply: false
+---
+---
+description: Documentation standards and requirements that should be followed when writing or modifying code documentation
+globs: ["**/*.ts", "**/*.md"]
+alwaysApply: false
+---
+
+# Documentation Standards
+
+## Code Documentation
+
+### Function Documentation
+- Clear purpose description
+- Parameter documentation
+- Return value documentation
+- Error conditions
+- Usage examples
+- Type information
+
+### Class Documentation
+- Class purpose and responsibility
+- Constructor parameters
+- Public methods
+- Protected/private methods
+- Property descriptions
+- Usage examples
+
+### Type Documentation
+- Type purpose
+- Property descriptions
+- Constraints and validations
+- Usage examples
+- Related types
+
+### Interface Documentation
+- Interface purpose
+- Method descriptions
+- Property descriptions
+- Implementation requirements
+- Usage patterns
+
+## Comment Standards
+
+### Code Comments
+- Add comments for non-obvious logic
+- Explain complex algorithms
+- Document edge cases
+- Note performance implications
+- Mark TODOs with clear context
+
+### JSDoc Comments
+- Use JSDoc for public APIs
+- Include all parameters
+- Document return types
+- Note throws conditions
+- Add usage examples
+
+### Inline Comments
+- Keep comments current
+- Remove obsolete comments
+- Explain why, not what
+- Document assumptions
+- Note limitations
+
+## File Documentation
+
+### File Headers
+- File purpose
+- Main exports
+- Dependencies
+- Author information
+- License information
+
+### Module Documentation
+- Module purpose
+- Public API
+- Dependencies
+- Configuration
+- Usage examples
+
+### Test Documentation
+- Test purpose
+- Test scenarios
+- Mock explanations
+- Edge cases
+- Known limitations
+
+## Project Documentation
+
+### README
+- Project overview
+- Installation steps
+- Basic usage
+- Configuration
+- Examples
+
+### API Documentation
+- API endpoints
+- Request/response formats
+- Error codes
+- Authentication
+- Rate limits
+
+### Architecture Documentation
+- System overview
+- Component relationships
+- Data flow
+- State management
+- Error handling
+
+## Best Practices
+
+### Documentation Style
+- Clear and concise
+- Consistent formatting
+- Complete sentences
+- Proper grammar
+- Code examples
+
+### Code Examples
+- Working examples
+- Common use cases
+- Error handling
+- Configuration
+- Best practices
+
+### Version Documentation
+- Version changes
+- Breaking changes
+- Migration guides
+- Deprecation notices
+- New features
+
+### Maintenance
+- Keep docs updated
+- Remove obsolete docs
+- Update examples
+- Fix broken links
+- Review periodically
+
+## Documentation Tools
+
+### TypeDoc
+- Generate API docs
+- Type information
+- Class hierarchy
+- Method signatures
+- Property details
+
+### Markdown
+- README files
+- Architecture docs
+- Guidelines
+- Examples
+- Notes
+
+### JSDoc
+- Code documentation
+- Type information
+- Examples
+- Links
+- References
+
+## Documentation Review
+
+### Review Process
+- Technical accuracy
+- Completeness
+- Clarity
+- Examples
+- Links
+
+### Quality Checks
+- Spelling
+- Grammar
+- Code correctness
+- Link validity
+- Format consistency
+
+# References
+- See @README.md for project documentation
+- See @src/core/types.ts for type documentation examples
+- See @docs/architecture.md for architecture documentation

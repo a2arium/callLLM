@@ -1,0 +1,187 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: Naming conventions and patterns that should be followed when creating or modifying code
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Naming Conventions
+
+## File Naming
+
+### Directory Names
+- Use lowercase-with-dashes
+- Descriptive and concise
+- Logical grouping
+- Clear purpose
+- Example: `core-components`
+
+### Source Files
+- Use camelCase
+- Descriptive names
+- Clear purpose
+- Type indication
+- Example: `streamController.ts`
+
+### Test Files
+- Mirror source filename
+- Add .test or .spec suffix
+- Match source location
+- Example: `streamController.test.ts`
+
+## Code Naming
+
+### Variables
+- Use camelCase
+- Descriptive names
+- Clear purpose
+- Avoid abbreviations
+- Example: `userResponse`
+
+### Functions
+- Use camelCase
+- Verb-noun combination
+- Clear purpose
+- Action description
+- Example: `calculateTokens`
+
+### Classes
+- Use PascalCase
+- Noun or noun phrase
+- Clear responsibility
+- Example: `StreamController`
+
+### Interfaces/Types
+- Use PascalCase
+- Descriptive names
+- Clear purpose
+- Example: `StreamConfig`
+
+## Component Naming
+
+### Core Components
+- Clear responsibility
+- Functional description
+- Standard suffixes
+- Example: `RetryManager`
+
+### Utility Functions
+- Action-focused names
+- Clear purpose
+- Reusability indication
+- Example: `formatResponse`
+
+### Constants
+- Use UPPER_SNAKE_CASE
+- Clear purpose
+- Grouped logically
+- Example: `MAX_RETRY_ATTEMPTS`
+
+## Parameter Naming
+
+### Function Parameters
+- Descriptive names
+- Clear purpose
+- Consistent across similar functions
+- Example: `config`, `options`
+
+### Generic Types
+- Single letter for simple types
+- Descriptive for complex types
+- Consistent conventions
+- Example: `T`, `TResponse`
+
+### Callback Parameters
+- Action description
+- Clear purpose
+- Event context
+- Example: `onComplete`, `onError`
+
+## Error Naming
+
+### Error Classes
+- Suffix with Error
+- Clear error type
+- Specific purpose
+- Example: `ValidationError`
+
+### Error Messages
+- Clear description
+- Action context
+- Resolution hints
+- Example: `Invalid token format`
+
+## Event Naming
+
+### Event Names
+- Clear purpose
+- Action description
+- Consistent format
+- Example: `streamComplete`
+
+### Event Handlers
+- Prefix with 'handle'
+- Clear purpose
+- Event context
+- Example: `handleStreamError`
+
+## Best Practices
+
+### Clarity
+- Self-documenting names
+- Avoid abbreviations
+- Clear purpose
+- Consistent style
+
+### Consistency
+- Follow conventions
+- Use standard patterns
+- Maintain across codebase
+- Regular review
+
+### Context
+- Consider scope
+- Reflect purpose
+- Include type context
+- Match domain language
+
+### Length
+- Balance clarity and brevity
+- Avoid unnecessary words
+- Keep names manageable
+- Use standard abbreviations only
+
+## Specific Patterns
+
+### React Components
+- PascalCase
+- Clear purpose
+- Functional indication
+- Example: `StreamViewer`
+
+### Hooks
+- Prefix with 'use'
+- Clear purpose
+- Functional description
+- Example: `useStreamState`
+
+### Higher-Order Functions
+- Action description
+- Clear purpose
+- Transformation indication
+- Example: `withRetry`
+
+### Type Guards
+- Prefix with 'is'
+- Clear type check
+- Boolean indication
+- Example: `isStreamComplete`
+
+# References
+- See @src/core/types.ts for type naming examples
+- See @src/core/streaming/StreamController.ts for class naming
+- See @src/utils/formatters.ts for utility function naming

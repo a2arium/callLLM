@@ -1,0 +1,119 @@
+---
+description: TypeScript coding standards and best practices that should be followed when writing or modifying TypeScript code
+globs: 
+alwaysApply: false
+---
+---
+description: TypeScript coding standards and best practices that should be followed when writing or modifying TypeScript code
+globs: ["**/*.ts", "**/*.tsx"]
+alwaysApply: false
+---
+
+# TypeScript Standards
+
+## Type Definitions
+
+### Core Principles
+- NEVER use 'any' type
+- Use `type` instead of `interface`
+- Prefer union types over enums
+- Use discriminated unions for complex types
+- Make types as specific as possible
+
+### Type Safety
+- Enable strict TypeScript checks
+- Use proper type guards
+- Avoid type assertions unless absolutely necessary
+- Use readonly where applicable
+- Leverage const assertions
+
+## Function Declarations
+
+### Parameters
+- Use specific types for parameters
+- Avoid optional parameters when possible
+- Use union types for varying parameter types
+- Document complex parameter types
+
+### Return Types
+- Always specify return types explicitly
+- Use Promise<T> for async functions
+- Use union types for multiple return types
+- Document return type meanings
+
+## Error Handling
+- Use typed error classes
+- Define error types for different scenarios
+- Use discriminated unions for error states
+- Properly type catch blocks
+
+## Generics
+- Use generics for reusable components
+- Constrain generic types when possible
+- Document generic type parameters
+- Use meaningful generic names
+
+## Best Practices
+
+### Type Exports
+- Export types separately from values
+- Use meaningful type names
+- Group related types together
+- Document complex type relationships
+
+### Type Guards
+- Use type predicates
+- Implement exhaustive checks
+- Document type guard behavior
+- Test type guards thoroughly
+
+### Async Code
+- Use proper Promise typing
+- Handle Promise rejection types
+- Type async iterators properly
+- Document async behavior
+
+### Utility Types
+- Use built-in utility types appropriately
+- Create custom utility types when needed
+- Document utility type usage
+- Test utility types thoroughly
+
+## Code Organization
+
+### File Structure
+- One main type/class per file
+- Group related types together
+- Separate type definitions when complex
+- Use index files for exports
+
+### Import/Export
+- Use named exports
+- Avoid default exports
+- Group imports by source
+- Sort imports alphabetically
+
+### Documentation
+- Document complex types
+- Add JSDoc comments for public APIs
+- Include examples in documentation
+- Document type constraints
+
+## Testing
+
+### Type Testing
+- Test type definitions
+- Verify type guards
+- Test utility types
+- Check error type handling
+
+### Test Types
+- Type test fixtures
+- Type mock functions
+- Type test utilities
+- Document test types
+
+# References
+- See @src/core/types.ts for core type examples
+- See @src/adapters/openai/types.ts for provider-specific types
+- See @src/core/retry/RetryManager.ts for error handling examples

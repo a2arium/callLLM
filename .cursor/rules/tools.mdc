@@ -1,0 +1,181 @@
+---
+description: Tool orchestration patterns and requirements that should be followed when working with tool functionality
+globs: 
+alwaysApply: false
+---
+---
+description: Tool orchestration patterns and requirements that should be followed when working with tool functionality
+globs: ["src/**/tools/**/*.ts", "src/**/*Tool*.ts"]
+alwaysApply: false
+---
+
+# Tool Orchestration Standards
+
+## Core Components
+
+### ToolController
+- High-level tool management
+- Tool lifecycle coordination
+- Error handling and recovery
+- Tool state management
+
+### ToolOrchestrator
+- Tool execution flow
+- Tool chain management
+- Result aggregation
+- State synchronization
+
+### ToolCallParser
+- Parse tool calls
+- Validate tool parameters
+- Handle tool responses
+- Format tool output
+
+## Implementation Requirements
+
+### Tool Definition
+- Clear tool interfaces
+- Strong type definitions
+- Parameter validation
+- Return type safety
+
+### Tool Execution
+- Safe parameter handling
+- Proper error boundaries
+- Resource management
+- State preservation
+
+### Tool Chain Management
+- Sequential execution
+- Parallel execution where possible
+- Dependency management
+- Result coordination
+
+## Type Safety
+
+### Parameter Types
+- Strict parameter typing
+- Required vs optional parameters
+- Parameter validation rules
+- Type guard implementation
+
+### Return Types
+- Specific return types
+- Error type definitions
+- Union type handling
+- Generic type constraints
+
+## State Management
+
+### Tool State
+- Track tool execution
+- Maintain tool context
+- Handle tool interruption
+- Manage tool resources
+
+### Orchestration State
+- Track execution chain
+- Manage dependencies
+- Handle partial completion
+- State recovery
+
+## Error Handling
+
+### Tool Errors
+- Tool-specific errors
+- Execution errors
+- Parameter errors
+- State errors
+
+### Recovery Strategies
+- Tool retry logic
+- Alternative tool paths
+- State restoration
+- Resource cleanup
+
+## Performance
+
+### Execution Optimization
+- Parallel execution
+- Resource pooling
+- Cache management
+- Memory optimization
+
+### Resource Management
+- Tool resource limits
+- Resource cleanup
+- Memory management
+- Connection pooling
+
+## Testing
+
+### Tool Testing
+- Unit test tools
+- Test tool chains
+- Mock external resources
+- Verify error handling
+
+### Integration Testing
+- Test tool interactions
+- Verify state management
+- Test error recovery
+- Performance testing
+
+## Security
+
+### Parameter Validation
+- Input sanitization
+- Type checking
+- Range validation
+- Format validation
+
+### Resource Access
+- Permission checking
+- Resource limits
+- Access logging
+- Security boundaries
+
+## Best Practices
+
+### Tool Design
+- Single responsibility
+- Clear interfaces
+- Proper documentation
+- Error handling
+
+### Tool Implementation
+- Type safety first
+- Resource management
+- Error boundaries
+- Performance optimization
+
+### Tool Composition
+- Logical grouping
+- Clear dependencies
+- State isolation
+- Error propagation
+
+### Documentation
+- Tool purpose
+- Parameter documentation
+- Return value documentation
+- Error documentation
+
+## Provider Integration
+
+### Provider Tools
+- Provider-specific tools
+- Universal interfaces
+- Error handling
+- Resource management
+
+### Tool Adapters
+- Provider adaptation
+- Format conversion
+- Error mapping
+- State translation
+
+# References
+- See @src/core/tools/ToolController.ts for controller patterns
+- See @src/core/tools/ToolOrchestrator.ts for orchestration examples
+- See @src/core/tools/types.ts for tool type definitions

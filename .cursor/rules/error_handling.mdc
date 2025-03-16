@@ -1,0 +1,151 @@
+---
+description: Error handling patterns and requirements that should be followed when implementing error management
+globs: 
+alwaysApply: false
+---
+---
+description: Error handling patterns and requirements that should be followed when implementing error management
+globs: ["src/**/*.ts"]
+alwaysApply: false
+---
+
+# Error Handling Standards
+
+## Core Principles
+
+### Type Safety
+- Use typed error classes
+- Define specific error types for different scenarios
+- Use discriminated unions for error states
+- Ensure proper type narrowing in catch blocks
+
+### Error Context
+- Maintain complete error context
+- Include relevant state information
+- Preserve error stack traces
+- Add descriptive error messages
+
+## Error Categories
+
+### API Errors
+- Handle provider-specific errors
+- Convert to universal error format
+- Preserve original error details
+- Include request context
+
+### Validation Errors
+- Schema validation errors
+- Type validation errors
+- Input validation errors
+- State validation errors
+
+### Runtime Errors
+- Handle async operation failures
+- Manage stream processing errors
+- Handle resource cleanup errors
+- Process timeout errors
+
+### Business Logic Errors
+- Model selection errors
+- Token limit errors
+- Cost calculation errors
+- State transition errors
+
+## Retry Management
+
+### RetryManager Usage
+- Use for transient failures
+- Implement exponential backoff
+- Configure retry attempts appropriately
+- Handle retry exhaustion
+
+### Retry Conditions
+- Define clear retry conditions
+- Identify non-retryable errors
+- Set appropriate timeouts
+- Monitor retry patterns
+
+## Error Recovery
+
+### Graceful Degradation
+- Provide fallback behavior
+- Maintain partial functionality
+- Clear error state properly
+- Restore system state
+
+### Resource Cleanup
+- Release system resources
+- Close open connections
+- Clear temporary state
+- Reset to known good state
+
+## Error Reporting
+
+### Error Messages
+- Clear and actionable messages
+- Include error codes
+- Provide resolution steps
+- Log appropriate context
+
+### Logging
+- Log error details
+- Include stack traces
+- Add contextual information
+- Use appropriate log levels
+
+## Implementation Patterns
+
+### Try-Catch Blocks
+- Use specific catch blocks
+- Handle errors at appropriate level
+- Avoid catching Error
+- Rethrow when appropriate
+
+### Async Error Handling
+- Use try-catch with async/await
+- Handle Promise rejections
+- Manage concurrent errors
+- Clean up resources
+
+### Stream Error Handling
+- Handle stream interruptions
+- Manage partial responses
+- Clean up stream resources
+- Maintain stream state
+
+### Error Boundaries
+- Define clear error boundaries
+- Handle errors at component level
+- Prevent error propagation
+- Maintain system stability
+
+## Best Practices
+
+### Error Prevention
+- Validate inputs early
+- Check preconditions
+- Verify state transitions
+- Use type guards
+
+### Error Recovery
+- Implement recovery strategies
+- Handle partial failures
+- Maintain data consistency
+- Provide feedback
+
+### Testing
+- Test error conditions
+- Verify error handling
+- Test recovery mechanisms
+- Check error messages
+
+### Documentation
+- Document error types
+- Describe error handling
+- Explain recovery steps
+- Note limitations
+
+# References
+- See @src/core/retry/RetryManager.ts for retry implementation
+- See @src/adapters/openai/errors.ts for provider error handling
+- See @src/core/types.ts for error type definitions

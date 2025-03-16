@@ -1,0 +1,127 @@
+---
+description: Testing standards and requirements that should be followed when writing or modifying tests
+globs: 
+alwaysApply: false
+---
+---
+description: Testing standards and requirements that should be followed when writing or modifying tests
+globs: ["tests/**/*.test.ts", "tests/**/*.spec.ts"]
+alwaysApply: false
+---
+
+# Testing Standards
+
+## Test Structure
+- Tests are organized in three levels:
+  1. Unit tests (`/src/tests/unit/`)
+  2. Integration tests (`/src/tests/integration/`)
+  3. End-to-end tests (`/src/tests/e2e/`)
+
+## Directory Organization
+- Mirror the source code directory structure in test directories
+- Keep mocks in `__mocks__` directory at each test level
+- Group related tests using describe blocks
+- Use clear, descriptive test names that explain the scenario
+
+## Coverage Requirements
+- Minimum 90% test coverage for all code
+- Test both success and error paths
+- Test all streaming scenarios thoroughly
+- Test JSON mode with different schema complexities
+- Verify token calculation accuracy
+- Test cost tracking accuracy
+
+## Testing Principles
+- No external API calls in unit and integration tests
+- Use mocks for external services (OpenAI, etc.)
+- Test type safety explicitly
+- Test error handling comprehensively
+- When fixing bugs, add regression tests
+
+## Test File Naming and Organization
+- Test files mirror source files with `.test.ts` suffix
+- Follow pattern: `describe('Component', () => describe('method', () => it('should behavior', () => {})))`
+- Use descriptive test names that explain the scenario
+- Each test file should have a header comment explaining its purpose
+
+## Mocking Conventions
+- Create separate mock files for each external service
+- Mock responses should cover all possible scenarios:
+  - Success cases
+  - Error cases
+  - Edge cases
+  - Partial responses
+  - Malformed data
+- For streaming, mock:
+  - Various chunk sizes
+  - Different streaming patterns
+  - Complete and incomplete responses
+  - Error conditions during streaming
+
+## Specific Testing Requirements
+
+### Streaming Tests
+- Test content accumulation accuracy
+- Verify JSON parsing at completion points
+- Test schema validation during streaming
+- Test error handling for malformed JSON
+- Test token calculation during streaming
+- Verify streaming state management
+
+### Schema Validation Tests
+- Test all supported schema types
+- Test nested schema validation
+- Test array schema validation
+- Test schema error handling
+- Test schema format conversions
+- Verify validation error messages
+
+### Text Processing Tests
+- Test content type classification
+- Test space handling
+- Test splitting strategies:
+  - Word-based splitting
+  - Character-based splitting
+  - Token-based splitting
+- Test content reconstruction
+- Test edge cases:
+  - Empty content
+  - Very large content
+  - Special characters
+  - Unicode characters
+
+### Error Handling Tests
+- Test all error types
+- Verify error propagation
+- Test retry mechanisms
+- Test error recovery
+- Verify error messages
+- Test error state handling
+
+### Performance Tests
+- Test streaming performance
+- Test token calculation speed
+- Test large payload handling
+- Test concurrent operations
+- Test memory usage patterns
+
+## Test Documentation
+- Document test purpose and scope
+- Document test dependencies
+- Document test data sources
+- Document expected behaviors
+- Document edge cases covered
+- Document known limitations
+
+## Best Practices
+- Keep tests focused and atomic
+- Use appropriate test doubles
+- Clean up test resources
+- Avoid test interdependence
+- Write maintainable test code
+- Follow DRY principles in test code
+
+# References
+- See @tests/jest.setup.ts for test configuration
+- See @tests/unit/core/retry/RetryManager.test.ts for example test patterns
+- See @tests/__mocks__/@dqbd/tiktoken.ts for mock examples

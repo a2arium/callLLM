@@ -1,0 +1,163 @@
+---
+description: Streaming implementation guidelines and patterns that should be followed when working with streaming functionality
+globs: 
+alwaysApply: false
+---
+---
+description: Streaming implementation guidelines and patterns that should be followed when working with streaming functionality
+globs: ["src/**/stream*.ts", "src/**/*Stream*.ts"]
+alwaysApply: false
+---
+
+# Streaming Standards
+
+## Core Components
+
+### StreamController
+- High-level stream management
+- Stream lifecycle coordination
+- Error handling and recovery
+- Event coordination
+
+### StreamHandler
+- Low-level stream processing
+- Content accumulation
+- Token tracking
+- Schema validation
+
+## Implementation Requirements
+
+### Content Processing
+- Careful content accumulation
+- Avoid double-parsing
+- Check content type before parsing
+- Parse complete objects only when isComplete is true
+- Handle both string and object content types
+
+### JSON Handling
+- Validate JSON structure
+- Accumulate partial JSON
+- Parse only complete objects
+- Handle malformed JSON
+- Maintain JSON state
+
+### Token Management
+- Track token usage
+- Calculate costs accurately
+- Handle token limits
+- Monitor accumulation
+
+## State Management
+
+### Stream State
+- Track stream progress
+- Maintain content buffer
+- Monitor completion status
+- Handle interruptions
+
+### Content State
+- Track accumulated content
+- Manage partial content
+- Handle content boundaries
+- Preserve content integrity
+
+## Error Handling
+
+### Stream Errors
+- Handle connection drops
+- Manage timeout errors
+- Process malformed data
+- Handle provider errors
+
+### Recovery Strategies
+- Implement retry logic
+- Handle partial failures
+- Maintain state consistency
+- Clean up resources
+
+## Performance Considerations
+
+### Memory Management
+- Efficient content buffering
+- Proper resource cleanup
+- Handle large streams
+- Monitor memory usage
+
+### Processing Efficiency
+- Optimize parsing logic
+- Minimize content copies
+- Efficient state updates
+- Smart buffer management
+
+## Testing Requirements
+
+### Stream Testing
+- Test various chunk sizes
+- Verify content accumulation
+- Test error conditions
+- Check state management
+
+### Content Validation
+- Validate content integrity
+- Test JSON parsing
+- Verify token counts
+- Check schema compliance
+
+## Logging and Debugging
+
+### Debug Information
+- Log stream progress
+- Track state changes
+- Monitor content flow
+- Record error conditions
+
+### Strategic Logging
+- Add logging checkpoints
+- Track critical operations
+- Monitor performance
+- Debug stream issues
+
+## Best Practices
+
+### Content Handling
+- Validate content early
+- Handle partial content
+- Preserve content order
+- Manage content types
+
+### State Management
+- Clear state transitions
+- Proper cleanup on completion
+- Handle edge cases
+- Maintain consistency
+
+### Error Management
+- Early error detection
+- Proper error propagation
+- Clean error recovery
+- State restoration
+
+### Performance
+- Efficient processing
+- Smart resource usage
+- Proper cleanup
+- Optimized operations
+
+## Provider Integration
+
+### Provider Adapters
+- Handle provider streams
+- Convert stream formats
+- Manage provider errors
+- Maintain consistency
+
+### Universal Interface
+- Consistent stream handling
+- Standard error formats
+- Common state management
+- Unified events
+
+# References
+- See @src/core/streaming/StreamController.ts for controller implementation
+- See @src/core/streaming/StreamHandler.ts for handler patterns
+- See @src/adapters/openai/stream.ts for provider streaming

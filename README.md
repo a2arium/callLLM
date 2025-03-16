@@ -179,7 +179,8 @@ Default OpenAI Models:
 | o1 | $15.00 | $7.50 | $60.00 | 85 | 151.2 | 22490 |
 | o1-mini | $3.00 | $1.50 | $12.00 | 82 | 212.1 | 10890 |
 
-Model characteristics (quality index, output speed, and latency) are sourced from comprehensive benchmarks and real-world usage data.
+Model characteristics (quality index, output speed, and latency) are sourced from comprehensive benchmarks and real-world usage data. https://artificialanalysis.ai/models 
+
 
 ### Model Capabilities
 

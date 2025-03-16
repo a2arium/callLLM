@@ -1,0 +1,229 @@
+---
+description: Guidelines for creating and maintaining Cursor rules in the project
+globs: 
+alwaysApply: false
+---
+---
+description: Guidelines for creating and maintaining Cursor rules in the project
+globs: [".cursor/rules/*.mdc"]
+alwaysApply: false
+---
+
+# Cursor Rules Guide
+
+## Rule Structure
+
+### Frontmatter
+```yaml
+---
+description: Clear description of when this rule should be applied
+globs: ["pattern/to/match/*.ts"]  # Files this rule applies to
+alwaysApply: true/false          # Whether rule should always be considered
+---
+```
+
+### Description Field
+- Clearly states when the rule should be applied
+- Uses natural language
+- Provides context for AI activation
+- Examples:
+  - "Core project rules that should always be considered"
+  - "TypeScript standards for writing code"
+  - "Testing requirements for new features"
+
+### Glob Patterns
+- Target specific file types or directories
+- Can include multiple patterns
+- Use standard glob syntax
+- Examples:
+  - `["**/*.ts"]` - All TypeScript files
+  - `["src/**/*"]` - All files in src
+  - `["tests/**/*.test.ts"]` - All test files
+
+### AlwaysApply Flag
+- `true`: Rule is always injected into context
+- `false`: Rule is only injected when relevant
+- Use sparingly for truly global rules
+
+## Rule Content Organization
+
+### Hierarchical Structure
+- Use clear heading levels
+- Start with level 1 (#) for main sections
+- Use level 2 (##) for major subsections
+- Use level 3 (###) for detailed points
+
+### Section Types
+1. Overview/Introduction
+   - Rule purpose
+   - Key principles
+   - When to apply
+
+2. Main Guidelines
+   - Core requirements
+   - Best practices
+   - Examples
+
+3. Specific Requirements
+   - Detailed rules
+   - Implementation details
+   - Edge cases
+
+4. References
+   - Links to example files
+   - Related documentation
+   - Tool documentation
+
+## Rule Types
+
+### Global Rules
+- Apply to entire codebase
+- Define core principles
+- Set project standards
+- Example: `global.mdc`, `naming.mdc`
+
+### Feature-Specific Rules
+- Target specific functionality
+- Define implementation patterns
+- Set component standards
+- Example: `streaming.mdc`, `tools.mdc`
+
+### Technical Rules
+- Define technical standards
+- Set implementation requirements
+- Specify patterns and practices
+- Example: `typescript.mdc`, `testing.mdc`
+
+## Best Practices
+
+### Rule Writing
+- Be specific and clear
+- Use consistent formatting
+- Provide concrete examples
+- Include references
+- Keep rules focused
+
+### Rule Organization
+- One concern per rule
+- Clear file names
+- Logical grouping
+- Easy to find
+- Easy to maintain
+
+### Rule Maintenance
+- Keep rules updated
+- Remove obsolete rules
+- Update examples
+- Review periodically
+- Maintain references
+
+## File References
+
+### Using @ Syntax
+- Reference project files with @
+- Use relative paths
+- Link to examples
+- Example: `@src/core/types.ts`
+
+### Reference Types
+- Code examples
+- Implementation patterns
+- Documentation
+- Test cases
+- Configuration
+
+## Rule Activation
+
+### Context-Based
+- Rules activate based on context
+- AI evaluates relevance
+- Description guides activation
+- Glob patterns limit scope
+
+### Automatic Attachment
+- Files matching globs trigger rules
+- Multiple rules can apply
+- Rules combine naturally
+- Context determines relevance
+
+## Implementation Guidelines
+
+### Creating New Rules
+1. Identify rule purpose
+2. Define target scope
+3. Write clear description
+4. Set appropriate globs
+5. Organize content
+6. Add examples
+7. Include references
+
+### Updating Rules
+1. Review current content
+2. Check for accuracy
+3. Update examples
+4. Verify references
+5. Test glob patterns
+6. Update description if needed
+
+### Removing Rules
+1. Check dependencies
+2. Update references
+3. Remove file
+4. Update documentation
+5. Notify team
+
+## Integration with Tools
+
+### IDE Integration
+- Rules appear in Cursor
+- AI uses rules for context
+- Rules guide completions
+- Rules inform suggestions
+
+### CI/CD Integration
+- Rules can be validated
+- Glob patterns checked
+- References verified
+- Format validated
+
+## Examples
+
+### Basic Rule
+```markdown
+---
+description: Basic coding standards
+globs: ["**/*.ts"]
+alwaysApply: false
+---
+
+# Standards
+- Rule one
+- Rule two
+
+# References
+- @example.ts
+```
+
+### Complex Rule
+```markdown
+---
+description: Complex feature patterns
+globs: ["src/feature/**/*.ts"]
+alwaysApply: false
+---
+
+# Feature Guidelines
+## Implementation
+- Pattern one
+- Pattern two
+
+# References
+- @src/feature/example.ts
+```
+
+# References
+- See @.cursor/rules/global.mdc for core rule example
+- See @.cursor/rules/typescript.mdc for technical rule example
+- See @.cursor/rules/streaming.mdc for feature-specific rule example
+- See @.cursor/rules/architecture.mdc for component documentation example
+

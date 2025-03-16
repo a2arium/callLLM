@@ -1,0 +1,133 @@
+---
+description: Architectural guidelines and component responsibilities that should be considered when modifying or extending the codebase structure
+globs: 
+alwaysApply: false
+---
+---
+description: Architectural guidelines and component responsibilities that should be considered when modifying or extending the codebase structure
+globs: ["src/**/*"]
+alwaysApply: false
+---
+
+# Architectural Overview
+
+## Core Components
+
+### LLMCaller (src/core/caller)
+- Acts as a high-level facade
+- Delegates specialized tasks to dedicated modules
+- Maintains provider and model state
+- Handles high-level error management
+
+### Streaming (src/core/streaming)
+- All streaming logic must be in streaming folder
+- StreamController and StreamHandler handle all stream operations
+- Consistent behavior with chat module
+- Token accumulation and validation during streaming
+
+### Tool Orchestration (src/core/tools)
+- Encapsulated tool logic with unified type safety
+- Clear APIs and consistent error handling
+- Independent from core call logic
+- Type-safe tool definitions
+
+### Adapters (src/adapters)
+- Provider-specific implementations
+- Consistent interface through BaseAdapter
+- Handle provider-specific error cases
+- Convert between universal and provider formats
+
+#### Current Adapters
+- OpenAI (Implemented)
+- Anthropic (Planned)
+- Google (Planned)
+- Azure (Planned)
+- AWS (Planned)
+- OpenRouter (Planned)
+
+#### Adapter Requirements
+- Must implement BaseAdapter interface
+- Must handle provider-specific errors
+- Must support streaming
+- Must implement token calculation
+- Must support JSON mode
+- Must handle rate limiting
+
+#### Adapter Features
+- Model mapping
+- Error translation
+- Stream handling
+- Token calculation
+- Cost tracking
+- Request formatting
+
+## Component Responsibilities
+
+### Core Modules
+1. ChatController (src/core/chat)
+   - Manages chat history and context
+   - Handles message formatting
+   - Maintains conversation state
+
+2. ModelManager (src/core/models)
+   - Handles model registration and updates
+   - Resolves model aliases
+   - Validates model configurations
+   - Provides model information
+
+3. TokenCalculator (src/core/models)
+   - Calculates token usage
+   - Computes costs
+   - Tracks cumulative usage
+   - Provides usage statistics
+
+4. RetryManager (src/core/retry)
+   - Manages retry logic with backoff
+   - Handles retry conditions
+   - Maintains retry state
+   - Implements exponential backoff
+
+## State Management
+- Each component manages its own state
+- No global state management library
+- Clear state boundaries and responsibilities
+- Type-safe state management
+
+## Module Boundaries
+- Keep modules focused and single-purpose
+- Clear separation of concerns
+- Well-defined interfaces between modules
+- Minimal cross-module dependencies
+
+## Performance Considerations
+- Efficient streaming processing
+- Smart token calculation
+- Optimized retry strategies
+- Early validation and error detection
+
+# Implementation Guidelines
+
+## New Features
+1. Plan the feature within existing architecture
+2. Identify affected components
+3. Maintain module boundaries
+4. Add necessary tests
+5. Update documentation
+
+## Modifications
+1. Understand existing component relationships
+2. Preserve architectural boundaries
+3. Maintain type safety
+4. Update affected tests
+5. Document changes
+
+## Error Handling
+- Each layer handles its specific errors
+- Proper error propagation
+- Clear error boundaries
+- Type-safe error handling
+
+# References
+- See @.notes/design_document.md for detailed design decisions
+- See @src/core/types.ts for core type definitions
+- See @src/adapters/base/baseAdapter.ts for adapter patterns
