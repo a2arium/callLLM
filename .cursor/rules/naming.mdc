@@ -1,9 +1,4 @@
 ---
-description: 
-globs: 
-alwaysApply: true
----
----
 description: Naming conventions and patterns that should be followed when creating or modifying code
 globs: ["**/*"]
 alwaysApply: true
@@ -143,6 +138,19 @@ alwaysApply: true
 - Maintain across codebase
 - Regular review
 
+### Adapter Property Naming
+- Use camelCase internally for all properties
+- Convert to provider-specific case in adapters (e.g., snake_case for OpenAI)
+- Keep conversion logic contained within adapter layer
+- Example:
+  ```typescript
+  // Internal format (camelCase)
+  { toolCallId: "123" }
+  
+  // OpenAI adapter converts to snake_case
+  { tool_call_id: "123" }
+  ```
+
 ### Context
 - Consider scope
 - Reflect purpose
@@ -184,4 +192,4 @@ alwaysApply: true
 # References
 - See @src/core/types.ts for type naming examples
 - See @src/core/streaming/StreamController.ts for class naming
-- See @src/utils/formatters.ts for utility function naming
+- See @src/utils/formatters.ts for utility function naming 

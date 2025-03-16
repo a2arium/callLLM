@@ -1,0 +1,159 @@
+---
+description: Logging standards and requirements that should be followed when implementing logging in the codebase
+globs: ["**/*.ts"]
+alwaysApply: true
+---
+
+# Logging Guidelines
+
+## Core Principles
+
+1. Use the centralized logger utility
+2. Never use direct console.log calls
+3. Use appropriate log levels
+4. Include contextual information
+5. Keep logs actionable and meaningful
+
+## Logger Usage
+
+### Import and Setup
+
+```typescript
+import { logger } from '../../utils/logger';
+
+// Set logger config at component level
+logger.setConfig({ 
+    level: process.env.LOG_LEVEL as any || 'info',
+    prefix: 'ComponentName'  // e.g., 'ToolController', 'ChatController'
+});
+```
+
+### Log Levels
+
+Use the appropriate level for each log:
+
+1. **debug**: Detailed information for debugging
+   ```typescript
+   logger.debug('Processing tool call:', { name, arguments });
+   ```
+
+2. **info**: General operational information
+   ```typescript
+   logger.info('Successfully completed operation');
+   ```
+
+3. **warn**: Warning conditions
+   ```typescript
+   logger.warn('Approaching rate limit:', rateLimitInfo);
+   ```
+
+4. **error**: Error conditions
+   ```typescript
+   logger.error('Failed to execute tool:', error);
+   ```
+
+### Best Practices
+
+1. **Component Prefixing**
+   - Set prefix when initializing component
+   - Use meaningful component names
+   ```typescript
+   logger.setConfig({ prefix: 'ToolController' });
+   ```
+
+2. **Structured Logging**
+   - Include relevant objects as separate arguments
+   - Don't concatenate objects into strings
+   ```typescript
+   // Good
+   logger.debug('Validating message:', messageInfo);
+   
+   // Bad
+   logger.debug(`Validating message: ${JSON.stringify(messageInfo)}`);
+   ```
+
+3. **Performance Logging**
+   - Log start/end of long operations
+   - Include timing information
+   ```typescript
+   logger.debug(`Operation completed in ${elapsed}ms`);
+   ```
+
+4. **Error Logging**
+   - Include full error objects
+   - Add context about the operation
+   ```typescript
+   logger.error('Failed to process request:', error, { requestId, context });
+   ```
+
+### Configuration
+
+1. **Environment Variables**
+   - Set LOG_LEVEL in .env file
+   ```env
+   LOG_LEVEL=warn  # debug | info | warn | error
+   ```
+
+2. **Runtime Configuration**
+   - Update log level dynamically
+   ```typescript
+   logger.setConfig({ level: 'debug' });
+   ```
+
+### Testing Considerations
+
+1. **Test Environment**
+   - Logging is minimized in test environment
+   - Only errors are logged by default
+
+2. **Log Verification**
+   - Use jest spies to verify logging
+   ```typescript
+   const logSpy = jest.spyOn(logger, 'debug');
+   expect(logSpy).toHaveBeenCalledWith('Expected message');
+   ```
+
+## Examples
+
+### Component Initialization
+```typescript
+export class ToolController {
+    constructor() {
+        logger.setConfig({ 
+            level: process.env.LOG_LEVEL as any || 'info',
+            prefix: 'ToolController'
+        });
+        logger.debug('Initialized');
+    }
+}
+```
+
+### Operation Logging
+```typescript
+async processToolCalls() {
+    logger.debug('Starting tool call processing');
+    try {
+        // Operation logic
+        logger.info('Successfully processed tool calls');
+    } catch (error) {
+        logger.error('Failed to process tool calls:', error);
+        throw error;
+    }
+}
+```
+
+### Validation Logging
+```typescript
+validateMessage(msg: Message) {
+    logger.debug('Validating message:', {
+        hasContent: Boolean(msg.content),
+        type: msg.type
+    });
+    // Validation logic
+}
+```
+
+## References
+- See @src/utils/logger.ts for logger implementation
+- See @src/core/tools/ToolController.ts for usage examples
+- See @tests/unit/core/tools/ToolController.test.ts for testing examples 

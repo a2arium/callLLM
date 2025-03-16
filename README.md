@@ -957,3 +957,46 @@ try {
     }
 }
 ```
+
+## Logging Configuration
+
+The library uses a configurable logging system that can be controlled through environment variables. You can set different log levels to control the verbosity of the output.
+
+For detailed logging guidelines and best practices, see [Logging Rules](.cursor/rules/logging.mdc).
+
+### Log Levels
+
+Set the `LOG_LEVEL` environment variable to one of the following values:
+
+- `debug`: Show all logs including detailed debug information
+- `info`: Show informational messages, warnings, and errors
+- `warn`: Show only warnings and errors
+- `error`: Show only errors
+
+### Configuration
+
+1. Create a `.env` file in your project root (or copy the example):
+```env
+LOG_LEVEL=warn  # or debug, info, error
+```
+
+2. The log level can also be set programmatically:
+```typescript
+import { logger } from './utils/logger';
+
+logger.setConfig({ level: 'debug' });
+```
+
+### Default Behavior
+
+- If no `LOG_LEVEL` is specified, it defaults to `info`
+- In test environments, logging is automatically minimized
+- Warning and error messages are always shown regardless of log level
+
+### Log Categories
+
+The logger automatically prefixes logs with their source component:
+- `[ToolController]` - Tool execution related logs
+- `[ToolOrchestrator]` - Tool orchestration and workflow logs
+- `[ChatController]` - Chat and message processing logs
+- `[StreamController]` - Streaming related logs

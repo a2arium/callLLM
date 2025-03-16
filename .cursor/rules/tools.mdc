@@ -1,10 +1,5 @@
 ---
 description: Tool orchestration patterns and requirements that should be followed when working with tool functionality
-globs: 
-alwaysApply: false
----
----
-description: Tool orchestration patterns and requirements that should be followed when working with tool functionality
 globs: ["src/**/tools/**/*.ts", "src/**/*Tool*.ts"]
 alwaysApply: false
 ---
@@ -178,4 +173,4 @@ alwaysApply: false
 # References
 - See @src/core/tools/ToolController.ts for controller patterns
 - See @src/core/tools/ToolOrchestrator.ts for orchestration examples
-- See @src/core/tools/types.ts for tool type definitions
+- See @src/core/tools/types.ts for tool type definitions 
