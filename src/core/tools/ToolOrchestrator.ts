@@ -4,6 +4,7 @@ import type { UniversalChatResponse, UniversalMessage, UniversalChatParams, Univ
 import { ToolError, ToolIterationLimitError } from '../../types/tooling';
 import { StreamController } from '../streaming/StreamController';
 import { ToolCallResult } from '../types';
+import { logger } from '../../utils/logger';
 
 export type ToolOrchestrationParams = {
     model: string;
@@ -61,7 +62,8 @@ export class ToolOrchestrator {
         streamController: StreamController
     ) {
         this.streamController = streamController;
-        if (process.env.NODE_ENV !== 'test') { console.log('[ToolOrchestrator] Initialized'); }
+        logger.setConfig({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'ToolOrchestrator' });
+        logger.debug('Initialized');
     }
 
     /**
@@ -75,7 +77,7 @@ export class ToolOrchestrator {
             return messages;
         }
 
-        if (process.env.NODE_ENV !== 'test') { console.log(`[ToolOrchestrator] Trimming history from ${messages.length} to ${maxLength} messages`); }
+        logger.debug(`Trimming history from ${messages.length} to ${maxLength} messages`);
 
         // Keep system messages and last maxLength messages
         const systemMessages = messages.filter(msg => msg.role === 'system');
@@ -143,7 +145,7 @@ export class ToolOrchestrator {
         response: UniversalChatResponse,
         params: ToolOrchestrationParams
     ): Promise<ToolOrchestrationResult> {
-        if (process.env.NODE_ENV !== 'test') { console.log('[ToolOrchestrator] Starting response processing'); }
+        logger.debug('Starting response processing');
         const maxHistory = params.maxHistoryLength ?? this.DEFAULT_MAX_HISTORY;
         let currentResponse = response;
         let updatedHistoricalMessages = [...(params.historicalMessages || [])];
@@ -155,11 +157,11 @@ export class ToolOrchestrator {
             while (true) {
                 iterationCount++;
                 if (iterationCount > this.MAX_TOOL_ITERATIONS) {
-                    if (process.env.NODE_ENV !== 'test') { console.warn(`[ToolOrchestrator] Iteration limit exceeded: ${this.MAX_TOOL_ITERATIONS}`); }
+                    logger.warn(`Iteration limit exceeded: ${this.MAX_TOOL_ITERATIONS}`);
                     throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
                 }
 
-                if (process.env.NODE_ENV !== 'test') { console.log(`[ToolOrchestrator] Processing iteration ${iterationCount}/${this.MAX_TOOL_ITERATIONS}`); }
+                logger.debug(`Processing iteration ${iterationCount}/${this.MAX_TOOL_ITERATIONS}`);
                 const toolResult = await this.toolController.processToolCalls(
                     currentResponse.content || '',
                     currentResponse
@@ -167,7 +169,7 @@ export class ToolOrchestrator {
 
                 // If no tool calls were found or processed, break the loop
                 if (!toolResult?.requiresResubmission) {
-                    if (process.env.NODE_ENV !== 'test') { console.log('[ToolOrchestrator] No more tool calls to process'); }
+                    logger.debug('No more tool calls to process');
                     break;
                 }
 
@@ -213,27 +215,23 @@ export class ToolOrchestrator {
 
                 // Validate that each message has either non-empty content or tool calls
                 const validatedMessages = updatedHistoricalMessages.map(msg => {
-                    if (process.env.NODE_ENV !== 'test') {
-                        console.log('[ToolOrchestrator] Validating message:', {
-                            role: msg.role,
-                            hasContent: Boolean(msg.content),
-                            contentLength: msg.content?.length,
-                            hasToolCalls: Boolean(msg.toolCalls),
-                            hasToolCallId: Boolean(msg.toolCallId)
-                        });
-                    }
+                    logger.debug('Validating message:', {
+                        role: msg.role,
+                        hasContent: Boolean(msg.content),
+                        contentLength: msg.content?.length,
+                        hasToolCalls: Boolean(msg.toolCalls),
+                        hasToolCallId: Boolean(msg.toolCallId)
+                    });
 
                     // If message has neither content nor tool calls, provide default content
                     const hasValidContent = msg.content && msg.content.trim().length > 0;
                     const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
 
-                    if (process.env.NODE_ENV !== 'test') {
-                        console.log('[ToolOrchestrator] Validation results:', {
-                            hasValidContent,
-                            hasToolCalls,
-                            willUseDefaultContent: !hasValidContent && !hasToolCalls
-                        });
-                    }
+                    logger.debug('Validation results:', {
+                        hasValidContent,
+                        hasToolCalls,
+                        willUseDefaultContent: !hasValidContent && !hasToolCalls
+                    });
 
                     const base = {
                         role: msg.role || 'user',
@@ -250,7 +248,7 @@ export class ToolOrchestrator {
                 });
 
                 if (process.env.NODE_ENV !== 'test') {
-                    console.log('[ToolOrchestrator] Final validated messages:', validatedMessages.map(msg => {
+                    logger.debug('Final validated messages:', validatedMessages.map(msg => {
                         const messageInfo: Record<string, unknown> = {
                             role: msg.role,
                             contentLength: msg.content?.length
@@ -290,7 +288,7 @@ export class ToolOrchestrator {
 
             // Reset tool iteration count after successful processing
             this.toolController.resetIterationCount();
-            if (process.env.NODE_ENV !== 'test') { console.log('[ToolOrchestrator] Successfully completed response processing'); }
+            logger.debug('Successfully completed response processing');
 
             return {
                 response,
@@ -299,7 +297,7 @@ export class ToolOrchestrator {
                 updatedHistoricalMessages
             };
         } catch (error) {
-            console.error('[ToolOrchestrator] Error during response processing:', error);
+            logger.error('Error during response processing:', error);
 
             // Reset iteration count even if there's an error
             this.toolController.resetIterationCount();
@@ -349,7 +347,7 @@ export class ToolOrchestrator {
         while (true) {
             iterationCount++;
             if (iterationCount > this.MAX_TOOL_ITERATIONS) {
-                if (process.env.NODE_ENV !== 'test') { console.warn(`[ToolOrchestrator] Iteration limit exceeded: ${this.MAX_TOOL_ITERATIONS}`); }
+                logger.warn(`Iteration limit exceeded: ${this.MAX_TOOL_ITERATIONS}`);
                 throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
             }
 
@@ -360,7 +358,7 @@ export class ToolOrchestrator {
 
             // If no tool calls were found or processed, break the loop
             if (!toolResult?.requiresResubmission) {
-                if (process.env.NODE_ENV !== 'test') { console.log('[ToolOrchestrator] No more tool calls to process'); }
+                logger.debug('No more tool calls to process');
                 break;
             }
 
@@ -481,6 +479,7 @@ export class ToolOrchestrator {
                 yield {
                     role: chunk.role,
                     content: chunk.content,
+                    contentObject: chunk.contentObject,
                     toolCalls: lastToolCalls,
                     isComplete: false,
                     metadata: chunk.metadata
@@ -492,6 +491,7 @@ export class ToolOrchestrator {
                 yield {
                     role: chunk.role,
                     content: accumulatedContent,
+                    contentObject: chunk.contentObject,
                     toolCalls: lastToolCalls,
                     isComplete: true,
                     metadata: chunk.metadata

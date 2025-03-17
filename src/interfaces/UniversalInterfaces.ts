@@ -76,8 +76,9 @@ export type Usage = {
     };
 };
 
-export interface UniversalChatResponse {
+export interface UniversalChatResponse<T = unknown> {
     content: string;
+    contentObject?: T;
     role: string;
     messages?: UniversalMessage[];  // Array of messages for tool call responses
     toolCalls?: Array<{
@@ -96,8 +97,9 @@ export interface UniversalChatResponse {
 }
 
 // Universal interface for streaming response
-export interface UniversalStreamResponse {
+export interface UniversalStreamResponse<T = unknown> {
     content: string;
+    contentObject?: T;
     role: string;
     isComplete: boolean;
     messages?: UniversalMessage[];  // Array of messages for tool call responses

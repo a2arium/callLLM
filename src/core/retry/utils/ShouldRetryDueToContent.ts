@@ -1,3 +1,8 @@
+import { logger } from '../../../utils/logger';
+
+// Initialize logger for this module
+logger.setConfig({ prefix: 'ShouldRetryDueToContent', level: process.env.LOG_LEVEL as any || 'info' });
+
 export const FORBIDDEN_PHRASES: string[] = [
     "I cannot assist with that",
     "I cannot provide that information",
@@ -22,15 +27,11 @@ type ResponseWithToolCalls = {
  * @returns true if a retry is needed, false otherwise
  */
 export function shouldRetryDueToContent(response: string | ResponseWithToolCalls | null | undefined, threshold: number = 200): boolean {
-    if (process.env.NODE_ENV !== 'test') {
-        console.log('[ShouldRetryDueToContent] Checking response:', JSON.stringify(response, null, 2));
-    }
+    logger.debug('[ShouldRetryDueToContent] Checking response:', JSON.stringify(response, null, 2));
 
     // Handle null/undefined
     if (!response) {
-        if (process.env.NODE_ENV !== 'test') {
-            console.log('[ShouldRetryDueToContent] Response is null/undefined, triggering retry');
-        }
+        logger.debug('Response is null/undefined, triggering retry');
         return true;
     }
 
@@ -38,18 +39,14 @@ export function shouldRetryDueToContent(response: string | ResponseWithToolCalls
     if (typeof response === 'string') {
         const trimmedContent = response.trim();
         if (!trimmedContent || trimmedContent.length < threshold) {
-            if (process.env.NODE_ENV !== 'test') {
-                console.log('[ShouldRetryDueToContent] String content is empty or too short, triggering retry');
-            }
+            logger.debug('String content is empty or too short, triggering retry');
             return true;
         }
 
         const lowerCaseResponse = response.toLowerCase();
         const hasBlockingPhrase = FORBIDDEN_PHRASES.some(phrase => lowerCaseResponse.includes(phrase.toLowerCase()));
         if (hasBlockingPhrase) {
-            if (process.env.NODE_ENV !== 'test') {
-                console.log('[ShouldRetryDueToContent] Found blocking phrase in string content:', response);
-            }
+            logger.debug('Found blocking phrase in string content:', response);
             return true;
         }
         return false;
@@ -58,9 +55,7 @@ export function shouldRetryDueToContent(response: string | ResponseWithToolCalls
     // Handle response object
     // If we have tool calls, the response is valid regardless of content
     if (response.toolCalls?.length) {
-        if (process.env.NODE_ENV !== 'test') {
-            console.log('[ShouldRetryDueToContent] Response has tool calls, not triggering retry');
-        }
+        logger.debug('Response has tool calls, not triggering retry');
         return false;
     }
 
@@ -69,31 +64,23 @@ export function shouldRetryDueToContent(response: string | ResponseWithToolCalls
 
     // If we have a valid response after tool execution, don't retry
     if (trimmedContent && !FORBIDDEN_PHRASES.some(phrase => trimmedContent.toLowerCase().includes(phrase.toLowerCase()))) {
-        if (process.env.NODE_ENV !== 'test') {
-            console.log('[ShouldRetryDueToContent] Response after tool execution is valid');
-        }
+        logger.debug('Response after tool execution is valid');
         return false;
     }
 
     // For other cases, check content length
     if (!trimmedContent || trimmedContent.length < threshold) {
-        if (process.env.NODE_ENV !== 'test') {
-            console.log('[ShouldRetryDueToContent] Response content is empty or too short, triggering retry');
-        }
+        logger.debug('Response content is empty or too short, triggering retry');
         return true;
     }
 
     const lowerCaseContent = trimmedContent.toLowerCase();
     const hasBlockingPhrase = FORBIDDEN_PHRASES.some(phrase => lowerCaseContent.includes(phrase.toLowerCase()));
     if (hasBlockingPhrase) {
-        if (process.env.NODE_ENV !== 'test') {
-            console.log('[ShouldRetryDueToContent] Found blocking phrase in response content:', trimmedContent);
-        }
+        logger.debug('Found blocking phrase in response content:', trimmedContent);
         return true;
     }
 
-    if (process.env.NODE_ENV !== 'test') {
-        console.log('[ShouldRetryDueToContent] Response is valid');
-    }
+    logger.debug('Response is valid');
     return false;
 } 

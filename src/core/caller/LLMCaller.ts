@@ -57,6 +57,7 @@ export class LLMCaller {
         this.responseProcessor = new ResponseProcessor();
         this.streamHandler = new StreamHandler(
             this.tokenCalculator,
+            this.responseProcessor,
             options?.usageCallback,
             options?.callerId
         );
@@ -179,6 +180,7 @@ export class LLMCaller {
         this.callerId = newId;
         this.streamHandler = new StreamHandler(
             this.tokenCalculator,
+            this.responseProcessor,
             this.usageCallback,
             newId
         );
@@ -211,6 +213,7 @@ export class LLMCaller {
         this.usageCallback = callback;
         this.streamHandler = new StreamHandler(
             this.tokenCalculator,
+            this.responseProcessor,
             callback,
             this.callerId
         );

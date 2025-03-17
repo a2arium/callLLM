@@ -6,10 +6,15 @@ import { ChatCompletionCreateParams, ChatCompletionMessageParam } from 'openai/r
 import { z } from 'zod';
 import { OpenAIStreamResponse } from './types';
 import { ToolCall } from '../../core/types';
+import { logger } from '../../utils/logger';
 
 export class Converter {
     private currentModel?: ModelInfo;
     private currentParams?: UniversalChatParams;
+
+    constructor() {
+        logger.setConfig({ prefix: 'Converter', level: process.env.LOG_LEVEL as any || 'info' });
+    }
 
     setModel(model: ModelInfo) {
         this.currentModel = model;
@@ -209,7 +214,7 @@ export class Converter {
 
     convertFromProviderResponse(response: OpenAIResponse): UniversalChatResponse {
         const message = this.extractMessageFromResponse(response);
-        console.log('[Converter] Original message from LLM:', JSON.stringify(message, null, 2));
+        logger.debug('[Converter] Original message from LLM:', JSON.stringify(message, null, 2));
 
         // Convert role to UniversalMessage role type
         const role: UniversalMessage['role'] =
@@ -247,7 +252,8 @@ export class Converter {
                     }
                 ]
             };
-            console.log('[Converter] Preparing tool result response:', JSON.stringify(toolResponse, null, 2));
+            // Log and return tool response
+            logger.debug('Preparing tool result response:', JSON.stringify(toolResponse, null, 2));
             return toolResponse;
         }
 
@@ -258,7 +264,7 @@ export class Converter {
             role,
             toolCalls
         };
-        console.log('[Converter] Regular response:', JSON.stringify(normalResponse, null, 2));
+        logger.debug('Regular response:', JSON.stringify(normalResponse, null, 2));
         return normalResponse;
     }
 
@@ -317,7 +323,7 @@ export class Converter {
     async *convertStreamResponse(stream: AsyncIterable<OpenAIStreamResponse>, params: UniversalChatParams): AsyncIterable<UniversalStreamResponse> {
         for await (const chunk of stream) {
             const message = this.convertStreamChunk(chunk);
-            console.log('[Converter] Stream chunk message:', JSON.stringify(message, null, 2));
+            logger.debug('[Converter] Stream chunk message:', JSON.stringify(message, null, 2));
 
             // Convert role to UniversalMessage role type
             const role: UniversalMessage['role'] =
@@ -350,7 +356,7 @@ export class Converter {
                         }
                     ]
                 };
-                console.log('[Converter] Preparing stream tool result response:', JSON.stringify(streamToolResponse, null, 2));
+                logger.debug('Preparing stream tool result response:', JSON.stringify(streamToolResponse, null, 2));
                 yield streamToolResponse;
             } else {
                 const streamResponse: UniversalStreamResponse = {
@@ -358,7 +364,7 @@ export class Converter {
                     role,
                     isComplete: false
                 };
-                console.log('[Converter] Regular stream response:', JSON.stringify(streamResponse, null, 2));
+                logger.debug('Regular stream response:', JSON.stringify(streamResponse, null, 2));
                 yield streamResponse;
             }
         }

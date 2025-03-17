@@ -8,11 +8,10 @@ export class ResponseProcessor {
     public async validateResponse<T extends z.ZodType | undefined = undefined>(
         response: UniversalChatResponse,
         settings: UniversalChatParams['settings']
-    ): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
-
+    ): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
         // Case 1: No special handling needed - return as is
-        if (!settings?.jsonSchema && response.metadata?.responseFormat !== 'json') {
-            return response as UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string };
+        if (!settings?.jsonSchema && settings?.responseFormat !== 'json') {
+            return response as UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>;
         }
 
         // Case 2: Schema validation (either Zod or JSON Schema)
@@ -21,18 +20,19 @@ export class ResponseProcessor {
         }
 
         // Case 3: JSON parsing without schema
-        return this.parseJson<T>(response);
+        return this.parseJson<T extends z.ZodType ? z.infer<T> : unknown>(response);
     }
 
     private async parseJson<T>(
         response: UniversalChatResponse
-    ): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
+    ): Promise<UniversalChatResponse<T>> {
         try {
-            const parsedResponse = {
+            const parsedContent = JSON.parse(response.content);
+            return {
                 ...response,
-                content: JSON.parse(response.content)
+                content: response.content, // Keep original string
+                contentObject: parsedContent // Add parsed object
             };
-            return parsedResponse as UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string };
         } catch (error) {
             const errorMessage = error instanceof Error
                 ? error.message
@@ -42,11 +42,11 @@ export class ResponseProcessor {
         }
     }
 
-    private async validateWithSchema<T>(
+    private async validateWithSchema<T extends z.ZodType | undefined = undefined>(
         response: UniversalChatResponse,
         schema: JSONSchemaDefinition,
         settings: UniversalChatParams['settings']
-    ): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
+    ): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
         let contentToParse = typeof response.content === 'string'
             ? JSON.parse(response.content)
             : response.content;
@@ -71,11 +71,13 @@ export class ResponseProcessor {
 
             const validatedContent = SchemaValidator.validate(contentToParse, schema);
 
-            const validatedResponse = {
+            const typedResponse: UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown> = {
                 ...response,
-                content: validatedContent
+                content: response.content, // Keep original string
+                contentObject: validatedContent as T extends z.ZodType ? z.infer<T> : unknown
             };
-            return validatedResponse as UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string };
+
+            return typedResponse;
         } catch (error) {
             if (error instanceof SchemaValidationError) {
                 console.warn('[validateWithSchema] Schema validation failed:', {
@@ -83,13 +85,14 @@ export class ResponseProcessor {
                 });
                 return {
                     ...response,
-                    content: contentToParse,
+                    content: response.content,
+                    contentObject: contentToParse as T extends z.ZodType ? z.infer<T> : unknown,
                     metadata: {
                         ...response.metadata,
                         validationErrors: error.validationErrors,
                         finishReason: FinishReason.CONTENT_FILTER
                     }
-                } as UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string };
+                };
             }
 
             const errorMessage = error instanceof Error

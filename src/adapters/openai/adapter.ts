@@ -131,7 +131,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
                     toolCalls: params.settings?.toolCalls
                 }
             }) as OpenAIModelParams;
-            console.log('openAIParams', JSON.stringify(openAIParams, null, 2));
+            // console.log('openAIParams', JSON.stringify(openAIParams, null, 2));
             const response = await this.client.chat.completions.create(openAIParams);
             const convResponse = this.converter.convertFromProviderResponse(response as unknown as OpenAIResponse);
             // Response now directly contains content, role and toolCalls if present

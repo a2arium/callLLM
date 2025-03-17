@@ -8,6 +8,7 @@ import { UsageTracker } from '../telemetry/UsageTracker';
 import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent";
+import { logger } from '../../utils/logger';
 
 export class ChatController {
     constructor(
@@ -16,7 +17,12 @@ export class ChatController {
         private responseProcessor: ResponseProcessor,
         private retryManager: RetryManager, // injected default retry manager (for defaults)
         private usageTracker: UsageTracker
-    ) { }
+    ) {
+        logger.setConfig({
+            prefix: 'ChatController',
+            level: process.env.LOG_LEVEL as any || 'info'
+        });
+    }
 
     /**
      * Executes a chat call using the given parameters.
@@ -29,7 +35,7 @@ export class ChatController {
         systemMessage: string,
         settings?: UniversalChatParams['settings'],
         historicalMessages: UniversalMessage[]
-    }): Promise<UniversalChatResponse & { content: T extends z.ZodType ? z.infer<T> : string }> {
+    }): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
         const { model, systemMessage, settings, historicalMessages } = params;
         const mergedSettings = settings;
 
@@ -51,7 +57,7 @@ export class ChatController {
 
             // Otherwise, both role and non-empty content are required
             if (!msg.role || !msg.content?.trim()) {
-                console.warn('[ChatController] Message missing role or content:', msg);
+                logger.warn('Message missing role or content:', msg);
                 throw new Error('Each message must have a role and non-empty content unless it contains tool calls or is a tool response');
             }
             return msg;
@@ -67,9 +73,7 @@ export class ChatController {
         };
 
         // Log the messages for debugging
-        if (process.env.NODE_ENV !== 'test') {
-            console.log('[ChatController] Sending messages:', JSON.stringify(chatParams.messages, null, 2));
-        }
+        logger.debug('Sending messages:', JSON.stringify(chatParams.messages, null, 2));
 
         const modelInfo = this.modelManager.getModel(model);
         if (!modelInfo) {
