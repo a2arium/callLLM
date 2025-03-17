@@ -1,10 +1,5 @@
 ---
 description: TypeScript coding standards and best practices that should be followed when writing or modifying TypeScript code
-globs: 
-alwaysApply: false
----
----
-description: TypeScript coding standards and best practices that should be followed when writing or modifying TypeScript code
 globs: ["**/*.ts", "**/*.tsx"]
 alwaysApply: false
 ---
@@ -116,4 +111,4 @@ alwaysApply: false
 # References
 - See @src/core/types.ts for core type examples
 - See @src/adapters/openai/types.ts for provider-specific types
-- See @src/core/retry/RetryManager.ts for error handling examples
+- See @src/core/retry/RetryManager.ts for error handling examples 

@@ -69,15 +69,21 @@ async function processStreamExample(caller: LLMCaller, message: string, data: an
         data,
         endingMessage: 'Start with title "SECTION RESPONSE:"',
         settings: {
-            maxTokens: 1000
+            maxTokens: 1000,
         }
     });
-
 
     let chunkCount = 0;
     for await (const chunk of stream) {
         chunkCount++;
+
+        // Always show content incrementally
         process.stdout.write(chunk.content);
+
+        // Could use chunk.contentText on the final chunk if needed
+        // if (chunk.isComplete && chunk.contentText) {
+        //     console.log("\nFull response text available in chunk.contentText");
+        // }
     }
     console.log(`\nDebug: Stream complete. Processed ${chunkCount} chunks\n`);
 }

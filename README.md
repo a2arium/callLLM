@@ -87,7 +87,14 @@ const stream = await caller.streamCall({
 });
 
 for await (const chunk of stream) {
-    console.log(chunk.content);
+    // For intermediate chunks, use content for incremental display
+    if (!chunk.isComplete) {
+        process.stdout.write(chunk.content);
+    } else {
+        // For the final chunk, contentText has the complete response
+        console.log(`\nFinal response: ${chunk.contentText}`);
+    }
+    
     // Each chunk includes current token usage and costs
     console.log(chunk.metadata?.usage);
 }
@@ -268,8 +275,10 @@ interface Usage {
 
 ### Stream Response
 ```typescript
-interface UniversalStreamResponse {
-    content: string;
+interface UniversalStreamResponse<T = unknown> {
+    content: string;      // Current chunk content
+    contentText?: string; // Complete accumulated text (available when isComplete is true)
+    contentObject?: T;    // Parsed object (available for JSON responses when isComplete is true)
     role: string;
     isComplete: boolean;
     metadata?: {
@@ -277,6 +286,79 @@ interface UniversalStreamResponse {
         usage?: Usage;
         [key: string]: any;
     };
+}
+```
+
+### Streaming Content Handling
+
+When streaming responses, there are different properties available depending on whether you're streaming text or JSON:
+
+#### Streaming Text
+```typescript
+const stream = await caller.streamCall({
+    message: 'Tell me a story',
+    settings: { temperature: 0.9 }
+});
+
+for await (const chunk of stream) {
+    // For incremental updates, use content
+    if (!chunk.isComplete) {
+        process.stdout.write(chunk.content);
+    } else {
+        // For the final complete text, use contentText
+        console.log(`\nComplete story: ${chunk.contentText}`);
+    }
+}
+```
+
+#### Streaming JSON
+```typescript
+import { z } from 'zod';
+
+// Define a schema for your JSON response
+const UserSchema = z.object({
+    name: z.string(),
+    age: z.number(),
+    email: z.string().email(),
+    interests: z.array(z.string())
+});
+
+// Use the generic type parameter for proper typing
+const stream = await caller.streamCall<typeof UserSchema>({
+    message: 'Generate user profile data',
+    settings: {
+        jsonSchema: { 
+            name: 'UserProfile',
+            schema: UserSchema 
+        },
+        responseFormat: 'json'
+    }
+});
+
+for await (const chunk of stream) {
+    // For incremental updates (showing JSON forming), use content
+    if (!chunk.isComplete) {
+        process.stdout.write(chunk.content);
+    } else {
+        // For the complete response, you have two options:
+        
+        // 1. contentText - Complete raw JSON string
+        console.log('\nComplete JSON string:', chunk.contentText);
+        
+        // 2. contentObject - Already parsed and validated JSON object
+        // TypeScript knows this is of type z.infer<typeof UserSchema>
+        console.log('\nParsed JSON object:', chunk.contentObject);
+        
+        // No need for type assertion when using generic type parameter
+        if (chunk.contentObject) {
+            console.log(`Name: ${chunk.contentObject.name}`);
+            console.log(`Age: ${chunk.contentObject.age}`);
+            console.log('Interests:');
+            chunk.contentObject.interests.forEach(interest => {
+                console.log(`- ${interest}`);
+            });
+        }
+    }
 }
 ```
 
@@ -437,6 +519,14 @@ Note: The library automatically adds `additionalProperties: false` to all object
 ### Streaming with Schema Validation
 
 ```typescript
+import { z } from 'zod';
+
+const UserSchema = z.object({
+    name: z.string(),
+    age: z.number(),
+    interests: z.array(z.string())
+});
+
 const stream = await caller.streamCall<typeof UserSchema>({
     message: 'Generate a profile for a user named Bob',
     settings: {
@@ -449,9 +539,27 @@ const stream = await caller.streamCall<typeof UserSchema>({
 });
 
 for await (const chunk of stream) {
-    if (chunk.isComplete) {
-        // Final chunk contains the validated JSON object
-        console.log(chunk.content);
+    // For intermediate chunks, display content as it arrives
+    if (!chunk.isComplete) {
+        process.stdout.write(chunk.content);
+    } else {
+        // Final chunk provides two important properties:
+        
+        // 1. contentText - The complete, accumulated JSON text
+        console.log('\nComplete JSON text:', chunk.contentText);
+        
+        // 2. contentObject - The parsed, validated JSON object with proper typing
+        console.log('\nParsed object:', chunk.contentObject);
+        
+        // TypeScript ensures correct typing of contentObject
+        // You can access properties directly with type safety
+        const profile = chunk.contentObject as z.infer<typeof UserSchema>;
+        console.log(`\nName: ${profile.name}, Age: ${profile.age}`);
+        
+        // Type inference works with generic type parameter
+        profile.interests.forEach(interest => {
+            console.log(`- ${interest}`);
+        });
     }
 }
 ```
@@ -898,8 +1006,13 @@ for await (const chunk of stream) {
         // Handle complete tool calls
         console.log('Complete tool calls:', chunk.toolCalls);
     }
-    if (chunk.content) {
-        console.log('Content:', chunk.content);
+    
+    // For intermediate chunks, display content as it arrives
+    if (!chunk.isComplete) {
+        process.stdout.write(chunk.content);
+    } else {
+        // For final chunk, use contentText for complete response
+        console.log('\nComplete response:', chunk.contentText);
     }
 }
 ```

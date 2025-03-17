@@ -490,7 +490,8 @@ export class ToolOrchestrator {
             if (chunk.isComplete) {
                 yield {
                     role: chunk.role,
-                    content: accumulatedContent,
+                    content: chunk.content,
+                    contentText: chunk.contentText || accumulatedContent,
                     contentObject: chunk.contentObject,
                     toolCalls: lastToolCalls,
                     isComplete: true,

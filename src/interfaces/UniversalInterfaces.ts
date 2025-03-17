@@ -98,7 +98,18 @@ export interface UniversalChatResponse<T = unknown> {
 
 // Universal interface for streaming response
 export interface UniversalStreamResponse<T = unknown> {
+    /**
+     * The content of the current chunk being streamed.
+     */
     content: string;
+    /**
+     * The complete accumulated text content, always present when isComplete is true.
+     * This property is intended for accessing the full accumulated text of the response.
+     */
+    contentText?: string;
+    /**
+     * The parsed object from the response, only available for JSON responses when isComplete is true.
+     */
     contentObject?: T;
     role: string;
     isComplete: boolean;

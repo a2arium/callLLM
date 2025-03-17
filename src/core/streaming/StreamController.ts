@@ -81,6 +81,8 @@ export class StreamController {
 
                 try {
                     for await (const chunk of stream) {
+                        // Still accumulate content from each chunk for retry purposes
+                        // but prefer contentText for the final chunk if available
                         accumulatedContent += chunk.content;
                         yield chunk;
                     }
@@ -94,8 +96,13 @@ export class StreamController {
 
                 // After the stream is complete, check if the accumulated content triggers a retry
                 // Only check content if shouldRetryDueToContent is not explicitly disabled
-                if (params.settings?.shouldRetryDueToContent !== false && shouldRetryDueToContent({ content: accumulatedContent })) {
-                    throw new Error("Stream response content triggered retry due to unsatisfactory answer");
+                if (params.settings?.shouldRetryDueToContent !== false) {
+                    // Use the last chunk's contentText if available (it should have the complete content)
+                    // Otherwise, use our accumulated content
+                    const contentToCheck = accumulatedContent;
+                    if (shouldRetryDueToContent({ content: contentToCheck })) {
+                        throw new Error("Stream response content triggered retry due to unsatisfactory answer");
+                    }
                 }
                 return;
             } catch (error) {

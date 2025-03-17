@@ -277,7 +277,7 @@ export class StreamHandler {
                 // For the final chunk in JSON mode, provide both the content and parsed object
                 // For intermediate chunks, just pass through the original content
                 const responseContent = chunk.isComplete
-                    ? accumulatedContent
+                    ? chunk.content
                     : chunk.content;
 
                 if (chunk.isComplete) {
@@ -290,7 +290,8 @@ export class StreamHandler {
 
                 // Log the contentObject right before yielding
                 if (chunk.isComplete) {
-                    logger.debug('Final content object before yielding', {
+                    logger.debug('Final content before yielding', {
+                        contentLength: accumulatedContent.length,
                         hasContentObject: Boolean(contentObject),
                         contentObjectType: typeof contentObject
                     });
@@ -300,13 +301,15 @@ export class StreamHandler {
                 const streamResponse = {
                     ...chunk,
                     content: responseContent,
+                    contentText: chunk.isComplete ? accumulatedContent : undefined,
                     contentObject,
                     metadata
                 } as UniversalStreamResponse<T extends z.ZodType ? z.infer<T> : unknown>;
 
                 // Final log of the content object in the response
                 if (chunk.isComplete) {
-                    logger.debug('Response content object check', {
+                    logger.debug('Response content check', {
+                        hasResponseContentText: Boolean(streamResponse.contentText),
                         hasResponseContentObject: Boolean(streamResponse.contentObject)
                     });
                 }

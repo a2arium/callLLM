@@ -27,7 +27,12 @@ export class ResponseProcessor {
         response: UniversalChatResponse
     ): Promise<UniversalChatResponse<T>> {
         try {
-            const parsedContent = JSON.parse(response.content);
+            // Use contentText if available (for StreamResponse), otherwise use content
+            const contentToUse = 'contentText' in response ?
+                (response as any).contentText || response.content :
+                response.content;
+
+            const parsedContent = JSON.parse(contentToUse);
             return {
                 ...response,
                 content: response.content, // Keep original string
@@ -47,9 +52,14 @@ export class ResponseProcessor {
         schema: JSONSchemaDefinition,
         settings: UniversalChatParams['settings']
     ): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
-        let contentToParse = typeof response.content === 'string'
-            ? JSON.parse(response.content)
-            : response.content;
+        // Use contentText if available (for StreamResponse), otherwise use content
+        const contentToUse = 'contentText' in response ?
+            (response as any).contentText || response.content :
+            response.content;
+
+        let contentToParse = typeof contentToUse === 'string'
+            ? JSON.parse(contentToUse)
+            : contentToUse;
 
         try {
             // Check if content is wrapped in a named object matching schema name

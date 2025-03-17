@@ -30,7 +30,18 @@ async function main() {
         console.log('\nStream Response:');
         let lastUsage;
         for await (const chunk of stream) {
-            process.stdout.write(chunk.content);
+            // For incremental chunks (not the final one)
+            if (!chunk.isComplete) {
+                // Display content as it comes in
+                process.stdout.write(chunk.content);
+            } else {
+                // For the final chunk, we can access the complete accumulated text
+                // via the contentText property (it should always be present when isComplete is true)
+                console.log('\n\nComplete response text:');
+                console.log(chunk.contentText);
+            }
+
+            // Track usage information for final reporting
             lastUsage = chunk.metadata?.usage;
         }
         console.log('\n\nFinal Usage Information:');

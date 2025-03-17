@@ -200,7 +200,14 @@ async function main() {
 
             // For the final chunk, write the complete content
             if (chunk.isComplete) {
-                console.log('\nFinal response:', chunk.content);
+                // When the stream is complete:
+                // 1. chunk.contentText contains the complete accumulated text response
+                // 2. chunk.toolCalls contains the complete tool calls (if any)
+
+                // Use contentText for the complete response text
+                console.log('\n\nComplete response text:');
+                console.log(chunk.contentText);
+
                 console.log('\nStream completed');
             }
         }
