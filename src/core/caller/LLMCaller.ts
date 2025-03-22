@@ -294,15 +294,6 @@ export class LLMCaller {
             this.retryManager
         );
 
-        // Obtain an initial response from chatController (non-streaming) to extract tool call markers
-        const initialResponse = await this.chatController.execute({
-            model: this.model,
-            systemMessage: this.systemMessage,
-            settings: finalParams.settings,
-            historicalMessages: messages,
-            callerId: this.callerId
-        });
-
         // Create a new toolOrchestrator with the updated streamController
         const toolOrchestrator = new ToolOrchestrator(
             this.toolController,
@@ -310,12 +301,15 @@ export class LLMCaller {
             streamController
         );
 
-        // Delegate the streaming tool orchestration to the new toolOrchestrator
-        return toolOrchestrator.streamProcessResponse(initialResponse, {
+        // Use the new streamDirectResponse method which implements true streaming
+        return toolOrchestrator.streamDirectResponse({
             model: this.model,
             systemMessage: this.systemMessage,
             historicalMessages: messages,
-            settings: finalParams.settings,
+            settings: {
+                ...finalParams.settings,
+                stream: true // Ensure streaming is enabled
+            },
             callerId: this.callerId
         }, inputTokens);
     }

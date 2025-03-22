@@ -5,6 +5,7 @@ import { ToolError, ToolIterationLimitError } from '../../types/tooling';
 import { StreamController } from '../streaming/StreamController';
 import { ToolCallResult } from '../types';
 import { logger } from '../../utils/logger';
+import { ToolCall, ToolDefinition, ToolNotFoundError } from '../../types/tooling';
 
 export type ToolOrchestrationParams = {
     model: string;
@@ -534,5 +535,196 @@ export class ToolOrchestrator {
             toolCalls,
             metadata: {}
         };
+    }
+
+    /**
+     * Stream processes a response directly from the LLM provider with real-time streaming.
+     * This replaces the previous approach where we first made a non-streaming request.
+     * @param params - The orchestration parameters
+     * @param inputTokens - The estimated input tokens for the prompt
+     * @returns An async iterable streaming the response
+     */
+    async *streamDirectResponse(
+        params: ToolOrchestrationParams,
+        inputTokens: number
+    ): AsyncIterable<UniversalStreamResponse> {
+        // Import the StreamBuffer here to avoid circular dependencies
+        const { StreamBuffer } = require('../streaming/StreamBuffer');
+
+        const streamBuffer = new StreamBuffer();
+        let currentMessages = params.historicalMessages || [];
+        let iteration = 0;
+        let seenToolCallIds = new Set<string>();
+
+        // Ensure settings are properly configured
+        const streamingParams: UniversalChatParams = {
+            messages: [
+                { role: 'system', content: params.systemMessage },
+                ...currentMessages
+            ],
+            settings: {
+                ...params.settings,
+                stream: true  // Ensure streaming is enabled
+            },
+            callerId: params.callerId
+        };
+
+        // Create the initial stream
+        let stream = await this.streamController.createStream(params.model, streamingParams, inputTokens);
+
+        // Process the stream
+        while (true) {
+            // Track tool calls for the current iteration
+            const toolCallsInCurrentIteration: ToolCall[] = [];
+
+            // Process current stream
+            for await (const chunk of stream) {
+                // Process the chunk with our streamBuffer to handle tool call accumulation
+                const { streamableContent, completedToolCalls, isComplete } = streamBuffer.processChunk(chunk);
+
+                // Handle completed tool calls
+                if (completedToolCalls.length > 0) {
+                    // Count this as a tool iteration
+                    iteration++;
+
+                    if (iteration > this.MAX_TOOL_ITERATIONS) {
+                        logger.warn(`Tool iteration limit exceeded: ${this.MAX_TOOL_ITERATIONS}`);
+                        throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
+                    }
+
+                    // Process tool calls
+                    for (const toolCall of completedToolCalls) {
+                        // Skip already processed tool calls
+                        if (toolCall.id && seenToolCallIds.has(toolCall.id)) {
+                            continue;
+                        }
+
+                        // Mark this tool call as seen
+                        if (toolCall.id) {
+                            seenToolCallIds.add(toolCall.id);
+                        }
+
+                        // Add this to the current iteration's tool calls
+                        toolCallsInCurrentIteration.push(toolCall);
+
+                        // Yield a tool call notification to the client
+                        yield {
+                            role: 'assistant',
+                            content: '',
+                            isComplete: false,
+                            toolCalls: [{
+                                name: toolCall.name,
+                                arguments: toolCall.parameters
+                            }]
+                        };
+                    }
+
+                    // If we have tool calls, we need to execute them and continue with a new stream
+                    if (toolCallsInCurrentIteration.length > 0) {
+                        // Execute the tool calls
+                        const executedToolCalls = await Promise.all(
+                            toolCallsInCurrentIteration.map(async (call) => {
+                                try {
+                                    // Find the tool definition
+                                    const tool = this.toolController.getToolByName(call.name);
+                                    if (!tool) {
+                                        throw new ToolNotFoundError(call.name);
+                                    }
+
+                                    // Execute the tool
+                                    const result = await tool.callFunction(call.parameters);
+                                    const resultText = typeof result === 'string' ? result : JSON.stringify(result);
+
+                                    return {
+                                        ...call,
+                                        result: resultText
+                                    };
+                                } catch (error) {
+                                    // Handle tool execution errors
+                                    const errorMessage = error instanceof Error ? error.message : String(error);
+                                    logger.error(`Tool execution error: ${errorMessage}`, { toolName: call.name });
+
+                                    return {
+                                        ...call,
+                                        error: errorMessage,
+                                        result: `Error: ${errorMessage}`
+                                    };
+                                }
+                            })
+                        );
+
+                        // Update messages with the assistant's tool calls and the tool results
+                        currentMessages.push({
+                            role: 'assistant',
+                            content: '',
+                            toolCalls: executedToolCalls.map(call => ({
+                                id: call.id || `tool-${Date.now()}`,
+                                name: call.name,
+                                arguments: call.parameters
+                            }))
+                        });
+
+                        // Add tool responses to history
+                        for (const call of executedToolCalls) {
+                            currentMessages.push({
+                                role: 'tool',
+                                content: call.result || `Error: ${call.error || 'Unknown error'}`,
+                                toolCallId: call.id || `tool-${Date.now()}`
+                            });
+                        }
+
+                        // Create a new stream with the updated conversation
+                        const newStreamParams: UniversalChatParams = {
+                            messages: [
+                                { role: 'system', content: params.systemMessage },
+                                ...this.trimHistory(currentMessages, params.maxHistoryLength ?? this.DEFAULT_MAX_HISTORY)
+                            ],
+                            settings: {
+                                ...params.settings,
+                                stream: true
+                            },
+                            callerId: params.callerId
+                        };
+
+                        // Reset the stream buffer for the new stream
+                        streamBuffer.reset();
+
+                        // Create a new stream
+                        stream = await this.streamController.createStream(params.model, newStreamParams, inputTokens);
+
+                        // Break out of the current stream loop to start processing the new stream
+                        break;
+                    }
+                }
+
+                // Yield streamable content to the client
+                if (streamableContent) {
+                    yield {
+                        role: 'assistant',
+                        content: streamableContent,
+                        isComplete: false
+                    };
+                }
+
+                // If complete, exit the stream and the outer loop
+                if (isComplete) {
+                    yield {
+                        role: 'assistant',
+                        content: chunk.content || '',
+                        contentText: streamBuffer.getAccumulatedContent(),
+                        isComplete: true,
+                        metadata: chunk.metadata
+                    };
+
+                    // Exit both loops
+                    return;
+                }
+            }
+
+            // If we completed the stream without finding more tool calls, we're done
+            if (toolCallsInCurrentIteration.length === 0) {
+                break;
+            }
+        }
     }
 } 

@@ -137,6 +137,8 @@ async function main() {
     // 5. Tool Call Stream Demonstration
     console.log('\n5. Tool Call Stream Demonstration');
     console.log('---------------------------------------------------------------');
+    console.log('Starting the stream - you\'ll see content as it arrives in real-time');
+
     const stream = await caller.streamCall({
         message: 'What is the current time in Tokyo? write a poem about it',
         settings: {
@@ -147,6 +149,9 @@ async function main() {
     });
 
     try {
+        let toolCallDetected = false;
+        let toolCallExecuted = false;
+
         for await (const chunk of stream) {
             // Handle content
             if (chunk.content) {
@@ -155,15 +160,19 @@ async function main() {
 
             // Handle tool calls
             if (chunk.toolCalls?.length) {
-                console.log('\nTool Call:', JSON.stringify(chunk.toolCalls, null, 2));
+                toolCallDetected = true;
+                console.log('\n\nTool Call Detected:', JSON.stringify(chunk.toolCalls, null, 2));
+            }
+
+            // We'll see when the tool call has completed by checking for empty content and tool calls
+            if (toolCallDetected && !toolCallExecuted && !chunk.content && !chunk.toolCalls?.length) {
+                toolCallExecuted = true;
+                console.log('\n\nTool executed - now we will see the continuation of the response\n');
             }
 
             // Indicate completion if flagged
             if (chunk.isComplete) {
-                if (chunk.content) {
-                    console.log('\nFinal response:', chunk.content);
-                }
-                console.log('\nStream completed');
+                console.log('\n\nStream completed');
             }
         }
     } catch (error) {

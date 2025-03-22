@@ -146,4 +146,13 @@ export class ToolController {
         logger.debug('Resetting iteration count');
         this.iterationCount = 0;
     }
+
+    /**
+     * Gets a tool by name
+     * @param name - The name of the tool to get
+     * @returns The tool definition or undefined if not found
+     */
+    getToolByName(name: string): ToolDefinition | undefined {
+        return this.toolsManager.getTool(name);
+    }
 } 
