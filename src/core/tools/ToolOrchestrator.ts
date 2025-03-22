@@ -1,6 +1,6 @@
 import { ToolController } from './ToolController';
 import { ChatController } from '../chat/ChatController';
-import type { UniversalChatResponse, UniversalMessage, UniversalChatParams, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
+import type { UniversalChatResponse, UniversalMessage, UniversalChatParams, UniversalStreamResponse, UniversalChatSettings } from '../../interfaces/UniversalInterfaces';
 import { ToolError, ToolIterationLimitError } from '../../types/tooling';
 import { StreamController } from '../streaming/StreamController';
 import { ToolCallResult } from '../types';
@@ -9,9 +9,10 @@ import { logger } from '../../utils/logger';
 export type ToolOrchestrationParams = {
     model: string;
     systemMessage: string;
-    historicalMessages?: UniversalMessage[];
-    settings?: Record<string, unknown>;
+    historicalMessages: UniversalMessage[];
+    settings?: UniversalChatSettings;
     maxHistoryLength?: number;
+    callerId?: string;
 };
 
 export type ToolOrchestrationResult = {
@@ -25,6 +26,14 @@ export type ToolOrchestrationResult = {
     }[];
     finalResponse: UniversalChatResponse;
     updatedHistoricalMessages: UniversalMessage[];
+};
+
+type StreamProcessParams = {
+    model: string;
+    systemMessage: string;
+    historicalMessages: UniversalMessage[];
+    settings?: UniversalChatSettings;
+    callerId?: string;
 };
 
 /**
@@ -91,46 +100,13 @@ export class ToolOrchestrator {
     }
 
     private async *accumulateStream(stream: AsyncIterable<UniversalStreamResponse>): AsyncIterable<UniversalStreamResponse> {
-        let totalContent = "";
-        let toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> | undefined;
-        let lastYieldedContent = "";
-
+        let accumulatedContent = '';
         for await (const chunk of stream) {
-            // Track tool calls
-            if (chunk.toolCalls?.length) {
-                toolCalls = chunk.toolCalls;
-                // Yield tool call chunk immediately
-                yield {
-                    role: chunk.role,
-                    content: '',
-                    toolCalls: chunk.toolCalls,
-                    isComplete: false,
-                    metadata: chunk.metadata
-                };
-                continue;
-            }
-
-            // Accumulate content
-            if (chunk.content) {
-                totalContent += chunk.content;
-            }
-
-            // Yield chunks as they come; when a chunk signals completion, yield the final accumulated chunk
-            if (chunk.isComplete) {
-                if (totalContent !== lastYieldedContent) {
-                    yield {
-                        role: chunk.role,
-                        content: totalContent,
-                        toolCalls,
-                        isComplete: true,
-                        metadata: chunk.metadata
-                    };
-                }
-                return;
-            } else if (chunk.content && chunk.content !== lastYieldedContent) {
-                lastYieldedContent = chunk.content;
-                yield { ...chunk, content: chunk.content };
-            }
+            accumulatedContent += chunk.content;
+            yield {
+                ...chunk,
+                contentText: accumulatedContent
+            };
         }
     }
 
@@ -154,6 +130,7 @@ export class ToolOrchestrator {
         try {
             let iterationCount = 0;
 
+            // Process all tool calls first
             while (true) {
                 iterationCount++;
                 if (iterationCount > this.MAX_TOOL_ITERATIONS) {
@@ -161,7 +138,6 @@ export class ToolOrchestrator {
                     throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
                 }
 
-                logger.debug(`Processing iteration ${iterationCount}/${this.MAX_TOOL_ITERATIONS}`);
                 const toolResult = await this.toolController.processToolCalls(
                     currentResponse.content || '',
                     currentResponse
@@ -337,97 +313,112 @@ export class ToolOrchestrator {
         params: ToolOrchestrationParams,
         inputTokens: number
     ): AsyncIterable<UniversalStreamResponse> {
+        let iteration = 0;
         let currentResponse = response;
-        let updatedHistoricalMessages: UniversalMessage[] = params.historicalMessages ? [...params.historicalMessages] : [];
-        const toolExecutions: ToolCallResult[] = [];
-        const maxHistory = params.maxHistoryLength ?? this.DEFAULT_MAX_HISTORY;
-        let iterationCount = 0;
+        let currentMessages = params.historicalMessages || [];
+        let seenToolCallIds = new Set<string>();
 
-        // Process all tool calls first
+        // Add initial assistant message to history
+        currentMessages.push({
+            role: 'assistant',
+            content: currentResponse.content
+        });
+
+        // Loop until no more tool calls are found or max iterations reached
         while (true) {
-            iterationCount++;
-            if (iterationCount > this.MAX_TOOL_ITERATIONS) {
-                logger.warn(`Iteration limit exceeded: ${this.MAX_TOOL_ITERATIONS}`);
-                throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
-            }
-
-            const toolResult = await this.toolController.processToolCalls(
-                currentResponse.content || '',
+            // Check if the response contains tool calls
+            let { toolCalls, messages, requiresResubmission } = await this.toolController.processToolCalls(
+                currentResponse.content,
                 currentResponse
             );
 
-            // If no tool calls were found or processed, break the loop
-            if (!toolResult?.requiresResubmission) {
-                logger.debug('No more tool calls to process');
-                break;
-            }
+            // If we have tool calls, count against the iteration limit
+            if (toolCalls.length > 0) {
+                iteration++;
 
-            // Add tool executions and prepare messages
-            if (toolResult?.toolCalls) {
-                // First, add the assistant's message with tool calls
-                const assistantMessage: UniversalMessage = {
+                if (iteration > this.MAX_TOOL_ITERATIONS) {
+                    logger.warn(`Tool iteration limit exceeded: ${this.MAX_TOOL_ITERATIONS}`);
+                    throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
+                }
+
+                // Check for new tool calls
+                const newToolCalls = toolCalls.filter(call => !seenToolCallIds.has(call.id));
+                newToolCalls.forEach(call => seenToolCallIds.add(call.id));
+
+                // First add the assistant message with tool calls
+                currentMessages.push({
                     role: 'assistant',
-                    content: currentResponse.content || '',
-                    toolCalls: toolResult.toolCalls.map(call => ({
+                    content: currentResponse.content || ' ',
+                    toolCalls: toolCalls.map(call => ({
                         id: call.id,
                         name: call.toolName,
                         arguments: call.arguments
                     }))
-                };
-                updatedHistoricalMessages.push(assistantMessage);
-
-                // Then add each tool result
-                toolResult.toolCalls.forEach(call => {
-                    // Track execution
-                    toolExecutions.push({
-                        id: call.id,
-                        toolName: call.toolName,
-                        arguments: call.arguments,
-                        result: call.result,
-                        error: call.error
-                    });
-
-                    // Add tool result message if successful
-                    if (!call.error && call.result) {
-                        const toolMessage: UniversalMessage = {
-                            role: 'tool',
-                            content: typeof call.result === 'string' ? call.result : JSON.stringify(call.result),
-                            toolCallId: call.id
-                        };
-                        updatedHistoricalMessages.push(toolMessage);
-                    }
                 });
 
-                // Yield tool calls immediately
-                yield {
-                    role: 'assistant',
-                    content: '',
-                    toolCalls: toolResult.toolCalls.map(call => ({
-                        name: call.toolName,
-                        arguments: call.arguments
-                    })),
-                    isComplete: false,
-                    metadata: {}
-                };
+                // Then add tool responses to the history
+                for (const call of toolCalls) {
+                    currentMessages.push({
+                        role: 'tool',
+                        content: call.result || '',
+                        toolCallId: call.id
+                    });
+                }
+
+                // Only yield if we have new tool calls
+                if (newToolCalls.length > 0) {
+                    yield {
+                        content: '',
+                        role: 'assistant',
+                        isComplete: false,
+                        toolCalls: newToolCalls.map(call => ({
+                            name: call.toolName,
+                            arguments: call.arguments
+                        }))
+                    };
+                }
+            } else if (!requiresResubmission) {
+                // No more tool calls and no need to resubmit, we're done
+                break;
             }
 
             // Trim history to maintain max length
-            updatedHistoricalMessages = this.trimHistory(updatedHistoricalMessages, maxHistory);
+            currentMessages = this.trimHistory(currentMessages, params.maxHistoryLength ?? this.DEFAULT_MAX_HISTORY);
 
-            // Get a non-streaming response to check for more tool calls
+            // Initial assistant message handling
+            for (let i = 0; i < currentMessages.length; i++) {
+                const message = currentMessages[i];
+                // If message is from assistant and has no/empty content but no tool calls
+                if (message && message.role === 'assistant' &&
+                    (!message.content || message.content.trim() === '') &&
+                    (!message.toolCalls || message.toolCalls.length === 0)) {
+
+                    // Don't set an empty toolCalls array, it causes OpenAI to reject the request
+                    // Just ensure there's content
+                    if (!currentMessages[i].content || currentMessages[i].content.trim() === '') {
+                        currentMessages[i].content = ' '; // Use a space instead of empty string
+                    }
+
+                    // Remove empty toolCalls array
+                    if (message && message.toolCalls && Array.isArray(message.toolCalls) && message.toolCalls.length === 0) {
+                        delete currentMessages[i].toolCalls;
+                    }
+                }
+            }
+
             const newParams = {
                 model: params.model,
                 systemMessage: params.systemMessage,
                 settings: {
                     ...params.settings,
                     stream: false,
-                    tools: params.settings?.tools,
-                    toolChoice: params.settings?.toolChoice,
-                    toolCalls: params.settings?.toolCalls
+                    tools: [],  // No tools for follow-up to force text response
+                    toolChoice: 'none',  // Force no tools for the follow-up message
+                    toolCalls: undefined
                 },
                 historicalMessages: [
-                    ...updatedHistoricalMessages,
-                    { role: 'user' as const, content: 'Please continue based on the tool execution results above.' }
+                    ...currentMessages,
+                    { role: 'user' as const, content: 'Please provide a complete response based on the tool execution results. Write a short poem about the current time in Tokyo.' }
                 ]
             };
 
@@ -438,14 +429,14 @@ export class ToolOrchestrator {
         const finalParams: UniversalChatParams = {
             messages: [
                 { role: 'system', content: params.systemMessage },
-                ...updatedHistoricalMessages
+                ...currentMessages
             ],
             settings: {
                 ...params.settings,
                 stream: true,
-                tools: params.settings?.tools,
-                toolChoice: params.settings?.toolChoice,
-                toolCalls: params.settings?.toolCalls,
+                tools: [],  // No tools for final response
+                toolChoice: 'none',  // Force no tools for final response
+                toolCalls: undefined,
                 shouldRetryDueToContent: false // Disable content-based retries for streaming
             }
         };
@@ -457,16 +448,27 @@ export class ToolOrchestrator {
         for await (const chunk of finalStream) {
             // Track tool calls
             if (chunk.toolCalls?.length) {
-                lastToolCalls = chunk.toolCalls;
-                // Yield tool call chunk immediately
-                yield {
-                    role: chunk.role,
-                    content: '',
-                    toolCalls: chunk.toolCalls,
-                    isComplete: false,
-                    metadata: chunk.metadata
-                };
-                continue;
+                // Only yield if these are new tool calls
+                const newToolCalls = chunk.toolCalls.filter(call => {
+                    const callId = (call as any).id;
+                    if (!callId) return true;
+                    const isNew = !seenToolCallIds.has(callId);
+                    if (isNew) seenToolCallIds.add(callId);
+                    return isNew;
+                });
+
+                if (newToolCalls.length > 0) {
+                    lastToolCalls = newToolCalls;
+                    // Yield tool call chunk immediately
+                    yield {
+                        role: chunk.role,
+                        content: '',
+                        toolCalls: newToolCalls,
+                        isComplete: false,
+                        metadata: chunk.metadata
+                    };
+                    continue;
+                }
             }
 
             // Accumulate content

@@ -28,15 +28,15 @@ export class StreamController {
 
             // Wrap providerStream in a debug wrapper to log raw chunks as they are received
             const debugProviderStream = (async function* () {
+                let hasStarted = false;
                 for await (const chunk of providerStream) {
-                    // if (process.env.NODE_ENV !== 'test' && chunk.toolCallDeltas?.length) {
-                    //     console.log('[StreamController] Tool call delta:', {
-                    //         id: chunk.toolCallDeltas[0].id,
-                    //         name: chunk.toolCallDeltas[0].name,
-                    //         arguments: chunk.toolCallDeltas[0].arguments
-                    //     });
-                    // }
-                    yield chunk;
+                    if (!hasStarted && chunk.content.trim()) {
+                        hasStarted = true;
+                    }
+                    // Only yield chunks that have actual content or are completion signals
+                    if (hasStarted || chunk.isComplete) {
+                        yield chunk;
+                    }
                 }
             })();
 

@@ -58,6 +58,7 @@ export type UniversalChatSettings = {
 export type UniversalChatParams = {
     messages: Array<UniversalMessage>;
     settings?: UniversalChatSettings;
+    callerId?: string;
     inputCachedTokens?: number;
     inputCachedPricePerMillion?: number;
 };
@@ -113,6 +114,11 @@ export interface UniversalStreamResponse<T = unknown> {
     contentObject?: T;
     role: string;
     isComplete: boolean;
+    /**
+     * Indicates whether this chunk contains newly detected tool calls.
+     * This is true only when new tool calls are first detected in this chunk.
+     */
+    isNewToolCall?: boolean;
     messages?: UniversalMessage[];  // Array of messages for tool call responses
     toolCallDeltas?: Array<{
         id?: string;

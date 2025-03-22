@@ -3,8 +3,10 @@ import { OpenAIStreamResponse } from './types';
 import { Converter } from './converter';
 import { ChatCompletionChunk } from 'openai/resources/chat';
 import { Stream } from 'openai/streaming';
+import { logger } from '../../utils/logger';
 
 type ToolCall = {
+    id?: string;
     name: string;
     arguments: Record<string, unknown>;
 };
@@ -21,31 +23,65 @@ type ValidToolCallDelta = {
 };
 
 export class StreamHandler {
-    constructor(private converter: Converter) { }
+    constructor(private converter: Converter) {
+        logger.setConfig({
+            level: process.env.LOG_LEVEL as any || 'debug',
+            prefix: 'OpenAIStreamHandler'
+        });
+    }
 
     async *handleStream(
         stream: Stream<ChatCompletionChunk>,
         params: UniversalChatParams
     ): AsyncIterable<UniversalStreamResponse> {
         let accumulatedCalls: ToolCall[] = [];
+        let seenToolCallIds = new Set<string>();
+        let hasNewToolCall = false;
 
         for await (const chunk of stream) {
             const delta = chunk.choices[0]?.delta;
             if (!delta) continue;
 
+            hasNewToolCall = false;
+
             // Handle function calls and tool calls
             if (delta.function_call || (delta as any).tool_calls) {
+                logger.debug('Processing tool call delta:', delta);
                 const toolCalls = this.processToolCallDelta(delta);
                 if (toolCalls) {
+                    logger.debug('Processed tool calls:', toolCalls);
+                    // Check if any of the tool calls are new
+                    const newToolCalls = toolCalls.filter(call => {
+                        if (!call.id) {
+                            logger.debug('Tool call without ID:', call);
+                            return true; // Consider calls without IDs as new
+                        }
+                        const isNew = !seenToolCallIds.has(call.id);
+                        if (isNew) {
+                            logger.debug('New tool call detected:', call);
+                            seenToolCallIds.add(call.id);
+                        }
+                        return isNew;
+                    });
+
+                    logger.debug('New tool calls:', newToolCalls);
+                    // Add new calls to accumulated calls
                     accumulatedCalls = [...accumulatedCalls, ...toolCalls];
-                    yield {
-                        content: '',
-                        role: 'assistant',
-                        isComplete: false,
-                        toolCalls: accumulatedCalls
-                    };
+
+                    // Set hasNewToolCall if we have new tool calls
+                    if (newToolCalls.length > 0) {
+                        hasNewToolCall = true;
+                        logger.debug('Yielding new tool call chunk');
+                        yield {
+                            content: '',
+                            role: 'assistant',
+                            isComplete: false,
+                            isNewToolCall: true,
+                            toolCalls: accumulatedCalls
+                        };
+                        continue;
+                    }
                 }
-                continue;
             }
 
             // Handle regular content
@@ -53,7 +89,8 @@ export class StreamHandler {
                 content: delta.content || '',
                 role: delta.role || 'assistant',
                 isComplete: chunk.choices[0]?.finish_reason !== null,
-                ...(accumulatedCalls.length > 0 && { toolCalls: accumulatedCalls }),
+                toolCalls: accumulatedCalls,
+                isNewToolCall: hasNewToolCall,
                 metadata: {
                     finishReason: this.mapFinishReason(chunk.choices[0]?.finish_reason)
                 }
@@ -84,6 +121,7 @@ export class StreamHandler {
             const validCalls = delta.tool_calls
                 .filter(this.isValidToolCallDelta)
                 .map(call => ({
+                    id: call.id,
                     name: call.function.name,
                     arguments: JSON.parse(call.function.arguments) as Record<string, unknown>
                 }));

@@ -45,21 +45,24 @@ async function main() {
     });
 
     console.log('\nStream Response:');
-    let lastUsage;
+    let finalUsage;
     for await (const chunk of stream) {
         // Display incremental content
         process.stdout.write(chunk.content);
 
-        // The complete accumulated content would be available in chunk.contentText 
-        // when chunk.isComplete is true, but we don't need it for this example
-
-        lastUsage = chunk.metadata?.usage;
+        // Keep track of the latest usage information
+        if (chunk.metadata?.usage) {
+            finalUsage = chunk.metadata.usage;
+        }
     }
-    console.log('\n\nFinal Usage Information:');
-    console.log('Input Tokens:', lastUsage?.inputTokens);
-    console.log('Output Tokens:', lastUsage?.outputTokens);
-    console.log('Total Tokens:', lastUsage?.totalTokens);
-    console.log('Costs:', lastUsage?.costs);
+
+    if (finalUsage) {
+        console.log('\n\nFinal Usage Information:');
+        console.log('Input Tokens:', finalUsage.inputTokens);
+        console.log('Output Tokens:', finalUsage.outputTokens);
+        console.log('Total Tokens:', finalUsage.totalTokens);
+        console.log('Total Cost:', finalUsage.costs.totalCost.toFixed(6));
+    }
 }
 
 main(); 

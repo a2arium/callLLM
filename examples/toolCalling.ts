@@ -86,53 +86,53 @@ async function main() {
     caller.addTool(timeTool);
     caller.addTool(calculateTool);
 
-    // 1. Basic Tool Call
-    console.log('1. Basic Tool Call');
-    console.log('------------------');
-    const weatherResponse = await caller.chatCall({
-        message: 'What\'s the weather like in San Francisco?',
-        settings: {
-            tools: [weatherTool],
-            toolChoice: 'auto'
-        }
-    });
-    console.log('Response:', weatherResponse);
+    // // 1. Basic Tool Call
+    // console.log('1. Basic Tool Call');
+    // console.log('------------------');
+    // const weatherResponse = await caller.chatCall({
+    //     message: 'What\'s the weather like in San Francisco?',
+    //     settings: {
+    //         tools: [weatherTool],
+    //         toolChoice: 'auto'
+    //     }
+    // });
+    // console.log('Response:', weatherResponse);
 
-    // 2. Multi-Tool Call
-    console.log('\n2. Multi-Tool Call');
-    console.log('------------------');
-    const multiToolResponse = await caller.chatCall({
-        message: 'What\'s the weather in New York and what time is it there?',
-        settings: {
-            tools: [weatherTool, timeTool],
-            toolChoice: 'auto'
-        }
-    });
-    console.log('Response:', multiToolResponse);
+    // // 2. Multi-Tool Call
+    // console.log('\n2. Multi-Tool Call');
+    // console.log('------------------');
+    // const multiToolResponse = await caller.chatCall({
+    //     message: 'What\'s the weather in New York and what time is it there?',
+    //     settings: {
+    //         tools: [weatherTool, timeTool],
+    //         toolChoice: 'auto'
+    //     }
+    // });
+    // console.log('Response:', multiToolResponse);
 
-    // 3. Calculation Tool Call
-    console.log('\n3. Calculation Tool Call');
-    console.log('------------------------');
-    const calculationResponse = await caller.chatCall({
-        message: 'Calculate 15% of 85',
-        settings: {
-            tools: [calculateTool],
-            toolChoice: 'auto'
-        }
-    });
-    console.log('Response:', calculationResponse);
+    // // 3. Calculation Tool Call
+    // console.log('\n3. Calculation Tool Call');
+    // console.log('------------------------');
+    // const calculationResponse = await caller.chatCall({
+    //     message: 'Calculate 15% of 85',
+    //     settings: {
+    //         tools: [calculateTool],
+    //         toolChoice: 'auto'
+    //     }
+    // });
+    // console.log('Response:', calculationResponse);
 
-    // 4. Time Tool Call
-    console.log('\n4. Time Tool Call');
-    console.log('----------------');
-    const timeResponse = await caller.chatCall({
-        message: 'What time is it in Tokyo?',
-        settings: {
-            tools: [timeTool],
-            toolChoice: 'auto'
-        }
-    });
-    console.log('Response:', timeResponse);
+    // // 4. Time Tool Call
+    // console.log('\n4. Time Tool Call');
+    // console.log('----------------');
+    // const timeResponse = await caller.chatCall({
+    //     message: 'What time is it in Tokyo?',
+    //     settings: {
+    //         tools: [timeTool],
+    //         toolChoice: 'auto'
+    //     }
+    // });
+    // console.log('Response:', timeResponse);
 
     // 5. Tool Call Stream Demonstration
     console.log('\n5. Tool Call Stream Demonstration');
@@ -155,7 +155,7 @@ async function main() {
 
             // Handle tool calls
             if (chunk.toolCalls?.length) {
-                console.log('\nTool Calls:', JSON.stringify(chunk.toolCalls, null, 2));
+                console.log('\nTool Call:', JSON.stringify(chunk.toolCalls, null, 2));
             }
 
             // Indicate completion if flagged
@@ -171,7 +171,7 @@ async function main() {
         throw error;
     }
 
-    // // 6. Multi-Tool Call Stream Demonstration
+    // 6. Multi-Tool Call Stream Demonstration
     console.log('\n6. Multi-Tool Call Stream Demonstration');
     console.log('---------------------------------------------------------------');
     const multiToolStream = await caller.streamCall({
@@ -195,7 +195,7 @@ async function main() {
 
             // Handle tool calls
             if (chunk.toolCalls?.length) {
-                console.log('\nTool Calls:', JSON.stringify(chunk.toolCalls, null, 2));
+                console.log('\nTool Call:', JSON.stringify(chunk.toolCalls, null, 2));
             }
 
             // For the final chunk, write the complete content

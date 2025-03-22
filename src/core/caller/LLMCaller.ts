@@ -18,6 +18,7 @@ import { ToolsManager } from '../tools/ToolsManager';
 import type { ToolDefinition, ToolCall } from '../types';
 import { ToolController } from '../tools/ToolController';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator';
+import { ChunkController } from '../chunks/ChunkController';
 
 export class LLMCaller {
     private providerManager: ProviderManager;
@@ -39,6 +40,7 @@ export class LLMCaller {
     private toolsManager: ToolsManager;
     private toolController: ToolController;
     private toolOrchestrator: ToolOrchestrator;
+    private chunkController: ChunkController;
 
     constructor(
         providerName: SupportedProviders,
@@ -103,6 +105,7 @@ export class LLMCaller {
         this.toolsManager = new ToolsManager();
         this.toolController = new ToolController(this.toolsManager);
         this.toolOrchestrator = new ToolOrchestrator(this.toolController, this.chatController, this.streamController);
+        this.chunkController = new ChunkController(this.tokenCalculator, this.chatController, this.streamController, 20);
 
         this.chatCall = (async (params: {
             message: string;
@@ -178,6 +181,7 @@ export class LLMCaller {
     // Add methods to manage ID and callback
     public setCallerId(newId: string): void {
         this.callerId = newId;
+        // Create new streamHandler with updated ID
         this.streamHandler = new StreamHandler(
             this.tokenCalculator,
             this.responseProcessor,
@@ -190,7 +194,7 @@ export class LLMCaller {
             this.usageCallback,
             newId
         );
-        // Also update chatController with the new usageTracker.
+        // Also update chatController with the new usageTracker
         this.chatController = new ChatController(
             this.providerManager,
             this.modelManager,
@@ -198,7 +202,14 @@ export class LLMCaller {
             this.retryManager,
             this.usageTracker
         );
-        // Rebind chatCall using mergeSettings so that updated settings are used.
+        // Update streamController with new streamHandler
+        this.streamController = new StreamController(
+            this.providerManager,
+            this.modelManager,
+            this.streamHandler,
+            this.retryManager
+        );
+        // Rebind chatCall using mergeSettings so that updated settings are used
         this.chatCall = ((params: { message: string; settings?: UniversalChatParams['settings'] }) => {
             return this.chatController.execute({
                 model: this.model,
@@ -254,7 +265,11 @@ export class LLMCaller {
         }
 
         const { message: _, historicalMessages: __, messages: ___, ...rest } = params;
-        finalParams = { ...rest, messages } as UniversalChatParams;
+        finalParams = {
+            ...rest,
+            messages,
+            callerId: this.callerId // Ensure callerId is passed through
+        } as UniversalChatParams;
 
         // Merge settings and add defaults
         const modelInfo = this.modelManager.getModel(this.model)!;
@@ -263,20 +278,45 @@ export class LLMCaller {
         const inputText = finalParams.messages.map(msg => msg.content).join("\n");
         const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + "\n" + inputText);
 
+        // Create a new streamHandler with the current callerId
+        const streamHandler = new StreamHandler(
+            this.tokenCalculator,
+            this.responseProcessor,
+            this.usageCallback,
+            this.callerId
+        );
+
+        // Create a new streamController with the updated streamHandler
+        const streamController = new StreamController(
+            this.providerManager,
+            this.modelManager,
+            streamHandler,
+            this.retryManager
+        );
+
         // Obtain an initial response from chatController (non-streaming) to extract tool call markers
         const initialResponse = await this.chatController.execute({
             model: this.model,
             systemMessage: this.systemMessage,
             settings: finalParams.settings,
-            historicalMessages: messages
+            historicalMessages: messages,
+            callerId: this.callerId
         });
 
-        // Delegate the streaming tool orchestration to ToolOrchestrator
-        return this.toolOrchestrator.streamProcessResponse(initialResponse, {
+        // Create a new toolOrchestrator with the updated streamController
+        const toolOrchestrator = new ToolOrchestrator(
+            this.toolController,
+            this.chatController,
+            streamController
+        );
+
+        // Delegate the streaming tool orchestration to the new toolOrchestrator
+        return toolOrchestrator.streamProcessResponse(initialResponse, {
             model: this.model,
             systemMessage: this.systemMessage,
             historicalMessages: messages,
-            settings: finalParams.settings
+            settings: finalParams.settings,
+            callerId: this.callerId
         }, inputTokens);
     }
 
@@ -299,20 +339,12 @@ export class LLMCaller {
             maxResponseTokens
         });
 
-        // Call for each message
-        const responses: UniversalChatResponse[] = [];
-        for (const [index, msg] of messages.entries()) {
-            if (messages.length > 1) {
-                console.log(`Processing message ${index + 1} of ${messages.length} chunks`);
-            }
-            const response = await this.chatCall({
-                message: msg,
-                settings
-            });
-            responses.push(response);
-        }
-
-        return responses;
+        // Use ChunkController to handle processing instead of manual implementation
+        return this.chunkController.processChunks(messages, {
+            model: this.model,
+            systemMessage: this.systemMessage,
+            settings: this.mergeSettings(settings)
+        });
     }
 
     // Extended stream method with additional functionality
@@ -334,74 +366,12 @@ export class LLMCaller {
             maxResponseTokens
         });
 
-        const self = this;
-        let currentMessageIndex = 0;
-        const totalMessages = messages.length;
-
-        return {
-            [Symbol.asyncIterator]() {
-                let currentStream: AsyncIterator<UniversalStreamResponse> | null = null;
-                let accumulatedContent = '';
-
-                return {
-                    async next(): Promise<IteratorResult<UniversalStreamResponse>> {
-                        while (currentMessageIndex < totalMessages) {
-                            if (!currentStream) {
-                                const processedMessage = messages[currentMessageIndex];
-                                const stream = await self.streamCall({
-                                    messages: [{ role: 'user', content: processedMessage }],
-                                    settings: settings
-                                });
-                                currentStream = stream[Symbol.asyncIterator]();
-                            }
-
-                            const result = await currentStream.next();
-                            if (!result.done) {
-                                const newContent = result.value.content + (result.value.isComplete && currentMessageIndex !== totalMessages - 1 ? '\n' : '');
-                                accumulatedContent += newContent;
-                                const response: UniversalStreamResponse = {
-                                    ...result.value,
-                                    content: newContent,
-                                    metadata: {
-                                        ...result.value.metadata,
-                                        processInfo: {
-                                            currentChunk: currentMessageIndex + 1,
-                                            totalChunks: totalMessages
-                                        }
-                                    }
-                                };
-                                return { done: false, value: response };
-                            }
-
-                            // Current stream is done, move to next message
-                            currentMessageIndex++;
-                            currentStream = null;
-
-                            // Add newline after each message is complete
-                            if (currentMessageIndex !== totalMessages) accumulatedContent += '\n';
-
-                            // If this was the last message, return the final accumulated content
-                            if (currentMessageIndex === totalMessages) {
-                                const finalResponse: UniversalStreamResponse = {
-                                    content: accumulatedContent,
-                                    role: 'assistant',
-                                    isComplete: true,
-                                    metadata: {
-                                        processInfo: {
-                                            currentChunk: totalMessages,
-                                            totalChunks: totalMessages
-                                        }
-                                    }
-                                };
-                                return { done: true } as IteratorResult<UniversalStreamResponse, void>;
-                            }
-                        }
-
-                        return { done: true, value: undefined as any };
-                    }
-                };
-            }
-        };
+        // Use ChunkController to handle streaming instead of manual implementation
+        return this.chunkController.streamChunks(messages, {
+            model: this.model,
+            systemMessage: this.systemMessage,
+            settings: this.mergeSettings(settings)
+        });
     }
 
     // Tool management methods

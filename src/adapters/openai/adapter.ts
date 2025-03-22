@@ -77,7 +77,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
             typeof (func as any).arguments === 'string';
     }
 
-    private processToolCalls(delta: StreamDelta): { name: string; arguments: Record<string, unknown>; }[] | undefined {
+    private processToolCalls(delta: StreamDelta): { id?: string; name: string; arguments: Record<string, unknown>; }[] | undefined {
         if (!delta.tool_calls?.length && !delta.function_call) {
             return undefined;
         }
@@ -90,6 +90,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
                     this.isValidToolCallFunction(call.function)
                 )
                 .map(call => ({
+                    id: call.id,
                     name: call.function.name,
                     arguments: JSON.parse(call.function.arguments)
                 }));
@@ -97,7 +98,10 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
         }
 
         if (delta.function_call && this.isValidToolCallFunction(delta.function_call)) {
+            // For function calls, generate a unique ID if one doesn't exist
+            const id = `call_${Date.now()}_${Math.random().toString(36).slice(2)}`;
             return [{
+                id,
                 name: delta.function_call.name,
                 arguments: JSON.parse(delta.function_call.arguments)
             }];
@@ -173,6 +177,8 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
 
         const self = this;
         async function* transformStream(stream: Stream<ChatCompletionChunk>): AsyncIterable<UniversalStreamResponse> {
+            let seenToolCallIds = new Set<string>();
+
             for await (const chunk of stream) {
                 const delta = chunk.choices[0]?.delta as StreamDelta;
                 if (!delta) continue;
@@ -180,19 +186,32 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
                 // Handle function calls
                 if (delta.function_call || delta.tool_calls) {
                     const toolCalls = self.processToolCalls(delta);
-                    const response: UniversalStreamResponse = {
-                        content: '',
-                        role: 'assistant',
-                        isComplete: false,
-                        toolCalls: toolCalls,
-                        metadata: {
-                            finishReason: self.mapFinishReason(delta.finish_reason || null),
-                            created: delta.created,
-                            model: delta.model
+                    if (toolCalls) {
+                        // Filter to only new tool calls
+                        const newToolCalls = toolCalls.filter(call => {
+                            if (!call.id) return true; // Consider calls without IDs as new
+                            const isNew = !seenToolCallIds.has(call.id);
+                            if (isNew && call.id) seenToolCallIds.add(call.id);
+                            return isNew;
+                        });
+
+                        // Only yield if we have new tool calls
+                        if (newToolCalls.length > 0) {
+                            const response: UniversalStreamResponse = {
+                                content: '',
+                                role: 'assistant',
+                                isComplete: false,
+                                toolCalls: newToolCalls,
+                                metadata: {
+                                    finishReason: self.mapFinishReason(delta.finish_reason || null),
+                                    created: delta.created,
+                                    model: delta.model
+                                }
+                            };
+                            yield response;
+                            continue;
                         }
-                    };
-                    yield response;
-                    continue;
+                    }
                 }
 
                 // Handle regular content

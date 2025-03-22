@@ -5,7 +5,7 @@ import { ModelManager } from '../models/ModelManager';
 import { ResponseProcessor } from '../processors/ResponseProcessor';
 import { RetryManager } from '../retry/RetryManager';
 import { UsageTracker } from '../telemetry/UsageTracker';
-import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage, UniversalChatSettings } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent";
 import { logger } from '../../utils/logger';
@@ -31,12 +31,13 @@ export class ChatController {
      * @returns A promise resolving to the processed chat response.
      */
     async execute<T extends z.ZodType | undefined = undefined>(params: {
-        model: string,
-        systemMessage: string,
-        settings?: UniversalChatParams['settings'],
-        historicalMessages: UniversalMessage[]
+        model: string;
+        systemMessage: string;
+        settings?: UniversalChatSettings;
+        historicalMessages: UniversalMessage[];
+        callerId?: string;
     }): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
-        const { model, systemMessage, settings, historicalMessages } = params;
+        const { model, systemMessage, settings, historicalMessages, callerId } = params;
         const mergedSettings = settings;
 
         const fullSystemMessage =
@@ -46,19 +47,26 @@ export class ChatController {
 
         // Validate all messages have role and content
         const validatedMessages = historicalMessages.map(msg => {
+            if (!msg.role) {
+                logger.warn('Message missing role:', msg);
+                throw new Error('Each message must have a role');
+            }
+
             // If message has tool calls or is a tool response, empty content is valid
-            if (msg.toolCalls?.length || msg.role === 'tool') {
+            if (msg.toolCalls?.length || msg.role === 'tool' ||
+                // Also allow assistant messages with empty or space-only content in tool call flows
+                (msg.role === 'assistant' && (!msg.content || msg.content.trim() === ''))) {
                 return {
                     ...msg,
-                    role: msg.role || 'assistant',
+                    role: msg.role,
                     content: msg.content || ''
                 };
             }
 
-            // Otherwise, both role and non-empty content are required
-            if (!msg.role || !msg.content?.trim()) {
-                logger.warn('Message missing role or content:', msg);
-                throw new Error('Each message must have a role and non-empty content unless it contains tool calls or is a tool response');
+            // Otherwise, content is required
+            if (!msg.content?.trim()) {
+                logger.warn('Message missing content:', msg);
+                throw new Error('Each message must have either content or tool calls');
             }
             return msg;
         });

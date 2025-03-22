@@ -1,3 +1,5 @@
+import { UniversalMessage, UniversalChatSettings } from '../interfaces/UniversalInterfaces';
+
 export type SupportedProviders = 'openai' | 'anthropic' | 'google';
 
 export type ToolParameterSchema = {
@@ -82,4 +84,12 @@ export type UniversalMessage = {
     name?: string;
     toolCalls?: ToolCall[];
     metadata?: Record<string, unknown>;
+};
+
+export type ToolOrchestrationParams = {
+    model: string;
+    systemMessage: string;
+    historicalMessages: UniversalMessage[];
+    settings?: UniversalChatSettings;
+    callerId?: string;
 }; 
