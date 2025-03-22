@@ -1,5 +1,7 @@
 import { UniversalMessage, UniversalChatSettings } from '../interfaces/UniversalInterfaces';
 
+export { UniversalMessage };
+
 export type SupportedProviders = 'openai' | 'anthropic' | 'google';
 
 export type ToolParameterSchema = {
@@ -78,13 +80,6 @@ export type ToolCall = {
     arguments: Record<string, unknown>;
 };
 
-export type UniversalMessage = {
-    role: 'system' | 'user' | 'assistant' | 'function';
-    content: string;
-    name?: string;
-    toolCalls?: ToolCall[];
-    metadata?: Record<string, unknown>;
-};
 
 export type ToolOrchestrationParams = {
     model: string;

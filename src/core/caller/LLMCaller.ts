@@ -244,7 +244,6 @@ export class LLMCaller {
 
     /**
      * Streams a response from the LLM.
-     * If legacy parameters are provided (message and historicalMessages), they will be converted to a messages array
      * with the system message prepended, historical messages in the middle, and the user message appended.
      */
     public async streamCall(params: Omit<UniversalChatParams, 'messages'> & { message?: string; historicalMessages?: UniversalMessage[]; messages?: UniversalMessage[] }): Promise<AsyncIterable<UniversalStreamResponse>> {

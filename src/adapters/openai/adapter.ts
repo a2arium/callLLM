@@ -22,7 +22,6 @@ type StreamDelta = Partial<ChatCompletionMessage> & {
     finish_reason?: string | null;
     created?: number;
     model?: string;
-    function_call?: ToolCallFunction;
     tool_calls?: Array<ChatCompletionMessageToolCall>;
 };
 
@@ -77,8 +76,8 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
             typeof (func as any).arguments === 'string';
     }
 
-    private processToolCalls(delta: StreamDelta): { id?: string; name: string; arguments: Record<string, unknown>; }[] | undefined {
-        if (!delta.tool_calls?.length && !delta.function_call) {
+    private processToolCalls(delta: StreamDelta): { id?: string; name: string; argumentsChunk: string; }[] | undefined {
+        if (!delta.tool_calls?.length) {
             return undefined;
         }
 
@@ -92,19 +91,10 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
                 .map(call => ({
                     id: call.id,
                     name: call.function.name,
-                    arguments: JSON.parse(call.function.arguments)
+                    argumentsChunk: call.function.arguments,
+                    // arguments: JSON.parse(call.function.arguments)
                 }));
             return validCalls.length > 0 ? validCalls : undefined;
-        }
-
-        if (delta.function_call && this.isValidToolCallFunction(delta.function_call)) {
-            // For function calls, generate a unique ID if one doesn't exist
-            const id = `call_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-            return [{
-                id,
-                name: delta.function_call.name,
-                arguments: JSON.parse(delta.function_call.arguments)
-            }];
         }
 
         return undefined;
@@ -184,7 +174,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
                 if (!delta) continue;
 
                 // Handle function calls
-                if (delta.function_call || delta.tool_calls) {
+                if (delta.tool_calls) {
                     const toolCalls = self.processToolCalls(delta);
                     if (toolCalls) {
                         // Filter to only new tool calls
@@ -201,7 +191,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
                                 content: '',
                                 role: 'assistant',
                                 isComplete: false,
-                                toolCalls: newToolCalls,
+                                toolCallDeltas: newToolCalls,
                                 metadata: {
                                     finishReason: self.mapFinishReason(delta.finish_reason || null),
                                     created: delta.created,
@@ -252,12 +242,12 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider {
             throw new Error('No delta in chunk');
         }
 
-        const toolCalls = this.processToolCalls(delta);
+        const toolCallDeltas = this.processToolCalls(delta);
         const response: UniversalStreamResponse = {
             content: delta.content || '',
             role: delta.role || 'assistant',
             isComplete: true,
-            toolCalls: toolCalls,
+            toolCallDeltas: toolCallDeltas,
             metadata: {
                 finishReason: this.mapFinishReason(delta.finish_reason || null),
                 created: delta.created,

@@ -180,50 +180,50 @@ async function main() {
         throw error;
     }
 
-    // 6. Multi-Tool Call Stream Demonstration
-    console.log('\n6. Multi-Tool Call Stream Demonstration');
-    console.log('---------------------------------------------------------------');
-    const multiToolStream = await caller.streamCall({
-        message: 'What is the current time and weather in Tokyo?',
-        settings: {
-            tools: [timeTool, weatherTool],
-            toolChoice: 'auto',
-            stream: true
-        }
-    });
+    // // 6. Multi-Tool Call Stream Demonstration
+    // console.log('\n6. Multi-Tool Call Stream Demonstration');
+    // console.log('---------------------------------------------------------------');
+    // const multiToolStream = await caller.streamCall({
+    //     message: 'What is the current time and weather in Tokyo?',
+    //     settings: {
+    //         tools: [timeTool, weatherTool],
+    //         toolChoice: 'auto',
+    //         stream: true
+    //     }
+    // });
 
-    try {
-        for await (const chunk of multiToolStream) {
-            // Handle content
-            if (chunk.content) {
-                // For non-complete chunks, write incrementally
-                if (!chunk.isComplete) {
-                    process.stdout.write(chunk.content);
-                }
-            }
+    // try {
+    //     for await (const chunk of multiToolStream) {
+    //         // Handle content
+    //         if (chunk.content) {
+    //             // For non-complete chunks, write incrementally
+    //             if (!chunk.isComplete) {
+    //                 process.stdout.write(chunk.content);
+    //             }
+    //         }
 
-            // Handle tool calls
-            if (chunk.toolCalls?.length) {
-                console.log('\nTool Call:', JSON.stringify(chunk.toolCalls, null, 2));
-            }
+    //         // Handle tool calls
+    //         if (chunk.toolCalls?.length) {
+    //             console.log('\nTool Call:', JSON.stringify(chunk.toolCalls, null, 2));
+    //         }
 
-            // For the final chunk, write the complete content
-            if (chunk.isComplete) {
-                // When the stream is complete:
-                // 1. chunk.contentText contains the complete accumulated text response
-                // 2. chunk.toolCalls contains the complete tool calls (if any)
+    //         // For the final chunk, write the complete content
+    //         if (chunk.isComplete) {
+    //             // When the stream is complete:
+    //             // 1. chunk.contentText contains the complete accumulated text response
+    //             // 2. chunk.toolCalls contains the complete tool calls (if any)
 
-                // Use contentText for the complete response text
-                console.log('\n\nComplete response text:');
-                console.log(chunk.contentText);
+    //             // Use contentText for the complete response text
+    //             console.log('\n\nComplete response text:');
+    //             console.log(chunk.contentText);
 
-                console.log('\nStream completed');
-            }
-        }
-    } catch (error) {
-        console.error('\nError processing stream:', error);
-        throw error;
-    }
+    //             console.log('\nStream completed');
+    //         }
+    //     }
+    // } catch (error) {
+    //     console.error('\nError processing stream:', error);
+    //     throw error;
+    // }
 }
 
 main().catch(console.error);

@@ -539,7 +539,6 @@ export class ToolOrchestrator {
 
     /**
      * Stream processes a response directly from the LLM provider with real-time streaming.
-     * This replaces the previous approach where we first made a non-streaming request.
      * @param params - The orchestration parameters
      * @param inputTokens - The estimated input tokens for the prompt
      * @returns An async iterable streaming the response
@@ -579,8 +578,13 @@ export class ToolOrchestrator {
 
             // Process current stream
             for await (const chunk of stream) {
+                logger.debug('Processing chunk in streamDirectResponse:', JSON.stringify(chunk, null, 2));
                 // Process the chunk with our streamBuffer to handle tool call accumulation
                 const { streamableContent, completedToolCalls, isComplete } = streamBuffer.processChunk(chunk);
+
+                logger.debug('Streamable content:', streamableContent);
+                logger.debug('Completed tool calls:', completedToolCalls);
+                logger.debug('Is complete:', isComplete);
 
                 // Handle completed tool calls
                 if (completedToolCalls.length > 0) {

@@ -19,7 +19,9 @@ export type UniversalMessage = {
         name: string;
         arguments: Record<string, unknown>;
     }>;
+    metadata?: Record<string, unknown>;
 };
+
 
 export type UniversalChatSettings = {
     /**
@@ -122,9 +124,9 @@ export interface UniversalStreamResponse<T = unknown> {
     messages?: UniversalMessage[];  // Array of messages for tool call responses
     toolCallDeltas?: Array<{
         id?: string;
-        index: number;
+        index?: number;
         name?: string;
-        arguments?: string | Record<string, unknown>;
+        argumentsChunk?: string;
     }>;
     toolCalls?: Array<{
         name: string;
