@@ -9,6 +9,9 @@ import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMess
 import { z } from 'zod';
 import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent";
 import { logger } from '../../utils/logger';
+import { ToolController } from '../tools/ToolController';
+import { ToolOrchestrator } from '../tools/ToolOrchestrator';
+import { HistoryManager } from '../history/HistoryManager';
 
 export class ChatController {
     constructor(
@@ -16,7 +19,10 @@ export class ChatController {
         private modelManager: ModelManager,
         private responseProcessor: ResponseProcessor,
         private retryManager: RetryManager, // injected default retry manager (for defaults)
-        private usageTracker: UsageTracker
+        private usageTracker: UsageTracker,
+        private toolController?: ToolController,
+        private toolOrchestrator?: ToolOrchestrator,
+        private historyManager?: HistoryManager
     ) {
         logger.setConfig({
             prefix: 'ChatController',
@@ -134,6 +140,46 @@ export class ChatController {
             },
             (error: unknown) => true // Retry on all errors.
         );
+
+        // Process tool calls if present in the response
+        if (this.toolController &&
+            this.toolOrchestrator &&
+            this.historyManager &&
+            ((response.toolCalls && response.toolCalls.length > 0) || response.metadata?.finishReason === FinishReason.TOOL_CALLS)) {
+
+            logger.debug('Tool calls detected in non-streaming response, processing');
+
+            // Add initial assistant response to history
+            if (response.content) {
+                this.historyManager.addMessage('assistant', response.content);
+            }
+
+            // Process tool calls
+            const { requiresResubmission } = await this.toolOrchestrator.processToolCalls(response);
+
+            if (requiresResubmission) {
+                // Get updated messages from history
+                const updatedMessages = this.historyManager.getHistoricalMessages();
+
+                logger.debug('Resubmitting with tool responses', {
+                    messagesCount: updatedMessages.length
+                });
+
+                // Make a recursive call with updated messages
+                return this.execute<T>({
+                    model,
+                    systemMessage,
+                    settings: {
+                        ...settings,
+                        // Don't include tools in the continuation to avoid infinite loops
+                        tools: undefined,
+                        toolChoice: undefined
+                    },
+                    historicalMessages: updatedMessages,
+                    callerId
+                });
+            }
+        }
 
         return this.responseProcessor.validateResponse<T>(response, mergedSettings);
     }

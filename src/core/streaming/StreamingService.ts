@@ -12,6 +12,7 @@ import { UsageTracker } from '../telemetry/UsageTracker';
 import { ContentAccumulator } from './processors/ContentAccumulator';
 import { ToolController } from '../tools/ToolController';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator';
+import { HistoryManager } from '../history/HistoryManager';
 
 /**
  * StreamingService
@@ -36,6 +37,7 @@ export class StreamingService {
     constructor(
         private providerManager: ProviderManager,
         private modelManager: ModelManager,
+        private historyManager: HistoryManager,
         retryManager?: RetryManager,
         usageCallback?: UsageCallback,
         callerId?: string,
@@ -54,11 +56,13 @@ export class StreamingService {
         );
         this.streamHandler = new StreamHandler(
             this.tokenCalculator,
+            this.historyManager,
             this.responseProcessor,
             usageCallback,
             callerId,
             this.toolController,
-            this.toolOrchestrator
+            this.toolOrchestrator,
+            this
         );
         this.retryManager = retryManager || new RetryManager({
             maxRetries: 3,
@@ -202,11 +206,13 @@ export class StreamingService {
         // Create new streamHandler with updated ID
         this.streamHandler = new StreamHandler(
             this.tokenCalculator,
+            this.historyManager,
             this.responseProcessor,
             this.usageTracker['callback'], // Access the callback from usageTracker
             newId,
             this.toolController,
-            this.toolOrchestrator
+            this.toolOrchestrator,
+            this
         );
 
         // Update the UsageTracker to use the new callerId
@@ -229,11 +235,13 @@ export class StreamingService {
 
         this.streamHandler = new StreamHandler(
             this.tokenCalculator,
+            this.historyManager,
             this.responseProcessor,
             callback,
             this.usageTracker['callerId'],
             this.toolController,
-            this.toolOrchestrator
+            this.toolOrchestrator,
+            this
         );
     }
 

@@ -167,8 +167,7 @@ export class ToolController {
      */
     async executeToolCall(toolCall: ToolCall): Promise<string | Record<string, unknown>> {
         const log = logger.createLogger({ prefix: 'ToolController.executeToolCall' });
-        log.debug(`Executing tool call: ${toolCall.name}`, { id: toolCall.id });
-        log.debug('Executing tool call', { name: toolCall.name, parameters: toolCall.arguments });
+        log.debug('Executing tool call', { name: toolCall.name, id: toolCall.id, parameters: toolCall.arguments });
 
         // Find the tool
         const tool = this.getToolByName(toolCall.name);

@@ -4,6 +4,7 @@ import { UsageCallback } from '../../interfaces/UsageInterfaces';
 import { logger } from '../../utils/logger';
 import { UniversalChatParams, UniversalStreamResponse, UniversalChatResponse, ModelInfo, FinishReason, UniversalMessage } from '../../interfaces/UniversalInterfaces';
 import { StreamPipeline } from './StreamPipeline';
+import { UsageTrackingProcessor } from './processors/UsageTrackingProcessor';
 import { ContentAccumulator } from './processors/ContentAccumulator';
 import { UsageTracker } from '../telemetry/UsageTracker';
 import { z } from 'zod';
@@ -12,6 +13,10 @@ import { StreamChunk } from './types';
 import { ToolController } from '../tools/ToolController';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator';
 import { ToolCall } from '../../types/tooling';
+import { HistoryManager } from '../history/HistoryManager';
+import { IStreamProcessor } from './types';
+import { StreamHistoryProcessor } from './processors/StreamHistoryProcessor';
+import { StreamingService } from './StreamingService';
 
 export class StreamHandler {
     private readonly tokenCalculator: TokenCalculator;
@@ -20,14 +25,19 @@ export class StreamHandler {
     private readonly callerId?: string;
     private readonly toolController?: ToolController;
     private readonly toolOrchestrator?: ToolOrchestrator;
+    private readonly historyManager: HistoryManager;
+    private readonly historyProcessor: StreamHistoryProcessor;
+    private readonly streamingService?: StreamingService;
 
     constructor(
         tokenCalculator: TokenCalculator,
+        historyManager: HistoryManager,
         responseProcessor: ResponseProcessor = new ResponseProcessor(),
         usageCallback?: UsageCallback,
         callerId?: string,
         toolController?: ToolController,
-        toolOrchestrator?: ToolOrchestrator
+        toolOrchestrator?: ToolOrchestrator,
+        streamingService?: StreamingService
     ) {
         this.tokenCalculator = tokenCalculator;
         this.responseProcessor = responseProcessor;
@@ -35,167 +45,15 @@ export class StreamHandler {
         this.callerId = callerId;
         this.toolController = toolController;
         this.toolOrchestrator = toolOrchestrator;
+        this.historyManager = historyManager;
+        this.historyProcessor = new StreamHistoryProcessor(this.historyManager);
+        this.streamingService = streamingService;
 
         logger.setConfig({
             level: process.env.LOG_LEVEL as any || 'info',
             prefix: 'StreamHandler'
         });
         logger.debug('Initialized StreamHandler', { callerId });
-    }
-
-    /**
-     * Processes tool calls retrieved from the stream and yields progress updates
-     * @param toolCalls The tool calls to process
-     * @param params The chat parameters
-     * @param messages The current conversation messages
-     * @returns AsyncGenerator yielding tool execution progress and results
-     */
-    private async *processToolCallsStreaming(
-        toolCalls: Array<{ name: string; arguments: Record<string, unknown>; id?: string }>,
-        params: UniversalChatParams,
-        messages: UniversalMessage[]
-    ): AsyncGenerator<{
-        response: UniversalStreamResponse;
-        updatedMessages: UniversalMessage[];
-    }> {
-        if (!this.toolController) {
-            throw new Error('ToolController is required for tool call processing');
-        }
-
-        const log = logger.createLogger({ prefix: 'StreamHandler.processToolCallsStreaming' });
-        log.debug('Processing tool calls in streaming mode', { count: toolCalls.length });
-
-        const updatedMessages = [...messages];
-        const processedToolCalls: Array<{
-            id: string;
-            toolName: string;
-            arguments: Record<string, unknown>;
-            result?: string;
-            error?: string;
-        }> = [];
-
-        // Add the assistant message with tool calls
-        const assistantMessage: UniversalMessage = {
-            role: 'assistant',
-            content: ' ',
-            toolCalls: toolCalls.map(call => ({
-                id: call.id || `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                name: call.name,
-                arguments: call.arguments
-            }))
-        };
-        updatedMessages.push(assistantMessage);
-
-        // Process each tool call sequentially, but stream progress updates
-        for (const call of toolCalls) {
-            const toolCallId = call.id || `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-            try {
-                // Yield "tool execution started" update
-                yield {
-                    response: {
-                        role: 'assistant',
-                        content: '',
-                        isComplete: false,
-                        metadata: {
-                            toolStatus: 'running',
-                            toolName: call.name,
-                            toolId: toolCallId
-                        }
-                    },
-                    updatedMessages
-                };
-
-                const toolCall: ToolCall = {
-                    id: toolCallId,
-                    name: call.name,
-                    arguments: call.arguments
-                };
-
-                log.debug(`Executing tool call: ${call.name}`, { id: toolCallId });
-                const result = await this.toolController.executeToolCall(toolCall);
-
-                // Format the result as a string
-                const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
-
-                // Add tool result message
-                const toolResultMessage: UniversalMessage = {
-                    role: 'tool',
-                    content: resultStr,
-                    toolCallId
-                };
-                updatedMessages.push(toolResultMessage);
-
-                // Track the processed tool call
-                processedToolCalls.push({
-                    id: toolCallId,
-                    toolName: call.name,
-                    arguments: call.arguments,
-                    result: resultStr
-                });
-
-                log.debug(`Successfully executed tool: ${call.name}`);
-
-                // Yield "tool execution completed" update
-                yield {
-                    response: {
-                        role: 'assistant',
-                        content: '',
-                        isComplete: false,
-                        toolCalls: [{
-                            name: call.name,
-                            arguments: call.arguments
-                        }],
-                        toolCallResults: [{
-                            id: toolCallId,
-                            name: call.name,
-                            result: resultStr
-                        }],
-                        metadata: {
-                            toolStatus: 'complete',
-                            toolName: call.name,
-                            toolId: toolCallId,
-                            toolResult: resultStr
-                        }
-                    },
-                    updatedMessages
-                };
-            } catch (error) {
-                log.error(`Error executing tool ${call.name}:`, error);
-                const errorMessage = error instanceof Error ? error.message : String(error);
-
-                // Track the error
-                processedToolCalls.push({
-                    id: toolCallId,
-                    toolName: call.name,
-                    arguments: call.arguments,
-                    error: errorMessage
-                });
-
-                // Add error as a system message
-                const errorSystemMessage: UniversalMessage = {
-                    role: 'system',
-                    content: `Error executing tool ${call.name}: ${errorMessage}`
-                };
-                updatedMessages.push(errorSystemMessage);
-
-                // Yield "tool execution error" update
-                yield {
-                    response: {
-                        role: 'assistant',
-                        content: '',
-                        isComplete: false,
-                        metadata: {
-                            toolStatus: 'error',
-                            toolName: call.name,
-                            toolId: toolCallId,
-                            toolError: errorMessage
-                        }
-                    },
-                    updatedMessages
-                };
-            }
-        }
     }
 
     /**
@@ -221,10 +79,10 @@ export class StreamHandler {
             modelName: modelInfo.name
         });
 
-        // Create a pipeline with our processors
+        // Create the content accumulator
         const contentAccumulator = new ContentAccumulator();
 
-        // Create the usage tracking processor via the UsageTracker
+        // Create the usage processor
         const usageProcessor = this.usageTracker.createStreamProcessor(
             inputTokens,
             modelInfo,
@@ -235,11 +93,17 @@ export class StreamHandler {
             }
         );
 
-        // Build the pipeline
-        const pipeline = new StreamPipeline([
+        // Build the pipeline with processors
+        const pipelineProcessors: IStreamProcessor[] = [
             contentAccumulator,
             usageProcessor
-        ]);
+        ];
+
+        // Add history processor to pipeline
+        log.debug('Adding history processor to stream pipeline');
+        pipelineProcessors.push(this.historyProcessor);
+
+        const pipeline = new StreamPipeline(pipelineProcessors);
 
         // Convert the UniversalStreamResponse to StreamChunk for processing
         const streamChunks = this.convertToStreamChunks(stream);
@@ -294,7 +158,7 @@ export class StreamHandler {
                     ) &&
                     !hasExecutedTools) {
 
-                    log.debug('Tool calls detected, executing tools in streaming mode');
+                    log.debug('Tool calls detected, processing with ToolOrchestrator.processToolCalls');
                     hasExecutedTools = true;
 
                     // Get completed tool calls
@@ -304,99 +168,94 @@ export class StreamHandler {
                         // Add the current response as an assistant message
                         const assistantMessage: UniversalMessage = {
                             role: 'assistant',
-                            content: contentAccumulator.getAccumulatedContent()
+                            content: contentAccumulator.getAccumulatedContent(),
+                            toolCalls: completedToolCalls.map(call => ({
+                                id: call.id || `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+                                name: call.name,
+                                arguments: call.arguments || {}
+                            }))
                         };
-                        currentMessages.push(assistantMessage);
 
-                        // Stream tool execution progress and results in real-time
-                        for await (const { response: toolResponse, updatedMessages } of this.processToolCallsStreaming(
-                            completedToolCalls,
-                            params,
-                            currentMessages
-                        )) {
-                            // Update current messages with latest state
-                            currentMessages = updatedMessages;
+                        yield {
+                            ...assistantMessage,
+                            isComplete: false
+                        };
 
-                            // Yield tool execution progress to client
-                            // yield toolResponse as any;
-                        }
+                        // Process each tool call
+                        log.debug(`Processing ${completedToolCalls.length} tool calls`);
 
-                        // Create a follow-up request to continue the conversation
+                        const { requiresResubmission } = await this.toolOrchestrator?.processToolCalls(response);
+                        if (!requiresResubmission) return; // If no need to submit tool calls, return
+
+                        // Get updated history for creating a continuation stream
+                        const updatedMessages = this.historyManager.getHistoricalMessages();
+
+                        log.debug('Creating continuation stream with updated history', {
+                            messagesCount: updatedMessages.length
+                        });
+
+                        // Extract system message
                         const systemMessage = params.messages?.find(m => m.role === 'system')?.content || '';
 
-                        // Create a direct stream from the ChatController or another available service
-                        // This avoids accessing private properties of ToolOrchestrator
-                        let providerStream;
+                        try {
+                            // Make sure we have streamingService before using it
+                            if (!this.streamingService) {
+                                throw new Error("StreamingService not available for creating continuation stream");
+                            }
 
-                        // If we have access to a chatController through the ToolOrchestrator, use it
-                        if (this.toolOrchestrator) {
-                            log.debug('Creating continuation stream with ToolOrchestrator');
-
-                            // Use the ToolOrchestrator's public API only - create a follow-up request with streamOrchestration
-                            providerStream = this.toolOrchestrator.streamProcessResponse(
+                            // Create a new stream using StreamingService with updated history
+                            const continuationStream = await this.streamingService.createStream(
                                 {
-                                    content: ' ', // Non-empty content for OpenAI
-                                    role: 'assistant'
-                                },
-                                {
-                                    model: modelInfo.name,
-                                    systemMessage,
-                                    historicalMessages: currentMessages,
+                                    messages: updatedMessages,
                                     settings: {
                                         ...params.settings,
                                         stream: true,
-                                        tools: undefined,
+                                        tools: undefined, // No tools in the continuation
                                         toolChoice: undefined
                                     }
                                 },
-                                inputTokens
+                                modelInfo.name,
+                                systemMessage
                             );
-                        } else {
-                            // Fallback - can't create a stream without more context
-                            throw new Error('Unable to create continuation stream - toolOrchestrator not available');
-                        }
 
-                        // Forward the stream chunks to the client
-                        log.debug('Starting to process continuation stream chunks');
+                            // Forward the stream chunks to the client
+                            log.debug('Starting to process continuation stream chunks');
+                            let forwardedChunks = 0;
 
-                        let forwardedChunks = 0;
-                        try {
-                            for await (const chunk of providerStream) {
-                                log.debug('Forwarding continuation chunk to client:', {
-                                    chunkHasContent: Boolean(chunk.content),
-                                    contentLength: chunk.content?.length,
-                                    isComplete: chunk.isComplete,
-                                    role: chunk.role,
-                                    chunkNumber: ++forwardedChunks
+                            for await (const chunk of continuationStream) {
+                                log.debug('Forwarding continuation chunk', {
+                                    chunkNumber: ++forwardedChunks,
+                                    hasContent: Boolean(chunk.content),
+                                    contentLength: chunk.content?.length || 0,
+                                    isComplete: chunk.isComplete
                                 });
 
-                                // Yield each chunk to the client
                                 yield {
                                     ...chunk,
                                     contentObject: null as any
                                 };
 
-                                // If we reach the end of the stream, log it
                                 if (chunk.isComplete) {
-                                    log.debug('Reached end of continuation stream', {
+                                    // Add the final response to history
+                                    if (chunk.content) {
+                                        this.historyManager.addMessage('assistant', chunk.content);
+                                    }
+
+                                    log.debug('Continuation stream complete', {
                                         totalChunks: forwardedChunks
                                     });
                                 }
                             }
-
-                            log.debug('Finished streaming all continuation chunks', {
-                                totalChunks: forwardedChunks
-                            });
                         } catch (error) {
-                            log.error('Error while streaming continuation chunks:', error);
+                            log.error('Error in continuation stream:', error);
                             yield {
                                 role: 'assistant',
-                                content: `Error during response generation: ${error instanceof Error ? error.message : String(error)}`,
+                                content: `Error generating response: ${error instanceof Error ? error.message : String(error)}`,
                                 isComplete: true
                             };
                         }
 
-                        // Since we've fully handled the streaming, return
+                        // We've handled the full stream, so return
                         return;
                     }
                 }
@@ -406,23 +265,23 @@ export class StreamHandler {
                     const accumulatedContent = contentAccumulator.getAccumulatedContent();
                     response.contentText = accumulatedContent;
 
-                    // If the finish reason is tool_calls, ensure we include all completed tool calls
-                    const finishReason = chunk.metadata?.finishReason;
-                    if (finishReason === FinishReason.TOOL_CALLS) {
-                        log.debug('Finish reason is TOOL_CALLS, retrieving completed tool calls');
-                        const completedToolCalls = contentAccumulator.getCompletedToolCalls();
+                    // // If the finish reason is tool_calls, ensure we include all completed tool calls
+                    // const finishReason = chunk.metadata?.finishReason;
+                    // if (finishReason === FinishReason.TOOL_CALLS) {
+                    //     log.debug('Finish reason is TOOL_CALLS, retrieving completed tool calls');
+                    //     const completedToolCalls = contentAccumulator.getCompletedToolCalls();
 
-                        if (completedToolCalls.length > 0) {
-                            log.debug('Retrieved completed tool calls', { count: completedToolCalls.length });
+                    //     if (completedToolCalls.length > 0) {
+                    //         log.debug('Retrieved completed tool calls', { count: completedToolCalls.length });
 
-                            // Update or create the toolCalls array in the response
-                            response.toolCalls = completedToolCalls.map(call => ({
-                                name: call.name,
-                                arguments: call.arguments || {},
-                                id: (call as any).id
-                            }));
-                        }
-                    }
+                    //         // Update or create the toolCalls array in the response
+                    //         response.toolCalls = completedToolCalls.map(call => ({
+                    //             name: call.name,
+                    //             arguments: call.arguments || {},
+                    //             id: (call as any).id
+                    //         }));
+                    //     }
+                    // }
 
                     // Handle JSON validation and parsing
                     if (isJsonMode && schema) {
@@ -461,16 +320,6 @@ export class StreamHandler {
                         totalChunks: chunkCount
                     });
 
-                    if (chunk.isComplete) {
-                        log.debug('Stream chunk completed, checking for tool calls', {
-                            hasToolController: Boolean(this.toolController),
-                            hasToolOrchestrator: Boolean(this.toolOrchestrator),
-                            finishReason: chunk.metadata?.finishReason,
-                            hasToolCalls: Boolean(chunk.toolCalls && chunk.toolCalls.length > 0),
-                            completedToolCallsCount: contentAccumulator.getCompletedToolCalls().length,
-                            hasExecutedTools
-                        });
-                    }
                 }
 
                 yield response;
@@ -484,32 +333,15 @@ export class StreamHandler {
     /**
      * Converts a UniversalStreamResponse stream to StreamChunk stream
      * for processing by our stream processors
+     * It just proxies for now, but could be extended to add additional processing
+     * @param stream - The UniversalStreamResponse stream to convert
+     * @returns An AsyncIterable of StreamChunk objects
      */
     private async *convertToStreamChunks(
         stream: AsyncIterable<UniversalStreamResponse>
     ): AsyncIterable<StreamChunk> {
-        const log = logger.createLogger({ prefix: 'StreamHandler.convertToStreamChunks' });
-
         for await (const chunk of stream) {
-            log.debug('Chunk:', chunk);
             yield chunk as StreamChunk;
-            // // Convert Universal ToolCalls to StreamChunk ToolCalls
-            // const toolCalls = chunk.toolCalls?.map(toolCall => {
-            //     // Universal toolCalls don't have id, so construct a ToolCall with optional id
-            //     const toolCallWithId: ToolCall = {
-            //         name: toolCall.name,
-            //         parameters: toolCall.arguments,
-            //         // id is optional in ToolCall type, so it's fine to not include it
-            //     };
-            //     return toolCallWithId;
-            // });
-
-            // yield {
-            //     content: chunk.content || '',
-            //     isComplete: chunk.isComplete || false,
-            //     toolCalls,
-            //     metadata: chunk.metadata
-            // };
         }
     }
 } 

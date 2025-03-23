@@ -1,9 +1,15 @@
 import { LLMCaller } from '../src';
 import type { ToolDefinition } from '../src/core/types';
+import { HistoryManager } from '../src/core/history/HistoryManager';
 
 async function main() {
+    // Create a history manager
+    const historyManager = new HistoryManager('You are a helpful assistant that can call tools.');
+
     // Initialize LLMCaller with OpenAI
-    const caller = new LLMCaller('openai', 'gpt-4o-mini');
+    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant that can call tools.', {
+        historyManager
+    });
 
     // Define tools
     const weatherTool: ToolDefinition = {
@@ -86,17 +92,17 @@ async function main() {
     caller.addTool(timeTool);
     caller.addTool(calculateTool);
 
-    // // 1. Basic Tool Call
-    // console.log('1. Basic Tool Call');
-    // console.log('------------------');
-    // const weatherResponse = await caller.chatCall({
-    //     message: 'What\'s the weather like in San Francisco?',
-    //     settings: {
-    //         tools: [weatherTool],
-    //         toolChoice: 'auto'
-    //     }
-    // });
-    // console.log('Response:', weatherResponse);
+    // 1. Basic Tool Call
+    console.log('1. Basic Tool Call');
+    console.log('------------------');
+    const weatherResponse = await caller.chatCall({
+        message: 'What\'s the weather like in San Francisco?',
+        settings: {
+            tools: [weatherTool],
+            toolChoice: 'auto'
+        }
+    });
+    console.log('Response:', weatherResponse);
 
     // // 2. Multi-Tool Call
     // console.log('\n2. Multi-Tool Call');
@@ -134,88 +140,64 @@ async function main() {
     // });
     // console.log('Response:', timeResponse);
 
-    // 5. Tool Call Stream Demonstration
-    console.log('\n5. Tool Call Stream Demonstration');
-    console.log('---------------------------------------------------------------');
-    console.log('Starting the stream - you\'ll see content as it arrives in real-time');
+    // // 5. Tool Call Stream Demonstration
+    // console.log('\n5. Tool Call Stream Demonstration');
+    // console.log('---------------------------------------------------------------');
+    // console.log('Starting the stream - you\'ll see content as it arrives in real-time');
 
-    let timeout: NodeJS.Timeout | null = null;
+    // let timeout: NodeJS.Timeout | null = null;
 
-    try {
-        const stream = await caller.streamCall({
-            message: 'What is the current time in Tokyo? write a haiku about the current time',
-            settings: {
-                tools: [timeTool],
-                toolChoice: 'auto',
-                stream: true
-            }
-        });
+    // try {
+    //     const stream = await caller.streamCall({
+    //         message: 'What is the current time in Tokyo? write a haiku about the current time',
+    //         settings: {
+    //             tools: [timeTool],
+    //             toolChoice: 'auto',
+    //             stream: true
+    //         }
+    //     });
 
-        let toolCallDetected = false;
-        let toolCallExecuted = false;
-        let responseAfterTool = false;
-        let accumulatedResponse = '';
+    //     let toolCallDetected = false;
+    //     let toolCallExecuted = false;
+    //     let responseAfterTool = false;
 
-        // Set a timeout to make sure the stream completes (for early termination debugging)
-        timeout = setTimeout(() => {
-            console.log('\n\nWARNING: Stream processing timed out after 30 seconds!');
-            console.log('Final accumulated response:', accumulatedResponse);
-            process.exit(1); // Force exit with error code
-        }, 30000);
+    //     // Add a debugging wrapper around the stream to see all chunks
+    //     for await (const chunk of stream) {
 
-        // Add a debugging wrapper around the stream to see all chunks
-        console.log('DEBUG: Starting stream processing');
+    //         // Handle content
+    //         if (chunk.content) {
+    //             process.stdout.write(chunk.content);
+    //         }
 
-        for await (const chunk of stream) {
-            console.log('DEBUG: Received chunk:', JSON.stringify(chunk, null, 2));
 
-            // Handle content
-            if (chunk.content) {
-                process.stdout.write(chunk.content);
-                accumulatedResponse += chunk.content;
-            }
+    //         // Handle tool calls
+    //         if (chunk.toolCalls?.length) {
+    //             toolCallDetected = true;
+    //             console.log('\n\nTool Call Detected:', JSON.stringify(chunk.toolCalls, null, 2));
+    //         }
 
-            // Check for tool call metadata
-            if (chunk.metadata && 'toolStatus' in chunk.metadata) {
-                console.log(`\n\nTool Status: ${chunk.metadata.toolStatus} - ${chunk.metadata.toolName || ''}`);
+    //         // Track when we start getting a response after tool execution
+    //         if (toolCallExecuted && chunk.content && !responseAfterTool) {
+    //             responseAfterTool = true;
+    //             console.log('\n\nContinuation response after tool execution:');
+    //             // Reset the accumulated response to only track post-tool content
+    //         }
 
-                if (chunk.metadata.toolStatus === 'complete') {
-                    toolCallExecuted = true;
-                    console.log('\nTool executed - waiting for continuation...');
-                }
-            }
+    //         // Indicate completion if flagged
+    //         if (chunk.isComplete) {
+    //             console.log('\n\nStream completed');
+    //         }
+    //     }
 
-            // Handle tool calls
-            if (chunk.toolCalls?.length) {
-                toolCallDetected = true;
-                console.log('\n\nTool Call Detected:', JSON.stringify(chunk.toolCalls, null, 2));
-            }
-
-            // Track when we start getting a response after tool execution
-            if (toolCallExecuted && chunk.content && !responseAfterTool) {
-                responseAfterTool = true;
-                console.log('\n\nContinuation response after tool execution:');
-                // Reset the accumulated response to only track post-tool content
-                accumulatedResponse = chunk.content;
-            }
-
-            // Indicate completion if flagged
-            if (chunk.isComplete) {
-                console.log('\n\nStream completed');
-                console.log('Final response after tools:', accumulatedResponse);
-            }
-        }
-
-        console.log('DEBUG: Stream processing finished');
-    } catch (error) {
-        console.error('\nError processing stream:', error);
-        throw error;
-    } finally {
-        // Clear the timeout when done
-        if (timeout) {
-            clearTimeout(timeout);
-        }
-    }
+    // } catch (error) {
+    //     console.error('\nError processing stream:', error);
+    //     throw error;
+    // } finally {
+    //     // Clear the timeout when done
+    //     if (timeout) {
+    //         clearTimeout(timeout);
+    //     }
+    // }
 
     // // 6. Multi-Tool Call Stream Demonstration
     // console.log('\n6. Multi-Tool Call Stream Demonstration');
