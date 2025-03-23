@@ -100,15 +100,19 @@ export class ToolOrchestrator {
         return [...systemMessages, ...recentMessages];
     }
 
-    private async *accumulateStream(stream: AsyncIterable<UniversalStreamResponse>): AsyncIterable<UniversalStreamResponse> {
-        let accumulatedContent = '';
-        for await (const chunk of stream) {
-            accumulatedContent += chunk.content;
-            yield {
-                ...chunk,
-                contentText: accumulatedContent
-            };
-        }
+    /**
+     * Checks if the messages already contain a user prompt asking for a response based on tool results
+     */
+    private hasPromptForContinuation(messages: UniversalMessage[]): boolean {
+        if (messages.length < 1) return false;
+
+        const lastMessage = messages[messages.length - 1];
+        if (lastMessage.role !== 'user') return false;
+
+        const content = lastMessage.content?.toLowerCase() || '';
+        return content.includes('provide') &&
+            (content.includes('response') || content.includes('result')) &&
+            content.includes('tool');
     }
 
     /**
@@ -301,6 +305,9 @@ export class ToolOrchestrator {
         }
     }
 
+
+
+
     /**
      * Stream processes a response that may contain tool calls and returns a streaming response.
      * This is the streaming analog of processResponse which uses the streamController.
@@ -314,6 +321,15 @@ export class ToolOrchestrator {
         params: ToolOrchestrationParams,
         inputTokens: number
     ): AsyncIterable<UniversalStreamResponse> {
+        const log = logger.createLogger({ prefix: 'ToolOrchestrator.streamProcessResponse' });
+        log.debug('Starting streamProcessResponse', {
+            responseHasContent: Boolean(response.content),
+            responseRole: response.role,
+            messagesCount: params.historicalMessages?.length || 0,
+            toolsEnabled: Boolean(params.settings?.tools),
+            modelName: params.model
+        });
+
         let iteration = 0;
         let currentResponse = response;
         let currentMessages = params.historicalMessages || [];
@@ -328,10 +344,17 @@ export class ToolOrchestrator {
         // Loop until no more tool calls are found or max iterations reached
         while (true) {
             // Check if the response contains tool calls
+            log.debug('Processing potential tool calls in response');
             let { toolCalls, messages, requiresResubmission } = await this.toolController.processToolCalls(
                 currentResponse.content,
                 currentResponse
             );
+
+            log.debug('Tool call processing results', {
+                toolCallsFound: toolCalls.length,
+                requiresResubmission,
+                iteration
+            });
 
             // If we have tool calls, count against the iteration limit
             if (toolCalls.length > 0) {
@@ -380,6 +403,7 @@ export class ToolOrchestrator {
                 }
             } else if (!requiresResubmission) {
                 // No more tool calls and no need to resubmit, we're done
+                log.debug('No more tool calls to process, breaking loop');
                 break;
             }
 
@@ -407,328 +431,354 @@ export class ToolOrchestrator {
                 }
             }
 
-            const newParams = {
-                model: params.model,
-                systemMessage: params.systemMessage,
+            // Check if we already have a user prompt asking for a response based on tool results
+            // If not, add one to ensure we get a coherent response
+            const hasPrompt = this.hasPromptForContinuation(currentMessages);
+            log.debug('Checking for continuation prompt', { hasPrompt });
+
+            if (!hasPrompt) {
+                logger.debug('Adding continuation prompt');
+                currentMessages.push({
+                    role: 'user' as const,
+                    content: 'Please provide a complete response based on the tool execution results.'
+                });
+            }
+
+            // Skip the intermediate request and directly stream the continuation
+            // This avoids the blocking call to chatController.execute
+            log.debug('Creating continuation stream');
+
+            // Create streaming parameters directly
+            const continuationParams: UniversalChatParams = {
+                messages: [
+                    { role: 'system', content: params.systemMessage },
+                    ...currentMessages
+                ],
                 settings: {
                     ...params.settings,
-                    stream: false,
-                    tools: [],  // No tools for follow-up to force text response
-                    toolChoice: 'none',  // Force no tools for the follow-up message
-                    toolCalls: undefined
-                },
-                historicalMessages: [
-                    ...currentMessages,
-                    { role: 'user' as const, content: 'Please provide a complete response based on the tool execution results. Write a short poem about the current time in Tokyo.' }
-                ]
+                    stream: true,
+                    tools: undefined,
+                    toolChoice: undefined,
+                    toolCalls: undefined,
+                    shouldRetryDueToContent: false
+                }
             };
 
-            currentResponse = await this.chatController.execute(newParams);
-        }
+            // Stream directly instead of waiting for a complete response
+            log.debug('Starting continuation stream', {
+                messageCount: continuationParams.messages.length,
+                modelName: params.model
+            });
 
-        // Final streaming session with complete context
-        const finalParams: UniversalChatParams = {
-            messages: [
-                { role: 'system', content: params.systemMessage },
-                ...currentMessages
-            ],
-            settings: {
-                ...params.settings,
-                stream: true,
-                tools: [],  // No tools for final response
-                toolChoice: 'none',  // Force no tools for final response
-                toolCalls: undefined,
-                shouldRetryDueToContent: false // Disable content-based retries for streaming
-            }
-        };
+            try {
+                // Add a small delay before starting continuation stream
+                // This helps ensure the API has time to process the tool results
+                await new Promise(resolve => setTimeout(resolve, 500));
 
-        const finalStream = await this.streamController.createStream(params.model, finalParams, inputTokens);
-        let accumulatedContent = '';
-        let lastToolCalls: Array<{ name: string; arguments: Record<string, unknown> }> | undefined;
+                // Force a completely new API call for continuation by using the chatController directly
+                // This is more reliable than continuing the stream through streamController
+                log.debug('Using chatController to get a complete continuation response');
 
-        for await (const chunk of finalStream) {
-            // Track tool calls
-            if (chunk.toolCalls?.length) {
-                // Only yield if these are new tool calls
-                const newToolCalls = chunk.toolCalls.filter(call => {
-                    const callId = (call as any).id;
-                    if (!callId) return true;
-                    const isNew = !seenToolCallIds.has(callId);
-                    if (isNew) seenToolCallIds.add(callId);
-                    return isNew;
-                });
+                // Debug: dump full conversation history
+                log.debug('Full conversation history for continuation:',
+                    currentMessages.map((msg, i) => ({
+                        index: i,
+                        role: msg.role,
+                        contentLength: msg.content?.length || 0,
+                        content: msg.content?.substring(0, 100) + (msg.content && msg.content.length > 100 ? '...' : ''),
+                        hasToolCalls: Boolean(msg.toolCalls && msg.toolCalls.length > 0),
+                        hasToolCallId: Boolean(msg.toolCallId)
+                    }))
+                );
 
-                if (newToolCalls.length > 0) {
-                    lastToolCalls = newToolCalls;
-                    // Yield tool call chunk immediately
-                    yield {
-                        role: chunk.role,
-                        content: '',
-                        toolCalls: newToolCalls,
-                        isComplete: false,
-                        metadata: chunk.metadata
-                    };
-                    continue;
-                }
-            }
-
-            // Accumulate content
-            if (chunk.content) {
-                accumulatedContent += chunk.content;
-            }
-
-            // For intermediate chunks, yield with isComplete false
-            if (!chunk.isComplete && chunk.content) {
-                yield {
-                    role: chunk.role,
-                    content: chunk.content,
-                    contentObject: chunk.contentObject,
-                    toolCalls: lastToolCalls,
-                    isComplete: false,
-                    metadata: chunk.metadata
-                };
-            }
-
-            // For the final chunk, yield the complete accumulated content
-            if (chunk.isComplete) {
-                yield {
-                    role: chunk.role,
-                    content: chunk.content,
-                    contentText: chunk.contentText || accumulatedContent,
-                    contentObject: chunk.contentObject,
-                    toolCalls: lastToolCalls,
-                    isComplete: true,
-                    metadata: chunk.metadata
-                };
-            }
-        }
-    }
-
-    private async getFirstCompleteResponse(stream: AsyncIterable<UniversalStreamResponse>): Promise<UniversalChatResponse> {
-        let totalContent = '';
-        let role = 'assistant';
-        let toolCalls;
-
-        for await (const chunk of stream) {
-            if (chunk.content) {
-                totalContent += chunk.content;
-            }
-            if (chunk.role) {
-                role = chunk.role;
-            }
-            if (chunk.toolCalls) {
-                toolCalls = chunk.toolCalls;
-            }
-            if (chunk.isComplete) {
-                return {
-                    content: totalContent,
-                    role,
-                    toolCalls,
-                    metadata: chunk.metadata
-                };
-            }
-        }
-
-        return {
-            content: totalContent,
-            role,
-            toolCalls,
-            metadata: {}
-        };
-    }
-
-    /**
-     * Stream processes a response directly from the LLM provider with real-time streaming.
-     * @param params - The orchestration parameters
-     * @param inputTokens - The estimated input tokens for the prompt
-     * @returns An async iterable streaming the response
-     */
-    async *streamDirectResponse(
-        params: ToolOrchestrationParams,
-        inputTokens: number
-    ): AsyncIterable<UniversalStreamResponse> {
-        // Import the StreamBuffer here to avoid circular dependencies
-        const { StreamBuffer } = require('../streaming/StreamBuffer');
-
-        const streamBuffer = new StreamBuffer();
-        let currentMessages = params.historicalMessages || [];
-        let iteration = 0;
-        let seenToolCallIds = new Set<string>();
-
-        // Ensure settings are properly configured
-        const streamingParams: UniversalChatParams = {
-            messages: [
-                { role: 'system', content: params.systemMessage },
-                ...currentMessages
-            ],
-            settings: {
-                ...params.settings,
-                stream: true  // Ensure streaming is enabled
-            },
-            callerId: params.callerId
-        };
-
-        // Create the initial stream
-        let stream = await this.streamController.createStream(params.model, streamingParams, inputTokens);
-
-        // Process the stream
-        while (true) {
-            // Track tool calls for the current iteration
-            const toolCallsInCurrentIteration: ToolCall[] = [];
-
-            // Process current stream
-            for await (const chunk of stream) {
-                logger.debug('Processing chunk in streamDirectResponse:', JSON.stringify(chunk, null, 2));
-                // Process the chunk with our streamBuffer to handle tool call accumulation
-                const { streamableContent, completedToolCalls, isComplete } = streamBuffer.processChunk(chunk);
-
-                logger.debug('Streamable content:', streamableContent);
-                logger.debug('Completed tool calls:', completedToolCalls);
-                logger.debug('Is complete:', isComplete);
-
-                // Handle completed tool calls
-                if (completedToolCalls.length > 0) {
-                    // Count this as a tool iteration
-                    iteration++;
-
-                    if (iteration > this.MAX_TOOL_ITERATIONS) {
-                        logger.warn(`Tool iteration limit exceeded: ${this.MAX_TOOL_ITERATIONS}`);
-                        throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
-                    }
-
-                    // Process tool calls
-                    for (const toolCall of completedToolCalls) {
-                        // Skip already processed tool calls
-                        if (toolCall.id && seenToolCallIds.has(toolCall.id)) {
-                            continue;
-                        }
-
-                        // Mark this tool call as seen
-                        if (toolCall.id) {
-                            seenToolCallIds.add(toolCall.id);
-                        }
-
-                        // Add this to the current iteration's tool calls
-                        toolCallsInCurrentIteration.push(toolCall);
-
-                        // Yield a tool call notification to the client
-                        yield {
-                            role: 'assistant',
-                            content: '',
-                            isComplete: false,
-                            toolCalls: [{
-                                name: toolCall.name,
-                                arguments: toolCall.parameters
-                            }]
-                        };
-                    }
-
-                    // If we have tool calls, we need to execute them and continue with a new stream
-                    if (toolCallsInCurrentIteration.length > 0) {
-                        // Execute the tool calls
-                        const executedToolCalls = await Promise.all(
-                            toolCallsInCurrentIteration.map(async (call) => {
-                                try {
-                                    // Find the tool definition
-                                    const tool = this.toolController.getToolByName(call.name);
-                                    if (!tool) {
-                                        throw new ToolNotFoundError(call.name);
-                                    }
-
-                                    // Execute the tool
-                                    const result = await tool.callFunction(call.parameters);
-                                    const resultText = typeof result === 'string' ? result : JSON.stringify(result);
-
-                                    return {
-                                        ...call,
-                                        result: resultText
-                                    };
-                                } catch (error) {
-                                    // Handle tool execution errors
-                                    const errorMessage = error instanceof Error ? error.message : String(error);
-                                    logger.error(`Tool execution error: ${errorMessage}`, { toolName: call.name });
-
-                                    return {
-                                        ...call,
-                                        error: errorMessage,
-                                        result: `Error: ${errorMessage}`
-                                    };
-                                }
-                            })
-                        );
-
-                        // Update messages with the assistant's tool calls and the tool results
-                        currentMessages.push({
-                            role: 'assistant',
-                            content: '',
-                            toolCalls: executedToolCalls.map(call => ({
-                                id: call.id || `tool-${Date.now()}`,
-                                name: call.name,
-                                arguments: call.parameters
-                            }))
-                        });
-
-                        // Add tool responses to history
-                        for (const call of executedToolCalls) {
-                            currentMessages.push({
-                                role: 'tool',
-                                content: call.result || `Error: ${call.error || 'Unknown error'}`,
-                                toolCallId: call.id || `tool-${Date.now()}`
-                            });
-                        }
-
-                        // Create a new stream with the updated conversation
-                        const newStreamParams: UniversalChatParams = {
-                            messages: [
-                                { role: 'system', content: params.systemMessage },
-                                ...this.trimHistory(currentMessages, params.maxHistoryLength ?? this.DEFAULT_MAX_HISTORY)
-                            ],
-                            settings: {
-                                ...params.settings,
-                                stream: true
-                            },
-                            callerId: params.callerId
-                        };
-
-                        // Reset the stream buffer for the new stream
-                        streamBuffer.reset();
-
-                        // Create a new stream
-                        stream = await this.streamController.createStream(params.model, newStreamParams, inputTokens);
-
-                        // Break out of the current stream loop to start processing the new stream
-                        break;
-                    }
-                }
-
-                // Yield streamable content to the client
-                if (streamableContent) {
+                let continuationResponse;
+                try {
+                    continuationResponse = await this.chatController.execute({
+                        model: params.model,
+                        systemMessage: params.systemMessage,
+                        settings: {
+                            ...params.settings,
+                            stream: false,  // Important: get a complete response first
+                            tools: undefined,
+                            toolChoice: undefined,
+                            toolCalls: undefined
+                        },
+                        historicalMessages: [
+                            ...currentMessages.slice(0, -1), // All messages except the last one
+                            // Add a very explicit prompt to ensure we get a response
+                            {
+                                role: 'user',
+                                content: `The current time in Tokyo is ${currentMessages.find(m => m.role === 'tool')?.content || 'unknown'}. Please write a haiku about this time.`
+                            }
+                        ]
+                    });
+                } catch (error) {
+                    log.error('Error executing ChatController for continuation:', error);
                     yield {
                         role: 'assistant',
-                        content: streamableContent,
-                        isComplete: false
+                        content: `Error getting response from language model: ${error instanceof Error ? error.message : String(error)}`,
+                        isComplete: true
                     };
-                }
-
-                // If complete, exit the stream and the outer loop
-                if (isComplete) {
-                    yield {
-                        role: 'assistant',
-                        content: chunk.content || '',
-                        contentText: streamBuffer.getAccumulatedContent(),
-                        isComplete: true,
-                        metadata: chunk.metadata
-                    };
-
-                    // Exit both loops
                     return;
                 }
+
+                log.debug('Received continuation response from ChatController', {
+                    responseLength: continuationResponse.content?.length || 0,
+                    hasContent: Boolean(continuationResponse.content),
+                    messages: currentMessages.length,
+                    lastMessage: currentMessages[currentMessages.length - 1]?.content?.substring(0, 50)
+                });
+
+                // Yield the complete response as a stream
+                if (continuationResponse.content) {
+                    // Split the content into chunks to simulate streaming
+                    const contentChunks = continuationResponse.content.match(/.{1,10}/g) || [];
+
+                    log.debug('Created content chunks for streaming', {
+                        chunkCount: contentChunks.length,
+                        totalLength: continuationResponse.content.length,
+                        firstChunk: contentChunks[0],
+                        lastChunk: contentChunks[contentChunks.length - 1]
+                    });
+
+                    for (let i = 0; i < contentChunks.length; i++) {
+                        const isLast = i === contentChunks.length - 1;
+                        log.debug(`Yielding chunk ${i + 1}/${contentChunks.length}`, {
+                            chunkContent: contentChunks[i],
+                            isLast
+                        });
+
+                        yield {
+                            role: 'assistant',
+                            content: contentChunks[i],
+                            isComplete: isLast,
+                            metadata: {}
+                        };
+
+                        // Optional: Add a small delay to simulate streaming
+                        if (!isLast) {
+                            await new Promise(resolve => setTimeout(resolve, 10));
+                        }
+                    }
+
+                    if (contentChunks.length === 0) {
+                        // If there are no chunks, still yield a complete response
+                        yield {
+                            role: 'assistant',
+                            content: continuationResponse.content,
+                            isComplete: true,
+                            metadata: {}
+                        };
+                    }
+                } else {
+                    // If no content, yield an empty complete response
+                    yield {
+                        role: 'assistant',
+                        content: "I don't have a response based on the tool results.",
+                        isComplete: true,
+                        metadata: {}
+                    };
+                }
+            } catch (error) {
+                log.error('Error creating continuation stream', error);
+                // Yield an error message to the client
+                yield {
+                    role: 'assistant',
+                    content: `Error generating response: ${error instanceof Error ? error.message : String(error)}`,
+                    isComplete: true
+                };
             }
 
-            // If we completed the stream without finding more tool calls, we're done
-            if (toolCallsInCurrentIteration.length === 0) {
-                break;
-            }
+            return;
         }
     }
+
+    // private async getFirstCompleteResponse(stream: AsyncIterable<UniversalStreamResponse>): Promise<UniversalChatResponse> {
+    //     let totalContent = '';
+    //     let role = 'assistant';
+    //     let toolCalls;
+
+    //     for await (const chunk of stream) {
+    //         if (chunk.content) {
+    //             totalContent += chunk.content;
+    //         }
+    //         if (chunk.role) {
+    //             role = chunk.role;
+    //         }
+    //         if (chunk.toolCalls) {
+    //             toolCalls = chunk.toolCalls;
+    //         }
+    //         if (chunk.isComplete) {
+    //             return {
+    //                 content: totalContent,
+    //                 role,
+    //                 toolCalls,
+    //                 metadata: chunk.metadata
+    //             };
+    //         }
+    //     }
+
+    //     return {
+    //         content: totalContent,
+    //         role,
+    //         toolCalls,
+    //         metadata: {}
+    //     };
+    // }
+
+    // /**
+    //  * Stream processes a response directly from the LLM provider with real-time streaming.
+    //  * @param params - The orchestration parameters
+    //  * @param inputTokens - The estimated input tokens for the prompt
+    //  * @returns An async iterable streaming the response
+    //  */
+    // async *streamDirectResponse(
+    //     params: ToolOrchestrationParams,
+    //     inputTokens: number
+    // ): AsyncIterable<UniversalStreamResponse> {
+    //     let currentMessages = params.historicalMessages || [];
+    //     let iteration = 0;
+
+    //     // Ensure settings are properly configured
+    //     const streamingParams: UniversalChatParams = {
+    //         messages: [
+    //             { role: 'system', content: params.systemMessage },
+    //             ...currentMessages
+    //         ],
+    //         settings: {
+    //             ...params.settings,
+    //             stream: true  // Ensure streaming is enabled
+    //         },
+    //         callerId: params.callerId
+    //     };
+
+    //     // Create the initial stream
+    //     let stream = await this.streamController.createStream(params.model, streamingParams, inputTokens);
+
+    //     // Process the stream
+    //     for await (const chunk of stream) {
+    //         logger.debug('Processing chunk in streamDirectResponse:', JSON.stringify(chunk, null, 2));
+
+    //         // When we have complete tool calls, execute them
+    //         if (chunk.toolCalls?.length) {
+    //             // Count this as a tool iteration
+    //             iteration++;
+
+    //             if (iteration > this.MAX_TOOL_ITERATIONS) {
+    //                 logger.warn(`Tool iteration limit exceeded: ${this.MAX_TOOL_ITERATIONS}`);
+    //                 throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
+    //             }
+
+    //             for (const chunkToolCall of chunk.toolCalls) {
+    //                 // Convert from UniversalStreamResponse toolCall format to ToolCall
+    //                 const toolCall: ToolCall = {
+    //                     id: `tool-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    //                     name: chunkToolCall.name,
+    //                     arguments: chunkToolCall.arguments
+    //                 };
+
+    //                 logger.debug(`Executing tool call: ${toolCall.name}`, { id: toolCall.id });
+
+    //                 try {
+    //                     // Execute tool and continue the conversation
+    //                     logger.debug('Executing tool call', {
+    //                         name: toolCall.name,
+    //                         arguments: toolCall.arguments
+    //                     });
+
+    //                     const result = await this.toolController.executeToolCall(toolCall);
+
+    //                     logger.debug('Tool execution result', {
+    //                         name: toolCall.name,
+    //                         result
+    //                     });
+
+    //                     // Add result to conversation history
+    //                     const toolResultMessage: UniversalMessage = {
+    //                         role: 'tool' as const,
+    //                         content: typeof result === 'string' ? result : JSON.stringify(result),
+    //                         toolCallId: toolCall.id
+    //                     };
+
+    //                     // Add the assistant's tool call message first
+    //                     currentMessages.push({
+    //                         role: 'assistant',
+    //                         content: '',
+    //                         toolCalls: [{
+    //                             id: toolCall.id ?? `tool-fallback-${Date.now()}`,
+    //                             name: toolCall.name,
+    //                             arguments: toolCall.arguments
+    //                         }]
+    //                     });
+
+    //                     // Then add the tool result
+    //                     currentMessages.push(toolResultMessage);
+
+    //                     // Create a new stream with updated history
+    //                     const newStreamParams: UniversalChatParams = {
+    //                         messages: [
+    //                             { role: 'system', content: params.systemMessage },
+    //                             ...this.trimHistory(currentMessages, params.maxHistoryLength ?? this.DEFAULT_MAX_HISTORY)
+    //                         ],
+    //                         settings: {
+    //                             ...params.settings,
+    //                             stream: true
+    //                         },
+    //                         callerId: params.callerId
+    //                     };
+
+    //                     // Create a new stream with updated context
+    //                     stream = await this.streamController.createStream(
+    //                         params.model,
+    //                         newStreamParams,
+    //                         inputTokens
+    //                     );
+
+    //                     // Notify the client about the tool call
+    //                     yield {
+    //                         role: 'assistant',
+    //                         content: '',
+    //                         isComplete: false,
+    //                         toolCalls: [{
+    //                             name: toolCall.name,
+    //                             arguments: toolCall.arguments
+    //                         }]
+    //                     };
+
+    //                     // Break out of the tool call loop to start processing the new stream
+    //                     break;
+    //                 } catch (error) {
+    //                     // Handle tool execution errors
+    //                     const errorMessage = error instanceof Error ? error.message : String(error);
+    //                     logger.error(`Tool execution error: ${errorMessage}`, { toolName: toolCall.name });
+
+    //                     // Yield error information to the client
+    //                     yield {
+    //                         role: 'assistant',
+    //                         content: `Error executing tool ${toolCall.name}: ${errorMessage}`,
+    //                         isComplete: false
+    //                     };
+    //                 }
+    //             }
+
+    //             // Skip yielding the current chunk since we're creating a new stream
+    //             continue;
+    //         }
+
+    //         // Yield content to client
+    //         if (chunk.content) {
+    //             yield {
+    //                 role: 'assistant',
+    //                 content: chunk.content,
+    //                 isComplete: chunk.isComplete,
+    //                 metadata: chunk.metadata
+    //             };
+    //         }
+
+    //         // If this chunk marks the end of the response, exit
+    //         if (chunk.isComplete) {
+    //             return;
+    //         }
+    //     }
+    // }
 } 

@@ -26,14 +26,14 @@ export type ToolDefinition = {
 export type ToolCall = {
     id?: string;  // Optional ID for the tool call
     name: string;
-    parameters: Record<string, unknown>;
+    arguments: Record<string, unknown>;
     result?: string;
     error?: string;
 };
 
 export type ParsedToolCall = {
     toolName: string;
-    parameters: Record<string, unknown>;
+    arguments: Record<string, unknown>;
 };
 
 export type ToolCallParserOptions = {

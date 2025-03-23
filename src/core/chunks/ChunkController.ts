@@ -23,7 +23,7 @@ export type ChunkProcessingParams = {
 };
 
 /**
- * ChunkController is responsible for managing the processing of data chunks.
+ * ChunkController is responsible for managing the processing of data chunks (NOT STREAMING CHUNKS).
  * It handles the chunking of large data and coordinates the processing of each chunk,
  * completely separate from tool orchestration.
  */

@@ -129,24 +129,24 @@ export class Converter {
         }));
     }
 
-    private convertToolCallDeltas(toolCalls?: Partial<OpenAIToolCall>[]): Array<{
-        id?: string;
-        index: number;
-        name?: string;
-        arguments?: string | Record<string, unknown>;
-    }> | undefined {
-        if (!toolCalls?.length) {
-            return undefined;
-        }
-        // console.log('toolCalls for openai converter', toolCalls);
+    // private convertToolCallDeltas(toolCalls?: Partial<OpenAIToolCall>[]): Array<{
+    //     id?: string;
+    //     index: number;
+    //     name?: string;
+    //     arguments?: string | Record<string, unknown>;
+    // }> | undefined {
+    //     if (!toolCalls?.length) {
+    //         return undefined;
+    //     }
+    //     // console.log('toolCalls for openai converter', toolCalls);
 
-        return toolCalls.map((call, index) => ({
-            index,
-            ...(call.id && { id: call.id }),
-            ...(call.function?.name && { name: call.function.name }),
-            ...(call.function?.arguments && { arguments: call.function.arguments })
-        }));
-    }
+    //     return toolCalls.map((call, index) => ({
+    //         index,
+    //         ...(call.id && { id: call.id }),
+    //         ...(call.function?.name && { name: call.function.name }),
+    //         ...(call.function?.arguments && { arguments: call.function.arguments })
+    //     }));
+    // }
 
     convertToProviderParams(params: UniversalChatParams): Omit<OpenAIModelParams, 'model'> {
         this.currentParams = params;
@@ -392,26 +392,26 @@ export class Converter {
 
 // New extended type definitions for the converter output
 
-type ExtendedUniversalChatMessage = {
-    id: string;
-    type: string;
-    role: string;
-    content?: string;
-    function?: {
-        name: string;
-        arguments: string;
-    };
-    toolCallId?: string;
-    // ... other possible fields ...
-};
+// type ExtendedUniversalChatMessage = {
+//     id: string;
+//     type: string;
+//     role: string;
+//     content?: string;
+//     function?: {
+//         name: string;
+//         arguments: string;
+//     };
+//     toolCallId?: string;
+//     // ... other possible fields ...
+// };
 
-type ExtendedUniversalChatResponse = {
-    messages: ExtendedUniversalChatMessage[];
-};
+// type ExtendedUniversalChatResponse = {
+//     messages: ExtendedUniversalChatMessage[];
+// };
 
-type ExtendedUniversalStreamResponse = {
-    messages: ExtendedUniversalChatMessage[];
-};
+// type ExtendedUniversalStreamResponse = {
+//     messages: ExtendedUniversalChatMessage[];
+// };
 
 // The following types (OpenAIResponse, OpenAIStreamResponse, UniversalChatParams) are assumed
 // to be imported from the respective modules, so we do not redeclare them here. 

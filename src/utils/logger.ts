@@ -7,7 +7,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export type LoggerConfig = {
-    level: LogLevel;
+    level?: LogLevel;
     prefix?: string;
 };
 
@@ -18,25 +18,50 @@ const LOG_LEVELS: Record<LogLevel, number> = {
     error: 3,
 };
 
+/**
+ * Logger class with support for isolated instances to prevent prefix/level conflicts
+ * between different parts of the codebase.
+ */
 export class Logger {
-    private static instance: Logger;
+    private static rootInstance: Logger;
     private level: LogLevel;
     private prefix: string;
 
-    private constructor() {
-        this.level = (process.env.LOG_LEVEL as LogLevel) || 'info';
-        this.prefix = '';
+    /**
+     * Create a new Logger instance with isolated state
+     */
+    constructor(config?: LoggerConfig) {
+        this.level = config?.level || (process.env.LOG_LEVEL as LogLevel) || 'info';
+        this.prefix = config?.prefix || '';
     }
 
+    /**
+     * Get the global singleton root logger instance
+     */
     public static getInstance(): Logger {
-        if (!Logger.instance) {
-            Logger.instance = new Logger();
+        if (!Logger.rootInstance) {
+            Logger.rootInstance = new Logger();
         }
-        return Logger.instance;
+        return Logger.rootInstance;
     }
 
+    /**
+     * Create a new isolated logger instance with its own configuration
+     * @param config Optional configuration (level defaults to process.env.LOG_LEVEL)
+     * @returns A new Logger instance with isolated state
+     */
+    public createLogger(config?: LoggerConfig): Logger {
+        return new Logger(config);
+    }
+
+    /**
+     * Configure this logger instance
+     * @param config Configuration options
+     */
     public setConfig(config: LoggerConfig): void {
-        this.level = config.level;
+        if (config.level) {
+            this.level = config.level;
+        }
         this.prefix = config.prefix || '';
     }
 
@@ -73,5 +98,5 @@ export class Logger {
     }
 }
 
-// Export a default instance
+// Export the root logger instance
 export const logger = Logger.getInstance(); 

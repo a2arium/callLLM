@@ -5,27 +5,57 @@ import { SupportedProviders } from '../types';
 import { ModelManager } from '../models/ModelManager';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { ResponseProcessor } from '../processors/ResponseProcessor';
-import { StreamHandler } from '../streaming/StreamHandler';
 import { v4 as uuidv4 } from 'uuid';
 import { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces';
 import { RequestProcessor } from '../processors/RequestProcessor';
 import { DataSplitter } from '../processors/DataSplitter';
 import { RetryManager } from '../retry/RetryManager';
 import { UsageTracker } from '../telemetry/UsageTracker';
-import { StreamController } from '../streaming/StreamController';
 import { ChatController } from '../chat/ChatController';
 import { ToolsManager } from '../tools/ToolsManager';
-import type { ToolDefinition, ToolCall } from '../types';
 import { ToolController } from '../tools/ToolController';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator';
 import { ChunkController } from '../chunks/ChunkController';
+import { StreamingService } from '../streaming/StreamingService';
+import type { ToolDefinition, ToolCall } from '../../types/tooling';
+import { StreamController } from '../streaming/StreamController';
+
+/**
+ * Interface that matches the StreamController's required methods
+ * Used for dependency injection and adapting StreamingService
+ */
+interface StreamControllerInterface {
+    createStream(
+        model: string,
+        params: UniversalChatParams,
+        inputTokens: number
+    ): Promise<AsyncIterable<UniversalStreamResponse>>;
+}
+
+/**
+ * Options for creating an LLMCaller instance
+ */
+export type LLMCallerOptions = {
+    apiKey?: string;
+    callerId?: string;
+    usageCallback?: UsageCallback;
+    settings?: UniversalChatParams['settings'];
+    // Dependency injection options for testing
+    providerManager?: ProviderManager;
+    modelManager?: ModelManager;
+    streamingService?: StreamingService;
+    chatController?: ChatController;
+    toolsManager?: ToolsManager;
+    tokenCalculator?: TokenCalculator;
+    responseProcessor?: ResponseProcessor;
+    retryManager?: RetryManager;
+};
 
 export class LLMCaller {
     private providerManager: ProviderManager;
     private modelManager: ModelManager;
     private tokenCalculator: TokenCalculator;
     private responseProcessor: ResponseProcessor;
-    private streamHandler: StreamHandler;
     private retryManager: RetryManager;
     private model: string;
     private systemMessage: string;
@@ -35,7 +65,7 @@ export class LLMCaller {
     private dataSplitter: DataSplitter;
     private settings?: UniversalChatParams['settings'];
     private usageTracker: UsageTracker;
-    private streamController: StreamController;
+    private streamingService: StreamingService;
     private chatController: ChatController;
     private toolsManager: ToolsManager;
     private toolController: ToolController;
@@ -46,35 +76,32 @@ export class LLMCaller {
         providerName: SupportedProviders,
         modelOrAlias: string,
         systemMessage = 'You are a helpful assistant.',
-        options?: {
-            apiKey?: string;
-            callerId?: string;
-            usageCallback?: UsageCallback;
-            settings?: UniversalChatParams['settings'];
-        }
+        options?: LLMCallerOptions
     ) {
-        this.providerManager = new ProviderManager(providerName, options?.apiKey);
-        this.modelManager = new ModelManager(providerName);
-        this.tokenCalculator = new TokenCalculator();
-        this.responseProcessor = new ResponseProcessor();
-        this.streamHandler = new StreamHandler(
-            this.tokenCalculator,
-            this.responseProcessor,
-            options?.usageCallback,
-            options?.callerId
-        );
-        this.retryManager = new RetryManager({
-            baseDelay: 1000,
-            maxRetries: options?.settings?.maxRetries ?? 3
-        });
+        // Initialize dependencies with dependency injection
+        this.providerManager = options?.providerManager ||
+            new ProviderManager(providerName, options?.apiKey);
+
+        this.modelManager = options?.modelManager ||
+            new ModelManager(providerName);
+
+        // Initialize core processors
+        this.tokenCalculator = options?.tokenCalculator ||
+            new TokenCalculator();
+
+        this.responseProcessor = options?.responseProcessor ||
+            new ResponseProcessor();
+
+        this.retryManager = options?.retryManager ||
+            new RetryManager({
+                baseDelay: 1000,
+                maxRetries: options?.settings?.maxRetries ?? 3
+            });
+
         this.systemMessage = systemMessage;
         this.settings = options?.settings;
-        this.streamController = new StreamController(
-            this.providerManager,
-            this.modelManager,
-            this.streamHandler,
-            this.retryManager
-        );
+        this.callerId = options?.callerId || uuidv4();
+        this.usageCallback = options?.usageCallback;
 
         // Initialize model
         const resolvedModel = this.modelManager.getModel(modelOrAlias);
@@ -83,18 +110,22 @@ export class LLMCaller {
         }
         this.model = resolvedModel.name;
 
-        this.callerId = options?.callerId ?? uuidv4();
-        this.usageCallback = options?.usageCallback;
-        // Initialize UsageTracker
         this.usageTracker = new UsageTracker(
             this.tokenCalculator,
             this.usageCallback,
             this.callerId
         );
+
+        // Initialize request processors
         this.requestProcessor = new RequestProcessor();
         this.dataSplitter = new DataSplitter(this.tokenCalculator);
 
-        this.chatController = new ChatController(
+        // Initialize the Tools subsystem
+        this.toolsManager = options?.toolsManager || new ToolsManager();
+        this.toolController = new ToolController(this.toolsManager);
+
+        // Initialize ChatController
+        this.chatController = options?.chatController || new ChatController(
             this.providerManager,
             this.modelManager,
             this.responseProcessor,
@@ -102,11 +133,49 @@ export class LLMCaller {
             this.usageTracker
         );
 
-        this.toolsManager = new ToolsManager();
-        this.toolController = new ToolController(this.toolsManager);
-        this.toolOrchestrator = new ToolOrchestrator(this.toolController, this.chatController, this.streamController);
-        this.chunkController = new ChunkController(this.tokenCalculator, this.chatController, this.streamController, 20);
+        // Initialize stream controller adapter
+        const streamControllerAdapter: StreamControllerInterface = {
+            createStream: async (
+                model: string,
+                params: UniversalChatParams,
+                inputTokens: number
+            ): Promise<AsyncIterable<UniversalStreamResponse>> => {
+                params.callerId = params.callerId || this.callerId;
+                return this.streamingService.createStream(
+                    params,
+                    model,
+                    params.messages.find(m => m.role === 'system')?.content
+                );
+            }
+        };
 
+        this.toolOrchestrator = new ToolOrchestrator(
+            this.toolController,
+            this.chatController,
+            streamControllerAdapter as StreamController
+        );
+
+        // Initialize StreamingService after toolController and toolOrchestrator
+        this.streamingService = options?.streamingService ||
+            new StreamingService(
+                this.providerManager,
+                this.modelManager,
+                this.retryManager,
+                this.usageCallback,
+                this.callerId,
+                { tokenBatchSize: 100 },
+                this.toolController,
+                this.toolOrchestrator
+            );
+
+        this.chunkController = new ChunkController(
+            this.tokenCalculator,
+            this.chatController,
+            streamControllerAdapter as StreamController,
+            20
+        );
+
+        // Bind chatCall method
         this.chatCall = (async (params: {
             message: string;
             settings?: UniversalChatParams['settings'];
@@ -181,13 +250,8 @@ export class LLMCaller {
     // Add methods to manage ID and callback
     public setCallerId(newId: string): void {
         this.callerId = newId;
-        // Create new streamHandler with updated ID
-        this.streamHandler = new StreamHandler(
-            this.tokenCalculator,
-            this.responseProcessor,
-            this.usageCallback,
-            newId
-        );
+        // Update the callerId in all relevant services
+        this.streamingService.setCallerId(newId);
         // Update the UsageTracker to use the new callerId
         this.usageTracker = new UsageTracker(
             this.tokenCalculator,
@@ -202,32 +266,11 @@ export class LLMCaller {
             this.retryManager,
             this.usageTracker
         );
-        // Update streamController with new streamHandler
-        this.streamController = new StreamController(
-            this.providerManager,
-            this.modelManager,
-            this.streamHandler,
-            this.retryManager
-        );
-        // Rebind chatCall using mergeSettings so that updated settings are used
-        this.chatCall = ((params: { message: string; settings?: UniversalChatParams['settings'] }) => {
-            return this.chatController.execute({
-                model: this.model,
-                systemMessage: this.systemMessage,
-                settings: this.mergeSettings(params.settings),
-                historicalMessages: [{ role: 'user', content: params.message }]
-            });
-        }).bind(this);
     }
 
     public setUsageCallback(callback: UsageCallback): void {
         this.usageCallback = callback;
-        this.streamHandler = new StreamHandler(
-            this.tokenCalculator,
-            this.responseProcessor,
-            callback,
-            this.callerId
-        );
+        this.streamingService.setUsageCallback(callback);
     }
 
     public updateSettings(newSettings: UniversalChatParams['settings']): void {
@@ -240,99 +283,84 @@ export class LLMCaller {
     }
 
     // Basic chat completion method
-    public chatCall: (params: { message: string; settings?: UniversalChatParams['settings']; historicalMessages?: UniversalMessage[] }) => Promise<UniversalChatResponse & { content: any }>;
+    public chatCall: (params: {
+        message: string;
+        settings?: UniversalChatParams['settings'];
+        historicalMessages?: UniversalMessage[]
+    }) => Promise<UniversalChatResponse>;
 
     /**
      * Streams a response from the LLM.
      * with the system message prepended, historical messages in the middle, and the user message appended.
      */
-    public async streamCall(params: Omit<UniversalChatParams, 'messages'> & { message?: string; historicalMessages?: UniversalMessage[]; messages?: UniversalMessage[] }): Promise<AsyncIterable<UniversalStreamResponse>> {
+    public async streamCall(params: Omit<UniversalChatParams, 'messages'> & {
+        message?: string;
+        historicalMessages?: UniversalMessage[];
+        messages?: UniversalMessage[]
+    }): Promise<AsyncIterable<UniversalStreamResponse>> {
         let finalParams: UniversalChatParams;
 
-        // Build messages: system message, historical messages, then user message (or last message from params.messages if provided)
-        const userMsg: string = params.message ?? "";
-        const history: UniversalMessage[] = params.historicalMessages ?? [];
-        const messages: UniversalMessage[] = [
-            { role: 'system', content: this.systemMessage },
-            ...history
-        ];
-
-        if (userMsg) {
-            messages.push({ role: 'user', content: userMsg });
-        } else if (params.messages?.length) {
-            messages.push(params.messages[params.messages.length - 1]);
+        // Build the final params object based on input
+        if (params.messages) {
+            // If messages are provided directly, use them
+            finalParams = {
+                ...params,
+                messages: params.messages
+            };
+        } else if (params.message) {
+            // Otherwise, construct messages from message and historicalMessages
+            finalParams = {
+                ...params,
+                messages: [
+                    ...(params.historicalMessages || []),
+                    { role: 'user', content: params.message }
+                ]
+            };
+        } else {
+            throw new Error('Either messages or message must be provided');
         }
 
-        const { message: _, historicalMessages: __, messages: ___, ...rest } = params;
-        finalParams = {
-            ...rest,
-            messages,
-            callerId: this.callerId // Ensure callerId is passed through
-        } as UniversalChatParams;
+        // Ensure settings are merged
+        finalParams.settings = this.mergeSettings(finalParams.settings);
 
-        // Merge settings and add defaults
-        const modelInfo = this.modelManager.getModel(this.model)!;
-        finalParams.settings = { maxTokens: modelInfo.maxResponseTokens, ...this.mergeSettings(finalParams.settings) };
-
-        const inputText = finalParams.messages.map(msg => msg.content).join("\n");
-        const inputTokens = this.tokenCalculator.calculateTokens(this.systemMessage + "\n" + inputText);
-
-        // Create a new streamHandler with the current callerId
-        const streamHandler = new StreamHandler(
-            this.tokenCalculator,
-            this.responseProcessor,
-            this.usageCallback,
-            this.callerId
+        // Delegate to StreamingService
+        return this.streamingService.createStream(
+            finalParams,
+            this.model,
+            this.systemMessage
         );
-
-        // Create a new streamController with the updated streamHandler
-        const streamController = new StreamController(
-            this.providerManager,
-            this.modelManager,
-            streamHandler,
-            this.retryManager
-        );
-
-        // Create a new toolOrchestrator with the updated streamController
-        const toolOrchestrator = new ToolOrchestrator(
-            this.toolController,
-            this.chatController,
-            streamController
-        );
-
-        // Use the new streamDirectResponse method which implements true streaming
-        return toolOrchestrator.streamDirectResponse({
-            model: this.model,
-            systemMessage: this.systemMessage,
-            historicalMessages: messages,
-            settings: {
-                ...finalParams.settings,
-                stream: true // Ensure streaming is enabled
-            },
-            callerId: this.callerId
-        }, inputTokens);
     }
 
-    // Extended call method with additional functionality
+    /**
+     * Processes a large message by breaking it into chunks, calling the LLM for each,
+     * and aggregating the results.
+     */
     public async call({ message, data, endingMessage, settings }: {
         message: string;
         data?: any;
         endingMessage?: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<UniversalChatResponse[]> {
+        // Use the RequestProcessor to process the request
         const modelInfo = this.modelManager.getModel(this.model)!;
-        const maxResponseTokens = settings?.maxTokens ?? modelInfo.maxResponseTokens;
-
-        // Process request into messages
         const messages = await this.requestProcessor.processRequest({
             message,
             data,
             endingMessage,
             model: modelInfo,
-            maxResponseTokens
+            maxResponseTokens: settings?.maxTokens
         });
 
-        // Use ChunkController to handle processing instead of manual implementation
+        // If there's only one chunk, just do a regular chat call
+        if (messages.length === 1) {
+            const response = await this.chatCall({
+                message: messages[0],
+                settings
+            });
+            return [response];
+        }
+
+        // Use ChunkController to process all chunks with the correct parameter structure
         return this.chunkController.processChunks(messages, {
             model: this.model,
             systemMessage: this.systemMessage,
@@ -340,26 +368,34 @@ export class LLMCaller {
         });
     }
 
-    // Extended stream method with additional functionality
+    /**
+     * Processes a large message by breaking it into chunks and streaming the response.
+     */
     public async stream({ message, data, endingMessage, settings }: {
         message: string;
         data?: any;
         endingMessage?: string;
         settings?: UniversalChatParams['settings'];
     }): Promise<AsyncIterable<UniversalStreamResponse>> {
+        // Use the RequestProcessor to process the request
         const modelInfo = this.modelManager.getModel(this.model)!;
-        const maxResponseTokens = settings?.maxTokens ?? modelInfo.maxResponseTokens;
-
-        // Process request into messages
         const messages = await this.requestProcessor.processRequest({
             message,
             data,
             endingMessage,
             model: modelInfo,
-            maxResponseTokens
+            maxResponseTokens: settings?.maxTokens
         });
 
-        // Use ChunkController to handle streaming instead of manual implementation
+        // If there's only one chunk, just do a regular stream call
+        if (messages.length === 1) {
+            return this.streamCall({
+                message: messages[0],
+                settings
+            });
+        }
+
+        // Use ChunkController to stream all chunks with the correct parameter structure
         return this.chunkController.streamChunks(messages, {
             model: this.model,
             systemMessage: this.systemMessage,
@@ -367,9 +403,10 @@ export class LLMCaller {
         });
     }
 
-    // Tool management methods
+    // Tool management methods - delegated to ToolsManager
     public addTool(tool: ToolDefinition): void {
-        this.toolsManager.addTool(tool);
+        // Safely add the tool using ToolsManager
+        this.toolsManager.addTool(tool as any);
     }
 
     public removeTool(name: string): void {
@@ -377,7 +414,8 @@ export class LLMCaller {
     }
 
     public updateTool(name: string, updated: Partial<ToolDefinition>): void {
-        this.toolsManager.updateTool(name, updated);
+        // Safely update the tool using ToolsManager
+        this.toolsManager.updateTool(name, updated as any);
     }
 
     public listTools(): ToolDefinition[] {

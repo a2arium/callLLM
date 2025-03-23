@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import type { ToolCallChunk } from '../core/streaming/types';
+import type { ToolCall } from '../types/tooling';
 
 // Finish reason enum based on OpenAI's finish reasons
 export enum FinishReason {
@@ -116,22 +118,14 @@ export interface UniversalStreamResponse<T = unknown> {
     contentObject?: T;
     role: string;
     isComplete: boolean;
-    /**
-     * Indicates whether this chunk contains newly detected tool calls.
-     * This is true only when new tool calls are first detected in this chunk.
-     */
-    isNewToolCall?: boolean;
     messages?: UniversalMessage[];  // Array of messages for tool call responses
-    toolCallDeltas?: Array<{
-        id?: string;
-        index?: number;
-        name?: string;
-        argumentsChunk?: string;
-    }>;
-    toolCalls?: Array<{
+    toolCalls?: ToolCall[];
+    toolCallResults?: Array<{  // Added field for tool call results
+        id: string;
         name: string;
-        arguments: Record<string, unknown>;
+        result: string;
     }>;
+    toolCallChunks?: ToolCallChunk[];
     metadata?: {
         finishReason?: FinishReason;
         usage?: Usage;
@@ -144,6 +138,12 @@ export interface UniversalStreamResponse<T = unknown> {
             currentChunk: number;
             totalChunks: number;
         };
+        // Tool execution status fields
+        toolStatus?: 'running' | 'complete' | 'error';
+        toolName?: string;
+        toolId?: string;
+        toolResult?: string;
+        toolError?: string;
     };
 }
 

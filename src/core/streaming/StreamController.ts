@@ -6,6 +6,16 @@ import { RetryManager } from '../retry/RetryManager';
 import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent";
 import { logger } from '../../utils/logger';
 
+/**
+ * StreamController is responsible for managing the creation and processing of streaming LLM responses.
+ * It handles the low-level details of:
+ * 1. Provider interaction (getting streams from LLM APIs)
+ * 2. Stream processing (through StreamHandler)
+ * 3. Retry management (for failed requests or problematic responses)
+ * 
+ * NOTE: StreamController is often used by ChunkController for handling large inputs that need
+ * to be broken into multiple smaller requests.
+ */
 export class StreamController {
     constructor(
         private providerManager: ProviderManager,
@@ -26,6 +36,22 @@ export class StreamController {
         });
     }
 
+    /**
+     * Creates a stream of responses from an LLM provider
+     * 
+     * IMPORTANT: This method returns an AsyncIterable, but NO PROCESSING happens
+     * until the returned generator is actually consumed. This is due to JavaScript's
+     * lazy evaluation of generators.
+     * 
+     * Flow:
+     * 1. Set up retry parameters
+     * 2. Create nested functions for stream creation, acquisition and retry logic
+     * 3. Return an AsyncIterable that will produce stream chunks when consumed
+     * 
+     * When ChunkController calls this method, it immediately returns the generator,
+     * but actual provider calls only happen when ChunkController starts iterating over
+     * the returned generator.
+     */
     async createStream(
         model: string,
         params: UniversalChatParams,
@@ -53,8 +79,24 @@ export class StreamController {
             initializationTimeMs: Date.now() - startTime
         });
 
-        // Helper function: call provider.streamCall and process the stream.
+        /**
+         * Internal helper function: calls provider.streamCall and processes the stream.
+         * 
+         * IMPORTANT: This function sets up the stream processing pipeline but due to
+         * async generator lazy evaluation, the actual processing doesn't start until
+         * the returned generator is consumed.
+         * 
+         * Flow:
+         * 1. Get provider instance
+         * 2. Request a stream from the provider
+         * 3. Process the provider stream through StreamHandler
+         * 4. Return the processed stream (which is an async generator)
+         */
         const getStream = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
+            logger.setConfig({
+                level: process.env.LOG_LEVEL as any || 'info',
+                prefix: 'StreamController.getStream'
+            });
             const provider = this.providerManager.getProvider();
             const providerType = provider.constructor.name;
 
@@ -73,6 +115,7 @@ export class StreamController {
             let providerStream;
 
             try {
+                // Get the raw provider stream - this actually makes the API call
                 providerStream = await provider.streamCall(model, params);
                 logger.debug('Provider stream created', {
                     timeToCreateMs: Date.now() - streamStartTime,
@@ -92,84 +135,9 @@ export class StreamController {
                 throw providerRequestError;
             }
 
-            // Wrap providerStream in a debug wrapper to log raw chunks as they are received
-            const debugProviderStream = (async function* () {
-                let hasStarted = false;
-                let chunkCount = 0;
-                let totalContentLength = 0;
-                let totalToolCalls = 0;
-                const chunkTimes: number[] = [];
-                const startStreamProcessingTime = Date.now();
-
-                for await (const chunk of providerStream) {
-                    logger.debug('Provider chunk', {
-                        chunkIndex: chunkCount,
-                        chunk: chunk,
-                        requestId
-                    });
-                    chunkCount++;
-                    chunkTimes.push(Date.now());
-                    const contentLength = chunk.content?.length || 0;
-                    totalContentLength += contentLength;
-                    const hasContent = contentLength > 0;
-                    const toolCallCount = chunk.toolCallDeltas?.length || 0;
-                    totalToolCalls += toolCallCount;
-
-                    if (!hasStarted && (hasContent || toolCallCount > 0)) {
-                        hasStarted = true;
-                        logger.debug('First meaningful chunk received from provider', {
-                            chunkIndex: chunkCount,
-                            timeToFirstChunkMs: Date.now() - streamStartTime,
-                            contentLength,
-                            hasToolCalls: Boolean(toolCallCount),
-                            toolCallCount,
-                            provider: providerType,
-                            requestId
-                        });
-                    }
-
-                    // Only yield chunks that have actual content or are completion signals
-                    if (hasStarted || chunk.isComplete || toolCallCount > 0) {
-                        logger.debug('Provider chunk on actual content', {
-                            chunkIndex: chunkCount,
-                            contentLength,
-                            isComplete: chunk.isComplete,
-                            hasToolCalls: Boolean(toolCallCount),
-                            toolCallCount,
-                            finishReason: chunk.metadata?.finishReason,
-                            timeSinceLastChunkMs: chunkTimes.length > 1 ? chunkTimes[chunkTimes.length - 1] - chunkTimes[chunkTimes.length - 2] : 0,
-                            totalContentLength,
-                            totalToolCalls,
-                            requestId
-                        });
-                        yield chunk;
-                    } else {
-                        logger.debug('Skipping empty provider chunk', {
-                            chunkIndex: chunkCount,
-                            requestId
-                        });
-                    }
-                }
-
-                // Calculate timing statistics
-                const totalTimeMs = Date.now() - startStreamProcessingTime;
-                const avgTimeBetweenChunksMs = chunkTimes.length > 1
-                    ? (chunkTimes[chunkTimes.length - 1] - chunkTimes[0]) / (chunkTimes.length - 1)
-                    : 0;
-
-                logger.debug('Provider stream ended', {
-                    totalChunks: chunkCount,
-                    totalTimeMs,
-                    totalContentLength,
-                    totalToolCalls,
-                    avgTimeBetweenChunksMs,
-                    finishReason: chunkCount > 0 ? 'completed' : 'empty_stream',
-                    provider: providerType,
-                    model,
-                    requestId
-                });
-            })();
-
+            // This log message might not appear if ChunkController is used because
+            // it might never reach this point in the code if it's using its own
+            // stream processing logic
             logger.debug('Processing provider stream through StreamHandler', {
                 model,
                 callerId: params.callerId,
@@ -181,13 +149,20 @@ export class StreamController {
             let result;
 
             try {
+                // IMPORTANT: This returns an async generator but doesn't start processing
+                // until the generator is consumed by iterating over it. The actual processing
+                // will only start when something begins iterating over 'result'.
+                // This is why the log message below may execute BEFORE any actual processing happens.
                 result = this.streamHandler.processStream(
-                    debugProviderStream,
+                    providerStream,
                     params,
                     inputTokens,
                     this.modelManager.getModel(model)!
                 );
 
+                // This log executes right after the generator is created, but BEFORE
+                // any processing actually happens. That's why this log message may appear
+                // to be out of order or missing if you're looking at a complete trace.
                 logger.debug('Stream handler processing completed', {
                     processingTimeMs: Date.now() - handlerStartTime,
                     model,
@@ -214,8 +189,13 @@ export class StreamController {
             return result;
         };
 
-        // A wrapper that uses RetryManager to call getStream exactly once per attempt.
-        // (By setting shouldRetry to always return false, no internal retries occur.)
+        /**
+         * A wrapper that uses RetryManager to call getStream exactly once per attempt.
+         * This encapsulates the retry logic around stream acquisition.
+         * 
+         * By setting shouldRetry to always return false, no internal retries occur;
+         * instead, retries are managed by the outer retry mechanism.
+         */
         const acquireStream = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
             try {
                 logger.debug('Acquiring stream with retry manager', {
@@ -262,8 +242,19 @@ export class StreamController {
             }
         };
 
-        // Outer recursive async generator: if an error occurs during acquisition or iteration,
-        // and we haven't exceeded maxRetries, wait (with exponential backoff) and try once more.
+        /**
+         * Outer recursive async generator: if an error occurs during acquisition or iteration,
+         * and we haven't exceeded maxRetries, wait (with exponential backoff) and try once more.
+         * 
+         * This is where the actual iteration over the stream happens, and where the
+         * lazy evaluation of the async generators finally starts executing.
+         * 
+         * Flow:
+         * 1. Acquire stream through acquireStream()
+         * 2. Iterate through the stream, yielding each chunk
+         * 3. Handle errors and retry if needed
+         * 4. Check content quality and retry if needed
+         */
         const outerRetryStream = async function* (this: StreamController, attempt: number): AsyncGenerator<UniversalStreamResponse> {
             try {
                 logger.debug('Starting stream attempt', {
@@ -275,6 +266,8 @@ export class StreamController {
                     timeSinceStartMs: Date.now() - startTime
                 });
 
+                // This gets the async generator from acquireStream but doesn't start
+                // consuming it yet
                 const stream = await acquireStream();
                 let accumulatedContent = "";
                 let chunkCount = 0;
@@ -283,6 +276,9 @@ export class StreamController {
                 const chunkTimings: number[] = [];
 
                 try {
+                    // THIS is where the actual processing begins! When we start
+                    // iterating over the stream, all the generator functions up the chain
+                    // start executing.
                     for await (const chunk of stream) {
                         chunkCount++;
                         chunkTimings.push(Date.now());
@@ -312,6 +308,7 @@ export class StreamController {
                             });
                         }
 
+                        // Forward the chunk to the caller
                         yield chunk;
                     }
                 } catch (streamError) {
@@ -421,11 +418,16 @@ export class StreamController {
                     totalElapsedTimeMs: Date.now() - startTime
                 });
 
+                // Recursively try again with the next attempt number
                 yield* outerRetryStream.call(this, attempt + 1);
             }
         };
 
         // Return an async iterable that uses the outerRetryStream generator.
+        // IMPORTANT: This is a lazy operation - no actual work happens until
+        // something begins iterating over the returned generator.
+        // When ChunkController calls this method and gets this generator,
+        // it won't start processing until ChunkController begins its for-await loop.
         return { [Symbol.asyncIterator]: () => outerRetryStream.call(this, 0) };
     }
 }

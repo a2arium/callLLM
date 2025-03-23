@@ -2,6 +2,7 @@ import type { ToolDefinition, ToolsManager } from '../types';
 import type { UniversalMessage, UniversalChatResponse } from '../../interfaces/UniversalInterfaces';
 import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../types/tooling';
 import { logger } from '../../utils/logger';
+import type { ToolCall } from '../../types/tooling';
 
 export class ToolController {
     private toolsManager: ToolsManager;
@@ -40,8 +41,9 @@ export class ToolController {
         }[];
         requiresResubmission: boolean;
     }> {
+        const log = logger.createLogger({ prefix: 'ToolController.processToolCalls' });
         if (this.iterationCount >= this.maxIterations) {
-            logger.warn(`Iteration limit exceeded: ${this.maxIterations}`);
+            log.warn(`Iteration limit exceeded: ${this.maxIterations}`);
             throw new ToolIterationLimitError(this.maxIterations);
         }
         this.iterationCount++;
@@ -51,7 +53,7 @@ export class ToolController {
         let requiresResubmission = false;
 
         if (response?.toolCalls?.length) {
-            logger.debug(`Found ${response.toolCalls.length} direct tool calls`);
+            log.debug(`Found ${response.toolCalls.length} direct tool calls`);
             parsedToolCalls = response.toolCalls.map((tc: { id?: string; name: string; arguments: Record<string, unknown> }) => ({
                 id: tc.id,
                 name: tc.name,
@@ -73,7 +75,7 @@ export class ToolController {
         }[] = [];
 
         for (const { id, name, arguments: args } of parsedToolCalls) {
-            logger.debug(`Processing tool call: ${name}`);
+            log.debug(`Processing tool call: ${name}`);
             const toolCallId = id || `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
             const toolCall = {
@@ -84,7 +86,7 @@ export class ToolController {
             const tool = this.toolsManager.getTool(name);
 
             if (!tool) {
-                logger.warn(`Tool not found: ${name}`);
+                log.warn(`Tool not found: ${name}`);
                 const error = new ToolNotFoundError(name);
                 messages.push({
                     role: 'system',
@@ -95,7 +97,7 @@ export class ToolController {
             }
 
             try {
-                logger.debug(`Executing tool: ${name}`);
+                log.debug(`Executing tool: ${name}`);
                 const result = await tool.callFunction(args);
                 let processedMessages: string[];
 
@@ -119,9 +121,9 @@ export class ToolController {
                     finalResult = JSON.stringify(result);
                 }
                 toolCalls.push({ ...toolCall, result: finalResult });
-                logger.debug(`Successfully executed tool: ${name}`);
+                log.debug(`Successfully executed tool: ${name}`);
             } catch (error) {
-                logger.error(`Error executing tool ${name}:`, error);
+                log.error(`Error executing tool ${name}:`, error);
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 const toolError = new ToolExecutionError(name, errorMessage);
                 messages.push({
@@ -154,5 +156,43 @@ export class ToolController {
      */
     getToolByName(name: string): ToolDefinition | undefined {
         return this.toolsManager.getTool(name);
+    }
+
+    /**
+     * Executes a single tool call
+     * @param toolCall - The tool call to execute
+     * @returns The result of the tool execution
+     * @throws {ToolNotFoundError} When the requested tool is not found
+     * @throws {ToolExecutionError} When tool execution fails
+     */
+    async executeToolCall(toolCall: ToolCall): Promise<string | Record<string, unknown>> {
+        const log = logger.createLogger({ prefix: 'ToolController.executeToolCall' });
+        log.debug(`Executing tool call: ${toolCall.name}`, { id: toolCall.id });
+        log.debug('Executing tool call', { name: toolCall.name, parameters: toolCall.arguments });
+
+        // Find the tool
+        const tool = this.getToolByName(toolCall.name);
+        if (!tool) {
+            log.error(`Tool not found: ${toolCall.name}`);
+            throw new ToolNotFoundError(toolCall.name);
+        }
+
+        try {
+            // Execute the tool
+            const result = await tool.callFunction(toolCall.arguments);
+            log.debug(`Tool execution successful: ${toolCall.name}`, {
+                id: toolCall.id,
+                resultType: typeof result
+            });
+            log.debug('Tool execution result', { result });
+
+            // Ensure we return the correct type
+            return typeof result === 'string' ? result : result as Record<string, unknown>;
+        } catch (error) {
+            // Handle tool execution errors
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log.error(`Tool execution error: ${errorMessage}`, { toolName: toolCall.name });
+            throw new ToolExecutionError(toolCall.name, errorMessage);
+        }
     }
 } 
