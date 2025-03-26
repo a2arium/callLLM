@@ -4,6 +4,7 @@ import { DataSplitter } from '../processors/DataSplitter';
 import type { UniversalMessage, UniversalChatResponse, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
 import { ChatController } from '../chat/ChatController';
 import { StreamController } from '../streaming/StreamController';
+import { HistoryManager } from '../history/HistoryManager';
 
 /**
  * Error thrown when chunk iteration limit is exceeded
@@ -37,12 +38,14 @@ export class ChunkController {
      * @param tokenCalculator - The TokenCalculator instance for token calculations
      * @param chatController - The ChatController for LLM interactions
      * @param streamController - The StreamController for streaming responses
+     * @param historyManager - The HistoryManager for tracking conversation history
      * @param maxIterations - Maximum number of chunk iterations allowed (default: 20)
      */
     constructor(
         private tokenCalculator: TokenCalculator,
         private chatController: ChatController,
         private streamController: StreamController,
+        private historyManager: HistoryManager,
         maxIterations: number = 20
     ) {
         this.maxIterations = maxIterations;
@@ -71,15 +74,12 @@ export class ChunkController {
                 throw new ChunkIterationLimitError(this.maxIterations);
             }
             this.iterationCount++;
+            this.historyManager.addMessage('user', message);
 
             const response = await this.chatController.execute({
                 model: params.model,
                 systemMessage: params.systemMessage,
-                settings: params.settings,
-                historicalMessages: [
-                    ...(params.historicalMessages || []),
-                    { role: 'user', content: message }
-                ]
+                settings: params.settings
             });
 
             responses.push(response);

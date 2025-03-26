@@ -39,7 +39,7 @@ export class StreamController {
     /**
      * Creates a stream of responses from an LLM provider
      * 
-     * IMPORTANT: This method returns an AsyncIterable, but NO PROCESSING happens
+     * This method returns an AsyncIterable, but no processing happens
      * until the returned generator is actually consumed. This is due to JavaScript's
      * lazy evaluation of generators.
      * 
@@ -424,7 +424,7 @@ export class StreamController {
         };
 
         // Return an async iterable that uses the outerRetryStream generator.
-        // IMPORTANT: This is a lazy operation - no actual work happens until
+        // This is a lazy operation - no actual work happens until
         // something begins iterating over the returned generator.
         // When ChunkController calls this method and gets this generator,
         // it won't start processing until ChunkController begins its for-await loop.

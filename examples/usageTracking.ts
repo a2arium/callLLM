@@ -6,12 +6,7 @@ async function main() {
     const usageCallback = (usageData: UsageData) => {
         console.log(`Usage for caller ${usageData.callerId}:`, {
             costs: usageData.usage.costs,
-            tokens: {
-                input: usageData.usage.inputTokens,
-                inputCached: usageData.usage.inputCachedTokens,
-                output: usageData.usage.outputTokens,
-                total: usageData.usage.totalTokens
-            },
+            tokens: usageData.usage.tokens,
             timestamp: new Date(usageData.timestamp).toISOString()
         });
     };
@@ -29,9 +24,19 @@ async function main() {
     // Change the caller ID midway
     caller.setCallerId('different-conversation');
 
-    await caller.chatCall({
+    const response = await caller.chatCall({
         message: 'What is the weather like?'
     });
+
+    console.log('\nChat Response:', response.content);
+    console.log('\nUsage Information:');
+    if (response.metadata?.usage) {
+        console.log('Input Tokens:', response.metadata.usage.tokens.input);
+        console.log('Input Cached Tokens:', response.metadata.usage.tokens.inputCached);
+        console.log('Output Tokens:', response.metadata.usage.tokens.output);
+        console.log('Total Tokens:', response.metadata.usage.tokens.total);
+        console.log('Costs:', response.metadata.usage.costs);
+    }
 
     // Example streaming call with usageCallback
     caller.setCallerId('streaming-conversation');
@@ -58,10 +63,11 @@ async function main() {
 
     if (finalUsage) {
         console.log('\n\nFinal Usage Information:');
-        console.log('Input Tokens:', finalUsage.inputTokens);
-        console.log('Output Tokens:', finalUsage.outputTokens);
-        console.log('Total Tokens:', finalUsage.totalTokens);
-        console.log('Total Cost:', finalUsage.costs.totalCost.toFixed(6));
+        console.log('Input Tokens:', finalUsage.tokens.input);
+        console.log('Input Cached Tokens:', finalUsage.tokens.inputCached);
+        console.log('Output Tokens:', finalUsage.tokens.output);
+        console.log('Total Tokens:', finalUsage.tokens.total);
+        console.log('Costs:', finalUsage.costs);
     }
 }
 

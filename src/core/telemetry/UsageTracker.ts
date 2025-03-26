@@ -27,20 +27,26 @@ export class UsageTracker {
     async trackUsage(
         input: string,
         output: string,
-        modelInfo: ModelInfo
+        modelInfo: ModelInfo,
+        inputCachedTokens: number = 0
     ): Promise<Usage> {
         const inputTokens = this.tokenCalculator.calculateTokens(input);
         const outputTokens = this.tokenCalculator.calculateTokens(output);
 
         const usage: Usage = {
-            inputTokens,
-            outputTokens,
-            totalTokens: inputTokens + outputTokens,
+            tokens: {
+                input: inputTokens,
+                inputCached: inputCachedTokens,
+                output: outputTokens,
+                total: inputTokens + outputTokens
+            },
             costs: this.tokenCalculator.calculateUsage(
                 inputTokens,
                 outputTokens,
                 modelInfo.inputPricePerMillion,
-                modelInfo.outputPricePerMillion
+                modelInfo.outputPricePerMillion,
+                inputCachedTokens,
+                modelInfo.inputCachedPricePerMillion
             )
         };
 

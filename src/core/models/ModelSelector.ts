@@ -17,17 +17,7 @@ export class ModelSelector {
     }
 
     private static selectCheapestModel(models: ModelInfo[]): string {
-        // Find the model with extremely low price (edge case)
-        const edgeCase = models.find(model => {
-            const totalCost = model.inputPricePerMillion + model.outputPricePerMillion;
-            return totalCost < 20.0; // Threshold for edge case pricing
-        });
-
-        if (edgeCase) {
-            return edgeCase.name;
-        }
-
-        // For regular cases, select the model with the best price/quality ratio
+        // Select the model with the best price/quality ratio
         return models.reduce((cheapest, current) => {
             const cheapestTotal = cheapest.inputPricePerMillion + cheapest.outputPricePerMillion;
             const currentTotal = current.inputPricePerMillion + current.outputPricePerMillion;

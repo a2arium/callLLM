@@ -192,6 +192,7 @@ export class LLMCaller {
             this.tokenCalculator,
             this.chatController,
             streamControllerAdapter as StreamController,
+            this.historyManager,
             20
         );
 
@@ -201,38 +202,22 @@ export class LLMCaller {
             settings?: UniversalChatParams['settings'];
             historicalMessages?: UniversalMessage[];
         }) => {
-            // Store the new user message in our history
+            // Reset tool iteration counter at the beginning of each chat call
+            this.toolController.resetIterationCount();
+
+            if (params.historicalMessages) this.historyManager.setHistoricalMessages(params.historicalMessages);
+
             this.historyManager.addMessage('user', params.message);
-
-            // Use internal historical messages or override if provided
-            const messagesForCall: UniversalMessage[] = params.historicalMessages ||
-                this.historyManager.getHistoricalMessages();
-
-            messagesForCall.push({ role: 'user', content: params.message });
 
             // Execute the base chat call
             const initialResponse = await this.chatController.execute({
                 model: this.model,
                 systemMessage: this.systemMessage,
-                settings: this.mergeSettings(params.settings),
-                historicalMessages: messagesForCall
+                settings: this.mergeSettings(params.settings)
             });
 
-            // Delegate tool orchestration completely to ToolOrchestrator
-            const orchestrationResult = await this.toolOrchestrator.processResponse(
-                initialResponse,
-                {
-                    model: this.model,
-                    systemMessage: this.systemMessage,
-                    historicalMessages: messagesForCall,
-                    settings: this.mergeSettings(params.settings)
-                }
-            );
+            return initialResponse;
 
-            // Store the assistant's response in our history
-            this.historyManager.addMessage('assistant', orchestrationResult.finalResponse.content || '');
-
-            return orchestrationResult.finalResponse;
         }).bind(this);
     }
 
@@ -328,6 +313,9 @@ export class LLMCaller {
         historicalMessages?: UniversalMessage[];
         messages?: UniversalMessage[]
     }): Promise<AsyncIterable<UniversalStreamResponse>> {
+        // Reset tool iteration counter at the beginning of each stream call
+        this.toolController.resetIterationCount();
+
         let finalParams: UniversalChatParams;
 
         // Build the final params object based on input
@@ -392,11 +380,10 @@ export class LLMCaller {
             maxResponseTokens: settings?.maxTokens
         });
 
-        // Add the initial user message to the history
-        this.historyManager.addMessage('user', message);
 
         // If there's only one chunk, just do a regular stream call
         if (messages.length === 1) {
+            this.historyManager.addMessage('user', message);
             return this.streamCall({
                 message: messages[0],
                 settings
@@ -433,7 +420,7 @@ export class LLMCaller {
         });
 
         // Add the initial user message to the history
-        this.historyManager.addMessage('user', message);
+        // this.historyManager.addMessage('user', message);
 
         // If there's only one chunk, just do a regular chat call
         if (messages.length === 1) {

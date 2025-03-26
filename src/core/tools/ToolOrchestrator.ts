@@ -25,6 +25,9 @@ export type ToolOrchestrationResult = {
 
 
 /**
+ * TODO: Combine with ToolController
+ * 
+ * 
  * ToolOrchestrator is responsible for managing the entire lifecycle of tool execution.
  * It processes tool calls embedded within assistant responses, delegates their execution to the ToolController,
  * handles any tool call deltas, and aggregates the final response after tool invocations.
@@ -43,9 +46,6 @@ export type ToolOrchestrationResult = {
  */
 
 export class ToolOrchestrator {
-    private readonly DEFAULT_MAX_HISTORY = 100;
-    private readonly MAX_TOOL_ITERATIONS = 10;
-    private streamController: StreamController;
 
     /**
      * Creates a new ToolOrchestrator instance
@@ -60,99 +60,10 @@ export class ToolOrchestrator {
         streamController: StreamController,
         private historyManager: HistoryManager
     ) {
-        this.streamController = streamController;
         logger.setConfig({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'ToolOrchestrator' });
         logger.debug('Initialized');
     }
 
-    /**
-     * Processes a response that may contain tool calls
-     * @param response - The response to process
-     * @param params - The orchestration parameters
-     * @returns The orchestration result
-     * @throws {ToolError} When a tool-related error occurs
-     */
-    async processResponse(
-        response: UniversalChatResponse,
-        params: ToolOrchestrationParams
-    ): Promise<ToolOrchestrationResult> {
-        const log = logger.createLogger({ prefix: 'ToolOrchestrator.processResponse' });
-        log.debug('Starting response processing');
-        let currentResponse = response;
-
-        try {
-            // Store the initial assistant response in history
-            this.historyManager.addMessage('assistant', currentResponse.content || '');
-
-            // Process all tool calls first in a loop
-            let iterationCount = 0;
-            let requiresMoreProcessing = true;
-
-            while (requiresMoreProcessing) {
-                iterationCount++;
-                if (iterationCount > this.MAX_TOOL_ITERATIONS) {
-                    logger.warn(`Iteration limit exceeded: ${this.MAX_TOOL_ITERATIONS}`);
-                    throw new ToolIterationLimitError(this.MAX_TOOL_ITERATIONS);
-                }
-
-                // Process tools and update history
-                const { requiresResubmission } = await this.processToolCalls(currentResponse,);
-
-                // If we found and processed tool calls, get LLM response
-                if (requiresResubmission) {
-                    // Get the current messages from the history manager
-                    const currentMessages = this.historyManager.getHistoricalMessages();
-
-                    // Get response from LLM based on tool results
-                    currentResponse = await this.chatController.execute({
-                        model: params.model,
-                        systemMessage: params.systemMessage,
-                        settings: params.settings,
-                        historicalMessages: currentMessages
-                    });
-
-                    // Add the assistant's response to the historical messages
-                    if (currentResponse.content) {
-                        this.historyManager.addMessage('assistant', currentResponse.content);
-                    }
-                } else {
-                    requiresMoreProcessing = false;
-                }
-            }
-
-            // Reset tool iteration count after successful processing
-            this.toolController.resetIterationCount();
-            log.debug('Successfully completed response processing');
-
-            // Get final history state
-            const updatedHistoricalMessages = this.historyManager.getHistoricalMessages();
-
-            return {
-                response,
-                finalResponse: currentResponse,
-                updatedHistoricalMessages
-            };
-        } catch (error) {
-            log.error('Error during response processing:', error);
-
-            // Reset iteration count even if there's an error
-            this.toolController.resetIterationCount();
-
-            // Add error to tool executions
-            const errorMessage = error instanceof Error ? error.message : String(error);
-
-
-            return {
-                response,
-                finalResponse: {
-                    role: 'assistant',
-                    content: `An error occurred during tool execution: ${errorMessage}`,
-                    metadata: {}
-                },
-                updatedHistoricalMessages: this.historyManager.getHistoricalMessages()
-            };
-        }
-    }
 
     /**
      * Processes tool calls found in a response and adds their results to history
@@ -162,6 +73,9 @@ export class ToolOrchestrator {
     public async processToolCalls(
         response: UniversalChatResponse
     ): Promise<{ requiresResubmission: boolean; newToolCalls: number }> {
+        // Reset iteration count at the beginning of each tool processing session
+        this.toolController.resetIterationCount();
+
         // Process tools in the response
         const toolResult = await this.toolController.processToolCalls(
             response.content || '',

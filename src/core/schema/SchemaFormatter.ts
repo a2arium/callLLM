@@ -52,19 +52,4 @@ export class SchemaFormatter {
         return result;
     }
 
-    /**
-     * Formats a JSON schema string into the required structure with name and strict validation
-     * @param name The name of the schema
-     * @param schema The JSON schema string
-     * @returns A formatted schema object ready for use with structured outputs
-     */
-    public static formatJsonSchema(name: string, schema: string): FormattedSchema {
-        const parsedSchema = JSON.parse(schema) as JSONSchemaObject;
-        return {
-            name,
-            description: name, // Duplicate name as description
-            strict: true,
-            schema: this.addAdditionalPropertiesFalse(parsedSchema)
-        };
-    }
 } 

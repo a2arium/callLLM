@@ -69,15 +69,17 @@ export type UniversalChatParams = {
 
 // Universal interface for chat response
 export type Usage = {
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
-    inputCachedTokens?: number;  // Number of cached input tokens
+    tokens: {
+        input: number;
+        inputCached: number;
+        output: number;
+        total: number;
+    };
     costs: {
-        inputCost: number;
-        inputCachedCost?: number;  // Cost for cached input tokens
-        outputCost: number;
-        totalCost: number;
+        input: number;
+        inputCached: number;
+        output: number;
+        total: number;
     };
 };
 

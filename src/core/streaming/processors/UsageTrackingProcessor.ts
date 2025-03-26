@@ -117,12 +117,12 @@ export class UsageTrackingProcessor implements IStreamProcessor {
                     usage: {
                         tokens: {
                             input: this.inputTokens,
-                            inputCached: this.inputCachedTokens,
+                            inputCached: this.inputCachedTokens || 0,
                             output: currentOutputTokens,
                             total: this.inputTokens + currentOutputTokens
                         },
-                        incremental: incrementalTokens,
-                        costs
+                        costs,
+                        incremental: incrementalTokens
                     }
                 }
             };
@@ -137,21 +137,22 @@ export class UsageTrackingProcessor implements IStreamProcessor {
         const regularInputCost = (this.inputTokens * this.modelInfo.inputPricePerMillion) / 1_000_000;
 
         // Calculate cached input costs if available
-        const cachedInputCost = this.inputCachedTokens && this.modelInfo.inputCachedPricePerMillion
-            ? (this.inputCachedTokens * this.modelInfo.inputCachedPricePerMillion) / 1_000_000
-            : undefined;
+        const inputCachedTokens = this.inputCachedTokens || 0;
+        const cachedInputCost = inputCachedTokens && this.modelInfo.inputCachedPricePerMillion
+            ? (inputCachedTokens * this.modelInfo.inputCachedPricePerMillion) / 1_000_000
+            : 0;
 
         // Calculate output cost
         const outputCost = (outputTokens * this.modelInfo.outputPricePerMillion) / 1_000_000;
 
         // Calculate total cost
-        const totalCost = regularInputCost + (cachedInputCost || 0) + outputCost;
+        const totalCost = regularInputCost + cachedInputCost + outputCost;
 
         return {
-            inputCost: regularInputCost,
-            inputCachedCost: cachedInputCost,
-            outputCost,
-            totalCost
+            input: regularInputCost,
+            inputCached: cachedInputCost,
+            output: outputCost,
+            total: totalCost
         };
     }
 
@@ -164,10 +165,12 @@ export class UsageTrackingProcessor implements IStreamProcessor {
         this.usageCallback({
             callerId: this.callerId,
             usage: {
-                inputTokens: this.inputTokens,
-                inputCachedTokens: this.inputCachedTokens,
-                outputTokens,
-                totalTokens: this.inputTokens + outputTokens,
+                tokens: {
+                    input: this.inputTokens,
+                    inputCached: this.inputCachedTokens || 0,
+                    output: outputTokens,
+                    total: this.inputTokens + outputTokens
+                },
                 costs
             },
             timestamp: Date.now()

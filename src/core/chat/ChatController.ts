@@ -40,16 +40,21 @@ export class ChatController {
         model: string;
         systemMessage: string;
         settings?: UniversalChatSettings;
-        historicalMessages: UniversalMessage[];
         callerId?: string;
     }): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
-        const { model, systemMessage, settings, historicalMessages, callerId } = params;
+        const { model, systemMessage, settings, callerId } = params;
         const mergedSettings = settings;
+
+        if (settings?.jsonSchema && mergedSettings) {
+            mergedSettings.responseFormat = 'json';
+        }
 
         const fullSystemMessage =
             mergedSettings && (mergedSettings.responseFormat === 'json' || mergedSettings.jsonSchema)
                 ? `${systemMessage}\n Provide your response in valid JSON format.`
                 : systemMessage;
+
+        const historicalMessages = this.historyManager?.getHistoricalMessages() || [];
 
         // Validate all messages have role and content
         const validatedMessages = historicalMessages.map(msg => {
@@ -95,9 +100,8 @@ export class ChatController {
         }
 
         // Get the last user message for usage tracking
-        const lastUserMessage = [...validatedMessages]
-            .reverse()
-            .find((msg: UniversalMessage) => msg.role === 'user')?.content || '';
+        // TODO: Check if this is correct
+        const lastUserMessage = this.historyManager?.getLastMessageByRole('user')?.content || '';
 
         // Validate JSON mode if needed.
         this.responseProcessor.validateJsonMode(modelInfo, chatParams);
@@ -126,11 +130,14 @@ export class ChatController {
                         modelInfo
                     );
                 } else {
-                    await this.usageTracker.trackUsage(
+                    // Track usage and update the existing metadata
+                    const trackResult = await this.usageTracker.trackUsage(
                         systemMessage + '\n' + lastUserMessage,
                         resp.content,
                         modelInfo
                     );
+                    // Update the response metadata with the tracked usage
+                    resp.metadata.usage = trackResult;
                 }
                 // Check if the response content triggers a retry
                 if (shouldRetryDueToContent(resp)) {
@@ -158,12 +165,6 @@ export class ChatController {
             const { requiresResubmission } = await this.toolOrchestrator.processToolCalls(response);
 
             if (requiresResubmission) {
-                // Get updated messages from history
-                const updatedMessages = this.historyManager.getHistoricalMessages();
-
-                logger.debug('Resubmitting with tool responses', {
-                    messagesCount: updatedMessages.length
-                });
 
                 // Make a recursive call with updated messages
                 return this.execute<T>({
@@ -175,12 +176,13 @@ export class ChatController {
                         tools: undefined,
                         toolChoice: undefined
                     },
-                    historicalMessages: updatedMessages,
                     callerId
                 });
             }
         }
 
-        return this.responseProcessor.validateResponse<T>(response, mergedSettings);
+        const validatedResponse = this.responseProcessor.validateResponse<T>(response, mergedSettings);
+        this.historyManager?.addMessage('assistant', response.content || '');
+        return validatedResponse;
     }
 }

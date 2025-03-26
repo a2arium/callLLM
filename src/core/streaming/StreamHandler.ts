@@ -265,24 +265,6 @@ export class StreamHandler {
                     const accumulatedContent = contentAccumulator.getAccumulatedContent();
                     response.contentText = accumulatedContent;
 
-                    // // If the finish reason is tool_calls, ensure we include all completed tool calls
-                    // const finishReason = chunk.metadata?.finishReason;
-                    // if (finishReason === FinishReason.TOOL_CALLS) {
-                    //     log.debug('Finish reason is TOOL_CALLS, retrieving completed tool calls');
-                    //     const completedToolCalls = contentAccumulator.getCompletedToolCalls();
-
-                    //     if (completedToolCalls.length > 0) {
-                    //         log.debug('Retrieved completed tool calls', { count: completedToolCalls.length });
-
-                    //         // Update or create the toolCalls array in the response
-                    //         response.toolCalls = completedToolCalls.map(call => ({
-                    //             name: call.name,
-                    //             arguments: call.arguments || {},
-                    //             id: (call as any).id
-                    //         }));
-                    //     }
-                    // }
-
                     // Handle JSON validation and parsing
                     if (isJsonMode && schema) {
                         try {

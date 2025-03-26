@@ -18,9 +18,9 @@ describe('TokenCalculator', () => {
         it('should calculate costs correctly', () => {
             const result = calculator.calculateUsage(100, 200, 1000, 2000);
 
-            expect(result.inputCost).toBe(0.1);    // 100 * 1000 / 1_000_000
-            expect(result.outputCost).toBe(0.4);   // 200 * 2000 / 1_000_000
-            expect(result.totalCost).toBe(0.5);    // 0.1 + 0.4
+            expect(result.input).toBe(0.1);    // 100 * 1000 / 1_000_000
+            expect(result.output).toBe(0.4);   // 200 * 2000 / 1_000_000
+            expect(result.total).toBe(0.5);    // 0.1 + 0.4
         });
 
         it('should calculate costs with cached tokens', () => {
@@ -36,10 +36,10 @@ describe('TokenCalculator', () => {
             // Regular input cost: (100-20) * 1000 / 1_000_000 = 0.08
             // Cached input cost: 20 * 500 / 1_000_000 = 0.01
             // Output cost: 200 * 2000 / 1_000_000 = 0.4
-            expect(result.inputCost).toBe(0.08);
-            expect(result.inputCachedCost).toBe(0.01);
-            expect(result.outputCost).toBe(0.4);
-            expect(result.totalCost).toBe(0.49);  // 0.08 + 0.01 + 0.4
+            expect(result.input).toBe(0.08);
+            expect(result.inputCached).toBe(0.01);
+            expect(result.output).toBe(0.4);
+            expect(result.total).toBe(0.49);  // 0.08 + 0.01 + 0.4
         });
 
         it('should handle cached tokens without cached price', () => {
@@ -52,10 +52,10 @@ describe('TokenCalculator', () => {
             );
 
             // All input tokens use regular price
-            expect(result.inputCost).toBe(0.1);    // 100 * 1000 / 1_000_000
-            expect(result.inputCachedCost).toBeUndefined();
-            expect(result.outputCost).toBe(0.4);   // 200 * 2000 / 1_000_000
-            expect(result.totalCost).toBe(0.5);    // 0.1 + 0.4
+            expect(result.input).toBe(0.1);    // 100 * 1000 / 1_000_000
+            expect(result.inputCached).toBe(0);
+            expect(result.output).toBe(0.4);   // 200 * 2000 / 1_000_000
+            expect(result.total).toBe(0.5);    // 0.1 + 0.4
         });
 
         it('should handle cached price without cached tokens', () => {
@@ -69,26 +69,26 @@ describe('TokenCalculator', () => {
             );
 
             // All input tokens use regular price
-            expect(result.inputCost).toBe(0.1);    // 100 * 1000 / 1_000_000
-            expect(result.inputCachedCost).toBeUndefined();
-            expect(result.outputCost).toBe(0.4);   // 200 * 2000 / 1_000_000
-            expect(result.totalCost).toBe(0.5);    // 0.1 + 0.4
+            expect(result.input).toBe(0.1);    // 100 * 1000 / 1_000_000
+            expect(result.inputCached).toBe(0);
+            expect(result.output).toBe(0.4);   // 200 * 2000 / 1_000_000
+            expect(result.total).toBe(0.5);    // 0.1 + 0.4
         });
 
         it('should handle zero tokens', () => {
             const result = calculator.calculateUsage(0, 0, 1000, 2000);
 
-            expect(result.inputCost).toBe(0);
-            expect(result.outputCost).toBe(0);
-            expect(result.totalCost).toBe(0);
+            expect(result.input).toBe(0);
+            expect(result.output).toBe(0);
+            expect(result.total).toBe(0);
         });
 
         it('should handle large token counts', () => {
             const result = calculator.calculateUsage(1_000_000, 2_000_000, 1000, 2000);
 
-            expect(result.inputCost).toBe(1000);
-            expect(result.outputCost).toBe(4000);
-            expect(result.totalCost).toBe(5000);
+            expect(result.input).toBe(1000);
+            expect(result.output).toBe(4000);
+            expect(result.total).toBe(5000);
         });
 
         it('should handle all cached tokens', () => {
@@ -102,10 +102,10 @@ describe('TokenCalculator', () => {
             );
 
             // All input tokens use cached price
-            expect(result.inputCost).toBe(0);      // no regular tokens
-            expect(result.inputCachedCost).toBe(0.05);  // 100 * 500 / 1_000_000
-            expect(result.outputCost).toBe(0.4);   // 200 * 2000 / 1_000_000
-            expect(result.totalCost).toBe(0.45);   // 0.05 + 0.4
+            expect(result.input).toBe(0);      // no regular tokens
+            expect(result.inputCached).toBe(0.05);  // 100 * 500 / 1_000_000
+            expect(result.output).toBe(0.4);   // 200 * 2000 / 1_000_000
+            expect(result.total).toBe(0.45);   // 0.05 + 0.4
         });
     });
 

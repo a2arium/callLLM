@@ -23,6 +23,7 @@ export class ToolController {
 
     /**
      * Processes tool calls found in the content
+     * TODO: We do not need content at all, we parse only response 
      * @param content - The content to process for tool calls
      * @param response - The response object containing tool calls (optional)
      * @returns Object containing messages, tool calls, and resubmission flag

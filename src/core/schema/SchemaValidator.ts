@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SchemaFormatter } from './SchemaFormatter';
 import { JSONSchemaDefinition } from '../../interfaces/UniversalInterfaces';
 
 export class SchemaValidationError extends Error {
@@ -52,7 +53,7 @@ export class SchemaValidator {
     /**
      * Converts a Zod schema to JSON Schema string
      */
-    public static zodToJsonSchema(schema: z.ZodType): string {
+    public static zodToJsonSchemaString(schema: z.ZodType): string {
         const jsonSchema = this.zodTypeToJsonSchema(schema);
         return JSON.stringify(jsonSchema);
     }
@@ -134,10 +135,17 @@ export class SchemaValidator {
     /**
      * Gets the appropriate schema format for a provider
      */
-    public static getProviderSchema(schema: JSONSchemaDefinition, provider: string): string {
+    public static getSchemaString(schema: JSONSchemaDefinition): string {
         if (typeof schema === 'string') {
             return schema;
         }
-        return this.zodToJsonSchema(schema);
+        return this.zodToJsonSchemaString(schema);
+    }
+
+    public static getSchemaObject(schema: JSONSchemaDefinition): object {
+        if (typeof schema === 'string') {
+            return SchemaFormatter.addAdditionalPropertiesFalse(JSON.parse(schema));
+        }
+        return this.zodTypeToJsonSchema(schema);
     }
 } 

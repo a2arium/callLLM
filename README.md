@@ -146,8 +146,8 @@ The library supports selecting models by characteristics using aliases:
 
 - `'fast'`: Optimized for speed (high output speed, low latency)
 - `'premium'`: Optimized for quality (high quality index)
-- `'balanced'`: Good balance of speed and quality
-- `'cheap'`: Optimized for cost (lowest price per token)
+- `'balanced'`: Good balance of speed and quality and cost
+- `'cheap'`: Optimized for cost (best price/quality ratio)
 
 ## Model Information
 

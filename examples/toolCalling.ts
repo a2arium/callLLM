@@ -103,146 +103,145 @@ async function main() {
         }
     });
     console.log('Response:', weatherResponse);
+    console.log(caller.getHistoricalMessages());
 
-    // // 2. Multi-Tool Call
-    // console.log('\n2. Multi-Tool Call');
-    // console.log('------------------');
-    // const multiToolResponse = await caller.chatCall({
-    //     message: 'What\'s the weather in New York and what time is it there?',
-    //     settings: {
-    //         tools: [weatherTool, timeTool],
-    //         toolChoice: 'auto'
-    //     }
-    // });
-    // console.log('Response:', multiToolResponse);
+    // 2. Multi-Tool Call
+    console.log('\n2. Multi-Tool Call');
+    console.log('------------------');
+    const multiToolResponse = await caller.chatCall({
+        message: 'What\'s the weather in New York and what time is it there?',
+        settings: {
+            tools: [weatherTool, timeTool],
+            toolChoice: 'auto'
+        }
+    });
+    console.log('Response:', multiToolResponse);
 
-    // // 3. Calculation Tool Call
-    // console.log('\n3. Calculation Tool Call');
-    // console.log('------------------------');
-    // const calculationResponse = await caller.chatCall({
-    //     message: 'Calculate 15% of 85',
-    //     settings: {
-    //         tools: [calculateTool],
-    //         toolChoice: 'auto'
-    //     }
-    // });
-    // console.log('Response:', calculationResponse);
+    // 3. Calculation Tool Call
+    console.log('\n3. Calculation Tool Call');
+    console.log('------------------------');
+    const calculationResponse = await caller.chatCall({
+        message: 'Calculate 15% of 85',
+        settings: {
+            tools: [calculateTool],
+            toolChoice: 'auto'
+        }
+    });
+    console.log('Response:', calculationResponse);
 
-    // // 4. Time Tool Call
-    // console.log('\n4. Time Tool Call');
-    // console.log('----------------');
-    // const timeResponse = await caller.chatCall({
-    //     message: 'What time is it in Tokyo?',
-    //     settings: {
-    //         tools: [timeTool],
-    //         toolChoice: 'auto'
-    //     }
-    // });
-    // console.log('Response:', timeResponse);
+    // 4. Time Tool Call
+    console.log('\n4. Time Tool Call');
+    console.log('----------------');
+    const timeResponse = await caller.chatCall({
+        message: 'What time is it in Tokyo?',
+        settings: {
+            tools: [timeTool],
+            toolChoice: 'auto'
+        }
+    });
+    console.log('Response:', timeResponse);
 
-    // // 5. Tool Call Stream Demonstration
-    // console.log('\n5. Tool Call Stream Demonstration');
-    // console.log('---------------------------------------------------------------');
-    // console.log('Starting the stream - you\'ll see content as it arrives in real-time');
+    // 5. Tool Call Stream Demonstration
+    console.log('\n5. Tool Call Stream Demonstration');
+    console.log('---------------------------------------------------------------');
+    console.log('Starting the stream - you\'ll see content as it arrives in real-time');
 
-    // let timeout: NodeJS.Timeout | null = null;
+    let timeout: NodeJS.Timeout | null = null;
 
-    // try {
-    //     const stream = await caller.streamCall({
-    //         message: 'What is the current time in Tokyo? write a haiku about the current time',
-    //         settings: {
-    //             tools: [timeTool],
-    //             toolChoice: 'auto',
-    //             stream: true
-    //         }
-    //     });
+    try {
+        const stream = await caller.streamCall({
+            message: 'What is the current time in Tokyo? write a haiku about the current time',
+            settings: {
+                tools: [timeTool],
+                toolChoice: 'auto',
+                stream: true
+            }
+        });
 
-    //     let toolCallDetected = false;
-    //     let toolCallExecuted = false;
-    //     let responseAfterTool = false;
+        let toolCallDetected = false;
+        let toolCallExecuted = false;
+        let responseAfterTool = false;
 
-    //     // Add a debugging wrapper around the stream to see all chunks
-    //     for await (const chunk of stream) {
+        // Add a debugging wrapper around the stream to see all chunks
+        for await (const chunk of stream) {
 
-    //         // Handle content
-    //         if (chunk.content) {
-    //             process.stdout.write(chunk.content);
-    //         }
+            // Handle content
+            if (chunk.content) {
+                process.stdout.write(chunk.content);
+            }
 
 
-    //         // Handle tool calls
-    //         if (chunk.toolCalls?.length) {
-    //             toolCallDetected = true;
-    //             console.log('\n\nTool Call Detected:', JSON.stringify(chunk.toolCalls, null, 2));
-    //         }
+            // Handle tool calls
+            if (chunk.toolCalls?.length) {
+                toolCallDetected = true;
+                console.log('\n\nTool Call Detected:', JSON.stringify(chunk.toolCalls, null, 2));
+            }
 
-    //         // Track when we start getting a response after tool execution
-    //         if (toolCallExecuted && chunk.content && !responseAfterTool) {
-    //             responseAfterTool = true;
-    //             console.log('\n\nContinuation response after tool execution:');
-    //             // Reset the accumulated response to only track post-tool content
-    //         }
+            // Track when we start getting a response after tool execution
+            if (toolCallExecuted && chunk.content && !responseAfterTool) {
+                responseAfterTool = true;
+                console.log('\n\nContinuation response after tool execution:');
+                // Reset the accumulated response to only track post-tool content
+            }
 
-    //         // Indicate completion if flagged
-    //         if (chunk.isComplete) {
-    //             console.log('\n\nStream completed');
-    //         }
-    //     }
+            // Indicate completion if flagged
+            if (chunk.isComplete) {
+                console.log('\n\nStream completed');
+                console.log(caller.getHistoricalMessages());
+            }
+        }
 
-    // } catch (error) {
-    //     console.error('\nError processing stream:', error);
-    //     throw error;
-    // } finally {
-    //     // Clear the timeout when done
-    //     if (timeout) {
-    //         clearTimeout(timeout);
-    //     }
-    // }
+    } catch (error) {
+        console.error('\nError processing stream:', error);
+        throw error;
+    } finally {
+        // Clear the timeout when done
+        if (timeout) {
+            clearTimeout(timeout);
+        }
+    }
 
-    // // 6. Multi-Tool Call Stream Demonstration
-    // console.log('\n6. Multi-Tool Call Stream Demonstration');
-    // console.log('---------------------------------------------------------------');
-    // const multiToolStream = await caller.streamCall({
-    //     message: 'What is the current time and weather in Tokyo?',
-    //     settings: {
-    //         tools: [timeTool, weatherTool],
-    //         toolChoice: 'auto',
-    //         stream: true
-    //     }
-    // });
+    // 6. Multi-Tool Call Stream Demonstration
+    console.log('\n6. Multi-Tool Call Stream Demonstration');
+    console.log('---------------------------------------------------------------');
+    const multiToolStream = await caller.streamCall({
+        message: 'What is the current time and weather in Tokyo?',
+        settings: {
+            tools: [timeTool, weatherTool],
+            toolChoice: 'auto',
+            stream: true
+        }
+    });
 
-    // try {
-    //     for await (const chunk of multiToolStream) {
-    //         // Handle content
-    //         if (chunk.content) {
-    //             // For non-complete chunks, write incrementally
-    //             if (!chunk.isComplete) {
-    //                 process.stdout.write(chunk.content);
-    //             }
-    //         }
+    try {
+        for await (const chunk of multiToolStream) {
+            // Handle content
+            if (chunk.content) {
+                // For non-complete chunks, write incrementally
+                if (!chunk.isComplete) {
+                    process.stdout.write(chunk.content);
+                }
+            }
 
-    //         // Handle tool calls
-    //         if (chunk.toolCalls?.length) {
-    //             console.log('\nTool Call:', JSON.stringify(chunk.toolCalls, null, 2));
-    //         }
+            // Handle tool calls
+            if (chunk.toolCalls?.length) {
+                console.log('\nTool Call:', JSON.stringify(chunk.toolCalls, null, 2));
+            }
 
-    //         // For the final chunk, write the complete content
-    //         if (chunk.isComplete) {
-    //             // When the stream is complete:
-    //             // 1. chunk.contentText contains the complete accumulated text response
-    //             // 2. chunk.toolCalls contains the complete tool calls (if any)
+            // For the final chunk, write the complete content
+            if (chunk.isComplete) {
+                // When the stream is complete:
+                // chunk.contentText contains the complete accumulated text response
+                console.log('\n\nComplete response text:');
+                console.log(chunk.contentText);
 
-    //             // Use contentText for the complete response text
-    //             console.log('\n\nComplete response text:');
-    //             console.log(chunk.contentText);
-
-    //             console.log('\nStream completed');
-    //         }
-    //     }
-    // } catch (error) {
-    //     console.error('\nError processing stream:', error);
-    //     throw error;
-    // }
+                console.log('\nStream completed');
+            }
+        }
+    } catch (error) {
+        console.error('\nError processing stream:', error);
+        throw error;
+    }
 }
 
 main().catch(console.error);

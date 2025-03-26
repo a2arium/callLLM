@@ -2,6 +2,7 @@ import { OpenAI } from 'openai';
 import { BaseAdapter, AdapterConfig } from '../base/baseAdapter';
 import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason, ModelInfo } from '../../interfaces/UniversalInterfaces';
 import { LLMProvider } from '../../interfaces/LLMProvider';
+import { SchemaValidator } from '../../core/schema/SchemaValidator';
 import { Converter } from './converter';
 import { StreamHandler } from './stream';
 import { Validator } from './validator';
@@ -78,39 +79,6 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
             default: return FinishReason.NULL;
         }
     }
-
-    // private isValidToolCallFunction(func: unknown): func is ToolCallFunction {
-    //     return !!func &&
-    //         typeof func === 'object' &&
-    //         'name' in func &&
-    //         'arguments' in func &&
-    //         typeof (func as any).name === 'string' &&
-    //         typeof (func as any).arguments === 'string';
-    // }
-
-    // private processToolCalls(delta: StreamDelta): { id?: string; name: string; argumentsChunk: string; }[] | undefined {
-    //     if (!delta.tool_calls?.length) {
-    //         return undefined;
-    //     }
-
-    //     if (delta.tool_calls?.length) {
-    //         const validCalls = delta.tool_calls
-    //             .filter((call): call is ChatCompletionMessageToolCall =>
-    //                 call.type === 'function' &&
-    //                 !!call.function &&
-    //                 this.isValidToolCallFunction(call.function)
-    //             )
-    //             .map(call => ({
-    //                 id: call.id,
-    //                 name: call.function.name,
-    //                 argumentsChunk: call.function.arguments,
-    //                 // arguments: JSON.parse(call.function.arguments)
-    //             }));
-    //         return validCalls.length > 0 ? validCalls : undefined;
-    //     }
-
-    //     return undefined;
-    // }
 
     async chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse> {
         try {
@@ -284,6 +252,16 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
                     };
                 }
             }
+
+            // JSON mode
+            if (actualParams.settings?.responseFormat === 'json') {
+                if (actualParams.settings?.jsonSchema) {
+                    const schemaObject = SchemaValidator.getSchemaObject(actualParams.settings.jsonSchema.schema);
+                    openAIParams.response_format = { type: 'json_schema', json_schema: { "strict": true, name: actualParams.settings.jsonSchema.name, schema: schemaObject } };
+                } else {
+                    openAIParams.response_format = { type: 'json_object' };
+                }
+            }
         }
 
         return openAIParams as T;
@@ -337,13 +315,17 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
         // Add usage info if available
         if (typedResponse.usage && universalResponse.metadata) {
             universalResponse.metadata.usage = {
-                inputTokens: typedResponse.usage.prompt_tokens,
-                outputTokens: typedResponse.usage.completion_tokens,
-                totalTokens: typedResponse.usage.total_tokens,
+                tokens: {
+                    input: typedResponse.usage.prompt_tokens,
+                    inputCached: 0,
+                    output: typedResponse.usage.completion_tokens,
+                    total: typedResponse.usage.total_tokens
+                },
                 costs: {
-                    inputCost: 0, // Calculate these based on model pricing
-                    outputCost: 0,
-                    totalCost: 0
+                    input: 0, // Calculate these based on model pricing
+                    inputCached: 0,
+                    output: 0,
+                    total: 0
                 }
             };
         }
@@ -357,36 +339,6 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
         return chunk as UniversalStreamResponse;
     }
 
-    /**
-     * Converts from provider stream response to a universal stream response format
-     * Required by BaseAdapter
-     */
-    // convertFromProviderStreamResponse(chunk: unknown): UniversalStreamResponse {
-    //     if (!chunk || typeof chunk !== 'object') {
-    //         throw new Error('Invalid chunk format');
-    //     }
-
-    //     const typedChunk = chunk as ChatCompletionChunk;
-    //     const delta = typedChunk.choices[0]?.delta as StreamDelta;
-
-    //     if (!delta) {
-    //         throw new Error('No delta in chunk');
-    //     }
-
-    //     // const toolCallDeltas = this.processToolCalls(delta);
-    //     const response: UniversalStreamResponse = {
-    //         content: delta.content || '',
-    //         role: delta.role || 'assistant',
-    //         isComplete: typedChunk.choices[0]?.finish_reason !== null,
-    //         // toolCallDeltas,
-    //         metadata: {
-    //             finishReason: this.mapFinishReason(typedChunk.choices[0]?.finish_reason),
-    //             created: delta.created,
-    //             model: delta.model
-    //         }
-    //     };
-    //     return response;
-    // }
 
     /**
      * Converts an OpenAI-specific stream to universal format
@@ -396,37 +348,6 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
     ): AsyncIterable<UniversalStreamResponse> {
         return this.streamHandler.convertProviderStream(stream as any);
     }
-
-    /**
-     * Converts StreamChunk objects to UniversalStreamResponse objects
-     * This helper method bridges the gap between our internal StreamChunk format
-     * and the UniversalStreamResponse format expected by LLMProvider
-     */
-    // private async *convertStreamChunksToUniversalResponse(
-    //     streamChunks: AsyncIterable<StreamChunk>
-    // ): AsyncIterable<UniversalStreamResponse> {
-    //     const log = logger.createLogger({ prefix: 'OpenAIAdapter.convertStreamChunksToUniversalResponse' });
-
-    //     for await (const chunk of streamChunks) {
-    //         log.debug('Chunk:', chunk);
-    //         const universalChunk: UniversalStreamResponse = {
-    //             content: chunk.content || '',
-    //             role: 'assistant',
-    //             isComplete: chunk.isComplete ?? false,
-    //             metadata: chunk.metadata as any
-    //         };
-
-    //         // Include tool calls if present
-    //         if (chunk.toolCalls && chunk.toolCalls.length > 0) {
-    //             universalChunk.toolCalls = chunk.toolCalls.map(call => ({
-    //                 name: call.name,
-    //                 arguments: call.parameters || {}
-    //             }));
-    //         }
-
-    //         yield universalChunk;
-    //     }
-    // }
 
     /**
      * Maps an OpenAI-specific error to a universal error format

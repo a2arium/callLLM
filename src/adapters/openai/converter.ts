@@ -273,23 +273,23 @@ export class Converter {
             return undefined;
         }
 
-        const result = {
-            inputTokens: usage.prompt_tokens,
-            outputTokens: usage.completion_tokens,
-            totalTokens: usage.total_tokens,
-            ...(usage.prompt_tokens_details?.cached_tokens !== undefined && {
-                inputCachedTokens: usage.prompt_tokens_details.cached_tokens
-            })
-        };
+        // Calculate the cached tokens value
+        const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;
 
         // Always return zero costs when no model info is available
         if (!this.currentModel) {
             return {
-                ...result,
+                tokens: {
+                    input: usage.prompt_tokens,
+                    inputCached: cachedTokens,
+                    output: usage.completion_tokens,
+                    total: usage.total_tokens
+                },
                 costs: {
-                    inputCost: 0,
-                    outputCost: 0,
-                    totalCost: 0
+                    input: 0,
+                    inputCached: 0,
+                    output: 0,
+                    total: 0
                 }
             };
         }
@@ -297,14 +297,26 @@ export class Converter {
         // Calculate costs with model info
         const inputCost = Number(((usage.prompt_tokens / 1_000_000) * this.currentModel.inputPricePerMillion).toFixed(6));
         const outputCost = Number(((usage.completion_tokens / 1_000_000) * this.currentModel.outputPricePerMillion).toFixed(6));
-        const totalCost = Number((inputCost + outputCost).toFixed(6));
+
+        // Calculate cached costs if applicable
+        const inputCachedCost = this.currentModel.inputCachedPricePerMillion
+            ? Number(((cachedTokens / 1_000_000) * this.currentModel.inputCachedPricePerMillion).toFixed(6))
+            : 0;
+
+        const totalCost = Number((inputCost + inputCachedCost + outputCost).toFixed(6));
 
         return {
-            ...result,
+            tokens: {
+                input: usage.prompt_tokens,
+                inputCached: cachedTokens,
+                output: usage.completion_tokens,
+                total: usage.total_tokens
+            },
             costs: {
-                inputCost,
-                outputCost,
-                totalCost
+                input: inputCost,
+                inputCached: inputCachedCost,
+                output: outputCost,
+                total: totalCost
             }
         };
     }

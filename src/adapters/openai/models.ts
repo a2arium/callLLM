@@ -16,8 +16,6 @@ export const defaultModels: ModelInfo[] = [
         },
         capabilities: {
             toolCalls: true,
-            parallelToolCalls: true,
-            batchProcessing: true,
             jsonMode: true
         }
     },
@@ -36,9 +34,7 @@ export const defaultModels: ModelInfo[] = [
         },
         capabilities: {
             toolCalls: true,
-            parallelToolCalls: true,
-            batchProcessing: true,
-            jsonMode: true
+            jsonMode: true,
         }
     },
     {
@@ -57,8 +53,6 @@ export const defaultModels: ModelInfo[] = [
         capabilities: {
             streaming: true,
             toolCalls: false,
-            parallelToolCalls: false,
-            batchProcessing: false,
             systemMessages: false,
             temperature: false,
             jsonMode: true
@@ -80,8 +74,6 @@ export const defaultModels: ModelInfo[] = [
         capabilities: {
             streaming: true,
             toolCalls: false,
-            parallelToolCalls: false,
-            batchProcessing: false,
             systemMessages: false,
             temperature: false,
             jsonMode: true

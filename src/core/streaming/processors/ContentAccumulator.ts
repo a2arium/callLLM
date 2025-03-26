@@ -80,10 +80,6 @@ export class ContentAccumulator implements IStreamProcessor {
                 }
             }
 
-            // Handle legacy format tool calls if present
-            if (chunk.toolCalls?.length) {
-                this.processLegacyToolCalls(chunk.toolCalls);
-            }
 
             // Check for completion
             if (chunk.isComplete && chunk.metadata?.finishReason === FinishReason.TOOL_CALLS) {
@@ -152,15 +148,6 @@ export class ContentAccumulator implements IStreamProcessor {
         logger.debug('Finished processing stream');
     }
 
-    /**
-     * Process legacy format tool calls
-     */
-    private processLegacyToolCalls(toolCalls: ToolCall[]): void {
-        logger.debug(`Processing ${toolCalls.length} legacy tool call(s)`);
-
-        // Simply keep legacy tool calls as is, since they're already in the right format
-        // They don't need accumulation as they come pre-assembled
-    }
 
     getAccumulatedContent(): string {
         logger.debug(`Getting accumulated content, length: ${this.accumulatedContent.length}`);

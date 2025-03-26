@@ -9,31 +9,31 @@ export class TokenCalculator {
         outputTokens: number,
         inputPricePerMillion: number,
         outputPricePerMillion: number,
-        inputCachedTokens?: number,
+        inputCachedTokens: number = 0,
         inputCachedPricePerMillion?: number
     ): Usage['costs'] {
         // Calculate non-cached input tokens
-        const nonCachedInputTokens = (inputCachedTokens !== undefined && inputCachedPricePerMillion !== undefined)
+        const nonCachedInputTokens = (inputCachedTokens && inputCachedPricePerMillion)
             ? inputTokens - inputCachedTokens
             : inputTokens;
 
         // Calculate input costs
         const regularInputCost = (nonCachedInputTokens * inputPricePerMillion) / 1_000_000;
-        const cachedInputCost = (inputCachedTokens !== undefined && inputCachedPricePerMillion !== undefined)
+        const cachedInputCost = (inputCachedTokens && inputCachedPricePerMillion)
             ? (inputCachedTokens * inputCachedPricePerMillion) / 1_000_000
             : 0;
-        const totalInputCost = regularInputCost + cachedInputCost;
 
         // Calculate output cost
         const outputCost = (outputTokens * outputPricePerMillion) / 1_000_000;
 
+        // Calculate total cost
+        const totalCost = regularInputCost + cachedInputCost + outputCost;
+
         return {
-            inputCost: regularInputCost,
-            ...(inputCachedTokens !== undefined && inputCachedPricePerMillion !== undefined
-                ? { inputCachedCost: cachedInputCost }
-                : {}),
-            outputCost,
-            totalCost: totalInputCost + outputCost
+            input: regularInputCost,
+            inputCached: cachedInputCost,
+            output: outputCost,
+            total: totalCost
         };
     }
 
