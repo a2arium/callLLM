@@ -31,20 +31,6 @@ export type ToolCall = {
     error?: string;
 };
 
-export type ParsedToolCall = {
-    toolName: string;
-    arguments: Record<string, unknown>;
-};
-
-export type ToolCallParserOptions = {
-    toolCallPattern?: RegExp;
-};
-
-export type ToolCallParserResult = {
-    toolCalls: ParsedToolCall[];
-    requiresResubmission: boolean;
-};
-
 export class ToolError extends Error {
     constructor(message: string) {
         super(message);

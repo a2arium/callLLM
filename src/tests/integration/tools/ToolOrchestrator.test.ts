@@ -5,6 +5,7 @@ import { ToolsManager } from '../../../core/tools/ToolsManager';
 import type { ToolDefinition } from '../../../core/types';
 import type { UniversalChatResponse, UniversalMessage } from '../../../interfaces/UniversalInterfaces';
 import { StreamController } from '../../../core/streaming/StreamController';
+import { HistoryManager } from '../../../core/history/HistoryManager';
 
 // Mock ChatController
 class MockChatController {
@@ -65,41 +66,84 @@ describe('ToolOrchestrator Integration', () => {
             toolsManager.addTool(mockTimeTool);
 
             // Setup mock chat responses
-            const mockChatController = new MockChatController([
-                'Based on the weather and time data: It\'s a sunny afternoon in London!'
-            ]);
+            const mockChatController = {
+                providerManager: { getProvider: jest.fn() },
+                modelManager: { getModel: jest.fn() },
+                responseProcessor: { validateResponse: jest.fn(), validateJsonMode: jest.fn() },
+                retryManager: { executeWithRetry: jest.fn() },
+                usageTracker: { trackUsage: jest.fn() },
+                toolController: undefined,
+                toolOrchestrator: undefined,
+                historyManager: undefined,
+                execute: jest.fn().mockResolvedValueOnce({
+                    content: 'Based on the weather and time data: It\'s a sunny afternoon in London!',
+                    role: 'assistant'
+                })
+            } as unknown as ChatController;
+
+            const mockHistoryManager = {
+                historicalMessages: [],
+                systemMessage: 'test',
+                initializeWithSystemMessage: jest.fn(),
+                getHistoricalMessages: jest.fn().mockReturnValue([]),
+                validateMessage: jest.fn(),
+                addMessage: jest.fn(),
+                clearHistory: jest.fn(),
+                setHistoricalMessages: jest.fn(),
+                getLastMessageByRole: jest.fn(),
+                getLastMessages: jest.fn(),
+                serializeHistory: jest.fn(),
+                deserializeHistory: jest.fn(),
+                updateSystemMessage: jest.fn(),
+                addToolCallToHistory: jest.fn(),
+                getHistorySummary: jest.fn(),
+                captureStreamResponse: jest.fn()
+            } as unknown as HistoryManager;
 
             orchestrator = new ToolOrchestrator(
                 toolController,
-                mockChatController as unknown as ChatController,
-                mockStreamController
+                mockChatController,
+                mockStreamController,
+                mockHistoryManager
             );
 
             // Initial response with tool calls
             const initialResponse: UniversalChatResponse = {
                 role: 'assistant',
-                content: `Let me check the weather and time in London.
-                    <tool>getWeather:{"location": "London"}</tool>
-                    <tool>getTime:{"location": "London"}</tool>`,
-                metadata: {}
+                content: 'Let me check the weather and time in London.',
+                metadata: {},
+                toolCalls: [
+                    {
+                        name: 'getWeather',
+                        arguments: { location: 'London' }
+                    },
+                    {
+                        name: 'getTime',
+                        arguments: { location: 'London' }
+                    }
+                ]
             };
 
-            const result = await orchestrator.processResponse(initialResponse, {
-                model: 'gpt-4',
-                systemMessage: 'You are a helpful assistant.',
-                historicalMessages: []
-            });
+            const result = await orchestrator.processToolCalls(initialResponse);
 
             // Verify tool executions
-            expect(result.toolExecutions).toHaveLength(2);
-            expect(result.toolExecutions[0].toolName).toBe('getWeather');
-            expect(result.toolExecutions[1].toolName).toBe('getTime');
+            expect(result.newToolCalls).toBe(2);
+            expect(result.requiresResubmission).toBe(true);
             expect(mockWeatherTool.callFunction).toHaveBeenCalledWith({ location: 'London' });
             expect(mockTimeTool.callFunction).toHaveBeenCalledWith({ location: 'London' });
 
-            // Verify final response
-            expect(result.finalResponse.content).toBe(
-                'Based on the weather and time data: It\'s a sunny afternoon in London!'
+            // Verify history manager was called
+            expect(mockHistoryManager.addToolCallToHistory).toHaveBeenCalledWith(
+                'getWeather',
+                { location: 'London' },
+                'Sunny, 22°C',
+                undefined
+            );
+            expect(mockHistoryManager.addToolCallToHistory).toHaveBeenCalledWith(
+                'getTime',
+                { location: 'London' },
+                '14:30 GMT',
+                undefined
             );
         });
 
@@ -118,31 +162,69 @@ describe('ToolOrchestrator Integration', () => {
             toolsManager.addTool(mockErrorTool);
 
             // Setup mock chat responses
-            const mockChatController = new MockChatController([
-                'I encountered an error while executing the tool.'
-            ]);
+            const mockChatController = {
+                providerManager: { getProvider: jest.fn() },
+                modelManager: { getModel: jest.fn() },
+                responseProcessor: { validateResponse: jest.fn(), validateJsonMode: jest.fn() },
+                retryManager: { executeWithRetry: jest.fn() },
+                usageTracker: { trackUsage: jest.fn() },
+                toolController: undefined,
+                toolOrchestrator: undefined,
+                historyManager: undefined,
+                execute: jest.fn().mockResolvedValueOnce({
+                    content: 'I encountered an error while executing the tool.',
+                    role: 'assistant'
+                })
+            } as unknown as ChatController;
+
+            const mockHistoryManager = {
+                historicalMessages: [],
+                systemMessage: 'test',
+                initializeWithSystemMessage: jest.fn(),
+                getHistoricalMessages: jest.fn().mockReturnValue([]),
+                validateMessage: jest.fn(),
+                addMessage: jest.fn(),
+                clearHistory: jest.fn(),
+                setHistoricalMessages: jest.fn(),
+                getLastMessageByRole: jest.fn(),
+                getLastMessages: jest.fn(),
+                serializeHistory: jest.fn(),
+                deserializeHistory: jest.fn(),
+                updateSystemMessage: jest.fn(),
+                addToolCallToHistory: jest.fn(),
+                getHistorySummary: jest.fn(),
+                captureStreamResponse: jest.fn()
+            } as unknown as HistoryManager;
 
             orchestrator = new ToolOrchestrator(
                 toolController,
-                mockChatController as unknown as ChatController,
-                mockStreamController
+                mockChatController,
+                mockStreamController,
+                mockHistoryManager
             );
 
             const initialResponse: UniversalChatResponse = {
                 role: 'assistant',
-                content: '<tool>errorTool:{}</tool>',
-                metadata: {}
+                content: 'Let me try to execute this tool.',
+                metadata: {},
+                toolCalls: [
+                    {
+                        name: 'errorTool',
+                        arguments: { shouldFail: true }
+                    }
+                ]
             };
 
-            const result = await orchestrator.processResponse(initialResponse, {
-                model: 'gpt-4',
-                systemMessage: 'You are a helpful assistant.',
-                historicalMessages: []
-            });
+            const result = await orchestrator.processToolCalls(initialResponse);
 
-            expect(result.toolExecutions).toHaveLength(1);
-            expect(result.toolExecutions[0].error).toBeDefined();
-            expect(result.toolExecutions[0].error).toContain('Tool execution failed');
+            expect(result.newToolCalls).toBe(1);
+            expect(result.requiresResubmission).toBe(true);
+            expect(mockHistoryManager.addToolCallToHistory).toHaveBeenCalledWith(
+                'errorTool',
+                { shouldFail: true },
+                undefined,
+                expect.stringContaining('Tool execution failed')
+            );
         });
 
         it('should handle multiple tool execution cycles', async () => {
@@ -164,32 +246,69 @@ describe('ToolOrchestrator Integration', () => {
             toolsManager.addTool(mockTool);
 
             // Setup mock chat responses that include another tool call
-            const mockChatController = new MockChatController([
-                'First response with tool call <tool>testTool:{"param": "second"}</tool>',
-                'Final response without tool calls'
-            ]);
+            const mockChatController = {
+                providerManager: { getProvider: jest.fn() },
+                modelManager: { getModel: jest.fn() },
+                responseProcessor: { validateResponse: jest.fn(), validateJsonMode: jest.fn() },
+                retryManager: { executeWithRetry: jest.fn() },
+                usageTracker: { trackUsage: jest.fn() },
+                toolController: undefined,
+                toolOrchestrator: undefined,
+                historyManager: undefined,
+                execute: jest.fn().mockResolvedValueOnce({
+                    content: 'Final response without tool calls',
+                    role: 'assistant'
+                })
+            } as unknown as ChatController;
+
+            const mockHistoryManager = {
+                historicalMessages: [],
+                systemMessage: 'test',
+                initializeWithSystemMessage: jest.fn(),
+                getHistoricalMessages: jest.fn().mockReturnValue([]),
+                validateMessage: jest.fn(),
+                addMessage: jest.fn(),
+                clearHistory: jest.fn(),
+                setHistoricalMessages: jest.fn(),
+                getLastMessageByRole: jest.fn(),
+                getLastMessages: jest.fn(),
+                serializeHistory: jest.fn(),
+                deserializeHistory: jest.fn(),
+                updateSystemMessage: jest.fn(),
+                addToolCallToHistory: jest.fn(),
+                getHistorySummary: jest.fn(),
+                captureStreamResponse: jest.fn()
+            } as unknown as HistoryManager;
 
             orchestrator = new ToolOrchestrator(
                 toolController,
-                mockChatController as unknown as ChatController,
-                mockStreamController
+                mockChatController,
+                mockStreamController,
+                mockHistoryManager
             );
 
             const initialResponse: UniversalChatResponse = {
                 role: 'assistant',
-                content: '<tool>testTool:{"param": "first"}</tool>',
-                metadata: {}
+                content: 'Let me execute the test tool.',
+                metadata: {},
+                toolCalls: [
+                    {
+                        name: 'testTool',
+                        arguments: {}
+                    }
+                ]
             };
 
-            const result = await orchestrator.processResponse(initialResponse, {
-                model: 'gpt-4',
-                systemMessage: 'You are a helpful assistant.',
-                historicalMessages: []
-            });
+            const result = await orchestrator.processToolCalls(initialResponse);
 
-            expect(result.toolExecutions).toHaveLength(2);
-            expect(mockTool.callFunction).toHaveBeenCalledTimes(2);
-            expect(result.finalResponse.content).toBe('Final response without tool calls');
+            expect(result.newToolCalls).toBe(1);
+            expect(result.requiresResubmission).toBe(true);
+            expect(mockHistoryManager.addToolCallToHistory).toHaveBeenCalledWith(
+                'testTool',
+                {},
+                'First result',
+                undefined
+            );
         });
 
         it('should preserve conversation history', async () => {
@@ -210,30 +329,69 @@ describe('ToolOrchestrator Integration', () => {
                 { role: 'assistant', content: 'Initial response' }
             ];
 
-            const mockChatController = new MockChatController([
-                'Final response'
-            ]);
+            const mockChatController = {
+                providerManager: { getProvider: jest.fn() },
+                modelManager: { getModel: jest.fn() },
+                responseProcessor: { validateResponse: jest.fn(), validateJsonMode: jest.fn() },
+                retryManager: { executeWithRetry: jest.fn() },
+                usageTracker: { trackUsage: jest.fn() },
+                toolController: undefined,
+                toolOrchestrator: undefined,
+                historyManager: undefined,
+                execute: jest.fn().mockResolvedValueOnce({
+                    content: 'Final response',
+                    role: 'assistant'
+                })
+            } as unknown as ChatController;
+
+            const mockHistoryManager = {
+                historicalMessages: [],
+                systemMessage: 'test',
+                initializeWithSystemMessage: jest.fn(),
+                getHistoricalMessages: jest.fn().mockReturnValue(historicalMessages),
+                validateMessage: jest.fn(),
+                addMessage: jest.fn(),
+                clearHistory: jest.fn(),
+                setHistoricalMessages: jest.fn(),
+                getLastMessageByRole: jest.fn(),
+                getLastMessages: jest.fn(),
+                serializeHistory: jest.fn(),
+                deserializeHistory: jest.fn(),
+                updateSystemMessage: jest.fn(),
+                addToolCallToHistory: jest.fn(),
+                getHistorySummary: jest.fn(),
+                captureStreamResponse: jest.fn()
+            } as unknown as HistoryManager;
 
             orchestrator = new ToolOrchestrator(
                 toolController,
-                mockChatController as unknown as ChatController,
-                mockStreamController
+                mockChatController,
+                mockStreamController,
+                mockHistoryManager
             );
 
             const initialResponse: UniversalChatResponse = {
                 role: 'assistant',
-                content: '<tool>testTool:{}</tool>',
-                metadata: {}
+                content: 'Let me execute the test tool.',
+                metadata: {},
+                toolCalls: [
+                    {
+                        name: 'testTool',
+                        arguments: {}
+                    }
+                ]
             };
 
-            const result = await orchestrator.processResponse(initialResponse, {
-                model: 'gpt-4',
-                systemMessage: 'You are a helpful assistant.',
-                historicalMessages
-            });
+            const result = await orchestrator.processToolCalls(initialResponse);
 
-            expect(result.toolExecutions).toHaveLength(1);
-            expect(result.finalResponse.content).toBe('Final response');
+            expect(result.newToolCalls).toBe(1);
+            expect(result.requiresResubmission).toBe(true);
+            expect(mockHistoryManager.addToolCallToHistory).toHaveBeenCalledWith(
+                'testTool',
+                {},
+                'Tool result',
+                undefined
+            );
         });
     });
 }); 

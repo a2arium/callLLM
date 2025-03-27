@@ -26,15 +26,3 @@ export type IRetryPolicy = {
     shouldRetry(error: Error, attempt: number): boolean;
     getDelayMs(attempt: number): number;
 };
-
-export type IStreamFactory = {
-    createStream(params: Record<string, unknown>): AsyncIterable<StreamChunk>;
-};
-
-export type IStreamConverter = {
-    convert(stream: AsyncIterable<unknown>): AsyncIterable<StreamChunk>;
-};
-
-export abstract class BaseStreamHandler implements IStreamProcessor {
-    abstract processStream(stream: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>;
-} 

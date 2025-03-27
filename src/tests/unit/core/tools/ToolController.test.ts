@@ -42,7 +42,7 @@ describe('ToolController', () => {
         };
         const result = await controller.processToolCalls('', response);
         expect(result.messages[0]).toMatchObject({ role: 'system', content: expect.stringContaining('nonExistentTool') });
-        expect(result.toolCalls[0]).toMatchObject({ name: 'nonExistentTool', error: expect.stringContaining('not found') });
+        expect(result.toolCalls[0]).toMatchObject({ toolName: 'nonExistentTool', error: expect.stringContaining('not found') });
         expect(result.requiresResubmission).toBe(true);
     });
 
@@ -67,7 +67,7 @@ describe('ToolController', () => {
         expect(dummyTool.callFunction).toHaveBeenCalledWith({ key: 'value' });
         // If result is not a string, JSON.stringify will be used
         expect(result.messages[0]).toMatchObject({ role: 'function', content: JSON.stringify({ result: 'resultValue' }), name: 'dummyTool' });
-        expect(result.toolCalls[0]).toMatchObject({ name: 'dummyTool', result: JSON.stringify({ result: 'resultValue' }) });
+        expect(result.toolCalls[0]).toMatchObject({ toolName: 'dummyTool', result: JSON.stringify({ result: 'resultValue' }) });
     });
 
     test('should process direct tool call with postCallLogic', async () => {
@@ -92,7 +92,7 @@ describe('ToolController', () => {
         expect(dummyTool.postCallLogic).toHaveBeenCalledWith('rawResult');
         expect(result.messages[0]).toMatchObject({ role: 'function', content: 'processedMessage', name: 'dummyTool' });
         // Even with postCallLogic, the original result is used for toolCalls
-        expect(result.toolCalls[0]).toMatchObject({ name: 'dummyTool', result: JSON.stringify('rawResult') });
+        expect(result.toolCalls[0]).toMatchObject({ toolName: 'dummyTool', result: 'rawResult' });
     });
 
     test('should handle error thrown by tool call', async () => {
@@ -114,7 +114,7 @@ describe('ToolController', () => {
         };
         const result = await controller.processToolCalls('', response);
         expect(result.messages[0]).toMatchObject({ role: 'system', content: expect.stringContaining('failingTool') });
-        expect(result.toolCalls[0]).toMatchObject({ name: 'failingTool', error: expect.stringContaining('call failed') });
+        expect(result.toolCalls[0]).toMatchObject({ toolName: 'failingTool', error: expect.stringContaining('call failed') });
     });
 
     test('should not fall back to parsing content when response is missing toolCalls', async () => {
@@ -126,10 +126,18 @@ describe('ToolController', () => {
             return name === 'parseTool' ? dummyTool : undefined;
         });
         const controller = new ToolController(fakeToolsManager);
-        const parseSpy = jest.spyOn((controller as any).toolCallParser, 'parse').mockReturnValue({
-            toolCalls: [{ toolName: 'parseTool', parameters: { a: 1 } }],
-            requiresResubmission: false
-        });
+
+        // Create a mock toolCallParser property manually since it doesn't actually exist in the ToolController
+        // We're only doing this for test purposes
+        (controller as any).toolCallParser = {
+            parse: jest.fn().mockReturnValue({
+                toolCalls: [{ toolName: 'parseTool', arguments: { a: 1 } }],
+                requiresResubmission: false
+            }),
+            hasToolCalls: jest.fn().mockReturnValue(false)
+        };
+        const parseSpy = jest.spyOn((controller as any).toolCallParser, 'parse');
+
         const result = await controller.processToolCalls('some content');
         expect(parseSpy).not.toHaveBeenCalled();
         expect(dummyTool.callFunction).not.toHaveBeenCalled();

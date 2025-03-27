@@ -48,43 +48,11 @@ describe('StreamingService', () => {
         yield { content: ' response', role: 'assistant', isComplete: true };
     };
 
-    // Sample processed stream
-    const mockProcessedStream = async function* () {
-        yield {
-            content: 'Test',
-            role: 'assistant',
-            isComplete: false,
-            metadata: {
-                usage: {
-                    inputTokens: 10,
-                    outputTokens: 5,
-                    totalTokens: 15,
-                    costs: {
-                        inputCost: 0.01,
-                        outputCost: 0.02,
-                        totalCost: 0.03
-                    }
-                }
-            }
-        };
-        yield {
-            content: ' response',
-            role: 'assistant',
-            isComplete: true,
-            metadata: {
-                usage: {
-                    inputTokens: 10,
-                    outputTokens: 10,
-                    totalTokens: 20,
-                    costs: {
-                        inputCost: 0.01,
-                        outputCost: 0.04,
-                        totalCost: 0.05
-                    }
-                }
-            }
-        };
-    };
+    // HELPER FUNCTIONS
+    async function* mockProcessedStream(): AsyncGenerator<UniversalStreamResponse> {
+        yield { content: 'Test', role: 'assistant', isComplete: false };
+        yield { content: ' response', role: 'assistant', isComplete: true };
+    }
 
     beforeEach(() => {
         // Reset mocks
@@ -126,10 +94,19 @@ describe('StreamingService', () => {
     });
 
     it('should create a stream with system message', async () => {
-        // Create service
+        // Create mock HistoryManager
+        const mockHistoryManager = {
+            addMessage: jest.fn(),
+            getHistoricalMessages: jest.fn().mockReturnValue([]),
+            getLatestMessages: jest.fn(),
+            systemMessage: 'Test system message'
+        } as unknown as any;
+
+        // Create service with correct constructor parameters
         const service = new StreamingService(
             mockProviderManager,
             mockModelManager,
+            mockHistoryManager,
             mockRetryManager,
             mockUsageCallback,
             callerId
@@ -172,10 +149,19 @@ describe('StreamingService', () => {
     });
 
     it('should not prepend system message if one already exists', async () => {
-        // Create service
+        // Create mock HistoryManager
+        const mockHistoryManager = {
+            addMessage: jest.fn(),
+            getHistoricalMessages: jest.fn().mockReturnValue([]),
+            getLatestMessages: jest.fn(),
+            systemMessage: 'Test system message'
+        } as unknown as any;
+
+        // Create service with correct constructor parameters
         const service = new StreamingService(
             mockProviderManager,
             mockModelManager,
+            mockHistoryManager,
             mockRetryManager
         );
 
@@ -211,24 +197,28 @@ describe('StreamingService', () => {
 
     it('should handle retries correctly', async () => {
         // Configure retry manager to simulate a retry
-        mockRetryManager.executeWithRetry.mockImplementation(async (fn, shouldRetry) => {
-            // Call the function once, then simulate a retry
+        mockRetryManager.executeWithRetry.mockImplementation(async (fn) => {
+            // First call fails, second succeeds
             try {
-                return fn();
+                return await fn();
             } catch (error) {
-                // Simulate retry logic
-                return mockProcessedStream();
+                return await fn();
             }
         });
 
-        // Make the provider fail on first call
-        mockProvider.streamCall.mockRejectedValueOnce(new Error('Test error'));
-        mockProvider.streamCall.mockResolvedValueOnce(mockStreamResponse());
+        // Create mock HistoryManager
+        const mockHistoryManager = {
+            addMessage: jest.fn(),
+            getHistoricalMessages: jest.fn().mockReturnValue([]),
+            getLatestMessages: jest.fn(),
+            systemMessage: 'Test system message'
+        } as unknown as any;
 
-        // Create service
+        // Create service with correct constructor parameters
         const service = new StreamingService(
             mockProviderManager,
             mockModelManager,
+            mockHistoryManager,
             mockRetryManager
         );
 
@@ -237,6 +227,10 @@ describe('StreamingService', () => {
             messages: [{ role: 'user', content: 'Test message' }],
             settings: { stream: true }
         };
+
+        // Make the provider fail on first call
+        mockProvider.streamCall.mockRejectedValueOnce(new Error('Test error'));
+        mockProvider.streamCall.mockResolvedValueOnce(mockStreamResponse());
 
         // Call createStream
         const stream = await service.createStream(params, testModel);
@@ -251,37 +245,67 @@ describe('StreamingService', () => {
         expect(mockRetryManager.executeWithRetry).toHaveBeenCalled();
 
         // Provider should have been called twice (original + retry)
-        expect(mockProvider.streamCall).toHaveBeenCalledTimes(1);
+        expect(mockProvider.streamCall).toHaveBeenCalledTimes(2);
     });
 
-    it('should update the callerId correctly', () => {
+    it('should update the callerId correctly', async () => {
+        // Create mock HistoryManager
+        const mockHistoryManager = {
+            addMessage: jest.fn(),
+            getHistoricalMessages: jest.fn().mockReturnValue([]),
+            getLatestMessages: jest.fn(),
+            systemMessage: 'Test system message'
+        } as unknown as any;
+
         // Create service with initial callerId
         const service = new StreamingService(
             mockProviderManager,
             mockModelManager,
+            mockHistoryManager,
             mockRetryManager,
             mockUsageCallback,
-            callerId
+            'test-caller-id'
         );
 
         // Update callerId
-        const newCallerId = 'new-caller-id';
-        service.setCallerId(newCallerId);
+        service.setCallerId('new-caller-id');
+
+        // Create stream params
+        const params: UniversalChatParams = {
+            messages: [{ role: 'user', content: 'Test message' }],
+            settings: { stream: true }
+        };
+
+        // Call createStream to trigger StreamHandler creation
+        await service.createStream(params, testModel);
 
         // Verify that new stream handler was created with updated callerId
         expect(StreamHandler).toHaveBeenLastCalledWith(
             expect.any(TokenCalculator),
+            expect.any(Object), // HistoryManager
             expect.any(ResponseProcessor),
             mockUsageCallback,
-            newCallerId
+            'new-caller-id',
+            undefined, // toolController
+            undefined, // toolOrchestrator
+            expect.any(Object) // StreamingService
         );
     });
 
     it('should update the usage callback correctly', () => {
-        // Create service
+        // Create mock HistoryManager
+        const mockHistoryManager = {
+            addMessage: jest.fn(),
+            getHistoricalMessages: jest.fn().mockReturnValue([]),
+            getLatestMessages: jest.fn(),
+            systemMessage: 'Test system message'
+        } as unknown as any;
+
+        // Create service with correct constructor parameters
         const service = new StreamingService(
             mockProviderManager,
             mockModelManager,
+            mockHistoryManager,
             mockRetryManager,
             mockUsageCallback,
             callerId
@@ -294,9 +318,13 @@ describe('StreamingService', () => {
         // Verify that new stream handler was created with updated callback
         expect(StreamHandler).toHaveBeenLastCalledWith(
             expect.any(TokenCalculator),
+            expect.any(Object), // HistoryManager
             expect.any(ResponseProcessor),
             newCallback,
-            expect.any(String)
+            callerId,
+            undefined, // toolController
+            undefined, // toolOrchestrator
+            expect.any(Object) // StreamingService
         );
     });
 }); 

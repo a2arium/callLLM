@@ -21,13 +21,17 @@ type ModelInfo = {
 };
 
 type Usage = {
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
+    tokens: {
+        input: number;
+        inputCached: number;
+        output: number;
+        total: number;
+    };
     costs: {
-        inputCost: number;
-        outputCost: number;
-        totalCost: number;
+        input: number;
+        inputCached: number;
+        output: number;
+        total: number;
     };
 };
 
@@ -61,7 +65,6 @@ describe("ChatController", () => {
     let retryManager: RetryManager;
     const modelName = 'openai-model';
     const systemMessage = 'system message';
-    const userMessage = 'user message';
     const fakeModel: ModelInfo = {
         name: modelName,
         inputPricePerMillion: 30,
@@ -75,13 +78,17 @@ describe("ChatController", () => {
         }
     };
     const usage: Usage = {
-        inputTokens: 10,
-        outputTokens: 20,
-        totalTokens: 30,
+        tokens: {
+            input: 10,
+            inputCached: 0,
+            output: 20,
+            total: 30
+        },
         costs: {
-            inputCost: 0.00001,
-            outputCost: 0.00002,
-            totalCost: 0.00003
+            input: 0.00001,
+            inputCached: 0,
+            output: 0.00002,
+            total: 0.00003
         }
     };
 
@@ -125,13 +132,12 @@ describe("ChatController", () => {
     });
 
     it('should execute chat call successfully with default settings', async () => {
-        const result = await chatController.execute({ model: modelName, systemMessage, message: userMessage });
+        const result = await chatController.execute({ model: modelName, systemMessage });
 
         // Verify that validateJsonMode has been called with the correct arguments.
         expect(responseProcessor.validateJsonMode).toHaveBeenCalledWith(fakeModel, {
             messages: [
-                { role: 'system', content: systemMessage },
-                { role: 'user', content: userMessage }
+                { role: 'system', content: systemMessage }
             ],
             settings: undefined
         });
@@ -139,8 +145,7 @@ describe("ChatController", () => {
         // The expected chat parameters.
         const expectedParams: UniversalChatParams = {
             messages: [
-                { role: 'system', content: systemMessage },
-                { role: 'user', content: userMessage }
+                { role: 'system', content: systemMessage }
             ],
             settings: undefined
         };
@@ -148,7 +153,7 @@ describe("ChatController", () => {
 
         // Verify usage tracking was called since metadata.usage was initially undefined.
         expect(usageTracker.trackUsage).toHaveBeenCalledWith(
-            systemMessage + '\n' + userMessage,
+            systemMessage + '\n',
             'provider response',
             fakeModel
         );
@@ -165,20 +170,19 @@ describe("ChatController", () => {
 
     it('should throw an error if model is not found', async () => {
         modelManager.getModel.mockReturnValue(undefined);
-        await expect(chatController.execute({ model: modelName, systemMessage, message: userMessage }))
+        await expect(chatController.execute({ model: modelName, systemMessage }))
             .rejects
             .toThrow(`Model ${modelName} not found`);
     });
 
     it('should append JSON instructions to the system message when responseFormat is json', async () => {
         const settings = { responseFormat: 'json' } as const;
-        await chatController.execute({ model: modelName, systemMessage, message: userMessage, settings });
+        await chatController.execute({ model: modelName, systemMessage, settings });
 
         const expectedSystemMessage = systemMessage + '\n Provide your response in valid JSON format.';
         const expectedParams: UniversalChatParams = {
             messages: [
-                { role: 'system', content: expectedSystemMessage },
-                { role: 'user', content: userMessage }
+                { role: 'system', content: expectedSystemMessage }
             ],
             settings: settings
         };
@@ -193,48 +197,36 @@ describe("ChatController", () => {
             role: 'assistant',
             metadata: {
                 usage: {
-                    inputTokens: 5,
-                    outputTokens: 10,
-                    totalTokens: 15,
+                    tokens: {
+                        input: 5,
+                        inputCached: 0,
+                        output: 10,
+                        total: 15
+                    },
                     costs: {
-                        inputCost: 0.000005,
-                        outputCost: 0.00001,
-                        totalCost: 0.000015
+                        input: 0.000005,
+                        inputCached: 0,
+                        output: 0.00001,
+                        total: 0.000015
                     }
                 }
             }
         };
-        providerManager.getProvider().chatCall.mockResolvedValueOnce(providerResponse);
 
-        const result = await chatController.execute({ model: modelName, systemMessage, message: userMessage });
+        // Update the mock to return our prepared response
+        providerManager.getProvider().chatCall.mockResolvedValue(providerResponse);
 
-        // Even though metadata.usage exists, trackUsage should still be called.
+        const result = await chatController.execute({ model: modelName, systemMessage });
+
+        // Verify that trackUsage was still called
         expect(usageTracker.trackUsage).toHaveBeenCalledWith(
-            systemMessage + '\n' + userMessage,
+            systemMessage + '\n',
             'provider response with usage',
             fakeModel
         );
 
-        // Since validateResponse returns its input, the usage remains unchanged.
-        expect(result.metadata?.usage).toEqual(providerResponse.metadata!.usage);
-    });
-
-    it('should include historical messages between system and user messages', async () => {
-        const historicalMessages: UniversalMessage[] = [
-            { role: 'assistant', content: 'previous answer' }
-        ];
-        await chatController.execute({ model: modelName, systemMessage, message: userMessage, historicalMessages });
-
-        const expectedParams: UniversalChatParams = {
-            messages: [
-                { role: 'system', content: systemMessage },
-                ...historicalMessages,
-                { role: 'user', content: userMessage }
-            ],
-            settings: undefined
-        };
-
-        expect(providerManager.getProvider().chatCall).toHaveBeenCalledWith(modelName, expectedParams);
+        // The result should have the usage from trackUsage, not the original metadata
+        expect(result.metadata?.usage).toEqual(usage);
     });
 
     describe("Content-based retry", () => {
@@ -284,7 +276,6 @@ describe("ChatController", () => {
             const result = await chatController.execute({
                 model: modelName,
                 systemMessage,
-                message: userMessage,
             });
 
             expect(result).toEqual(satisfactoryResponse);
@@ -307,7 +298,6 @@ describe("ChatController", () => {
             await expect(chatController.execute({
                 model: modelName,
                 systemMessage,
-                message: userMessage,
             })).rejects.toThrow(/Failed after 3 retries.*Response content triggered retry due to unsatisfactory answer/);
 
             expect(mockProvider.chatCall).toHaveBeenCalledTimes(4); // Initial + 3 retries

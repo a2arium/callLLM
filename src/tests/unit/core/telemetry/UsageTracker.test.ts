@@ -37,15 +37,18 @@ describe('UsageTracker', () => {
                     inputTokens: number,
                     outputTokens: number,
                     inputPrice: number,
-                    outputPrice: number
+                    outputPrice: number,
+                    cachedTokens: number = 0,
+                    cachedPrice: number = 0
                 ) => {
                     const inputCost = (inputTokens * inputPrice) / 1_000_000;
                     const outputCost = (outputTokens * outputPrice) / 1_000_000;
+                    const cachedCost = (cachedTokens * cachedPrice) / 1_000_000;
                     return {
                         input: inputCost,
-                        inputCached: 0,
+                        inputCached: cachedCost,
                         output: outputCost,
-                        total: inputCost + outputCost
+                        total: inputCost + outputCost + cachedCost
                     };
                 }
             ),
@@ -80,6 +83,7 @@ describe('UsageTracker', () => {
                 temperature: false,
                 jsonMode: false,
             },
+            inputCachedPricePerMillion: 500 // Add cached price
         };
     });
 
@@ -90,7 +94,7 @@ describe('UsageTracker', () => {
         // Verify the tokenCalculator functions were called with the expected inputs.
         expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('input');
         expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('output');
-        expect(dummyTokenCalculator.calculateUsage).toHaveBeenCalledWith(10, 20, 1000, 2000);
+        expect(dummyTokenCalculator.calculateUsage).toHaveBeenCalledWith(10, 20, 1000, 2000, 0, 500);
 
         // Verify the usage object returned.
         expect(usage).toEqual({
@@ -153,5 +157,32 @@ describe('UsageTracker', () => {
                 total: 0.05
             }
         });
+    });
+
+    it('should handle cached tokens correctly', async () => {
+        const tracker = new UsageTracker(dummyTokenCalculator, undefined, 'dummy-caller');
+        const usage = await tracker.trackUsage('input', 'output', modelInfo, 5);
+
+        // Verify the tokenCalculator functions were called with the expected inputs.
+        expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('input');
+        expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('output');
+        expect(dummyTokenCalculator.calculateUsage).toHaveBeenCalledWith(10, 20, 1000, 2000, 5, 500);
+
+        // Verify the usage object returned.
+        expect(usage).toEqual({
+            tokens: {
+                input: 10,
+                inputCached: 5,
+                output: 20,
+                total: 30
+            },
+            costs: {
+                input: 0.01,
+                inputCached: 0.0025,
+                output: 0.04,
+                total: expect.any(Number)
+            }
+        });
+        expect(usage.costs.total).toBeCloseTo(0.0525, 5);
     });
 });

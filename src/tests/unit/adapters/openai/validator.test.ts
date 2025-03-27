@@ -36,7 +36,7 @@ describe('Validator', () => {
                     messages: [{ content: 'test' }] as any
                 };
                 expect(() => validator.validateParams(params)).toThrow(AdapterError);
-                expect(() => validator.validateParams(params)).toThrow('Each message must have a role and content');
+                expect(() => validator.validateParams(params)).toThrow('Each message must have a role');
             });
 
             it('should throw error when message is missing content', () => {
@@ -44,7 +44,7 @@ describe('Validator', () => {
                     messages: [{ role: 'user' }] as any
                 };
                 expect(() => validator.validateParams(params)).toThrow(AdapterError);
-                expect(() => validator.validateParams(params)).toThrow('Each message must have a role and content');
+                expect(() => validator.validateParams(params)).toThrow('Each message must have either content or tool calls');
             });
 
             it('should throw error when message has invalid role', () => {
@@ -52,14 +52,18 @@ describe('Validator', () => {
                     messages: [{ role: 'invalid' as any, content: 'test' }]
                 };
                 expect(() => validator.validateParams(params)).toThrow(AdapterError);
-                expect(() => validator.validateParams(params)).toThrow('Invalid message role. Must be one of: system, user, assistant');
+                expect(() => validator.validateParams(params)).toThrow('Invalid message role. Must be one of: system, user, assistant, function, tool');
             });
 
             it('should accept valid message roles', () => {
-                const validRoles = ['system', 'user', 'assistant'] as const;
+                const validRoles = ['system', 'user', 'assistant', 'function', 'tool'] as const;
                 validRoles.forEach(role => {
                     const params: UniversalChatParams = {
-                        messages: [{ role, content: 'test' }]
+                        messages: [{
+                            role,
+                            content: 'test',
+                            name: role === 'function' ? 'testFunction' : undefined
+                        }]
                     };
                     expect(() => validator.validateParams(params)).not.toThrow();
                 });

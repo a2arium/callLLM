@@ -109,7 +109,7 @@ describe('SchemaValidator', () => {
                 age: z.number()
             });
 
-            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchema(zodSchema));
+            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchemaString(zodSchema));
             expect(jsonSchema).toEqual({
                 type: 'object',
                 properties: {
@@ -127,7 +127,7 @@ describe('SchemaValidator', () => {
                 age: z.number().optional()
             });
 
-            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchema(zodSchema));
+            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchemaString(zodSchema));
             expect(jsonSchema).toEqual({
                 type: 'object',
                 properties: {
@@ -144,7 +144,7 @@ describe('SchemaValidator', () => {
                 email: z.string().email()
             });
 
-            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchema(zodSchema));
+            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchemaString(zodSchema));
             expect(jsonSchema.properties.email).toEqual({
                 type: 'string',
                 format: 'email'
@@ -156,7 +156,7 @@ describe('SchemaValidator', () => {
                 tags: z.array(z.string())
             });
 
-            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchema(zodSchema));
+            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchemaString(zodSchema));
             expect(jsonSchema.properties.tags).toEqual({
                 type: 'array',
                 items: { type: 'string' }
@@ -168,7 +168,7 @@ describe('SchemaValidator', () => {
                 role: z.enum(['admin', 'user'])
             });
 
-            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchema(zodSchema));
+            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchemaString(zodSchema));
             expect(jsonSchema.properties.role).toEqual({
                 type: 'string',
                 enum: ['admin', 'user']
@@ -180,7 +180,7 @@ describe('SchemaValidator', () => {
                 metadata: z.record(z.string())
             });
 
-            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchema(zodSchema));
+            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchemaString(zodSchema));
             expect(jsonSchema.properties.metadata).toEqual({
                 type: 'object',
                 additionalProperties: { type: 'string' }
@@ -198,7 +198,7 @@ describe('SchemaValidator', () => {
                 })
             });
 
-            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchema(zodSchema));
+            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchemaString(zodSchema));
             expect(jsonSchema.properties.user.properties.address).toEqual({
                 type: 'object',
                 properties: {
@@ -215,17 +215,17 @@ describe('SchemaValidator', () => {
                 unknown: z.any()
             });
 
-            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchema(zodSchema));
+            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchemaString(zodSchema));
             expect(jsonSchema.properties.unknown).toEqual({
                 type: 'string'  // fallback type
             });
         });
     });
 
-    describe('getProviderSchema', () => {
+    describe('getSchemaString', () => {
         it('should return string schema as-is', () => {
             const schema = '{"type":"object"}';
-            expect(SchemaValidator.getProviderSchema(schema, 'openai')).toBe(schema);
+            expect(SchemaValidator.getSchemaString(schema)).toBe(schema);
         });
 
         it('should convert Zod schema to JSON schema string', () => {
@@ -233,7 +233,7 @@ describe('SchemaValidator', () => {
                 name: z.string()
             });
 
-            const result = SchemaValidator.getProviderSchema(zodSchema, 'openai');
+            const result = SchemaValidator.getSchemaString(zodSchema);
             const parsed = JSON.parse(result);
             expect(parsed).toEqual({
                 type: 'object',

@@ -59,7 +59,7 @@ describe('ResponseProcessor', () => {
             };
 
             const result = await processor.validateResponse(response, settings);
-            expect(result.content).toEqual(jsonContent);
+            expect(result.contentObject).toEqual(jsonContent);
         });
 
         it('should validate content against Zod schema', async () => {
@@ -83,7 +83,7 @@ describe('ResponseProcessor', () => {
             };
 
             const result = await processor.validateResponse(response, settings);
-            expect(result.content).toEqual(validContent);
+            expect(result.contentObject).toEqual(validContent);
             expect(SchemaValidator.validate).toHaveBeenCalledWith(validContent, testSchema);
         });
 
@@ -191,7 +191,7 @@ describe('ResponseProcessor', () => {
             };
 
             const result = await processor.validateResponse(response, settings);
-            expect(result.content).toEqual(validContent);
+            expect(result.contentObject).toEqual(validContent);
             expect(SchemaValidator.validate).toHaveBeenCalledWith(validContent, testSchema);
         });
 
@@ -218,7 +218,7 @@ describe('ResponseProcessor', () => {
             };
 
             const result = await processor.validateResponse(response, settings);
-            expect(result.content).toEqual(validContent);
+            expect(result.contentObject).toEqual(validContent);
             expect(SchemaValidator.validate).toHaveBeenCalledWith(validContent, testSchema);
         });
     });
@@ -232,7 +232,7 @@ describe('ResponseProcessor', () => {
             };
 
             const result = await processor['parseJson'](response);
-            expect(result.content).toEqual(jsonContent);
+            expect(result.contentObject).toEqual(jsonContent);
         });
 
         it('should handle malformed JSON', async () => {
