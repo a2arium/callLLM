@@ -1,0 +1,155 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+
+**Goal:** To add support for a new LLM provider (e.g., Anthropic, Google Gemini) by creating a new adapter that adheres to the library's universal interfaces.
+
+**Core Concept:** Adapters translate between the library's universal request/response formats (`UniversalChatParams`, `UniversalChatResponse`, `UniversalStreamResponse`) and the specific format required by the target LLM provider's API. They encapsulate provider-specific logic, SDK interactions, and error handling.
+
+---
+
+### Step-by-Step Instructions
+
+1.  **Create Directory Structure:**
+    *   Inside the `src/adapters/` directory, create a new folder named after your provider (e.g., `anthropic`, `google`). Use `lowercase-with-dashes` if the name has multiple words.
+    *   Within this new folder, create the following files (mimicking the `openai` structure):
+        *   `adapter.ts`: The main adapter class implementation.
+        *   `converter.ts`: (Recommended) Logic for converting parameters and responses.
+        *   `stream.ts`: (Recommended) Logic for handling provider-specific streaming.
+        *   `types.ts`: Provider-specific type definitions (requests, responses, etc.).
+        *   `errors.ts`: Custom error classes specific to this provider.
+        *   `models.ts`: Default model configurations (`ModelInfo`) for this provider.
+        *   `validator.ts`: (Optional) Input parameter validation logic.
+        *   `index.ts`: Exports the main adapter class and potentially other relevant types/errors.
+
+2.  **Implement the Adapter Class (`adapter.ts`):**
+    *   Create a new class (e.g., `AnthropicAdapter`) that extends `BaseAdapter` from `src/adapters/base/baseAdapter.ts`.
+    *   Implement the constructor:
+        *   It should accept an `AdapterConfig` (or a partial one) containing `apiKey` and optional `baseUrl`, `organization`, etc.
+        *   Call `super(config)` to pass the config to the base class constructor (which handles basic validation like checking for `apiKey`).
+        *   Initialize the provider-specific client/SDK using the configuration (e.g., `new Anthropic({ apiKey: this.config.apiKey })`).
+    *   Instantiate helper classes like `Converter`, `StreamHandler`, and `Validator` if you created them.
+
+3.  **Implement Abstract Methods from `BaseAdapter`:**
+    *   **`chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse>`:**
+        *   Validate the input `params` using your `Validator` (if implemented).
+        *   Use your `Converter` to transform `UniversalChatParams` into the provider-specific request format.
+        *   Call the provider's non-streaming chat completion API using the initialized SDK client.
+        *   Use your `Converter` to transform the provider's response back into `UniversalChatResponse`.
+        *   Handle potential provider API errors (map them using `mapProviderError`).
+        *   Return the `UniversalChatResponse`.
+    *   **`streamCall(model: string, params: UniversalChatParams): Promise<AsyncIterable<UniversalStreamResponse>>`:**
+        *   Validate the input `params`.
+        *   Use your `Converter` to transform `UniversalChatParams` into the provider-specific *streaming* request format.
+        *   Call the provider's *streaming* chat completion API. This should return a raw stream iterable from the provider's SDK.
+        *   Use your `StreamHandler` (or logic within this method) to wrap the provider's stream and convert each chunk from the provider-specific stream format into the `UniversalStreamResponse` format. **Crucially, implement *real* streaming, yielding chunks as they arrive from the provider, not faking it by getting the full response first.**
+        *   Handle potential provider API errors during streaming.
+        *   Return the `AsyncIterable<UniversalStreamResponse>`.
+    *   **`convertToProviderParams(model: string, params: UniversalChatParams): unknown`:**
+        *   Implement the logic (likely delegating to your `Converter`) to translate `UniversalChatParams` (including messages and settings) into the exact object structure the provider's API expects for a chat completion request.
+        *   Pay attention to mapping roles, content, and settings (like temperature, max_tokens, tools, tool_choice, response_format) to the provider's specific field names and structures (e.g., snake_case vs camelCase). Refer to the `naming.mdc` rule regarding adapter property naming.
+    *   **`convertFromProviderResponse(response: unknown): UniversalChatResponse`:**
+        *   Implement the logic (likely delegating to your `Converter`) to translate a *non-streaming* response object from the provider's API into the `UniversalChatResponse` interface.
+        *   Extract content, role, tool calls, and metadata (like finish reason, usage).
+    *   **`convertFromProviderStreamResponse(response: unknown): UniversalStreamResponse`:**
+        *   Implement the logic (likely delegating to your `StreamHandler` or `Converter`) to translate a *single chunk* from the provider's *streaming* response into the `UniversalStreamResponse` interface.
+        *   Extract incremental content (`content`), role, partial tool call information (`toolCallChunks`), completion status (`isComplete`), and metadata.
+
+4.  **Implement Conversion Logic (`converter.ts` - Recommended):**
+    *   Create methods to handle the detailed mapping logic required by the adapter's conversion methods (`convertToProviderParams`, `convertFromProviderResponse`).
+    *   Handle nuances like mapping message roles, settings compatibility (e.g., does the provider support `topP`?), and response formats (text vs. JSON).
+    *   Refer to `src/adapters/openai/converter.ts` for an example.
+
+5.  **Implement Streaming Logic (`stream.ts` - Recommended):**
+    *   Create a class (e.g., `AnthropicStreamHandler`) responsible for consuming the provider's raw stream and yielding `UniversalStreamResponse` chunks.
+    *   Handle the specific structure of the provider's stream events (e.g., Server-Sent Events).
+    *   Parse incremental content, tool call deltas, finish reasons, and usage data from stream chunks.
+    *   Refer to `src/adapters/openai/stream.ts` for an example.
+
+6.  **Define Provider-Specific Types (`types.ts`):**
+    *   Define TypeScript types/interfaces that accurately represent the request parameters and response structures (both streaming and non-streaming) of the provider's API.
+    *   This improves type safety within your adapter.
+    *   Refer to `src/adapters/openai/types.ts`.
+
+7.  **Handle Provider-Specific Errors (`errors.ts`):**
+    *   Create custom error classes that extend `AdapterError` from `src/adapters/base/baseAdapter.ts` (e.g., `AnthropicAdapterError`, `AnthropicValidationError`).
+    *   Implement error mapping logic (e.g., in a `mapProviderError` method within the adapter or converter) to catch errors from the provider's SDK or API and throw your custom, more informative errors.
+    *   Refer to `src/adapters/openai/errors.ts`.
+
+8.  **Add Default Models (`models.ts`):**
+    *   Create an array of `ModelInfo` objects (defined in `src/interfaces/UniversalInterfaces.ts`) for the provider's commonly used models.
+    *   Include pricing, token limits, capabilities (streaming, tool calls, JSON mode, etc.), and characteristics (quality, speed, latency).
+    *   Export this array (e.g., `export const defaultModels: ModelInfo[] = [...]`).
+    *   Refer to `src/adapters/openai/models.ts`.
+
+9.  **Implement Parameter Validation (`validator.ts` - Optional but Recommended):**
+    *   Create a `Validator` class with methods to validate `UniversalChatParams` *before* they are converted and sent to the provider.
+    *   Check for provider-specific constraints (e.g., required fields, valid roles, setting ranges).
+    *   Throw validation errors (e.g., `AnthropicValidationError`) if checks fail.
+    *   Refer to `src/adapters/openai/validator.ts`.
+
+10. **Integrate with Core System:**
+    *   **`src/core/caller/ProviderManager.ts`:**
+        *   Add your provider name to the `SupportedProviders` type alias.
+        *   Modify the `createProvider` method to add a `case` for your new provider, instantiating your adapter class.
+        *   Modify `getCurrentProviderName` to recognize your new adapter class.
+    *   **`src/core/models/ModelManager.ts`:**
+        *   Modify the `initializeModels` method to add a `case` for your new provider, importing and adding its `defaultModels`.
+
+11. **Add Tests:**
+    *   Create unit tests for your adapter components (adapter, converter, stream handler, validator, errors) in `src/tests/unit/adapters/your_provider_name/`.
+    *   Mock the provider's SDK/API client to test your adapter's logic in isolation.
+    *   (Optional but highly recommended) Create integration tests in `src/tests/integration/adapters/your_provider_name/`. These might hit a real (sandboxed) endpoint or use more sophisticated mocking (like `nock` or `msw`).
+    *   Ensure high test coverage, especially for conversion logic, streaming, error handling, and tool calls. Refer to `.cursor/rules/testing.mdc`.
+
+12. **Documentation:**
+    *   Update the main `README.md` to list the new provider as supported.
+    *   Add any necessary configuration instructions (e.g., environment variables for API keys) to the README.
+    *   Consider adding a provider-specific README within the adapter's directory if there are significant configuration options or usage notes.
+
+---
+
+### Key Considerations
+
+*   **Interface Adherence:** Strictly adhere to the `LLMProvider` interface (via `BaseAdapter`) and the `UniversalChatParams`, `UniversalChatResponse`, `UniversalStreamResponse` types.
+*   **Statelessness:** Keep adapters as stateless as possible. State related to the conversation should be managed by core components like `HistoryManager`.
+*   **True Streaming:** Ensure the `streamCall` implementation provides *actual* streaming by yielding chunks as they arrive from the provider, not collecting the full response first.
+*   **Error Mapping:** Clearly map provider-specific errors (API errors, rate limits, validation errors) to your custom adapter errors or potentially a universal error type.
+*   **Configuration:** Handle API keys and other configurations securely, prioritizing environment variables (`dotenv`) but allowing direct configuration during instantiation.
+*   **Dependencies:** Avoid adding unnecessary dependencies. Use the provider's official SDK if available.
+*   **Capabilities:** Accurately define model capabilities in `models.ts`. The core library relies on these flags to enable/disable features or adapt behavior.
+
+---
+
+### Relevant Files for Reference
+
+*   **Base Implementation:**
+    *   `src/adapters/base/baseAdapter.ts`
+    *   `src/interfaces/LLMProvider.ts`
+    *   `src/interfaces/UniversalInterfaces.ts` (Defines core data structures)
+    *   `src/adapters/types.ts` (ProviderAdapter concept)
+*   **Example (OpenAI):**
+    *   `src/adapters/openai/adapter.ts`
+    *   `src/adapters/openai/converter.ts`
+    *   `src/adapters/openai/stream.ts`
+    *   `src/adapters/openai/types.ts`
+    *   `src/adapters/openai/errors.ts`
+    *   `src/adapters/openai/models.ts`
+    *   `src/adapters/openai/validator.ts`
+*   **Integration Points:**
+    *   `src/core/caller/ProviderManager.ts`
+    *   `src/core/models/ModelManager.ts`
+    *   `src/core/types.ts` (Update `SupportedProviders`)
+*   **Testing Examples:**
+    *   `src/tests/unit/adapters/openai/adapter.test.ts`
+    *   `src/tests/unit/adapters/openai/converter.test.ts`
+    *   `src/tests/unit/adapters/openai/stream.test.ts`
+    *   `src/tests/integration/adapters/openai/adapter.integration.test.ts`
+*   **Rules & Guidelines:**
+    *   `.cursor/rules/architecture.mdc`
+    *   `.cursor/rules/error_handling.mdc`
+    *   `.cursor/rules/streaming.mdc`
+    *   `.cursor/rules/naming.mdc`
+    *   `.cursor/rules/typescript.mdc`

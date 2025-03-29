@@ -195,30 +195,6 @@ export class LLMCaller {
             this.historyManager,
             20
         );
-
-        // Bind chatCall method
-        this.chatCall = (async (params: {
-            message: string;
-            settings?: UniversalChatParams['settings'];
-            historicalMessages?: UniversalMessage[];
-        }) => {
-            // Reset tool iteration counter at the beginning of each chat call
-            this.toolController.resetIterationCount();
-
-            if (params.historicalMessages) this.historyManager.setHistoricalMessages(params.historicalMessages);
-
-            this.historyManager.addMessage('user', params.message);
-
-            // Execute the base chat call
-            const initialResponse = await this.chatController.execute({
-                model: this.model,
-                systemMessage: this.systemMessage,
-                settings: this.mergeSettings(params.settings)
-            });
-
-            return initialResponse;
-
-        }).bind(this);
     }
 
     // Model management methods - delegated to ModelManager
@@ -297,12 +273,28 @@ export class LLMCaller {
         return { ...this.settings, ...methodSettings };
     }
 
-    // Basic chat completion method
-    public chatCall: (params: {
+    // Basic chat completion method - define as a standard method
+    public async chatCall(params: {
         message: string;
         settings?: UniversalChatParams['settings'];
         historicalMessages?: UniversalMessage[]
-    }) => Promise<UniversalChatResponse>;
+    }): Promise<UniversalChatResponse> {
+        // Reset tool iteration counter at the beginning of each chat call
+        this.toolController.resetIterationCount();
+
+        if (params.historicalMessages) this.historyManager.setHistoricalMessages(params.historicalMessages);
+
+        this.historyManager.addMessage('user', params.message);
+
+        // Execute the base chat call
+        const initialResponse = await this.chatController.execute({
+            model: this.model,
+            systemMessage: this.systemMessage,
+            settings: this.mergeSettings(params.settings)
+        });
+
+        return initialResponse;
+    }
 
     /**
      * Streams a response from the LLM.
