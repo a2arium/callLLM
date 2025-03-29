@@ -63,13 +63,15 @@ const caller = new LLMCaller('openai', 'fast', 'You are a helpful assistant.');
 const caller = new LLMCaller('openai', 'gpt-4o', 'You are a helpful assistant.');
 
 // Basic chat call with usage tracking
-const response = await caller.chatCall({
-    message: 'Hello, how are you?',
-    settings: {
-        temperature: 0.7,
-        maxTokens: 100
+const response = await caller.call(
+    'Hello, how are you?',
+    {
+        settings: {
+            temperature: 0.7,
+            maxTokens: 100
+        }
     }
-});
+);
 
 console.log(response.metadata?.usage);
 // {
@@ -84,12 +86,14 @@ console.log(response.metadata?.usage);
 // }
 
 // Streaming call with real-time token counting
-const stream = await caller.streamCall({
-    message: 'Tell me a story',
-    settings: {
-        temperature: 0.9
+const stream = await caller.stream(
+    'Tell me a story',
+    {
+        settings: {
+            temperature: 0.9
+        }
     }
-});
+);
 
 for await (const chunk of stream) {
     // For intermediate chunks, use content for incremental display
@@ -300,10 +304,12 @@ When streaming responses, there are different properties available depending on 
 
 #### Streaming Text
 ```typescript
-const stream = await caller.streamCall({
-    message: 'Tell me a story',
-    settings: { temperature: 0.9 }
-});
+const stream = await caller.stream(
+    'Tell me a story',
+    {
+        settings: { temperature: 0.9 }
+    }
+);
 
 for await (const chunk of stream) {
     // For incremental updates, use content
@@ -329,16 +335,18 @@ const UserSchema = z.object({
 });
 
 // Use the generic type parameter for proper typing
-const stream = await caller.streamCall<typeof UserSchema>({
-    message: 'Generate user profile data',
-    settings: {
-        jsonSchema: { 
-            name: 'UserProfile',
-            schema: UserSchema 
-        },
-        responseFormat: 'json'
+const stream = await caller.stream<typeof UserSchema>(
+    'Generate user profile data',
+    {
+        settings: {
+            jsonSchema: { 
+                name: 'UserProfile',
+                schema: UserSchema 
+            },
+            responseFormat: 'json'
+        }
     }
-});
+);
 
 for await (const chunk of stream) {
     // For incremental updates (showing JSON forming), use content
@@ -476,16 +484,18 @@ const UserSchema = z.object({
     interests: z.array(z.string())
 });
 
-const response = await caller.chatCall<typeof UserSchema>({
-    message: 'Generate a profile for a user named Alice',
-    settings: {
-        jsonSchema: {
-            name: 'UserProfile',
-            schema: UserSchema
-        },
-        responseFormat: 'json'
+const response = await caller.call<typeof UserSchema>(
+    'Generate a profile for a user named Alice',
+    {
+        settings: {
+            jsonSchema: {
+                name: 'UserProfile',
+                schema: UserSchema
+            },
+            responseFormat: 'json'
+        }
     }
-});
+);
 
 // response.content is typed as { name: string; age: number; interests: string[] }
 ```
@@ -493,30 +503,32 @@ const response = await caller.chatCall<typeof UserSchema>({
 ### Using JSON Schema
 
 ```typescript
-const response = await caller.chatCall({
-    message: 'Generate a recipe',
-    settings: {
-        jsonSchema: {
-            name: 'Recipe',
-            schema: {
-                type: 'object',
-                properties: {
-                    name: { type: 'string' },
-                    ingredients: {
-                        type: 'array',
-                        items: { type: 'string' }
+const response = await caller.call(
+    'Generate a recipe',
+    {
+        settings: {
+            jsonSchema: {
+                name: 'Recipe',
+                schema: {
+                    type: 'object',
+                    properties: {
+                        name: { type: 'string' },
+                        ingredients: {
+                            type: 'array',
+                            items: { type: 'string' }
+                        },
+                        steps: {
+                            type: 'array',
+                            items: { type: 'string' }
+                        }
                     },
-                    steps: {
-                        type: 'array',
-                        items: { type: 'string' }
-                    }
-                },
-                required: ['name', 'ingredients', 'steps']
-            }
-        },
-        responseFormat: 'json'
+                    required: ['name', 'ingredients', 'steps']
+                }
+            },
+            responseFormat: 'json'
+        }
     }
-});
+);
 ```
 
 Note: The library automatically adds `additionalProperties: false` to all object levels in JSON schemas to ensure strict validation. You don't need to specify this in your schema.
@@ -532,16 +544,18 @@ const UserSchema = z.object({
     interests: z.array(z.string())
 });
 
-const stream = await caller.streamCall<typeof UserSchema>({
-    message: 'Generate a profile for a user named Bob',
-    settings: {
-        jsonSchema: {
-            name: 'UserProfile',
-            schema: UserSchema
-        },
-        responseFormat: 'json'
+const stream = await caller.stream<typeof UserSchema>(
+    'Generate a profile for a user named Bob',
+    {
+        settings: {
+            jsonSchema: {
+                name: 'UserProfile',
+                schema: UserSchema
+            },
+            responseFormat: 'json'
+        }
     }
-});
+);
 
 for await (const chunk of stream) {
     // For intermediate chunks, display content as it arrives
@@ -575,16 +589,18 @@ When using schema validation, the library provides detailed validation errors:
 
 ```typescript
 try {
-    const response = await caller.chatCall({
-        message: 'Generate data',
-        settings: {
-            jsonSchema: {
-                name: 'Data',
-                schema: UserSchema
-            },
-            responseFormat: 'json'
+    const response = await caller.call(
+        'Generate data',
+        {
+            settings: {
+                jsonSchema: {
+                    name: 'Data',
+                    schema: UserSchema
+                },
+                responseFormat: 'json'
+            }
         }
-    });
+    );
 } catch (error) {
     if (error instanceof SchemaValidationError) {
         console.log('Validation errors:', error.validationErrors);
@@ -633,21 +649,23 @@ The library validates settings before passing them to the model:
 
 Example with model-specific settings:
 ```typescript
-const response = await caller.chatCall({
-    message: "Hello",
-    settings: {
-        // Universal settings
-        temperature: 0.7,
-        maxTokens: 1000,
-        
-        // OpenAI-specific settings
-        user: "user-123",
-        stop: ["\n", "Stop"],
-        logitBias: {
-            50256: -100  // Bias against specific token
+const response = await caller.call(
+    "Hello",
+    {
+        settings: {
+            // Universal settings
+            temperature: 0.7,
+            maxTokens: 1000,
+            
+            // OpenAI-specific settings
+            user: "user-123",
+            stop: ["\n", "Stop"],
+            logitBias: {
+                50256: -100  // Bias against specific token
+            }
         }
     }
-});
+);
 ```
 
 ## Settings Management
@@ -686,23 +704,22 @@ Override class-level settings for individual calls:
 
 ```typescript
 // Override temperature just for this call
-const response = await caller.chatCall({
-    message: "Hello",
-    settings: {
-        temperature: 0.5  // This takes precedence over class-level setting
+const response = await caller.call(
+    "Hello",
+    {
+        settings: {
+            temperature: 0.5  // This takes precedence over class-level setting
+        }
     }
-});
+);
 
 // Settings work with all call types
-const stream = await caller.streamCall({
-    message: "Hello",
-    settings: { temperature: 0.5 }
-});
-
-const responses = await caller.call({
-    message: "Hello",
-    settings: { temperature: 0.5 }
-});
+const stream = await caller.stream(
+    "Hello",
+    {
+        settings: { temperature: 0.5 }
+    }
+);
 ```
 
 ### Settings Merging
@@ -723,13 +740,15 @@ const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', 
 });
 
 // Make a call with method-level settings
-const response = await caller.chatCall({
-    message: "Hello",
-    settings: {
-        temperature: 0.5,  // Overrides class-level
-        topP: 0.8         // New setting
+const response = await caller.call(
+    "Hello",
+    {
+        settings: {
+            temperature: 0.5,  // Overrides class-level
+            topP: 0.8         // New setting
+        }
     }
-});
+);
 // Effective settings:
 // - temperature: 0.5 (from method)
 // - maxTokens: 1000 (from class)
@@ -753,12 +772,14 @@ const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', 
 });
 
 // Override maxRetries for a specific call
-const response = await caller.chatCall({
-    message: 'Hello',
-    settings: {
-        maxRetries: 2  // Will retry up to 2 times for this call only
+const response = await caller.call(
+    'Hello',
+    {
+        settings: {
+            maxRetries: 2  // Will retry up to 2 times for this call only
+        }
     }
-});
+);
 ```
 
 ### Regular Call Retries
@@ -771,10 +792,12 @@ For regular (non-streaming) calls, the library will:
 
 ```typescript
 try {
-    const response = await caller.chatCall({
-        message: 'Hello',
-        settings: { maxRetries: 2 }
-    });
+    const response = await caller.call(
+        'Hello',
+        {
+            settings: { maxRetries: 2 }
+        }
+    );
 } catch (error) {
     // Will contain message like: "Failed after 2 retries. Last error: API error"
     console.error(error);
@@ -792,10 +815,12 @@ The library provides two levels of retry protection for streaming calls:
 
 ```typescript
 try {
-    const stream = await caller.streamCall({
-        message: 'Hello',
-        settings: { maxRetries: 2 }
-    });
+    const stream = await caller.stream(
+        'Hello',
+        {
+            settings: { maxRetries: 2 }
+        }
+    );
     
     for await (const chunk of stream) {
         console.log(chunk.content);
@@ -813,10 +838,12 @@ try {
    - Uses exponential backoff between attempts
 
 ```typescript
-const stream = await caller.streamCall({
-    message: 'Tell me a story',
-    settings: { maxRetries: 2 }
-});
+const stream = await caller.stream(
+    'Tell me a story',
+    {
+        settings: { maxRetries: 2 }
+    }
+);
 
 try {
     for await (const chunk of stream) {
@@ -958,15 +985,17 @@ const tools = [{
 }];
 
 // Make a chat call with tool definitions
-const response = await adapter.chatCall({
-    messages: [
-        { role: 'user', content: 'What\'s the weather in New York?' }
-    ],
-    settings: {
-        tools,
-        toolChoice: 'auto' // Let the model decide when to use tools
+const response = await adapter.call(
+    'Hello, how are you?',
+    {
+        settings: {
+            temperature: 0.7,
+            maxTokens: 100,
+            tools,
+            toolChoice: 'auto' // Let the model decide when to use tools
+        }
     }
-});
+);
 
 // Handle tool calls in the response
 if (response.toolCalls) {
@@ -974,13 +1003,18 @@ if (response.toolCalls) {
         if (call.name === 'get_weather') {
             const weather = await getWeather(call.arguments.location);
             // Send the tool's response back to continue the conversation
-            const followUpResponse = await adapter.chatCall({
-                messages: [
-                    ...previousMessages,
-                    { role: 'assistant', content: response.content, toolCalls: response.toolCalls },
-                    { role: 'tool', name: 'get_weather', content: JSON.stringify(weather) }
-                ]
-            });
+            const followUpResponse = await adapter.call(
+                'Hello',
+                {
+                    settings: {
+                        temperature: 0.7,
+                        maxTokens: 100,
+                        tools,
+                        toolCalls: response.toolCalls,
+                        toolChoice: 'auto'
+                    }
+                }
+            );
         }
     }
 }
@@ -991,16 +1025,18 @@ if (response.toolCalls) {
 Tool calls are also supported in streaming mode:
 
 ```typescript
-const stream = await adapter.streamCall({
-    messages: [
-        { role: 'user', content: 'What\'s the weather in New York?' }
-    ],
-    settings: {
-        tools,
-        toolChoice: 'auto',
-        stream: true
+const stream = await adapter.stream(
+    'Hello, how are you?',
+    {
+        settings: {
+            temperature: 0.7,
+            maxTokens: 100,
+            tools,
+            toolChoice: 'auto',
+            stream: true
+        }
     }
-});
+);
 
 for await (const chunk of stream) {
     if (chunk.toolCallDeltas) {
@@ -1027,18 +1063,20 @@ for await (const chunk of stream) {
 For models that support it, you can make parallel tool calls:
 
 ```typescript
-const response = await adapter.chatCall({
-    messages: [
-        { role: 'user', content: 'Get weather for multiple cities' }
-    ],
-    settings: {
-        tools,
-        toolCalls: [
-            { name: 'get_weather', arguments: { location: 'New York, NY' } },
-            { name: 'get_weather', arguments: { location: 'Los Angeles, CA' } }
-        ]
+const response = await adapter.call(
+    'Hello',
+    {
+        settings: {
+            temperature: 0.7,
+            maxTokens: 100,
+            tools,
+            toolCalls: [
+                { name: 'get_weather', arguments: { location: 'New York, NY' } },
+                { name: 'get_weather', arguments: { location: 'Los Angeles, CA' } }
+            ]
+        }
     }
-});
+);
 ```
 
 ## Best Practices
@@ -1065,10 +1103,16 @@ The library includes built-in error handling for tool calls:
 
 ```typescript
 try {
-    const response = await adapter.chatCall({
-        messages: [{ role: 'user', content: 'Check weather' }],
-        settings: { tools }
-    });
+    const response = await adapter.call(
+        'Hello',
+        {
+            settings: {
+                temperature: 0.7,
+                maxTokens: 100,
+                tools
+            }
+        }
+    );
 } catch (error) {
     if (error instanceof ToolCallError) {
         console.error('Tool call failed:', error.message);

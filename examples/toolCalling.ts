@@ -95,50 +95,58 @@ async function main() {
     // 1. Basic Tool Call
     console.log('1. Basic Tool Call');
     console.log('------------------');
-    const weatherResponse = await caller.chatCall({
-        message: 'What\'s the weather like in San Francisco?',
-        settings: {
-            tools: [weatherTool],
-            toolChoice: 'auto'
+    const weatherResponse = await caller.call(
+        'What\'s the weather like in San Francisco?',
+        {
+            settings: {
+                tools: [weatherTool],
+                toolChoice: 'auto'
+            }
         }
-    });
+    );
     console.log('Response:', weatherResponse);
     console.log(caller.getHistoricalMessages());
 
     // 2. Multi-Tool Call
     console.log('\n2. Multi-Tool Call');
     console.log('------------------');
-    const multiToolResponse = await caller.chatCall({
-        message: 'What\'s the weather in New York and what time is it there?',
-        settings: {
-            tools: [weatherTool, timeTool],
-            toolChoice: 'auto'
+    const multiToolResponse = await caller.call(
+        'What\'s the weather in New York and what time is it there?',
+        {
+            settings: {
+                tools: [weatherTool, timeTool],
+                toolChoice: 'auto'
+            }
         }
-    });
+    );
     console.log('Response:', multiToolResponse);
 
     // 3. Calculation Tool Call
     console.log('\n3. Calculation Tool Call');
     console.log('------------------------');
-    const calculationResponse = await caller.chatCall({
-        message: 'Calculate 15% of 85',
-        settings: {
-            tools: [calculateTool],
-            toolChoice: 'auto'
+    const calculationResponse = await caller.call(
+        'Calculate 15% of 85',
+        {
+            settings: {
+                tools: [calculateTool],
+                toolChoice: 'auto'
+            }
         }
-    });
+    );
     console.log('Response:', calculationResponse);
 
     // 4. Time Tool Call
     console.log('\n4. Time Tool Call');
     console.log('----------------');
-    const timeResponse = await caller.chatCall({
-        message: 'What time is it in Tokyo?',
-        settings: {
-            tools: [timeTool],
-            toolChoice: 'auto'
+    const timeResponse = await caller.call(
+        'What time is it in Tokyo?',
+        {
+            settings: {
+                tools: [timeTool],
+                toolChoice: 'auto'
+            }
         }
-    });
+    );
     console.log('Response:', timeResponse);
 
     // 5. Tool Call Stream Demonstration
@@ -149,14 +157,16 @@ async function main() {
     let timeout: NodeJS.Timeout | null = null;
 
     try {
-        const stream = await caller.streamCall({
-            message: 'What is the current time in Tokyo? write a haiku about the current time',
-            settings: {
-                tools: [timeTool],
-                toolChoice: 'auto',
-                stream: true
+        const stream = await caller.stream(
+            'What is the current time in Tokyo? write a haiku about the current time',
+            {
+                settings: {
+                    tools: [timeTool],
+                    toolChoice: 'auto',
+                    stream: true
+                }
             }
-        });
+        );
 
         let toolCallDetected = false;
         let toolCallExecuted = false;
@@ -164,12 +174,10 @@ async function main() {
 
         // Add a debugging wrapper around the stream to see all chunks
         for await (const chunk of stream) {
-
             // Handle content
             if (chunk.content) {
                 process.stdout.write(chunk.content);
             }
-
 
             // Handle tool calls
             if (chunk.toolCalls?.length) {
@@ -190,7 +198,6 @@ async function main() {
                 console.log(caller.getHistoricalMessages());
             }
         }
-
     } catch (error) {
         console.error('\nError processing stream:', error);
         throw error;
@@ -204,14 +211,16 @@ async function main() {
     // 6. Multi-Tool Call Stream Demonstration
     console.log('\n6. Multi-Tool Call Stream Demonstration');
     console.log('---------------------------------------------------------------');
-    const multiToolStream = await caller.streamCall({
-        message: 'What is the current time and weather in Tokyo?',
-        settings: {
-            tools: [timeTool, weatherTool],
-            toolChoice: 'auto',
-            stream: true
+    const multiToolStream = await caller.stream(
+        'What is the current time and weather in Tokyo?',
+        {
+            settings: {
+                tools: [timeTool, weatherTool],
+                toolChoice: 'auto',
+                stream: true
+            }
         }
-    });
+    );
 
     try {
         for await (const chunk of multiToolStream) {

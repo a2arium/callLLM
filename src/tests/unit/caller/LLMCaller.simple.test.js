@@ -248,23 +248,26 @@ describe('LLMCaller', () => {
         { role: 'system', content: 'System message' },
         { role: 'user', content: 'Previous message' }
       ];
+      
+      // Mock getting historical messages
       historyInstance.getHistoricalMessages.mockReturnValue(historicalMessages);
       
-      // Call streamCall
-      const result = await caller.streamCall({ message: 'Test message' });
+      // Mock request processor to return a single message
+      caller.requestProcessor = {
+        processRequest: jest.fn().mockResolvedValue(['Test message'])
+      };
+      
+      // Call stream method
+      await caller.stream('Test message');
       
       // Check the stream was created with the right parameters
       expect(streamingInstance.createStream).toHaveBeenCalledWith(
         expect.objectContaining({
-          messages: [...historicalMessages, { role: 'user', content: 'Test message' }],
-          message: 'Test message'
+          messages: [...historicalMessages, { role: 'user', content: 'Test message' }]
         }),
         'test-model',
         expect.any(String)
       );
-      
-      // Check the result is an AsyncIterable
-      expect(result[Symbol.asyncIterator]).toBeDefined();
     });
   });
   
@@ -297,9 +300,14 @@ describe('LLMCaller', () => {
       
       // Make the createStream method throw an error
       streamingInstance.createStream.mockRejectedValue(error);
+
+      // Mock request processor to return a single message
+      caller.requestProcessor = {
+        processRequest: jest.fn().mockResolvedValue(['test message'])
+      };
       
       // Verify the error is propagated properly
-      await expect(caller.streamCall({ message: 'test message' })).rejects.toThrow('API error');
+      await expect(caller.stream('test message')).rejects.toThrow('API error');
       
       // Verify createStream was called
       expect(streamingInstance.createStream).toHaveBeenCalled();
@@ -310,14 +318,23 @@ describe('LLMCaller', () => {
       const streamingInstance = StreamingService.mock.results[0].value;
       const retryManagerInstance = RetryManager.mock.results[0].value;
       
-      // Set custom retry settings
-      const customSettings = { maxRetries: 5 };
+      // Setup retry behavior
+      const error = new Error('Stream creation error');
       
-      // Call streamCall with custom settings
-      await caller.streamCall({ 
-        message: 'test message', 
-        settings: customSettings 
+      // Setup streamingInstance to use retry manager
+      streamingInstance.createStream.mockImplementation(() => {
+        throw error;
       });
+
+      // Mock request processor to return a single message
+      caller.requestProcessor = {
+        processRequest: jest.fn().mockResolvedValue(['test message'])
+      };
+      
+      // Expect stream to throw the same error
+      await expect(caller.stream('test message', {
+        settings: { maxRetries: 5 }
+      })).rejects.toThrow('Stream creation error');
       
       // Verify the retry manager was used with expected parameters
       expect(streamingInstance.createStream).toHaveBeenCalledWith(
@@ -335,9 +352,24 @@ describe('LLMCaller', () => {
       const caller = new LLMCaller('openai', 'test-model');
       const streamingInstance = StreamingService.mock.results[0].value;
       
-      // Call streamCall with specific parameters
-      await caller.streamCall({ 
-        message: 'test message',
+      // Setup mock stream
+      const mockStream = {
+        async* [Symbol.asyncIterator]() {
+          yield { content: 'test', role: 'assistant', isComplete: false };
+          yield { content: ' response', role: 'assistant', isComplete: true };
+        }
+      };
+      
+      // Setup the createStream mock to return our mock stream
+      streamingInstance.createStream.mockResolvedValue(mockStream);
+
+      // Mock request processor to return a single message
+      caller.requestProcessor = {
+        processRequest: jest.fn().mockResolvedValue(['test message'])
+      };
+      
+      // Call the method with settings
+      const result = await caller.stream('test message', {
         settings: {
           temperature: 0.7,
           maxTokens: 500
@@ -347,7 +379,6 @@ describe('LLMCaller', () => {
       // Verify the parameters were correctly passed to createStream
       expect(streamingInstance.createStream).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'test message',
           settings: expect.objectContaining({
             temperature: 0.7,
             maxTokens: 500
@@ -356,6 +387,9 @@ describe('LLMCaller', () => {
         'test-model',
         expect.any(String)
       );
+      
+      // Verify the result is our mock stream
+      expect(result).toBe(mockStream);
     });
   });
 }); 

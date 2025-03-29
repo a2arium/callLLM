@@ -23,13 +23,15 @@ async function processRegularExample(caller: LLMCaller, message: string, data: a
 
     console.log('\nResponse:');
     console.log('Debug: Calling LLM...');
-    const responses = await caller.call({
+    const responses = await caller.call(
         message,
-        data,
-        settings: {
-            maxTokens: 1000
+        {
+            data,
+            settings: {
+                maxTokens: 1000
+            }
         }
-    });
+    );
 
     console.log(`Debug: Received ${responses.length} responses`);
 
@@ -64,14 +66,16 @@ async function processStreamExample(caller: LLMCaller, message: string, data: an
 
     console.log('\nStreaming response:');
     console.log('Debug: Starting stream...');
-    const stream = await caller.stream({
+    const stream = await caller.stream(
         message,
-        data,
-        endingMessage: 'Start with title "SECTION RESPONSE:"',
-        settings: {
-            maxTokens: 1000,
+        {
+            data,
+            endingMessage: 'Start with title "SECTION RESPONSE:"',
+            settings: {
+                maxTokens: 1000,
+            }
         }
-    });
+    );
 
     let chunkCount = 0;
     for await (const chunk of stream) {

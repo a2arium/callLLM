@@ -1,4 +1,3 @@
-
 import { LLMCaller } from '../src/core/caller/LLMCaller';
 
 async function runAliasExample() {
@@ -24,14 +23,10 @@ async function runAliasExample() {
 
     // Make calls using the balanced model
     console.log('\nMaking calls with balanced model:');
-    const chatResponse = await balancedCaller.chatCall({
-        message: 'What is the weather like today?'
-    });
-    console.log('\nChat Response:', chatResponse.content);
+    const chatResponse = await balancedCaller.call('What is the weather like today?');
+    console.log('\nChat Response:', chatResponse[0].content);
 
-    const stream = await balancedCaller.streamCall({
-        message: 'Tell me a joke.'
-    });
+    const stream = await balancedCaller.stream('Tell me a joke.');
     console.log('\nStream Response:');
     for await (const chunk of stream) {
         process.stdout.write(chunk.content);

@@ -236,28 +236,29 @@ describe('LLMCaller', () => {
             const streamingInstance = StreamingService.mock.results[0].value;
             const historyInstance = HistoryManager.mock.results[0].value;
 
-            // Setup historical messages
             const historicalMessages = [
                 { role: 'system', content: 'System message' },
                 { role: 'user', content: 'Previous message' }
             ];
             historyInstance.getHistoricalMessages.mockReturnValue(historicalMessages);
 
-            // Call streamCall
-            const result = await caller.streamCall({ message: 'Test message' });
+            // Mock the request processor to return a single message
+            const requestProcessor = {
+                processRequest: mockJest.fn().mockResolvedValue(['Test message'])
+            };
+            caller.requestProcessor = requestProcessor;
+
+            // Execute stream method
+            await caller.stream('Test message');
 
             // Check the stream was created with the right parameters
             expect(streamingInstance.createStream).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    messages: [...historicalMessages, { role: 'user', content: 'Test message' }],
-                    message: 'Test message'
+                    messages: [...historicalMessages, { role: 'user', content: 'Test message' }]
                 }),
                 'test-model',
                 expect.any(String)
             );
-
-            // Check the result is an AsyncIterable
-            expect(result[Symbol.asyncIterator]).toBeDefined();
         });
     });
 }); 

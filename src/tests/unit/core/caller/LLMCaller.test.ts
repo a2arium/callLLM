@@ -10,6 +10,11 @@ import type { TokenCalculator } from '../../../../core/models/TokenCalculator';
 import type { UniversalMessage, UniversalStreamResponse, ModelInfo } from '../../../../interfaces/UniversalInterfaces';
 import type { SupportedProviders } from '../../../../core/types';
 
+// Define RequestProcessor interface type
+type RequestProcessor = {
+    processRequest: (params: any) => Promise<string[]>;
+}
+
 describe('LLMCaller', () => {
     let mockStreamingService: jest.Mocked<StreamingService>;
     let mockProviderManager: jest.Mocked<ProviderManager>;
@@ -123,8 +128,13 @@ describe('LLMCaller', () => {
             // Configure mockStreamingService to throw an error after being called
             mockStreamingService.createStream.mockRejectedValue(error);
 
+            // Mock the request processor to return a single message
+            (llmCaller as any).requestProcessor = {
+                processRequest: jest.fn().mockImplementation(() => Promise.resolve(['test message']))
+            };
+
             // Execute the call and expect it to fail
-            await expect(llmCaller.streamCall({ message: 'test message' })).rejects.toThrow('Stream creation failed');
+            await expect(llmCaller.stream('test message')).rejects.toThrow('Stream creation failed');
 
             // Verify the createStream was called at least once
             expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
@@ -136,21 +146,25 @@ describe('LLMCaller', () => {
             // Configure mockStreamingService to throw an error after being called
             mockStreamingService.createStream.mockRejectedValue(error);
 
+            // Mock the request processor to return a single message
+            (llmCaller as any).requestProcessor = {
+                processRequest: jest.fn().mockImplementation(() => Promise.resolve(['test message']))
+            };
+
             // Set maxRetries to 1 in options
             const customOptions = {
-                retrySettings: {
-                    maxRetries: 1,
-                    initialDelay: 1000,
-                    maxDelay: 5000,
-                    backoffFactor: 2,
-                },
+                settings: {
+                    retrySettings: {
+                        maxRetries: 1,
+                        initialDelay: 1000,
+                        maxDelay: 5000,
+                        backoffFactor: 2,
+                    }
+                }
             };
 
             // Execute the call with custom options and expect it to fail
-            await expect(llmCaller.streamCall({
-                message: 'test message',
-                settings: customOptions
-            })).rejects.toThrow('Stream creation failed');
+            await expect(llmCaller.stream('test message', customOptions)).rejects.toThrow('Stream creation failed');
 
             // Verify the createStream was called at least once with the proper settings
             expect(mockStreamingService.createStream).toHaveBeenCalledWith(
@@ -176,8 +190,13 @@ describe('LLMCaller', () => {
                 yield { content: 'Hello world', role: 'assistant', isComplete: true };
             })());
 
-            // Call the streamCall method with a message
-            await llmCaller.streamCall({ message: 'test message' });
+            // Mock the request processor to return a single message
+            (llmCaller as any).requestProcessor = {
+                processRequest: jest.fn().mockImplementation(() => Promise.resolve(['test message']))
+            };
+
+            // Call the stream method with a message
+            await llmCaller.stream('test message');
 
             // Verify createStream was called with the expected parameters
             expect(mockStreamingService.createStream).toHaveBeenCalledWith(

@@ -17,37 +17,35 @@ async function main() {
     });
 
     // Make some calls
-    await caller.chatCall({
-        message: 'Hello, how are you?'
-    });
+    await caller.call('Hello, how are you?');
 
     // Change the caller ID midway
     caller.setCallerId('different-conversation');
 
-    const response = await caller.chatCall({
-        message: 'What is the weather like?'
-    });
+    const response = await caller.call('What is the weather like?');
 
-    console.log('\nChat Response:', response.content);
+    console.log('\nChat Response:', response[0].content);
     console.log('\nUsage Information:');
-    if (response.metadata?.usage) {
-        console.log('Input Tokens:', response.metadata.usage.tokens.input);
-        console.log('Input Cached Tokens:', response.metadata.usage.tokens.inputCached);
-        console.log('Output Tokens:', response.metadata.usage.tokens.output);
-        console.log('Total Tokens:', response.metadata.usage.tokens.total);
-        console.log('Costs:', response.metadata.usage.costs);
+    if (response[0].metadata?.usage) {
+        console.log('Input Tokens:', response[0].metadata.usage.tokens.input);
+        console.log('Input Cached Tokens:', response[0].metadata.usage.tokens.inputCached);
+        console.log('Output Tokens:', response[0].metadata.usage.tokens.output);
+        console.log('Total Tokens:', response[0].metadata.usage.tokens.total);
+        console.log('Costs:', response[0].metadata.usage.costs);
     }
 
     // Example streaming call with usageCallback
     caller.setCallerId('streaming-conversation');
     console.log('\nTesting streaming call with usage tracking...');
-    const stream = await caller.streamCall({
-        message: 'Tell me a story about a programmer.',
-        settings: {
-            temperature: 0.9,
-            maxTokens: 500
+    const stream = await caller.stream(
+        'Tell me a story about a programmer.',
+        {
+            settings: {
+                temperature: 0.9,
+                maxTokens: 500
+            }
         }
-    });
+    );
 
     console.log('\nStream Response:');
     let finalUsage;
@@ -71,4 +69,4 @@ async function main() {
     }
 }
 
-main(); 
+main().catch(console.error); 

@@ -5,45 +5,34 @@ import dotenv from 'dotenv';
 // Load environment variables
 dotenv.config();
 
+// Define a Zod schema
+const UserSchema = z.object({
+    name: z.string(),
+    age: z.number(),
+    interests: z.array(z.string())
+});
+
 async function main() {
     // Initialize the caller with OpenAI
-    const caller = new LLMCaller(
-        'openai',
-        'cheap',
-        'You are a helpful assistant.'
-    );
-
-    // Define a Zod schema for user information
-    const UserSchema = z.object({
-        name: z.string(),
-        age: z.number(),
-        email: z.string(),
-        interests: z.array(z.string()),
-        address: z.object({
-            street: z.string(),
-            city: z.string(),
-            country: z.string()
-        })
-    });
+    const caller = new LLMCaller('openai', 'gpt-4o-mini');
 
     try {
         // Example 1: Using Zod schema
         console.log('\nExample 1: Using Zod schema for structured output');
-        const response1 = await caller.chatCall({
-            message: 'Generate a profile for a fictional user named Alice who loves technology',
-            settings: {
-                jsonSchema: {
-                    name: 'UserProfile',
-                    schema: UserSchema
-                },
+        const response1 = await caller.call(
+            'Generate a profile for a fictional user named Alice who loves technology',
+            {
+                settings: {
+                    jsonSchema: {
+                        name: 'UserProfile',
+                        schema: UserSchema
+                    },
+                }
             }
-        });
-
+        );
         console.log('\nStructured Response:');
-        console.log(JSON.stringify(response1.contentObject, null, 2));
-
+        console.log(JSON.stringify(response1[0].contentObject, null, 2));
         console.log(caller.getHistoricalMessages());
-
 
         // // Example 2: Using raw JSON Schema
         // console.log('\nExample 2: Using raw JSON Schema');
@@ -71,53 +60,52 @@ async function main() {
         //     },
         //     required: ['name', 'preparationTime', 'difficulty', 'ingredients', 'steps']
         // };
-
-        // const response2 = await caller.chatCall({
-        //     message: 'Generate a recipe for a vegetarian pasta dish',
-        //     settings: {
-        //         temperature: 0.7,
-        //         jsonSchema: {
-        //             name: 'Recipe',
-        //             schema: JSON.stringify(recipeSchema)
-        //         },
-        //         responseFormat: 'json'
+        // const response2 = await caller.call(
+        //     'Generate a recipe for a vegetarian pasta dish',
+        //     {
+        //         settings: {
+        //             temperature: 0.7,
+        //             jsonSchema: {
+        //                 name: 'Recipe',
+        //                 schema: JSON.stringify(recipeSchema)
+        //             },
+        //             responseFormat: 'json'
+        //         }
         //     }
-        // });
-
+        // );
         // console.log('\nJSON Schema Response:');
-        // console.log(JSON.stringify(response2.contentObject, null, 2));
+        // console.log(JSON.stringify(response2[0].contentObject, null, 2));
 
         // // Example 3: Simple JSON mode without schema
         // console.log('\nExample 3: Simple JSON mode without schema');
-        // const response3 = await caller.chatCall({
-        //     message: 'List 3 programming languages and their main use cases',
-        //     settings: {
-        //         temperature: 0.7,
-        //         responseFormat: 'json'
+        // const response3 = await caller.call(
+        //     'List 3 programming languages and their main use cases',
+        //     {
+        //         settings: {
+        //             temperature: 0.7,
+        //             responseFormat: 'json'
+        //         }
         //     }
-        // });
-
+        // );
         // console.log('\nParsed object:');
-        // console.log(JSON.stringify(response3.contentObject, null, 2));
-
-
+        // console.log(JSON.stringify(response3[0].contentObject, null, 2));
 
         // // Example 4: Streaming JSON with schema
         // console.log('\nExample 4: Streaming JSON with schema');
-        // const stream = await caller.streamCall({
-        //     message: 'Generate a profile for a fictional user named Bob who loves sports',
-        //     settings: {
-        //         temperature: 0.7,
-        //         jsonSchema: {
-        //             name: 'UserProfile',
-        //             schema: UserSchema
-        //         },
-        //         responseFormat: 'json'
+        // const stream = await caller.stream(
+        //     'Generate a profile for a fictional user named Bob who loves sports',
+        //     {
+        //         settings: {
+        //             temperature: 0.7,
+        //             jsonSchema: {
+        //                 name: 'UserProfile',
+        //                 schema: UserSchema
+        //             },
+        //             responseFormat: 'json'
+        //         }
         //     }
-        // });
-
+        // );
         // console.log('\nStreaming Response:');
-
         // for await (const chunk of stream) {
         //     // For non-complete chunks, show them incrementally
         //     if (!chunk.isComplete) {
@@ -126,11 +114,9 @@ async function main() {
         //         // For the complete final chunk, we have two properties available:
         //         // 1. contentText - The complete accumulated text of the response
         //         // 2. contentObject - The parsed JSON object (when using JSON mode)
-
         //         // When streaming JSON responses, contentText contains the raw JSON string
         //         console.log("\n\nFinal raw JSON (length: " + (chunk.contentText?.length || 0) + "):");
         //         console.log(chunk.contentText);
-
         //         // When streaming JSON responses, contentObject contains the parsed object
         //         console.log("\nFinal contentObject (parsed JSON):");
         //         try {
@@ -139,7 +125,6 @@ async function main() {
         //             console.log(chunk.contentObject);
         //             console.log("\nError stringifying contentObject:", err);
         //         }
-
         //     }
         // }
 
@@ -148,4 +133,4 @@ async function main() {
     }
 }
 
-main(); 
+main().catch(console.error); 

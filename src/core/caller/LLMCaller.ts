@@ -273,24 +273,24 @@ export class LLMCaller {
         return { ...this.settings, ...methodSettings };
     }
 
-    // Basic chat completion method - define as a standard method
-    public async chatCall(params: {
-        message: string;
-        settings?: UniversalChatParams['settings'];
+    // Basic chat completion method - now private
+    private async chatCall(
+        message: string,
+        settings?: UniversalChatParams['settings'],
         historicalMessages?: UniversalMessage[]
-    }): Promise<UniversalChatResponse> {
+    ): Promise<UniversalChatResponse> {
         // Reset tool iteration counter at the beginning of each chat call
         this.toolController.resetIterationCount();
 
-        if (params.historicalMessages) this.historyManager.setHistoricalMessages(params.historicalMessages);
+        if (historicalMessages) this.historyManager.setHistoricalMessages(historicalMessages);
 
-        this.historyManager.addMessage('user', params.message);
+        this.historyManager.addMessage('user', message);
 
         // Execute the base chat call
         const initialResponse = await this.chatController.execute({
             model: this.model,
             systemMessage: this.systemMessage,
-            settings: this.mergeSettings(params.settings)
+            settings: this.mergeSettings(settings)
         });
 
         return initialResponse;
@@ -299,46 +299,45 @@ export class LLMCaller {
     /**
      * Streams a response from the LLM.
      * with the system message prepended, historical messages in the middle, and the user message appended.
+     * Now private as public API has been standardized to stream() method.
      */
-    public async streamCall(params: Omit<UniversalChatParams, 'messages'> & {
-        message?: string;
-        historicalMessages?: UniversalMessage[];
-        messages?: UniversalMessage[]
-    }): Promise<AsyncIterable<UniversalStreamResponse>> {
+    private async streamCall(
+        messageOrMessages: string | UniversalMessage[],
+        settings?: UniversalChatParams['settings'],
+        historicalMessages?: UniversalMessage[]
+    ): Promise<AsyncIterable<UniversalStreamResponse>> {
         // Reset tool iteration counter at the beginning of each stream call
         this.toolController.resetIterationCount();
 
         let finalParams: UniversalChatParams;
 
         // Build the final params object based on input
-        if (params.messages) {
+        if (Array.isArray(messageOrMessages)) {
             // If messages are provided directly, use them
             finalParams = {
-                ...params,
-                messages: params.messages
+                messages: messageOrMessages,
+                settings
             };
-        } else if (params.message) {
+        } else {
             // Store user message in history
-            this.historyManager.addMessage('user', params.message);
+            this.historyManager.addMessage('user', messageOrMessages);
 
             // Construct messages from internal historical messages or override if provided
-            const historicalMessages = params.historicalMessages ||
+            const messagesHistory = historicalMessages ||
                 this.historyManager.getHistoricalMessages();
 
             const userMessage: UniversalMessage = {
                 role: 'user',
-                content: params.message
+                content: messageOrMessages
             };
 
             finalParams = {
-                ...params,
                 messages: [
-                    ...historicalMessages,
+                    ...messagesHistory,
                     userMessage
-                ]
+                ],
+                settings
             };
-        } else {
-            throw new Error('Either messages or message must be provided');
         }
 
         // Ensure settings are merged
@@ -354,14 +353,17 @@ export class LLMCaller {
     }
 
     /**
-     * Processes a large message by breaking it into chunks and streaming the response.
+     * Processes a message and streams the response.
+     * This is the standardized public API for streaming responses.
      */
-    public async stream({ message, data, endingMessage, settings }: {
-        message: string;
-        data?: any;
-        endingMessage?: string;
-        settings?: UniversalChatParams['settings'];
-    }): Promise<AsyncIterable<UniversalStreamResponse>> {
+    public async stream(
+        message: string,
+        { data, endingMessage, settings }: {
+            data?: any;
+            endingMessage?: string;
+            settings?: UniversalChatParams['settings'];
+        } = {}
+    ): Promise<AsyncIterable<UniversalStreamResponse>> {
         // Use the RequestProcessor to process the request
         const modelInfo = this.modelManager.getModel(this.model)!;
         const messages = await this.requestProcessor.processRequest({
@@ -372,14 +374,10 @@ export class LLMCaller {
             maxResponseTokens: settings?.maxTokens
         });
 
-
         // If there's only one chunk, just do a regular stream call
         if (messages.length === 1) {
             this.historyManager.addMessage('user', message);
-            return this.streamCall({
-                message: messages[0],
-                settings
-            });
+            return this.streamCall(messages[0], settings);
         }
 
         // Use ChunkController to stream all chunks with the correct parameter structure
@@ -392,15 +390,17 @@ export class LLMCaller {
     }
 
     /**
-     * Processes a large message by breaking it into chunks, calling the LLM for each,
-     * and aggregating the results.
+     * Processes a message and returns the response.
+     * This is the standardized public API for getting responses.
      */
-    public async call({ message, data, endingMessage, settings }: {
-        message: string;
-        data?: any;
-        endingMessage?: string;
-        settings?: UniversalChatParams['settings'];
-    }): Promise<UniversalChatResponse[]> {
+    public async call(
+        message: string,
+        { data, endingMessage, settings }: {
+            data?: any;
+            endingMessage?: string;
+            settings?: UniversalChatParams['settings'];
+        } = {}
+    ): Promise<UniversalChatResponse[]> {
         // Use the RequestProcessor to process the request
         const modelInfo = this.modelManager.getModel(this.model)!;
         const messages = await this.requestProcessor.processRequest({
@@ -412,14 +412,11 @@ export class LLMCaller {
         });
 
         // Add the initial user message to the history
-        // this.historyManager.addMessage('user', message);
+        this.historyManager.addMessage('user', message);
 
         // If there's only one chunk, just do a regular chat call
         if (messages.length === 1) {
-            const response = await this.chatCall({
-                message: messages[0],
-                settings
-            });
+            const response = await this.chatCall(messages[0], settings);
             return [response];
         }
 

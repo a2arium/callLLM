@@ -7,26 +7,30 @@ async function main() {
     try {
         // Test regular chat call
         console.log('Testing chat call...');
-        const response = await caller.chatCall({
-            message: 'What is TypeScript and why should I use it?',
-            settings: {
-                maxTokens: 300
+        const response = await caller.call(
+            'What is TypeScript and why should I use it?',
+            {
+                settings: {
+                    maxTokens: 300
+                }
             }
-        });
-        console.log('\nChat Response:', response.content);
+        );
+        console.log('\nChat Response:', response[0].content);
         console.log('\nUsage Information:');
-        console.log('Tokens:', response.metadata?.usage?.tokens);
-        console.log('Costs:', response.metadata?.usage?.costs);
+        console.log('Tokens:', response[0].metadata?.usage?.tokens);
+        console.log('Costs:', response[0].metadata?.usage?.costs);
 
         // Test streaming call
         console.log('\nTesting streaming call...');
-        const stream = await caller.streamCall({
-            message: 'Tell me a short story about a programmer.',
-            settings: {
-                temperature: 0.9,
-                maxTokens: 100
+        const stream = await caller.stream(
+            'Tell me a short story about a programmer.',
+            {
+                settings: {
+                    temperature: 0.9,
+                    maxTokens: 100
+                }
             }
-        });
+        );
 
         console.log('\nStream Response:');
         let lastUsage;
@@ -54,4 +58,4 @@ async function main() {
     }
 }
 
-main(); 
+main().catch(console.error); 
