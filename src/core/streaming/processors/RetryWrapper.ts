@@ -1,6 +1,8 @@
 import type { StreamChunk, IStreamProcessor, IRetryPolicy } from "../types";
 import { logger } from "../../../utils/logger";
 
+
+// TODO: CURRENTLY NOT IN USE. Either use or remove
 export class RetryWrapper implements IStreamProcessor {
     private processor: IStreamProcessor;
     private retryPolicy: IRetryPolicy;

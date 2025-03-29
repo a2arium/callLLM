@@ -3,7 +3,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![TypeScript](https://img.shields.io/badge/lang-TypeScript-007ACC.svg)
 
-A single interface for multi-provider LLM operations with cost optimization, large data handling, and enterprise-grade JSON management.
+
 
 ```typescript
 // Unified example across providers
@@ -21,11 +21,16 @@ const response = await caller.call({
 
 ## Why callLLM?
 
-- **Multi-Provider Unified API**: Switch between OpenAI, Anthropic (coming soon), and others with one interface
-- **Large Data Processing**: Automatic chunking of massive datasets (text/JSON) with context preservation
-- **Smart Model Management**: Pre-configured & customizable models with real-time price updates
-- **Enterprise JSON Handling**: Schema validation, type safety, and streaming JSON support
-- **Cost Transparency**: Real-time token tracking with per-call cost breakdowns
+*   **Multi-Provider Support**: Easily switch between different LLM providers (currently OpenAI, with others planned).
+*   **Streaming**: Native support for handling streaming responses.
+*   **Large Data Handling**: Automatic chunking and processing of large text or JSON data that exceeds model context limits.
+*   **JSON Mode & Schema Validation**: Robust support for enforcing JSON output, validating against Zod or JSON schemas.
+*   **Tool Calling**: Unified interface for defining and using tools (function calling) with LLMs.
+*   **Cost Tracking**: Automatic calculation and reporting of token usage and costs per API call.
+*   **Model Management**: Flexible model selection using aliases (`fast`, `cheap`, `balanced`, `premium`) or specific names, with built-in defaults and support for custom models.
+*   **Retry Mechanisms**: Built-in resilience against transient API errors using exponential backoff.
+*   **History Management**: Easy management of conversation history.
+
 
 ```bash
 yarn add callllm

@@ -327,4 +327,197 @@ describe('StreamingService', () => {
             expect.any(Object) // StreamingService
         );
     });
+
+    it('should throw error when model is not found', async () => {
+        // Create mock HistoryManager
+        const mockHistoryManager = {
+            addMessage: jest.fn(),
+            getHistoricalMessages: jest.fn().mockReturnValue([]),
+            getLatestMessages: jest.fn(),
+            systemMessage: 'Test system message'
+        } as unknown as any;
+
+        // Create service with correct constructor parameters
+        const service = new StreamingService(
+            mockProviderManager,
+            mockModelManager,
+            mockHistoryManager,
+            mockRetryManager
+        );
+
+        // Mock model not found
+        mockModelManager.getModel.mockReturnValueOnce(undefined);
+
+        // Create stream params
+        const params: UniversalChatParams = {
+            messages: [{ role: 'user', content: 'Test message' }],
+            settings: { stream: true }
+        };
+
+        // Expect createStream to throw an error
+        await expect(service.createStream(params, 'unknown-model')).rejects.toThrow(
+            /Model unknown-model not found/
+        );
+    });
+
+    it('should use custom maxRetries from params settings', async () => {
+        // Create mock HistoryManager
+        const mockHistoryManager = {
+            addMessage: jest.fn(),
+            getHistoricalMessages: jest.fn().mockReturnValue([]),
+            getLatestMessages: jest.fn(),
+            systemMessage: 'Test system message'
+        } as unknown as any;
+
+        // Create service with correct constructor parameters
+        const service = new StreamingService(
+            mockProviderManager,
+            mockModelManager,
+            mockHistoryManager,
+            mockRetryManager
+        );
+
+        // Create stream params with custom maxRetries
+        const params: UniversalChatParams = {
+            messages: [{ role: 'user', content: 'Test message' }],
+            settings: { stream: true, maxRetries: 5 }
+        };
+
+        // Call createStream
+        await service.createStream(params, testModel);
+
+        // Verify that executeWithRetry was called with the custom maxRetries
+        expect(mockRetryManager.executeWithRetry).toHaveBeenCalledWith(
+            expect.any(Function),
+            expect.any(Function)
+        );
+
+        // Access the first argument of the last call (which should be the params object)
+        const executeWithRetryCall = mockRetryManager.executeWithRetry.mock.calls[0][0];
+
+        // Execute it to trigger streamCall
+        await executeWithRetryCall();
+
+        // Verify that the custom maxRetries setting was used
+        expect(mockProvider.streamCall).toHaveBeenCalledWith(
+            testModel,
+            expect.objectContaining({
+                settings: expect.objectContaining({
+                    maxRetries: 5
+                })
+            })
+        );
+    });
+
+    it('should throw error if retryManager fails after all retries', async () => {
+        // Create mock HistoryManager
+        const mockHistoryManager = {
+            addMessage: jest.fn(),
+            getHistoricalMessages: jest.fn().mockReturnValue([]),
+            getLatestMessages: jest.fn(),
+            systemMessage: 'Test system message'
+        } as unknown as any;
+
+        // Configure retry manager to always fail
+        mockRetryManager.executeWithRetry.mockRejectedValueOnce(new Error('Max retries exceeded'));
+
+        // Create service with correct constructor parameters
+        const service = new StreamingService(
+            mockProviderManager,
+            mockModelManager,
+            mockHistoryManager,
+            mockRetryManager
+        );
+
+        // Create stream params
+        const params: UniversalChatParams = {
+            messages: [{ role: 'user', content: 'Test message' }],
+            settings: { stream: true }
+        };
+
+        // Expect createStream to throw an error due to retry failure
+        await expect(service.createStream(params, testModel)).rejects.toThrow('Max retries exceeded');
+    });
+
+    it('should handle provider stream error', async () => {
+        // Create mock HistoryManager
+        const mockHistoryManager = {
+            addMessage: jest.fn(),
+            getHistoricalMessages: jest.fn().mockReturnValue([]),
+            getLatestMessages: jest.fn(),
+            systemMessage: 'Test system message'
+        } as unknown as any;
+
+        // Create service with correct constructor parameters
+        const service = new StreamingService(
+            mockProviderManager,
+            mockModelManager,
+            mockHistoryManager,
+            mockRetryManager
+        );
+
+        // Set up retry manager to pass through function calls once
+        mockRetryManager.executeWithRetry.mockImplementation(async (fn) => {
+            return await fn();
+        });
+
+        // Make the provider's streamCall throw an error
+        const testError = new Error('Stream creation failed');
+        mockProvider.streamCall.mockRejectedValueOnce(testError);
+
+        // Create stream params
+        const params: UniversalChatParams = {
+            messages: [{ role: 'user', content: 'Test message' }],
+            settings: { stream: true }
+        };
+
+        // Expect createStream to throw the provider error
+        await expect(service.createStream(params, testModel)).rejects.toThrow('Stream creation failed');
+    });
+
+    it('should return token calculator instance', () => {
+        // Create mock HistoryManager
+        const mockHistoryManager = {
+            addMessage: jest.fn(),
+            getHistoricalMessages: jest.fn().mockReturnValue([]),
+            getLatestMessages: jest.fn(),
+        } as unknown as any;
+
+        // Create service
+        const service = new StreamingService(
+            mockProviderManager,
+            mockModelManager,
+            mockHistoryManager,
+            mockRetryManager
+        );
+
+        // Get the token calculator
+        const tokenCalculator = service.getTokenCalculator();
+
+        // Verify that it's an instance of TokenCalculator
+        expect(tokenCalculator).toBeInstanceOf(TokenCalculator);
+    });
+
+    it('should return response processor instance', () => {
+        // Create mock HistoryManager
+        const mockHistoryManager = {
+            addMessage: jest.fn(),
+            getHistoricalMessages: jest.fn().mockReturnValue([]),
+            getLatestMessages: jest.fn(),
+        } as unknown as any;
+
+        // Create service
+        const service = new StreamingService(
+            mockProviderManager,
+            mockModelManager,
+            mockHistoryManager,
+            mockRetryManager
+        );
+
+        // Get the response processor
+        const responseProcessor = service.getResponseProcessor();
+
+        // Verify that it's an instance of ResponseProcessor
+        expect(responseProcessor).toBeInstanceOf(ResponseProcessor);
+    });
 }); 

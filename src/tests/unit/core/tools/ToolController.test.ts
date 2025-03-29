@@ -156,4 +156,138 @@ describe('ToolController', () => {
         // After reset, should be able to call without reaching limit
         await expect(controller.processToolCalls('content', { content: '', role: 'assistant' })).resolves.toBeDefined();
     });
+
+    // Tests for getToolByName method
+    describe('getToolByName', () => {
+        test('should return tool when it exists', () => {
+            const fakeToolsManager = createFakeToolsManager();
+            const mockTool = { name: 'existingTool', description: 'Test tool', callFunction: jest.fn() };
+            (fakeToolsManager.getTool as jest.Mock).mockReturnValue(mockTool);
+
+            const controller = new ToolController(fakeToolsManager);
+            const result = controller.getToolByName('existingTool');
+
+            expect(fakeToolsManager.getTool).toHaveBeenCalledWith('existingTool');
+            expect(result).toBe(mockTool);
+        });
+
+        test('should return undefined when tool does not exist', () => {
+            const fakeToolsManager = createFakeToolsManager();
+            (fakeToolsManager.getTool as jest.Mock).mockReturnValue(undefined);
+
+            const controller = new ToolController(fakeToolsManager);
+            const result = controller.getToolByName('nonExistentTool');
+
+            expect(fakeToolsManager.getTool).toHaveBeenCalledWith('nonExistentTool');
+            expect(result).toBeUndefined();
+        });
+    });
+
+    // Tests for executeToolCall method
+    describe('executeToolCall', () => {
+        test('should execute tool successfully with string result', async () => {
+            const fakeToolsManager = createFakeToolsManager();
+            const mockTool = {
+                name: 'stringTool',
+                description: 'Tool that returns a string',
+                callFunction: jest.fn().mockResolvedValue('string result')
+            };
+
+            (fakeToolsManager.getTool as jest.Mock).mockReturnValue(mockTool);
+
+            const controller = new ToolController(fakeToolsManager);
+            const toolCall = {
+                id: 'call_123',
+                name: 'stringTool',
+                arguments: { param: 'value' }
+            };
+
+            const result = await controller.executeToolCall(toolCall);
+
+            expect(mockTool.callFunction).toHaveBeenCalledWith({ param: 'value' });
+            expect(result).toBe('string result');
+        });
+
+        test('should execute tool successfully with object result', async () => {
+            const fakeToolsManager = createFakeToolsManager();
+            const objectResult = { data: 'test', count: 42 };
+            const mockTool = {
+                name: 'objectTool',
+                description: 'Tool that returns an object',
+                callFunction: jest.fn().mockResolvedValue(objectResult)
+            };
+
+            (fakeToolsManager.getTool as jest.Mock).mockReturnValue(mockTool);
+
+            const controller = new ToolController(fakeToolsManager);
+            const toolCall = {
+                id: 'call_456',
+                name: 'objectTool',
+                arguments: { query: 'test' }
+            };
+
+            const result = await controller.executeToolCall(toolCall);
+
+            expect(mockTool.callFunction).toHaveBeenCalledWith({ query: 'test' });
+            expect(result).toEqual(objectResult);
+        });
+
+        test('should throw ToolNotFoundError when tool does not exist', async () => {
+            const fakeToolsManager = createFakeToolsManager();
+            (fakeToolsManager.getTool as jest.Mock).mockReturnValue(undefined);
+
+            const controller = new ToolController(fakeToolsManager);
+            const toolCall = {
+                id: 'call_789',
+                name: 'nonExistentTool',
+                arguments: {}
+            };
+
+            await expect(controller.executeToolCall(toolCall)).rejects.toThrow(ToolNotFoundError);
+            expect(fakeToolsManager.getTool).toHaveBeenCalledWith('nonExistentTool');
+        });
+
+        test('should throw ToolExecutionError when tool execution fails', async () => {
+            const fakeToolsManager = createFakeToolsManager();
+            const mockTool = {
+                name: 'failingTool',
+                description: 'Tool that always fails',
+                callFunction: jest.fn().mockRejectedValue(new Error('Execution failed'))
+            };
+
+            (fakeToolsManager.getTool as jest.Mock).mockReturnValue(mockTool);
+
+            const controller = new ToolController(fakeToolsManager);
+            const toolCall = {
+                id: 'call_101',
+                name: 'failingTool',
+                arguments: { param: 'value' }
+            };
+
+            await expect(controller.executeToolCall(toolCall)).rejects.toThrow(ToolExecutionError);
+            expect(mockTool.callFunction).toHaveBeenCalledWith({ param: 'value' });
+        });
+
+        test('should handle non-Error objects thrown during execution', async () => {
+            const fakeToolsManager = createFakeToolsManager();
+            const mockTool = {
+                name: 'strangeErrorTool',
+                description: 'Tool that throws non-Error objects',
+                callFunction: jest.fn().mockRejectedValue('String error message')
+            };
+
+            (fakeToolsManager.getTool as jest.Mock).mockReturnValue(mockTool);
+
+            const controller = new ToolController(fakeToolsManager);
+            const toolCall = {
+                id: 'call_202',
+                name: 'strangeErrorTool',
+                arguments: {}
+            };
+
+            const error = await controller.executeToolCall(toolCall).catch(e => e);
+            expect(error).toBeInstanceOf(ToolExecutionError);
+            expect(error.message).toContain('String error message');
+        });
+    });
 }); 

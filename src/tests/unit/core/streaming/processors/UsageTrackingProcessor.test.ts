@@ -269,6 +269,152 @@ describe('UsageTrackingProcessor', () => {
         expect(processorAsAny.lastOutputTokens).toBe(0);
         expect(processorAsAny.lastCallbackTokens).toBe(0);
     });
+
+    it('should handle streams with no content chunks', async () => {
+        // Set up token calculation mock
+        mockTokenCalculator.calculateTokens.mockReturnValue(0);
+
+        // Create processor
+        const processor = new UsageTrackingProcessor({
+            tokenCalculator: mockTokenCalculator,
+            inputTokens,
+            modelInfo: mockModelInfo
+        });
+
+        // Create mock stream with chunks that have no content
+        const mockStream = createMockStream([
+            { content: '', isComplete: false, metadata: { key: 'value' } },
+            { content: '', isComplete: true, metadata: { another: 'data' } }
+        ]);
+
+        // Process stream
+        const results: StreamChunk[] = [];
+        for await (const chunk of processor.processStream(mockStream)) {
+            results.push(chunk);
+        }
+
+        // Verify results
+        expect(results.length).toBe(2);
+        expect(results[0].content).toBe('');
+        expect(results[0].metadata).toHaveProperty('key', 'value');
+        expect(results[0].metadata).toHaveProperty('usage');
+        expect(results[1].content).toBe('');
+        expect(results[1].metadata).toHaveProperty('another', 'data');
+        expect(results[1].metadata).toHaveProperty('usage');
+
+        // Check token calculation was correct even with empty content
+        const finalMetadata = results[1].metadata as any;
+        expect(finalMetadata.usage.tokens.output).toBe(0);
+        expect(finalMetadata.usage.incremental).toBe(0);
+    });
+
+    it('should handle streams with tool calls', async () => {
+        // Set up token calculation mock
+        mockTokenCalculator.calculateTokens.mockReturnValue(5);
+
+        // Create processor
+        const processor = new UsageTrackingProcessor({
+            tokenCalculator: mockTokenCalculator,
+            inputTokens,
+            modelInfo: mockModelInfo
+        });
+
+        // Create mock stream with tool calls
+        const mockToolCall = {
+            id: 'tool123',
+            name: 'testTool',
+            arguments: { arg: 'value' }
+        };
+        const mockStream = createMockStream([
+            {
+                content: 'Content with tool call',
+                isComplete: true,
+                toolCalls: [mockToolCall]
+            }
+        ]);
+
+        // Process stream
+        const results: StreamChunk[] = [];
+        for await (const chunk of processor.processStream(mockStream)) {
+            results.push(chunk);
+        }
+
+        // Verify results
+        expect(results.length).toBe(1);
+        expect(results[0].toolCalls).toEqual([mockToolCall]);
+        expect(results[0].metadata).toHaveProperty('usage');
+    });
+
+    it('should handle model info without input cached price', async () => {
+        // Create model info without inputCachedPricePerMillion
+        const modelInfoWithoutCachedPrice: ModelInfo = {
+            ...mockModelInfo,
+            inputCachedPricePerMillion: undefined
+        };
+
+        // Set up token calculation mock
+        mockTokenCalculator.calculateTokens.mockReturnValue(4);
+
+        // Create processor with cached tokens but no cached price in model info
+        const processor = new UsageTrackingProcessor({
+            tokenCalculator: mockTokenCalculator,
+            inputTokens,
+            inputCachedTokens,
+            modelInfo: modelInfoWithoutCachedPrice
+        });
+
+        // Create mock stream
+        const mockStream = createMockStream([
+            { content: 'Test', isComplete: true }
+        ]);
+
+        // Process stream
+        const results: StreamChunk[] = [];
+        for await (const chunk of processor.processStream(mockStream)) {
+            results.push(chunk);
+        }
+
+        // Verify results - inputCached cost should be 0 when no cached price is defined
+        const metadata = results[0].metadata as UsageMetadata;
+        expect(metadata.usage.tokens.inputCached).toBe(inputCachedTokens);
+        expect(metadata.usage.costs.inputCached).toBe(0);
+    });
+
+    it('should directly trigger the callback when token increase exactly matches batch size', async () => {
+        // Create mock callback
+        const mockCallback: UsageCallback = jest.fn();
+
+        // Set up token calculation mock with exact batch size increases
+        mockTokenCalculator.calculateTokens
+            .mockReturnValueOnce(5)    // 5 tokens (exactly matches batch size)
+            .mockReturnValueOnce(10)   // 10 tokens (exactly matches batch size)
+            .mockReturnValueOnce(15);  // 15 tokens (exactly matches batch size)
+
+        // Create processor with batch size of exactly 5
+        const processor = new UsageTrackingProcessor({
+            tokenCalculator: mockTokenCalculator,
+            inputTokens,
+            modelInfo: mockModelInfo,
+            usageCallback: mockCallback,
+            callerId: 'test-caller',
+            tokenBatchSize: 5
+        });
+
+        // Create mock stream with chunks that will result in token count that matches batch size
+        const mockStream = createMockStream([
+            { content: 'AAAAA', isComplete: false }, // 5 tokens
+            { content: 'BBBBB', isComplete: false }, // +5 tokens = 10 total
+            { content: 'CCCCC', isComplete: true }   // +5 tokens = 15 total
+        ]);
+
+        // Process stream
+        for await (const chunk of processor.processStream(mockStream)) {
+            // Just iterate through
+        }
+
+        // Verify callback was called for each batch plus completion
+        expect(mockCallback).toHaveBeenCalledTimes(3);
+    });
 });
 
 // Helper function to create a mock async iterable from an array of chunks

@@ -122,7 +122,7 @@ export interface UniversalStreamResponse<T = unknown> {
     isComplete: boolean;
     messages?: UniversalMessage[];  // Array of messages for tool call responses
     toolCalls?: ToolCall[];
-    toolCallResults?: Array<{  // Added field for tool call results
+    toolCallResults?: Array<{
         id: string;
         name: string;
         result: string;

@@ -57,13 +57,6 @@ export type UniversalChatParams = {
     };
 };
 
-export type ToolCallResult = {
-    id: string;
-    toolName: string;
-    arguments: Record<string, unknown>;
-    result?: string;
-    error?: string;
-};
 
 export type ToolCallResponse = {
     id: string;
@@ -79,12 +72,3 @@ export type ToolCall = {
     name: string;
     arguments: Record<string, unknown>;
 };
-
-
-export type ToolOrchestrationParams = {
-    model: string;
-    systemMessage: string;
-    historicalMessages: UniversalMessage[];
-    settings?: UniversalChatSettings;
-    callerId?: string;
-}; 

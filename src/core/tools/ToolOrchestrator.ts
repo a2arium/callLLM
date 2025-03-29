@@ -3,25 +3,10 @@ import { ChatController } from '../chat/ChatController';
 import type { UniversalChatResponse, UniversalMessage, UniversalChatParams, UniversalStreamResponse, UniversalChatSettings } from '../../interfaces/UniversalInterfaces';
 import { ToolError, ToolIterationLimitError } from '../../types/tooling';
 import { StreamController } from '../streaming/StreamController';
-import { ToolCallResult } from '../types';
 import { logger } from '../../utils/logger';
 import { ToolCall, ToolDefinition, ToolNotFoundError } from '../../types/tooling';
 import { HistoryManager } from '../history/HistoryManager';
 
-export type ToolOrchestrationParams = {
-    model: string;
-    systemMessage: string;
-    historicalMessages?: UniversalMessage[];
-    settings?: UniversalChatSettings;
-    maxHistoryLength?: number;
-    callerId?: string;
-};
-
-export type ToolOrchestrationResult = {
-    response: UniversalChatResponse;
-    finalResponse: UniversalChatResponse;
-    updatedHistoricalMessages: UniversalMessage[];
-};
 
 
 /**

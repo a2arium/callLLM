@@ -8,6 +8,17 @@ import type { ChatCompletionChunk } from 'openai/resources/chat';
 
 jest.mock('../../../../adapters/openai/converter');
 
+// Helper function to create a mock OpenAI stream
+function createMockStream(chunks: any[]): Stream<ChatCompletionChunk> {
+    return {
+        [Symbol.asyncIterator]: async function* () {
+            for (const chunk of chunks) {
+                yield chunk as ChatCompletionChunk;
+            }
+        }
+    } as unknown as Stream<ChatCompletionChunk>;
+}
+
 describe('StreamHandler', () => {
     let handler: StreamHandler;
     let mockConverter: jest.Mocked<Converter>;
@@ -154,6 +165,345 @@ describe('StreamHandler', () => {
                     }
                 }
             ]);
+        });
+
+        it('should handle stream with function/tool call chunks', async () => {
+            // Create a mock stream that includes tool calls
+            const mockStream = createMockStream([
+                {
+                    choices: [
+                        {
+                            delta: {
+                                content: 'Response with tool call',
+                                tool_calls: [
+                                    {
+                                        id: 'tool_1',
+                                        index: 0,
+                                        function: {
+                                            name: 'get_weather',
+                                            arguments: '{"location":'
+                                        }
+                                    }
+                                ]
+                            },
+                            finish_reason: null
+                        }
+                    ]
+                },
+                {
+                    choices: [
+                        {
+                            delta: {
+                                content: '',
+                                tool_calls: [
+                                    {
+                                        id: 'tool_1',
+                                        index: 0,
+                                        function: {
+                                            arguments: '"New York"}'
+                                        }
+                                    }
+                                ]
+                            },
+                            finish_reason: 'tool_calls'
+                        }
+                    ]
+                }
+            ]);
+
+            const streamHandler = new StreamHandler();
+            const result = streamHandler.convertProviderStream(mockStream as any);
+
+            const chunks = [];
+            for await (const chunk of result) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks.length).toBe(2);
+            expect(chunks[0].toolCallChunks).toBeDefined();
+            expect(chunks[0].toolCallChunks![0].id).toBe('tool_1');
+            expect(chunks[0].toolCallChunks![0].name).toBe('get_weather');
+            expect(chunks[0].toolCallChunks![0].argumentsChunk).toBe('{"location":');
+            expect(chunks[1].isComplete).toBe(true);
+            expect(chunks[1].metadata?.finishReason).toBe('tool_calls');
+        });
+
+        it('should handle undefined tool calls', async () => {
+            // Create a mock stream without tool calls
+            const mockStream = createMockStream([
+                {
+                    choices: [
+                        {
+                            delta: {
+                                content: 'Response without tool calls',
+                                // No tool_calls field
+                            },
+                            finish_reason: null
+                        }
+                    ]
+                }
+            ]);
+
+            const streamHandler = new StreamHandler();
+            const result = streamHandler.convertProviderStream(mockStream as any);
+
+            const chunks = [];
+            for await (const chunk of result) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks.length).toBe(1);
+            expect(chunks[0].toolCallChunks).toBeUndefined();
+        });
+
+        it('should handle all finish reason types', async () => {
+            // Test all possible finish reasons
+            const finishReasons = [
+                'stop',
+                'length',
+                'content_filter',
+                'tool_calls',
+                'function_call',
+                'unknown_reason' // For default case
+            ];
+
+            for (const reason of finishReasons) {
+                const mockStream = createMockStream([
+                    {
+                        choices: [
+                            {
+                                delta: {
+                                    content: `Response with finish reason: ${reason}`
+                                },
+                                finish_reason: reason
+                            }
+                        ]
+                    }
+                ]);
+
+                const streamHandler = new StreamHandler();
+                const result = streamHandler.convertProviderStream(mockStream as any);
+
+                const chunks = [];
+                for await (const chunk of result) {
+                    chunks.push(chunk);
+                }
+
+                expect(chunks.length).toBe(1);
+
+                // Verify the finish reason mapping
+                switch (reason) {
+                    case 'stop':
+                        expect(chunks[0].metadata?.finishReason).toBe('stop');
+                        break;
+                    case 'length':
+                        expect(chunks[0].metadata?.finishReason).toBe('length');
+                        break;
+                    case 'content_filter':
+                        expect(chunks[0].metadata?.finishReason).toBe('content_filter');
+                        break;
+                    case 'tool_calls':
+                    case 'function_call':
+                        expect(chunks[0].metadata?.finishReason).toBe('tool_calls');
+                        break;
+                    default:
+                        expect(chunks[0].metadata?.finishReason).toBe('null');
+                        break;
+                }
+            }
+        });
+
+        it('should handle stream with empty delta', async () => {
+            // Create a mock stream with an empty delta
+            const mockStream = createMockStream([
+                {
+                    choices: [
+                        {
+                            delta: {}, // Empty delta
+                            finish_reason: null
+                        }
+                    ]
+                }
+            ]);
+
+            const streamHandler = new StreamHandler();
+            const result = streamHandler.convertProviderStream(mockStream as any);
+
+            const chunks = [];
+            for await (const chunk of result) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks.length).toBe(1);
+            expect(chunks[0].content).toBe('');
+        });
+
+        it('should handle null finish reason', async () => {
+            // Create a mock stream with a null finish reason
+            const mockStream = createMockStream([
+                {
+                    choices: [
+                        {
+                            delta: {
+                                content: 'Response with null finish reason'
+                            },
+                            finish_reason: null
+                        }
+                    ]
+                }
+            ]);
+
+            const streamHandler = new StreamHandler();
+            const result = streamHandler.convertProviderStream(mockStream as any);
+
+            const chunks = [];
+            for await (const chunk of result) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks.length).toBe(1);
+            expect(chunks[0].metadata?.finishReason).toBe('null');
+        });
+
+        // New tests for additional coverage
+
+        it('should handle chunks with empty choices array', async () => {
+            // Testing lines 50-51 where choices[0] is accessed
+            const mockStream = createMockStream([
+                {
+                    id: 'test-id',
+                    choices: [] // Empty choices array
+                }
+            ]);
+
+            const streamHandler = new StreamHandler();
+            const result = streamHandler.convertProviderStream(mockStream as any);
+
+            const chunks = [];
+            for await (const chunk of result) {
+                chunks.push(chunk);
+            }
+
+            // Should skip the chunk and return empty array
+            expect(chunks).toEqual([]);
+        });
+
+        it('should handle delta without content property', async () => {
+            // Create a mock stream with delta missing content property
+            const mockStream = createMockStream([
+                {
+                    choices: [
+                        {
+                            delta: {
+                                // No content property
+                            },
+                            finish_reason: null
+                        }
+                    ]
+                }
+            ]);
+
+            const streamHandler = new StreamHandler();
+            const result = streamHandler.convertProviderStream(mockStream as any);
+
+            const chunks = [];
+            for await (const chunk of result) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks.length).toBe(1);
+            expect(chunks[0].content).toBe('');
+        });
+
+        it('should handle tool_calls that are empty arrays', async () => {
+            // Testing lines 76-78
+            const mockStream = createMockStream([
+                {
+                    choices: [
+                        {
+                            delta: {
+                                content: 'test content',
+                                tool_calls: [] // Empty array
+                            },
+                            finish_reason: null
+                        }
+                    ]
+                }
+            ]);
+
+            const streamHandler = new StreamHandler();
+            const result = streamHandler.convertProviderStream(mockStream as any);
+
+            const chunks = [];
+            for await (const chunk of result) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks.length).toBe(1);
+            expect(chunks[0].toolCallChunks).toBeUndefined();
+        });
+
+        it('should handle tool calls without function property', async () => {
+            // Testing the tool call mapping function for missing function property
+            const mockStream = createMockStream([
+                {
+                    choices: [
+                        {
+                            delta: {
+                                content: 'test content',
+                                tool_calls: [
+                                    {
+                                        id: 'tool_1',
+                                        index: 0
+                                        // No function property
+                                    }
+                                ]
+                            },
+                            finish_reason: null
+                        }
+                    ]
+                }
+            ]);
+
+            const streamHandler = new StreamHandler();
+            const result = streamHandler.convertProviderStream(mockStream as any);
+
+            const chunks = [];
+            for await (const chunk of result) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks.length).toBe(1);
+            expect(chunks[0].toolCallChunks).toBeDefined();
+            expect(chunks[0].toolCallChunks![0].name).toBeUndefined();
+            expect(chunks[0].toolCallChunks![0].argumentsChunk).toBeUndefined();
+        });
+
+        it('should handle empty string finish reason', async () => {
+            // Testing mapFinishReason for empty string
+            const mockStream = createMockStream([
+                {
+                    choices: [
+                        {
+                            delta: {
+                                content: 'test content'
+                            },
+                            finish_reason: '' // Empty string
+                        }
+                    ]
+                }
+            ]);
+
+            const streamHandler = new StreamHandler();
+            const result = streamHandler.convertProviderStream(mockStream as any);
+
+            const chunks = [];
+            for await (const chunk of result) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks.length).toBe(1);
+            expect(chunks[0].metadata?.finishReason).toBe(FinishReason.NULL);
         });
     });
 });

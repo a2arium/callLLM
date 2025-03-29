@@ -1,6 +1,7 @@
 import { UsageTracker } from '../../../../../src/core/telemetry/UsageTracker';
 import { ModelInfo } from '../../../../../src/interfaces/UniversalInterfaces';
 import { UsageCallback } from '../../../../../src/interfaces/UsageInterfaces';
+import { UsageTrackingProcessor } from '../../../../../src/core/streaming/processors/UsageTrackingProcessor';
 
 type DummyTokenCalculator = {
     calculateTokens: (text: string) => number;
@@ -52,7 +53,7 @@ describe('UsageTracker', () => {
                     };
                 }
             ),
-            calculateTotalTokens: (messages: { role: string; content: string }[]) =>
+            calculateTotalTokens: jest.fn((messages: { role: string; content: string }[]) =>
                 messages.reduce(
                     (sum, message) =>
                         sum +
@@ -62,7 +63,8 @@ describe('UsageTracker', () => {
                                 ? 20
                                 : 0),
                     0
-                ),
+                )
+            ),
         };
 
         // Define a dummy modelInfo with required properties.
@@ -184,5 +186,95 @@ describe('UsageTracker', () => {
             }
         });
         expect(usage.costs.total).toBeCloseTo(0.0525, 5);
+    });
+
+    // Tests for the createStreamProcessor method
+    describe('createStreamProcessor', () => {
+        it('should create a UsageTrackingProcessor with default options', () => {
+            const tracker = new UsageTracker(dummyTokenCalculator, undefined, 'caller-id');
+            const processor = tracker.createStreamProcessor(10, modelInfo);
+
+            // Check that processor is an instance of UsageTrackingProcessor
+            expect(processor).toBeInstanceOf(UsageTrackingProcessor);
+        });
+
+        it('should create a processor with input cached tokens', () => {
+            const tracker = new UsageTracker(dummyTokenCalculator, undefined, 'caller-id');
+            const processor = tracker.createStreamProcessor(10, modelInfo, { inputCachedTokens: 5 });
+
+            // Force TypeScript to allow us to inspect these private properties
+            const processorAny = processor as any;
+            expect(processorAny.inputTokens).toBe(10);
+            expect(processorAny.inputCachedTokens).toBe(5);
+        });
+
+        it('should create a processor with custom token batch size', () => {
+            const tracker = new UsageTracker(dummyTokenCalculator, undefined, 'caller-id');
+            const processor = tracker.createStreamProcessor(10, modelInfo, { tokenBatchSize: 100 });
+
+            // Force TypeScript to allow us to inspect these private properties
+            const processorAny = processor as any;
+            expect(processorAny.TOKEN_BATCH_SIZE).toBe(100);
+        });
+
+        it('should use caller ID from options over the one from constructor', () => {
+            const tracker = new UsageTracker(dummyTokenCalculator, undefined, 'default-caller-id');
+            const processor = tracker.createStreamProcessor(10, modelInfo, { callerId: 'option-caller-id' });
+
+            // Force TypeScript to allow us to inspect these private properties
+            const processorAny = processor as any;
+            expect(processorAny.callerId).toBe('option-caller-id');
+        });
+
+        it('should use default caller ID if not specified in options', () => {
+            const tracker = new UsageTracker(dummyTokenCalculator, undefined, 'default-caller-id');
+            const processor = tracker.createStreamProcessor(10, modelInfo);
+
+            // Force TypeScript to allow us to inspect these private properties
+            const processorAny = processor as any;
+            expect(processorAny.callerId).toBe('default-caller-id');
+        });
+    });
+
+    // Tests for the calculateTokens method
+    describe('calculateTokens', () => {
+        it('should call tokenCalculator.calculateTokens with the provided text', () => {
+            const tracker = new UsageTracker(dummyTokenCalculator);
+            const result = tracker.calculateTokens('sample text');
+
+            expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('sample text');
+            expect(result).toBe(0); // returns 0 for text that isn't 'input' or 'output'
+        });
+
+        it('should return the correct token count for known inputs', () => {
+            const tracker = new UsageTracker(dummyTokenCalculator);
+
+            expect(tracker.calculateTokens('input')).toBe(10);
+            expect(tracker.calculateTokens('output')).toBe(20);
+        });
+    });
+
+    // Tests for the calculateTotalTokens method
+    describe('calculateTotalTokens', () => {
+        it('should call tokenCalculator.calculateTotalTokens with the provided messages', () => {
+            const tracker = new UsageTracker(dummyTokenCalculator);
+            const messages = [
+                { role: 'user', content: 'input' },
+                { role: 'assistant', content: 'output' }
+            ];
+
+            const result = tracker.calculateTotalTokens(messages);
+
+            expect(dummyTokenCalculator.calculateTotalTokens).toHaveBeenCalledWith(messages);
+            expect(result).toBe(30); // 10 + 20
+        });
+
+        it('should handle empty message array', () => {
+            const tracker = new UsageTracker(dummyTokenCalculator);
+            const result = tracker.calculateTotalTokens([]);
+
+            expect(dummyTokenCalculator.calculateTotalTokens).toHaveBeenCalledWith([]);
+            expect(result).toBe(0);
+        });
     });
 });

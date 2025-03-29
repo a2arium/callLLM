@@ -1,4 +1,5 @@
 /*
+ TODO: Move from here or move all types here
  Consolidated tooling types for the callllm project.
 
  This file provides all tool-related type definitions such as:
@@ -24,13 +25,14 @@ export type ToolDefinition = {
 };
 
 export type ToolCall = {
-    id?: string;  // Optional ID for the tool call
+    id?: string;
     name: string;
     arguments: Record<string, unknown>;
     result?: string;
     error?: string;
 };
 
+// TODO: we shouldn't have it in types folder
 export class ToolError extends Error {
     constructor(message: string) {
         super(message);
