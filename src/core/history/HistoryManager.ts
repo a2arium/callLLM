@@ -296,14 +296,42 @@ export class HistoryManager {
 
                 // Include tool calls if requested and available
                 if (includeToolCalls && hasToolCalls && msg.toolCalls) {
-                    result.toolCalls = msg.toolCalls.map(tc => ({
-                        name: tc.name,
-                        args: tc.arguments
-                    }));
+                    result.toolCalls = msg.toolCalls.map(tc => {
+                        // Check whether we have a ToolCall object or OpenAI format
+                        if ('name' in tc && 'arguments' in tc) {
+                            // Our ToolCall format
+                            return {
+                                name: tc.name,
+                                args: tc.arguments
+                            };
+                        } else if (tc.function) {
+                            // OpenAI format with function property
+                            return {
+                                name: tc.function.name,
+                                args: this.safeJsonParse(tc.function.arguments)
+                            };
+                        }
+                        // Fallback
+                        return {
+                            name: 'unknown',
+                            args: {}
+                        };
+                    });
                 }
 
                 return result;
             });
+    }
+
+    /**
+     * Gets all messages including the system message
+     * @returns Array of all messages including the initial system message
+     */
+    public getMessages(): UniversalMessage[] {
+        // Return all messages including the system message
+        // The system message should already be included in historicalMessages
+        // if it was added during initialization or updateSystemMessage
+        return this.getHistoricalMessages();
     }
 
     /**
@@ -321,5 +349,61 @@ export class HistoryManager {
         if (isComplete && (content || contentText)) {
             this.addMessage('assistant', contentText || content);
         }
+    }
+
+    private safeJsonParse(jsonString: string): Record<string, unknown> {
+        try {
+            return JSON.parse(jsonString);
+        } catch (e) {
+            console.error(`Error parsing JSON: ${e}`);
+            return {};
+        }
+    }
+
+    /**
+     * Removes any assistant messages with tool calls that don't have matching tool responses
+     * This helps prevent issues with historical tool calls that OpenAI expects responses for
+     * @returns The number of assistant messages with unmatched tool calls that were removed
+     */
+    public removeToolCallsWithoutResponses(): number {
+        // First, collect all tool call IDs that have responses
+        const respondedToolCallIds = new Set<string>();
+
+        // Find all tool responses
+        this.historicalMessages.forEach(msg => {
+            if (msg.role === 'tool' && msg.toolCallId) {
+                respondedToolCallIds.add(msg.toolCallId);
+            }
+        });
+
+        // Identify and remove assistant messages with unmatched tool calls
+        const messagesToRemove: number[] = [];
+
+        this.historicalMessages.forEach((msg, index) => {
+            if (
+                msg.role === 'assistant' &&
+                msg.toolCalls &&
+                msg.toolCalls.length > 0
+            ) {
+                // Check if any tool calls in this message are missing responses
+                const hasUnmatchedCalls = msg.toolCalls.some(toolCall => {
+                    const id = 'id' in toolCall ? toolCall.id : undefined;
+                    // If ID exists and isn't in the responded set, it's unmatched
+                    return id && !respondedToolCallIds.has(id);
+                });
+
+                if (hasUnmatchedCalls) {
+                    messagesToRemove.push(index);
+                }
+            }
+        });
+
+        // Remove the problematic messages (from highest index to lowest to avoid shifting issues)
+        for (let i = messagesToRemove.length - 1; i >= 0; i--) {
+            this.historicalMessages.splice(messagesToRemove[i], 1);
+        }
+
+        logger.debug(`Removed ${messagesToRemove.length} assistant messages with unmatched tool calls`);
+        return messagesToRemove.length;
     }
 } 

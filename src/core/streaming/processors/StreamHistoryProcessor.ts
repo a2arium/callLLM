@@ -41,10 +41,18 @@ export class StreamHistoryProcessor implements IStreamProcessor {
             // Save to history if this is the final chunk
             if (chunk.isComplete) {
                 log.debug('Captured complete response in history');
-                this.historyManager.captureStreamResponse(
-                    finalContent,
-                    true
-                );
+
+                // Skip adding the message to history if it contains tool calls
+                // Tool calls will be handled by the special tool call handling code in StreamHandler
+                const hasTool = chunk.toolCalls !== undefined && chunk.toolCalls.length > 0;
+                const isToolCall = chunk.metadata?.finishReason === 'tool_calls';
+
+                if (!(hasTool || isToolCall)) {
+                    this.historyManager.captureStreamResponse(
+                        finalContent,
+                        true
+                    );
+                }
             }
 
             // Forward the chunk unmodified

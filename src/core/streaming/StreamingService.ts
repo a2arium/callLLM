@@ -115,7 +115,7 @@ export class StreamingService {
             model,
             inputTokens,
             callerId: params.callerId,
-            toolsEnabled: Boolean(params.settings?.tools?.length)
+            toolsEnabled: Boolean(params.tools?.length)
         });
 
         return this.executeWithRetry(model, params, inputTokens, modelInfo);

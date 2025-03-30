@@ -10,26 +10,42 @@
  All types are defined using 'type' where applicable to ensure strict type safety.
 */
 
+// Copied from src/core/types.ts and adapted
+export type ToolParameterSchema = {
+    type: string; // e.g., 'string', 'number', 'boolean', 'object', 'array'
+    description?: string;
+    enum?: string[]; // For string types
+    properties?: Record<string, ToolParameterSchema>; // For object type
+    items?: ToolParameterSchema; // For array type
+    required?: string[]; // For object type
+    // Allow other JSON Schema properties
+    [key: string]: unknown;
+};
+
+// Copied from src/core/types.ts
+export type ToolParameters = {
+    type: 'object'; // Tools always expect an object wrapper
+    properties: Record<string, ToolParameterSchema>;
+    required?: string[];
+};
+
+// Updated ToolDefinition using ToolParameters
 export type ToolDefinition = {
     name: string;
     description: string;
-    parameters: {
-        type: string;
-        properties: Record<string, unknown>;
-        required?: string[];
-    };
+    parameters: ToolParameters; // Use the stricter, object-based parameters type
     callFunction: <TParams extends Record<string, unknown>, TResponse = unknown>(
         params: TParams
-    ) => Promise<TResponse>;
-    postCallLogic?: (rawResult: unknown) => Promise<string[]>;
+    ) => Promise<TResponse>; // Keep generic default
+    postCallLogic?: (rawResult: unknown) => Promise<string[]>; // Use unknown for flexibility
 };
 
 export type ToolCall = {
-    id?: string;
+    id?: string; // ID provided by the model (e.g., OpenAI)
     name: string;
-    arguments: Record<string, unknown>;
-    result?: string;
-    error?: string;
+    arguments: Record<string, unknown>; // Parsed arguments object
+    result?: string; // Stringified result after execution
+    error?: string; // Error message if execution failed
 };
 
 // TODO: we shouldn't have it in types folder
@@ -49,14 +65,14 @@ export class ToolIterationLimitError extends ToolError {
 
 export class ToolNotFoundError extends ToolError {
     constructor(toolName: string) {
-        super(`Tool ${toolName} not found`);
+        super(`Tool \"${toolName}\" not found`);
         this.name = "ToolNotFoundError";
     }
 }
 
 export class ToolExecutionError extends ToolError {
     constructor(toolName: string, errorMessage: string) {
-        super(`Execution of tool ${toolName} failed: ${errorMessage}`);
+        super(`Execution of tool \"${toolName}\" failed: ${errorMessage}`);
         this.name = "ToolExecutionError";
     }
 } 

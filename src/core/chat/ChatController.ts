@@ -5,7 +5,7 @@ import { ModelManager } from '../models/ModelManager';
 import { ResponseProcessor } from '../processors/ResponseProcessor';
 import { RetryManager } from '../retry/RetryManager';
 import { UsageTracker } from '../telemetry/UsageTracker';
-import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage, UniversalChatSettings } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage, UniversalChatSettings, JSONSchemaDefinition } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent";
 import { logger } from '../../utils/logger';
@@ -14,175 +14,188 @@ import { ToolOrchestrator } from '../tools/ToolOrchestrator';
 import { HistoryManager } from '../history/HistoryManager';
 
 export class ChatController {
+    // Keep track of the orchestrator - needed for recursive calls
+    private toolOrchestrator?: ToolOrchestrator;
+
     constructor(
         private providerManager: ProviderManager,
         private modelManager: ModelManager,
         private responseProcessor: ResponseProcessor,
-        private retryManager: RetryManager, // injected default retry manager (for defaults)
+        private retryManager: RetryManager,
         private usageTracker: UsageTracker,
         private toolController?: ToolController,
-        private toolOrchestrator?: ToolOrchestrator,
-        private historyManager?: HistoryManager
+        // ToolOrchestrator is injected after construction in LLMCaller
+        toolOrchestrator?: ToolOrchestrator,
+        private historyManager?: HistoryManager // Keep optional for flexibility
     ) {
+        this.toolOrchestrator = toolOrchestrator; // Store the orchestrator
         logger.setConfig({
             prefix: 'ChatController',
             level: process.env.LOG_LEVEL as any || 'info'
         });
     }
 
+    // Method for LLMCaller to set the orchestrator after initialization
+    public setToolOrchestrator(orchestrator: ToolOrchestrator): void {
+        this.toolOrchestrator = orchestrator;
+    }
+
     /**
-     * Executes a chat call using the given parameters.
+     * Executes a chat call using the provided parameters.
      *
-     * @param params - An object containing the model, system message, and optional settings and historical messages.
+     * @param params - The full UniversalChatParams object containing messages, settings, tools, etc.
      * @returns A promise resolving to the processed chat response.
      */
-    async execute<T extends z.ZodType | undefined = undefined>(params: {
-        model: string;
-        systemMessage: string;
-        settings?: UniversalChatSettings;
-        callerId?: string;
-    }): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
-        const { model, systemMessage, settings, callerId } = params;
-        const mergedSettings = settings;
+    async execute<T extends z.ZodType | undefined = undefined>(
+        // Update signature to accept UniversalChatParams
+        params: UniversalChatParams
+    ): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
+        // Extract necessary info directly from params
+        const {
+            model,
+            messages, // Use messages directly from params
+            settings,
+            jsonSchema,
+            responseFormat,
+            tools,
+            callerId
+        } = params;
 
-        if (settings?.jsonSchema && mergedSettings) {
-            mergedSettings.responseFormat = 'json';
+        const mergedSettings = { ...settings }; // Work with a mutable copy
+
+        // Determine effective response format based on jsonSchema or explicit format
+        let effectiveResponseFormat = responseFormat || 'text';
+        if (jsonSchema) {
+            effectiveResponseFormat = 'json';
         }
 
-        const fullSystemMessage =
-            mergedSettings && (mergedSettings.responseFormat === 'json' || mergedSettings.jsonSchema)
-                ? `${systemMessage}\n Provide your response in valid JSON format.`
-                : systemMessage;
+        // Find the system message within the provided messages array
+        const systemMessageContent = messages.find(m => m.role === 'system')?.content || '';
 
-        const historicalMessages = this.historyManager?.getHistoricalMessages() || [];
+        // Append JSON instruction to system message if needed
+        const fullSystemMessageContent =
+            effectiveResponseFormat === 'json'
+                ? `${systemMessageContent}\n Provide your response in valid JSON format.`
+                : systemMessageContent;
 
-        // Validate all messages have role and content
-        const validatedMessages = historicalMessages.map(msg => {
-            if (!msg.role) {
-                logger.warn('Message missing role:', msg);
-                throw new Error('Each message must have a role');
+        // Update system message content in the messages array if necessary
+        const finalMessages = messages.map(msg =>
+            msg.role === 'system' ? { ...msg, content: fullSystemMessageContent } : msg
+        );
+
+        // Validate messages (ensure role, content/tool_calls validity)
+        const validatedMessages = finalMessages.map(msg => {
+            if (!msg.role) throw new Error('Message missing role');
+            const hasContent = msg.content && msg.content.trim().length > 0;
+            const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+            if (!hasContent && !hasToolCalls && msg.role !== 'assistant' && msg.role !== 'tool') {
+                throw new Error(`Message from role '${msg.role}' must have content or tool calls.`);
             }
-
-            // If message has tool calls or is a tool response, empty content is valid
-            if (msg.toolCalls?.length || msg.role === 'tool' ||
-                // Also allow assistant messages with empty or space-only content in tool call flows
-                (msg.role === 'assistant' && (!msg.content || msg.content.trim() === ''))) {
-                return {
-                    ...msg,
-                    role: msg.role,
-                    content: msg.content || ''
-                };
-            }
-
-            // Otherwise, content is required
-            if (!msg.content?.trim()) {
-                logger.warn('Message missing content:', msg);
-                throw new Error('Each message must have either content or tool calls');
-            }
-            return msg;
+            return {
+                ...msg,
+                content: msg.content || '' // Ensure content is always a string
+            };
         });
 
-        // Build the chat parameters
-        const chatParams: UniversalChatParams = {
-            messages: [
-                { role: 'system', content: fullSystemMessage },
-                ...validatedMessages
-            ],
-            settings: mergedSettings
+        // Reconstruct chatParams for the provider call, including tools
+        const chatParamsForProvider: UniversalChatParams = {
+            model: model, // Pass model name
+            messages: validatedMessages,
+            settings: mergedSettings,
+            jsonSchema: jsonSchema, // Pass schema info if provider needs it
+            responseFormat: effectiveResponseFormat, // Pass effective format
+            tools: tools, // Pass tool definitions
+            callerId: callerId
         };
 
-        // Log the messages for debugging
-        logger.debug('Sending messages:', JSON.stringify(chatParams.messages, null, 2));
+        logger.debug('Sending messages:', JSON.stringify(chatParamsForProvider.messages, null, 2));
+        if (tools && tools.length > 0) logger.debug('With tools:', tools.map(t => t.name));
 
         const modelInfo = this.modelManager.getModel(model);
-        if (!modelInfo) {
-            throw new Error(`Model ${model} not found`);
-        }
+        if (!modelInfo) throw new Error(`Model ${model} not found`);
 
-        // Get the last user message for usage tracking
-        // TODO: Check if this is correct
-        const lastUserMessage = this.historyManager?.getLastMessageByRole('user')?.content || '';
+        // Get last user message content for usage tracking (best effort)
+        const lastUserMessage = [...validatedMessages].reverse().find(m => m.role === 'user')?.content || '';
 
-        // Validate JSON mode if needed.
-        this.responseProcessor.validateJsonMode(modelInfo, chatParams);
+        // Validate JSON mode capability if needed
+        this.responseProcessor.validateJsonMode(modelInfo, chatParamsForProvider);
 
-        // Determine effective maxRetries from merged settings.
-        const effectiveMaxRetries = mergedSettings && mergedSettings.maxRetries !== undefined ? mergedSettings.maxRetries : 3;
+        const effectiveMaxRetries = mergedSettings?.maxRetries ?? 3;
+        const localRetryManager = new RetryManager({ baseDelay: 1000, maxRetries: effectiveMaxRetries });
 
-        // Create a local RetryManager that uses the effective maxRetries.
-        const localRetryManager = new RetryManager({
-            baseDelay: 1000,
-            maxRetries: effectiveMaxRetries
-        });
-
-        // Execute the provider chat call with retry logic.
+        // Execute the provider chat call with retry logic
         const response = await localRetryManager.executeWithRetry(
             async () => {
-                const resp = await this.providerManager.getProvider().chatCall(model, chatParams);
-                if (!resp.metadata) {
-                    resp.metadata = {};
-                }
-                // Track usage if needed.
-                if (!resp.metadata.usage) {
-                    resp.metadata.usage = await this.usageTracker.trackUsage(
-                        systemMessage + '\n' + lastUserMessage,
-                        resp.content,
-                        modelInfo
-                    );
-                } else {
-                    // Track usage and update the existing metadata
-                    const trackResult = await this.usageTracker.trackUsage(
-                        systemMessage + '\n' + lastUserMessage,
-                        resp.content,
-                        modelInfo
-                    );
-                    // Update the response metadata with the tracked usage
-                    resp.metadata.usage = trackResult;
-                }
-                // Check if the response content triggers a retry
+                const resp = await this.providerManager.getProvider().chatCall(model, chatParamsForProvider);
+                if (!resp.metadata) resp.metadata = {};
+
+                const systemContentForUsage = systemMessageContent;
+                const usage = await this.usageTracker.trackUsage(
+                    systemContentForUsage + '\n' + lastUserMessage,
+                    resp.content ?? '',
+                    modelInfo
+                );
+                resp.metadata.usage = usage;
+
+                // Pass the complete response object to consider tool calls in the retry decision
                 if (shouldRetryDueToContent(resp)) {
-                    throw new Error("Response content triggered retry due to unsatisfactory answer");
+                    throw new Error("Response content triggered retry");
                 }
                 return resp;
             },
-            (error: unknown) => true // Retry on all errors.
+            (error: unknown) => true
         );
 
-        // Process tool calls if present in the response
-        if (this.toolController &&
-            this.toolOrchestrator &&
-            this.historyManager &&
-            ((response.toolCalls && response.toolCalls.length > 0) || response.metadata?.finishReason === FinishReason.TOOL_CALLS)) {
+        // Process tool calls if detected in the response
+        const hasToolCalls = (response.toolCalls && response.toolCalls.length > 0) || response.metadata?.finishReason === FinishReason.TOOL_CALLS;
 
-            logger.debug('Tool calls detected in non-streaming response, processing');
+        if (hasToolCalls && this.toolController && this.toolOrchestrator && this.historyManager) {
+            logger.debug('Tool calls detected, processing...');
 
-            // Add initial assistant response to history
-            if (response.content) {
-                this.historyManager.addMessage('assistant', response.content);
-            }
+            this.historyManager.addMessage('assistant', response.content ?? '', { toolCalls: response.toolCalls });
 
-            // Process tool calls
             const { requiresResubmission } = await this.toolOrchestrator.processToolCalls(response);
 
             if (requiresResubmission) {
+                logger.debug('Tool results require resubmission to model.');
 
-                // Make a recursive call with updated messages
-                return this.execute<T>({
-                    model,
-                    systemMessage,
+                // Get the updated messages including the tool results that were just added
+                const updatedMessages = this.historyManager.getMessages();
+
+                // Create a new params object with the updated messages that include tool results
+                const recursiveParams: UniversalChatParams = {
+                    ...params,
+                    messages: updatedMessages,
                     settings: {
-                        ...settings,
-                        // Don't include tools in the continuation to avoid infinite loops
-                        tools: undefined,
-                        toolChoice: undefined
+                        ...mergedSettings,
+                        toolChoice: undefined,
                     },
-                    callerId
-                });
+                    tools: undefined,
+                    jsonSchema: undefined,
+                    responseFormat: 'text',
+                };
+
+                logger.debug('Resubmitting with updated messages including tool results');
+                return this.execute<T>(recursiveParams);
             }
         }
 
-        const validatedResponse = this.responseProcessor.validateResponse<T>(response, mergedSettings);
-        this.historyManager?.addMessage('assistant', response.content || '');
+        // Validate the FINAL response (original or from recursion)
+        const validationParams: UniversalChatParams = {
+            messages: [],  // Required by UniversalChatParams but not used in validation
+            model: '',     // Required by UniversalChatParams but not used in validation
+            settings: mergedSettings,
+            jsonSchema: params.jsonSchema,
+            responseFormat: params.responseFormat
+        };
+        const validatedResponse = await this.responseProcessor.validateResponse<T>(response, validationParams);
+
+        // Ensure the final assistant message (if not already added during tool call flow) is in history
+        if (!hasToolCalls) {
+            // If there were no tool calls, add the final assistant response now
+            this.historyManager?.addMessage('assistant', validatedResponse.content || '');
+        }
+
         return validatedResponse;
     }
 }

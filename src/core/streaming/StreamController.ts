@@ -67,12 +67,12 @@ export class StreamController {
             inputTokens,
             maxRetries,
             stream: params.settings?.stream,
-            tools: params.settings?.tools ? params.settings.tools.map((t: { name: string }) => t.name) : [],
+            tools: params.tools ? params.tools.map((t: { name: string }) => t.name) : [],
             toolChoice: params.settings?.toolChoice,
             callerId: params.callerId,
             requestId,
-            responseFormat: params.settings?.responseFormat,
-            hasJsonSchema: Boolean(params.settings?.jsonSchema),
+            responseFormat: params.responseFormat,
+            hasJsonSchema: Boolean(params.jsonSchema),
             messagesCount: params.messages.length,
             isDirectStreaming: true,  // Flag to track true streaming vs fake streaming
             shouldRetryContent: params.settings?.shouldRetryDueToContent !== false,
@@ -105,9 +105,9 @@ export class StreamController {
                 model,
                 callerId: params.callerId,
                 requestId,
-                toolsCount: params.settings?.tools?.length || 0,
-                hasJsonSchema: Boolean(params.settings?.jsonSchema),
-                responseFormat: params.settings?.responseFormat || 'none'
+                toolsCount: params.tools?.length || 0,
+                hasJsonSchema: Boolean(params.jsonSchema),
+                responseFormat: params.responseFormat || 'none'
             });
 
             const streamStartTime = Date.now();

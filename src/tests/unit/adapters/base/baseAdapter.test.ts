@@ -24,7 +24,7 @@ class TestAdapter extends BaseAdapter {
     }
 
     convertToProviderParams(model: string, params: UniversalChatParams): unknown {
-        return { model, ...params };
+        return { ...params, model };
     }
 
     convertFromProviderResponse(response: unknown): UniversalChatResponse {
@@ -97,7 +97,8 @@ describe('BaseAdapter', () => {
 
             it('should implement chatCall', async () => {
                 const response = await adapter.chatCall('test-model', {
-                    messages: [{ role: 'user', content: 'test' }]
+                    messages: [{ role: 'user', content: 'test' }],
+                    model: 'test-model'
                 });
                 expect(response).toEqual({
                     content: 'test response',
@@ -107,7 +108,8 @@ describe('BaseAdapter', () => {
 
             it('should implement streamCall', async () => {
                 const stream = await adapter.streamCall('test-model', {
-                    messages: [{ role: 'user', content: 'test' }]
+                    messages: [{ role: 'user', content: 'test' }],
+                    model: 'test-model'
                 });
                 const chunks = [];
                 for await (const chunk of stream) {
@@ -122,7 +124,8 @@ describe('BaseAdapter', () => {
 
             it('should implement convertToProviderParams', () => {
                 const params: UniversalChatParams = {
-                    messages: [{ role: 'user', content: 'test' }]
+                    messages: [{ role: 'user', content: 'test' }],
+                    model: 'test-model'
                 };
                 const result = adapter.convertToProviderParams('test-model', params);
                 expect(result).toEqual({

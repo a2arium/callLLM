@@ -20,7 +20,8 @@ describe('OpenAIAdapter', () => {
     const mockBaseUrl = 'https://test.openai.com';
     const mockModel = 'gpt-4';
     const mockParams: UniversalChatParams = {
-        messages: [{ role: 'user', content: 'test' }]
+        messages: [{ role: 'user', content: 'Hello' }],
+        model: 'gpt-3.5-turbo'
     };
 
     let mockOpenAIClient: jest.MockedObject<OpenAI>;
@@ -103,13 +104,13 @@ describe('OpenAIAdapter', () => {
                 stream: params.settings?.stream || false
             };
 
-            if (params.settings?.tools) {
-                converted.tools = params.settings.tools.map((tool: { name: string; description?: string; parameters?: Record<string, unknown> }) => ({
+            if (params.tools) {
+                converted.tools = params.tools.map((tool: { name: string; description?: string; parameters?: Record<string, unknown> }) => ({
                     type: 'function',
                     function: {
                         name: tool.name,
-                        description: tool.description,
-                        parameters: tool.parameters
+                        description: tool.description || '',
+                        parameters: tool.parameters || {}
                     }
                 }));
             }
@@ -119,7 +120,13 @@ describe('OpenAIAdapter', () => {
             }
 
             if (params.settings?.toolCalls) {
-                converted.n = params.settings.toolCalls;
+                (converted as any).tool_calls = params.settings.toolCalls.map(call => ({
+                    type: 'function',
+                    function: {
+                        name: call.name,
+                        arguments: JSON.stringify(call.arguments)
+                    }
+                }));
             }
 
             return converted;
@@ -485,7 +492,8 @@ describe('OpenAIAdapter', () => {
 
         it('should convert to provider params', () => {
             const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'test' }]
+                messages: [{ role: 'user', content: 'test' }],
+                model: 'test-model'
             };
             mockConverter.convertToProviderParams.mockReturnValue({
                 messages: [{ role: 'user', content: 'test' }]
@@ -693,10 +701,29 @@ describe('OpenAIAdapter', () => {
 
         const mockToolCallParams: UniversalChatParams = {
             messages: [{ role: 'user', content: 'test' }],
+            model: 'gpt-3.5-turbo',
             settings: {
-                tools: [mockTool],
                 toolChoice: 'auto'
-            }
+            },
+            tools: [
+                {
+                    name: 'test_tool',
+                    description: 'A test tool',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: {
+                            test: {
+                                type: 'string',
+                                description: 'A test parameter'
+                            }
+                        },
+                        required: ['test']
+                    },
+                    callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                        return {} as T;
+                    }
+                }
+            ]
         };
 
         it('should handle tool calling in chat call', async () => {
@@ -731,7 +758,8 @@ describe('OpenAIAdapter', () => {
 
         it('should preserve existing behavior when no tool settings are present', async () => {
             const regularParams: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'test' }]
+                messages: [{ role: 'user', content: 'test' }],
+                model: 'test-model'
             };
 
             mockConverter.convertToProviderParams.mockReturnValue({
@@ -750,11 +778,33 @@ describe('OpenAIAdapter', () => {
         it('should handle parallel tool calls', async () => {
             const paramsWithParallelTools: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'test' }],
+                model: 'gpt-3.5-turbo',
                 settings: {
-                    tools: [mockTool],
                     toolChoice: 'auto',
-                    toolCalls: 2
-                }
+                    toolCalls: [
+                        { name: 'tool1', arguments: {} },
+                        { name: 'tool2', arguments: {} }
+                    ]
+                },
+                tools: [
+                    {
+                        name: 'test_tool',
+                        description: 'A test tool',
+                        parameters: {
+                            type: 'object' as const,
+                            properties: {
+                                test: {
+                                    type: 'string',
+                                    description: 'A test parameter'
+                                }
+                            },
+                            required: ['test']
+                        },
+                        callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                            return {} as T;
+                        }
+                    }
+                ]
             };
 
             mockConverter.convertToProviderParams.mockReturnValue({

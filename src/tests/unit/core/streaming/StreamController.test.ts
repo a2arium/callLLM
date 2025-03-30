@@ -87,7 +87,11 @@ describe('StreamController', () => {
         characteristics: { qualityIndex: 80, outputSpeed: 50, firstTokenLatency: 10 }
     };
 
-    const dummyParams: UniversalChatParams = { messages: [{ role: 'user', content: 'test' }], settings: {} };
+    const dummyParams: UniversalChatParams = {
+        messages: [{ role: 'user', content: 'test' }],
+        settings: {},
+        model: 'test-model'
+    };
 
     beforeEach(() => {
         // Create a provider stub that has a streamCall method.
@@ -190,7 +194,11 @@ describe('StreamController', () => {
             throw new Error('Always fail');
         });
         // Set maxRetries to 2 via params.
-        const paramsWithRetries: UniversalChatParams = { messages: dummyParams.messages, settings: { maxRetries: 2 } };
+        const paramsWithRetries: UniversalChatParams = {
+            messages: dummyParams.messages,
+            settings: { maxRetries: 2 },
+            model: 'test-model'
+        };
 
         const resultIterable = await streamController.createStream('test-model', paramsWithRetries, 10);
         let error: Error | null = null;
@@ -331,7 +339,8 @@ describe('StreamController', () => {
         // Use params without maxRetries specified
         const paramsWithoutRetries: UniversalChatParams = {
             messages: dummyParams.messages,
-            settings: {} // No maxRetries specified
+            settings: {}, // No maxRetries specified
+            model: 'test-model'
         };
 
         const resultIterable = await streamController.createStream('test-model', paramsWithoutRetries, 10);
@@ -443,7 +452,11 @@ describe('StreamController', () => {
                     };
                 })();
             });
-            const paramsWithRetries: UniversalChatParams = { messages: dummyParams.messages, settings: { maxRetries: 2 } };
+            const paramsWithRetries: UniversalChatParams = {
+                messages: dummyParams.messages,
+                settings: { maxRetries: 2 },
+                model: 'test-model'
+            };
             const resultIterable = await streamController.createStream('test-model', paramsWithRetries, 10);
             let error: Error | null = null;
             try {
@@ -471,9 +484,8 @@ describe('StreamController', () => {
             // Set the shouldRetryDueToContent flag to false
             const paramsWithNoContentRetry: UniversalChatParams = {
                 messages: dummyParams.messages,
-                settings: {
-                    shouldRetryDueToContent: false
-                }
+                settings: { shouldRetryDueToContent: false },
+                model: 'test-model'
             };
 
             const resultIterable = await streamController.createStream('test-model', paramsWithNoContentRetry, 10);
@@ -596,7 +608,8 @@ describe('StreamController', () => {
         // Create params with custom maxRetries
         const paramsWithCustomRetries: UniversalChatParams = {
             messages: dummyParams.messages,
-            settings: { maxRetries: customMaxRetries }
+            settings: { maxRetries: customMaxRetries },
+            model: 'test-model'
         };
 
         // Mock retryManager to always fail
@@ -806,7 +819,8 @@ describe('StreamController', () => {
     it('should handle undefined settings for maxRetries', async () => {
         // Create params with undefined settings
         const paramsWithUndefinedSettings: UniversalChatParams = {
-            messages: dummyParams.messages
+            messages: dummyParams.messages,
+            model: 'test-model'
         };
 
         // Mock retryManager to always fail so we can check the default retry count
@@ -980,7 +994,8 @@ describe('StreamController', () => {
         // Create params with null settings
         const paramsWithNullSettings: UniversalChatParams = {
             messages: dummyParams.messages,
-            settings: null as any
+            settings: null as any,
+            model: 'test-model'
         };
 
         // Mock retryManager to always fail so we can verify default retry count
@@ -1088,7 +1103,8 @@ describe('StreamController', () => {
         // Create params with empty settings object
         const paramsWithEmptySettings: UniversalChatParams = {
             messages: dummyParams.messages,
-            settings: {}
+            settings: {},
+            model: 'test-model'
         };
 
         // Create a truly unusual error object
@@ -1123,7 +1139,8 @@ describe('StreamController', () => {
         // Create params with settings.maxRetries explicitly set to 0
         const paramsWithZeroRetries: UniversalChatParams = {
             messages: dummyParams.messages,
-            settings: { maxRetries: 0 }
+            settings: { maxRetries: 0 },
+            model: 'test-model'
         };
 
         // Mock to throw an error to test the retry logic

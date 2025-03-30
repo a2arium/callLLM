@@ -133,17 +133,21 @@ describe('ToolOrchestrator Integration', () => {
             expect(mockTimeTool.callFunction).toHaveBeenCalledWith({ location: 'London' });
 
             // Verify history manager was called
-            expect(mockHistoryManager.addToolCallToHistory).toHaveBeenCalledWith(
-                'getWeather',
-                { location: 'London' },
+            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith(
+                'tool',
                 'Sunny, 22°C',
-                undefined
+                {
+                    toolCallId: expect.any(String),
+                    name: 'getWeather'
+                }
             );
-            expect(mockHistoryManager.addToolCallToHistory).toHaveBeenCalledWith(
-                'getTime',
-                { location: 'London' },
+            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith(
+                'tool',
                 '14:30 GMT',
-                undefined
+                {
+                    toolCallId: expect.any(String),
+                    name: 'getTime'
+                }
             );
         });
 
@@ -219,11 +223,12 @@ describe('ToolOrchestrator Integration', () => {
 
             expect(result.newToolCalls).toBe(1);
             expect(result.requiresResubmission).toBe(true);
-            expect(mockHistoryManager.addToolCallToHistory).toHaveBeenCalledWith(
-                'errorTool',
-                { shouldFail: true },
-                undefined,
-                expect.stringContaining('Tool execution failed')
+            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith(
+                'tool',
+                'Error executing tool errorTool: Execution of tool "errorTool" failed: Tool execution failed',
+                {
+                    toolCallId: expect.any(String)
+                }
             );
         });
 
@@ -303,11 +308,13 @@ describe('ToolOrchestrator Integration', () => {
 
             expect(result.newToolCalls).toBe(1);
             expect(result.requiresResubmission).toBe(true);
-            expect(mockHistoryManager.addToolCallToHistory).toHaveBeenCalledWith(
-                'testTool',
-                {},
+            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith(
+                'tool',
                 'First result',
-                undefined
+                {
+                    toolCallId: expect.any(String),
+                    name: 'testTool'
+                }
             );
         });
 
@@ -386,11 +393,13 @@ describe('ToolOrchestrator Integration', () => {
 
             expect(result.newToolCalls).toBe(1);
             expect(result.requiresResubmission).toBe(true);
-            expect(mockHistoryManager.addToolCallToHistory).toHaveBeenCalledWith(
-                'testTool',
-                {},
+            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith(
+                'tool',
                 'Tool result',
-                undefined
+                {
+                    toolCallId: expect.any(String),
+                    name: 'testTool'
+                }
             );
         });
     });

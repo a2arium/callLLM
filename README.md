@@ -471,7 +471,7 @@ In both cases:
 
 ## JSON Mode and Schema Validation
 
-The library supports structured outputs with schema validation using either Zod schemas or JSON Schema:
+The library supports structured outputs with schema validation using either Zod schemas or JSON Schema. You can configure these parameters either at the root level of the options object or within the settings property:
 
 ### Using Zod Schema
 
@@ -484,6 +484,22 @@ const UserSchema = z.object({
     interests: z.array(z.string())
 });
 
+// Recommended approach: properties at root level
+const response = await caller.call<typeof UserSchema>(
+    'Generate a profile for a user named Alice',
+    {
+        jsonSchema: {
+            name: 'UserProfile',
+            schema: UserSchema
+        },
+        responseFormat: 'json',
+        settings: {
+            temperature: 0.7
+        }
+    }
+);
+
+// Alternative approach: properties nested in settings
 const response = await caller.call<typeof UserSchema>(
     'Generate a profile for a user named Alice',
     {
@@ -492,7 +508,8 @@ const response = await caller.call<typeof UserSchema>(
                 name: 'UserProfile',
                 schema: UserSchema
             },
-            responseFormat: 'json'
+            responseFormat: 'json',
+            temperature: 0.7
         }
     }
 );
@@ -503,109 +520,65 @@ const response = await caller.call<typeof UserSchema>(
 ### Using JSON Schema
 
 ```typescript
+// Recommended approach: properties at root level
 const response = await caller.call(
     'Generate a recipe',
     {
-        settings: {
-            jsonSchema: {
-                name: 'Recipe',
-                schema: {
-                    type: 'object',
-                    properties: {
-                        name: { type: 'string' },
-                        ingredients: {
-                            type: 'array',
-                            items: { type: 'string' }
-                        },
-                        steps: {
-                            type: 'array',
-                            items: { type: 'string' }
-                        }
+        jsonSchema: {
+            name: 'Recipe',
+            schema: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string' },
+                    ingredients: {
+                        type: 'array',
+                        items: { type: 'string' }
                     },
-                    required: ['name', 'ingredients', 'steps']
-                }
-            },
-            responseFormat: 'json'
-        }
+                    steps: {
+                        type: 'array',
+                        items: { type: 'string' }
+                    }
+                },
+                required: ['name', 'ingredients', 'steps']
+            }
+        },
+        responseFormat: 'json'
     }
 );
 ```
 
 Note: The library automatically adds `additionalProperties: false` to all object levels in JSON schemas to ensure strict validation. You don't need to specify this in your schema.
 
-### Streaming with Schema Validation
+### Tool Configuration
 
 ```typescript
-import { z } from 'zod';
+// Define your tools
+const tools = [{
+    name: 'get_weather',
+    description: 'Get the current weather',
+    parameters: {
+        type: 'object',
+        properties: {
+            location: {
+                type: 'string',
+                description: 'The city and state'
+            }
+        },
+        required: ['location']
+    }
+}];
 
-const UserSchema = z.object({
-    name: z.string(),
-    age: z.number(),
-    interests: z.array(z.string())
-});
-
-const stream = await caller.stream<typeof UserSchema>(
-    'Generate a profile for a user named Bob',
+// Recommended approach: tools at root level
+const response = await caller.call(
+    'What is the weather in New York?',
     {
+        tools,
         settings: {
-            jsonSchema: {
-                name: 'UserProfile',
-                schema: UserSchema
-            },
-            responseFormat: 'json'
+            temperature: 0.7,
+            toolChoice: 'auto' // toolChoice remains in settings
         }
     }
 );
-
-for await (const chunk of stream) {
-    // For intermediate chunks, display content as it arrives
-    if (!chunk.isComplete) {
-        process.stdout.write(chunk.content);
-    } else {
-        // Final chunk provides two important properties:
-        
-        // 1. contentText - The complete, accumulated JSON text
-        console.log('\nComplete JSON text:', chunk.contentText);
-        
-        // 2. contentObject - The parsed, validated JSON object with proper typing
-        console.log('\nParsed object:', chunk.contentObject);
-        
-        // TypeScript ensures correct typing of contentObject
-        // You can access properties directly with type safety
-        const profile = chunk.contentObject as z.infer<typeof UserSchema>;
-        console.log(`\nName: ${profile.name}, Age: ${profile.age}`);
-        
-        // Type inference works with generic type parameter
-        profile.interests.forEach(interest => {
-            console.log(`- ${interest}`);
-        });
-    }
-}
-```
-
-### Error Handling
-
-When using schema validation, the library provides detailed validation errors:
-
-```typescript
-try {
-    const response = await caller.call(
-        'Generate data',
-        {
-            settings: {
-                jsonSchema: {
-                    name: 'Data',
-                    schema: UserSchema
-                },
-                responseFormat: 'json'
-            }
-        }
-    );
-} catch (error) {
-    if (error instanceof SchemaValidationError) {
-        console.log('Validation errors:', error.validationErrors);
-    }
-}
 ```
 
 ## Available Settings
@@ -1162,3 +1135,53 @@ The logger automatically prefixes logs with their source component:
 - `[ToolOrchestrator]` - Tool orchestration and workflow logs
 - `[ChatController]` - Chat and message processing logs
 - `[StreamController]` - Streaming related logs
+
+## Recent Updates
+
+- **v0.9.2**: Fixed JSON structured responses in non-streaming calls.
+  - The `contentObject` property is now properly populated in non-streaming responses.
+  - Enhanced JSON schema validation to work consistently across streaming and non-streaming calls.
+  - Ensured proper passing of response format and JSON schema parameters throughout the validation pipeline.
+
+- **v0.9.1**: Fixed a critical issue with tool call responses not being properly incorporated in follow-up messages.
+  - When making API calls after tool execution, the tool results are now properly included in the message history.
+  - This ensures the model correctly uses information from tool results in all responses.
+  - The fix prevents the model from falsely claiming it doesn't have information it has already received through tools.
+
+- **v0.9.0**: Added support for JSON schemas, streaming, and tool calling at the root level of the options object.
+  - `jsonSchema`, `responseFormat`, and `tools` can now be used as top-level options instead of being nested under `settings`.
+  - Backward compatibility is maintained, supporting both formats.
+  - Fixed a critical issue with tool calls where original tool call IDs were not preserved, causing API errors with multiple tool calls.
+  - Fixed an issue where assistant messages were being duplicated in history when using tool calls.
+
+## Tool Calling Best Practices
+
+When working with tool calls, ensure that:
+
+1. Tool definitions are clear and properly typed
+2. Every tool call response uses the **exact** tool call ID from the API response
+3. For multi-tool calls, all tool calls in an assistant message must have corresponding tool responses
+
+Example of correct tool call handling:
+
+```typescript
+// Receive a response with tool calls from the API
+const response = await caller.call('What time is it in Tokyo?', {
+  tools: [timeTool],
+  settings: { toolChoice: 'auto' }
+});
+
+// Process each tool call with the EXACT same ID
+if (response.toolCalls && response.toolCalls.length > 0) {
+  for (const toolCall of response.toolCalls) {
+    const result = await executeYourTool(toolCall.arguments);
+    
+    // Add the result with the EXACT same ID from the API
+    caller.addToolResult(
+      toolCall.id, // Keep the original ID!
+      JSON.stringify(result),
+      toolCall.name
+    );
+  }
+}
+```

@@ -71,11 +71,11 @@ export class StreamHandler {
         const startTime = Date.now();
         log.debug('Starting stream processing', {
             inputTokens,
-            jsonMode: params.settings?.responseFormat === 'json',
-            hasSchema: Boolean(params.settings?.jsonSchema),
+            jsonMode: params.responseFormat === 'json',
+            hasSchema: Boolean(params.jsonSchema),
             callerId: params.callerId || this.callerId,
             isStreamModeEnabled: params.settings?.stream === true,
-            toolsEnabled: Boolean(params.settings?.tools?.length),
+            toolsEnabled: Boolean(params.tools?.length),
             modelName: modelInfo.name
         });
 
@@ -112,8 +112,8 @@ export class StreamHandler {
         const processedStream = pipeline.processStream(streamChunks);
 
         try {
-            const schema = params.settings?.jsonSchema?.schema as T;
-            const isJsonMode = params.settings?.responseFormat === 'json';
+            const schema = params.jsonSchema?.schema as T;
+            const isJsonMode = params.responseFormat === 'json';
 
             let chunkCount = 0;
             let hasExecutedTools = false;
@@ -178,11 +178,41 @@ export class StreamHandler {
 
                         yield {
                             ...assistantMessage,
-                            isComplete: false
+                            isComplete: false,
+                            toolCalls: assistantMessage.toolCalls?.map(call => {
+                                if ('function' in call) {
+                                    // Handle OpenAI-style tool calls
+                                    return {
+                                        id: call.id || '',
+                                        name: call.function.name,
+                                        arguments: typeof call.function.arguments === 'string'
+                                            ? JSON.parse(call.function.arguments)
+                                            : call.function.arguments
+                                    };
+                                } else {
+                                    // Handle our standard ToolCall format
+                                    return {
+                                        id: call.id || '',
+                                        name: call.name,
+                                        arguments: call.arguments || {}
+                                    };
+                                }
+                            })
                         };
 
                         // Process each tool call
                         log.debug(`Processing ${completedToolCalls.length} tool calls`);
+
+                        // First, ensure the assistant message with tool calls is added to history
+                        // This is critical for OpenAI which requires that tool messages reference
+                        // tool call IDs from a preceding assistant message
+                        this.historyManager.addMessage('assistant', contentAccumulator.getAccumulatedContent(), {
+                            toolCalls: completedToolCalls.map(call => ({
+                                id: call.id || `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+                                name: call.name,
+                                arguments: call.arguments || {}
+                            }))
+                        });
 
                         const { requiresResubmission } = await this.toolOrchestrator?.processToolCalls(response);
                         if (!requiresResubmission) return; // If no need to submit tool calls, return
@@ -193,6 +223,38 @@ export class StreamHandler {
                         log.debug('Creating continuation stream with updated history', {
                             messagesCount: updatedMessages.length
                         });
+
+                        // Add detailed debug logging for history structure
+                        log.debug('Message history structure before continuation:',
+                            updatedMessages.map((msg, index) => ({
+                                index,
+                                role: msg.role,
+                                hasContent: Boolean(msg.content && msg.content.length > 0),
+                                contentLength: msg.content?.length || 0,
+                                hasToolCalls: Boolean(msg.toolCalls && msg.toolCalls.length > 0),
+                                toolCallsCount: msg.toolCalls?.length || 0,
+                                toolCallIds: msg.toolCalls?.map(tc => tc.id || 'missing_id') || [],
+                                hasToolCallId: Boolean(msg.toolCallId),
+                                toolCallId: msg.toolCallId || 'none'
+                            }))
+                        );
+
+                        // Check for tool messages without corresponding tool calls
+                        const toolMessages = updatedMessages.filter(msg => msg.role === 'tool');
+                        const toolCallIds = updatedMessages
+                            .filter(msg => msg.toolCalls)
+                            .flatMap(msg => msg.toolCalls?.map(tc => tc.id) || []);
+
+                        const orphanedToolMessages = toolMessages.filter(
+                            msg => !msg.toolCallId || !toolCallIds.includes(msg.toolCallId)
+                        );
+
+                        if (orphanedToolMessages.length > 0) {
+                            log.warn('Found orphaned tool messages without matching tool calls', {
+                                count: orphanedToolMessages.length,
+                                toolCallIds: orphanedToolMessages.map(msg => msg.toolCallId)
+                            });
+                        }
 
                         // Extract system message
                         const systemMessage = params.messages?.find(m => m.role === 'system')?.content || '';
@@ -210,9 +272,13 @@ export class StreamHandler {
                                     settings: {
                                         ...params.settings,
                                         stream: true,
-                                        tools: undefined, // No tools in the continuation
+                                        // Remove toolChoice if we're not including tools
                                         toolChoice: undefined
-                                    }
+                                    },
+                                    tools: undefined, // No tools in the continuation
+                                    responseFormat: params.responseFormat,
+                                    jsonSchema: params.jsonSchema,
+                                    model: modelInfo.name
                                 },
                                 modelInfo.name,
                                 systemMessage
@@ -238,7 +304,8 @@ export class StreamHandler {
                                 if (chunk.isComplete) {
                                     // Add the final response to history
                                     if (chunk.content) {
-                                        this.historyManager.addMessage('assistant', chunk.content);
+                                        // Don't add the message here as it will be added by StreamHistoryProcessor
+                                        // this.historyManager.addMessage('assistant', chunk.content);
                                     }
 
                                     log.debug('Continuation stream complete', {
@@ -286,8 +353,11 @@ export class StreamHandler {
                             if (response.metadata) {
                                 response.metadata.validationErrors =
                                     error instanceof SchemaValidationError
-                                        ? error.validationErrors
-                                        : [{ message: String(error), path: '' }];
+                                        ? error.validationErrors.map(err => ({
+                                            message: err.message,
+                                            path: Array.isArray(err.path) ? err.path : [err.path]
+                                        }))
+                                        : [{ message: String(error), path: [''] }];
                             }
                         }
                     }

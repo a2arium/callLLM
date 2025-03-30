@@ -10,7 +10,7 @@ export const FORBIDDEN_PHRASES: string[] = [
 ];
 
 type ResponseWithToolCalls = {
-    content: string;
+    content: string | null;
     toolCalls?: Array<{
         name: string;
         arguments: Record<string, unknown>;
@@ -18,8 +18,21 @@ type ResponseWithToolCalls = {
 };
 
 /**
+ * Checks whether a string content looks like valid JSON
+ * @param content - The string content to check
+ * @returns true if the content looks like valid JSON
+ */
+function isLikelyJSON(content: string): boolean {
+    const trimmed = content.trim();
+    // Check if it starts with { and ends with }
+    return (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+        (trimmed.startsWith('[') && trimmed.endsWith(']'));
+}
+
+/**
  * Checks whether the response content triggers a retry.
  * If the response has tool calls, it's considered valid regardless of content.
+ * If the response is JSON, it's considered valid regardless of length.
  * Otherwise, checks if content is empty/null or contains forbidden phrases.
  *
  * @param response - The response to check, can be a string or a full response object
@@ -30,7 +43,7 @@ export function shouldRetryDueToContent(response: string | ResponseWithToolCalls
     logger.debug('[ShouldRetryDueToContent] Checking response:', JSON.stringify(response, null, 2));
 
     // Handle null/undefined
-    if (!response) {
+    if (response === null || response === undefined) {
         logger.debug('Response is null/undefined, triggering retry');
         return true;
     }
@@ -38,8 +51,22 @@ export function shouldRetryDueToContent(response: string | ResponseWithToolCalls
     // Handle string input (backwards compatibility)
     if (typeof response === 'string') {
         const trimmedContent = response.trim();
-        if (!trimmedContent || trimmedContent.length < threshold) {
-            logger.debug('String content is empty or too short, triggering retry');
+
+        // Empty strings need special handling - they might be valid in some contexts (like tool calls)
+        // but we can't determine that from just the string
+        if (trimmedContent === '') {
+            logger.debug('String content is empty, triggering retry');
+            return true;
+        }
+
+        // If it looks like JSON, don't apply the length threshold
+        if (isLikelyJSON(trimmedContent)) {
+            logger.debug('Response looks like JSON, not triggering retry');
+            return false;
+        }
+
+        if (trimmedContent.length < threshold) {
+            logger.debug('String content is too short, triggering retry');
             return true;
         }
 
@@ -52,15 +79,26 @@ export function shouldRetryDueToContent(response: string | ResponseWithToolCalls
         return false;
     }
 
-    // Handle response object
+    // Handle response object - must have content property at minimum
+    if (!('content' in response)) {
+        logger.debug('Response object missing content property, triggering retry');
+        return true;
+    }
+
     // If we have tool calls, the response is valid regardless of content
-    if (response.toolCalls?.length) {
+    if (response.toolCalls && response.toolCalls.length > 0) {
         logger.debug('Response has tool calls, not triggering retry');
         return false;
     }
 
     // No tool calls, check content
-    const trimmedContent = response.content.trim();
+    const trimmedContent = response.content?.trim() ?? '';
+
+    // If it looks like JSON, don't apply the length threshold
+    if (isLikelyJSON(trimmedContent)) {
+        logger.debug('Response looks like JSON, not triggering retry');
+        return false;
+    }
 
     // If we have a valid response after tool execution, don't retry
     if (trimmedContent && !FORBIDDEN_PHRASES.some(phrase => trimmedContent.toLowerCase().includes(phrase.toLowerCase()))) {

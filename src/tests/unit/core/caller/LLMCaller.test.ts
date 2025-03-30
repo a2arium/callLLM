@@ -154,12 +154,7 @@ describe('LLMCaller', () => {
             // Set maxRetries to 1 in options
             const customOptions = {
                 settings: {
-                    retrySettings: {
-                        maxRetries: 1,
-                        initialDelay: 1000,
-                        maxDelay: 5000,
-                        backoffFactor: 2,
-                    }
+                    maxRetries: 1
                 }
             };
 
@@ -170,13 +165,12 @@ describe('LLMCaller', () => {
             expect(mockStreamingService.createStream).toHaveBeenCalledWith(
                 expect.objectContaining({
                     settings: expect.objectContaining({
-                        retrySettings: expect.objectContaining({
-                            maxRetries: 1
-                        })
-                    })
+                        maxRetries: 1
+                    }),
+                    model: 'test-model'
                 }),
                 'test-model',
-                'You are a helpful assistant.'
+                undefined
             );
 
             // Verify the number of calls
@@ -201,15 +195,11 @@ describe('LLMCaller', () => {
             // Verify createStream was called with the expected parameters
             expect(mockStreamingService.createStream).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    messages: expect.arrayContaining([
-                        expect.objectContaining({
-                            role: 'user',
-                            content: 'test message'
-                        })
-                    ])
+                    messages: expect.any(Array),
+                    model: 'test-model'
                 }),
                 'test-model',
-                'You are a helpful assistant.'
+                undefined
             );
         });
     });

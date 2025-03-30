@@ -112,10 +112,7 @@ describe('OpenAIAdapter Integration Tests', () => {
 
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'What\'s the weather?' }],
-                settings: {
-                    tools: [mockTool],
-                    toolChoice: 'auto'
-                }
+                model: MODEL
             };
 
             mockCreate.mockResolvedValueOnce({
@@ -173,11 +170,7 @@ describe('OpenAIAdapter Integration Tests', () => {
 
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'What\'s the weather?' }],
-                settings: {
-                    tools: [mockTool],
-                    toolChoice: 'auto',
-                    stream: true
-                }
+                model: MODEL
             };
 
             mockCreate.mockImplementation(() => ({
@@ -228,7 +221,8 @@ describe('OpenAIAdapter Integration Tests', () => {
 
         it('should maintain backward compatibility when no tool settings provided', async () => {
             const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'Hello' }]
+                messages: [{ role: 'user', content: 'Hello' }],
+                model: MODEL
             };
 
             mockCreate.mockResolvedValueOnce({
@@ -289,10 +283,11 @@ describe('OpenAIAdapter Integration Tests', () => {
 
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'Check weather and time' }],
+                tools: [mockWeatherTool, mockTimeTool],
                 settings: {
-                    tools: [mockWeatherTool, mockTimeTool],
                     toolChoice: 'auto'
-                }
+                },
+                model: MODEL
             };
 
             mockCreate.mockResolvedValueOnce({
@@ -354,10 +349,11 @@ describe('OpenAIAdapter Integration Tests', () => {
 
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'Hello' }],
+                tools: [mockTool],
                 settings: {
-                    tools: [mockTool],
                     toolChoice: 'auto'
-                }
+                },
+                model: MODEL
             };
 
             mockCreate.mockResolvedValueOnce({
@@ -405,10 +401,11 @@ describe('OpenAIAdapter Integration Tests', () => {
 
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'Test invalid tool call' }],
+                tools: [mockTool],
                 settings: {
-                    tools: [mockTool],
                     toolChoice: 'auto'
-                }
+                },
+                model: MODEL
             };
 
             mockCreate.mockResolvedValueOnce({
@@ -460,10 +457,11 @@ describe('OpenAIAdapter Integration Tests', () => {
 
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'Test tool validation' }],
+                tools: [mockTool],
                 settings: {
-                    tools: [mockTool],
                     toolChoice: 'auto'
-                }
+                },
+                model: MODEL
             };
 
             mockCreate.mockResolvedValueOnce({
@@ -515,11 +513,12 @@ describe('OpenAIAdapter Integration Tests', () => {
 
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'Test streaming errors' }],
+                tools: [mockTool],
                 settings: {
-                    tools: [mockTool],
                     toolChoice: 'auto',
                     stream: true
-                }
+                },
+                model: MODEL
             };
 
             mockCreate.mockImplementation(() => ({
@@ -569,10 +568,11 @@ describe('OpenAIAdapter Integration Tests', () => {
 
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'Test no tool support' }],
+                tools: [mockTool],
                 settings: {
-                    tools: [mockTool],
                     toolChoice: 'auto'
-                }
+                },
+                model: MODEL_WITHOUT_TOOLS
             };
 
             mockCreate.mockRejectedValueOnce(new Error('Model does not support tool calls'));
@@ -610,10 +610,11 @@ describe('OpenAIAdapter Integration Tests', () => {
 
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'Test no parallel tools' }],
+                tools: [mockTool1, mockTool2],
                 settings: {
-                    tools: [mockTool1, mockTool2],
                     toolChoice: 'auto'
-                }
+                },
+                model: MODEL_WITHOUT_PARALLEL
             };
 
             mockCreate.mockRejectedValueOnce(new Error('Model does not support parallel tool calls'));
@@ -626,7 +627,8 @@ describe('OpenAIAdapter Integration Tests', () => {
     describe('Error Handling', () => {
         it('should handle API errors gracefully', async () => {
             const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'Test API error' }]
+                messages: [{ role: 'user', content: 'Test API error' }],
+                model: MODEL
             };
 
             mockCreate.mockRejectedValueOnce(new Error('API Error'));
@@ -637,7 +639,8 @@ describe('OpenAIAdapter Integration Tests', () => {
 
         it('should handle rate limit errors', async () => {
             const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'Test rate limit' }]
+                messages: [{ role: 'user', content: 'Test rate limit' }],
+                model: MODEL
             };
 
             mockCreate.mockRejectedValueOnce(new Error('Rate limit exceeded'));
@@ -648,7 +651,8 @@ describe('OpenAIAdapter Integration Tests', () => {
 
         it('should handle invalid model errors', async () => {
             const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'Test invalid model' }]
+                messages: [{ role: 'user', content: 'Test invalid model' }],
+                model: 'nonexistent-model'
             };
 
             mockCreate.mockRejectedValueOnce(new Error('Model not found'));

@@ -78,14 +78,27 @@ export class ToolOrchestrator {
         // Add tool executions to the tracking array and prepare messages
         if (toolResult?.toolCalls) {
             for (const call of toolResult.toolCalls) {
+                // CRITICAL: When processing tool calls, we need to add the tool response
+                // directly with the EXACT same tool call ID that was provided by the API.
+                // This ensures OpenAI can match tool responses to the original calls.
 
-                // Add to history manager - this handles adding both the assistant and tool messages
-                this.historyManager.addToolCallToHistory(
-                    call.toolName,
-                    call.arguments,
-                    call.result || undefined,
-                    call.error
-                );
+                if (!call.id) {
+                    logger.warn('Tool call missing ID - this may cause message history issues');
+                    continue;
+                }
+
+                // Add tool result directly to history with the EXACT original ID
+                if (call.result) {
+                    this.historyManager.addMessage('tool', call.result, {
+                        toolCallId: call.id,
+                        name: call.toolName
+                    });
+                } else if (call.error) {
+                    // Handle error case
+                    this.historyManager.addMessage('tool',
+                        `Error executing tool ${call.toolName}: ${call.error}`,
+                        { toolCallId: call.id });
+                }
 
                 newToolCallsCount++;
             }

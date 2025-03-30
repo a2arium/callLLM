@@ -87,25 +87,17 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
             if (modelInfo) {
                 this.converter.setModel(modelInfo);
                 // Validate tool calling capabilities
-                if (params.settings?.tools && !modelInfo.capabilities?.toolCalls) {
+                if (params.tools && params.tools.length > 0 && !modelInfo.capabilities?.toolCalls) {
                     throw new Error('Model does not support tool calls');
-                }
-                if (params.settings?.toolCalls && !modelInfo.capabilities?.parallelToolCalls) {
-                    throw new Error('Model does not support parallel tool calls');
                 }
             }
             this.converter.setParams(params);
-            const openAIParams = this.convertToProviderParams({
-                ...params,
-                settings: {
-                    ...params.settings,
-                    model,
-                    stream: false,
-                    tools: params.settings?.tools,
-                    toolChoice: params.settings?.toolChoice,
-                    toolCalls: params.settings?.toolCalls
-                }
-            });
+
+            // Use a temporary type with _stream property
+            type ParamsWithStream = UniversalChatParams & { _stream?: boolean };
+            const paramsWithStream = { ...params, model, _stream: false } as ParamsWithStream;
+
+            const openAIParams = this.convertToProviderParams(paramsWithStream);
 
             // Use as unknown to first erase the type, then cast to ProviderSpecificResponse
             const response = await this.client.chat.completions.create(openAIParams as any) as unknown as ProviderSpecificResponse;
@@ -125,25 +117,17 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
             if (modelInfo) {
                 this.converter.setModel(modelInfo);
                 // Validate tool calling capabilities
-                if (params.settings?.tools && !modelInfo.capabilities?.toolCalls) {
+                if (params.tools && params.tools.length > 0 && !modelInfo.capabilities?.toolCalls) {
                     throw new Error('Model does not support tool calls');
-                }
-                if (params.settings?.toolCalls && !modelInfo.capabilities?.parallelToolCalls) {
-                    throw new Error('Model does not support parallel tool calls');
                 }
             }
             this.converter.setParams(params);
-            const openAIParams = this.convertToProviderParams({
-                ...params,
-                settings: {
-                    ...params.settings,
-                    model,
-                    stream: true,
-                    tools: params.settings?.tools,
-                    toolChoice: params.settings?.toolChoice,
-                    toolCalls: params.settings?.toolCalls
-                }
-            });
+
+            // Use a temporary type with _stream property
+            type ParamsWithStream = UniversalChatParams & { _stream?: boolean };
+            const paramsWithStream = { ...params, model, _stream: true } as ParamsWithStream;
+
+            const openAIParams = this.convertToProviderParams(paramsWithStream);
 
             const stream = await this.client.chat.completions.create({ ...openAIParams as any, stream: true }) as unknown as Stream<ChatCompletionChunk>;
 
@@ -151,8 +135,6 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
             const streamChunks = this.convertProviderStream(stream);
 
             return streamChunks;
-            // Convert StreamChunk to UniversalStreamResponse (add metadata)
-            // return this.convertStreamChunksToUniversalResponse(streamChunks);
         } catch (error) {
             throw this.mapProviderError(error);
         }
@@ -173,6 +155,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
         // Handle different method signatures
         let model: string | undefined;
         let actualParams: UniversalChatParams;
+        let streamMode = false; // Default stream mode
 
         if (typeof modelOrParams === 'string') {
             model = modelOrParams;
@@ -180,10 +163,16 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
         } else {
             model = undefined;
             actualParams = modelOrParams;
+            // Check if stream property was passed (used by our specific implementation)
+            if ('_stream' in actualParams) {
+                streamMode = Boolean(actualParams._stream);
+                // Remove non-standard property to avoid TypeScript errors
+                delete actualParams._stream;
+            }
         }
 
-        const openAIParams: Record<string, unknown> = {
-            messages: actualParams.messages.map(msg => {
+        const openAIParams: Record<string, any> = {
+            messages: actualParams.messages.map((msg) => {
                 // Base message properties
                 const openAIMsg: Record<string, unknown> = {
                     role: msg.role,
@@ -192,75 +181,138 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
 
                 // Handle tool calls (for function calling)
                 if (msg.toolCalls && msg.toolCalls.length > 0) {
-                    openAIMsg.tool_calls = msg.toolCalls.map(call => ({
-                        id: call.id,
-                        type: 'function',
-                        function: {
-                            name: call.name,
-                            arguments: JSON.stringify(call.arguments || {})
+                    openAIMsg.tool_calls = msg.toolCalls.map(call => {
+                        // Handle both our ToolCall type and OpenAI format
+                        if ('name' in call && 'arguments' in call) {
+                            // Our ToolCall format
+                            return {
+                                id: call.id || `tool_${Date.now()}`,
+                                type: 'function',
+                                function: {
+                                    name: call.name,
+                                    arguments: JSON.stringify(call.arguments || {})
+                                }
+                            };
+                        } else if (call.function) {
+                            // Already in OpenAI format
+                            return call;
+                        } else {
+                            // Fallback (shouldn't happen with proper types)
+                            return {
+                                id: call.id || `tool_${Date.now()}`,
+                                type: 'function',
+                                function: {
+                                    name: 'unknown',
+                                    arguments: '{}'
+                                }
+                            };
                         }
-                    }));
+                    });
                 }
 
                 // Handle tool responses
                 if (msg.toolCallId) {
+                    openAIMsg.role = 'tool'; // Ensure role is 'tool' for OpenAI
                     openAIMsg.tool_call_id = msg.toolCallId;
+                    // For OpenAI, content must be a string
+                    if (typeof openAIMsg.content !== 'string') {
+                        openAIMsg.content = JSON.stringify(openAIMsg.content);
+                    }
                 }
 
                 return openAIMsg;
             }),
-            model: model || actualParams.settings?.model || '',
-            stream: actualParams.settings?.stream || false
+            model: model || actualParams.model || '', // First use provided model, then fallback to params.model, then empty string
+            stream: streamMode // Use the extracted stream mode
         };
 
-        // Handle additional settings
+        // Handle settings from UniversalChatSettings
         if (actualParams.settings) {
+            const settings = actualParams.settings;
+
             // Temperature
-            if (actualParams.settings.temperature !== undefined) {
-                openAIParams.temperature = actualParams.settings.temperature;
+            if (settings.temperature !== undefined) {
+                openAIParams.temperature = settings.temperature;
             }
 
             // Max tokens
-            if (actualParams.settings.maxTokens !== undefined) {
-                openAIParams.max_tokens = actualParams.settings.maxTokens;
+            if (settings.maxTokens !== undefined) {
+                openAIParams.max_tokens = settings.maxTokens;
             }
 
-            // Tools
-            if (actualParams.settings.tools && actualParams.settings.tools.length > 0) {
-                openAIParams.tools = actualParams.settings.tools.map((tool: any) => ({
-                    type: 'function',
-                    function: {
-                        name: tool.name,
-                        description: tool.description,
-                        parameters: tool.parameters
-                    }
-                }));
+            // Top P
+            if (settings.topP !== undefined) {
+                openAIParams.top_p = settings.topP;
+            }
+
+            // Frequency penalty
+            if (settings.frequencyPenalty !== undefined) {
+                openAIParams.frequency_penalty = settings.frequencyPenalty;
+            }
+
+            // Presence penalty
+            if (settings.presencePenalty !== undefined) {
+                openAIParams.presence_penalty = settings.presencePenalty;
+            }
+
+            // User identifier
+            if (settings.user !== undefined) {
+                openAIParams.user = settings.user;
+            }
+
+            // Stop sequences
+            if (settings.stop !== undefined) {
+                openAIParams.stop = settings.stop;
+            }
+
+            // Number of completions
+            if (settings.n !== undefined) {
+                openAIParams.n = settings.n;
             }
 
             // Tool choice
-            if (actualParams.settings.toolChoice) {
-                if (actualParams.settings.toolChoice === 'auto') {
+            if (settings.toolChoice) {
+                if (settings.toolChoice === 'auto') {
                     openAIParams.tool_choice = 'auto';
-                } else if (actualParams.settings.toolChoice === 'none') {
+                } else if (settings.toolChoice === 'none') {
                     openAIParams.tool_choice = 'none';
-                } else if (typeof actualParams.settings.toolChoice === 'object') {
+                } else if (typeof settings.toolChoice === 'object') {
                     openAIParams.tool_choice = {
                         type: 'function',
                         function: {
-                            name: actualParams.settings.toolChoice.name
+                            name: settings.toolChoice.function.name
                         }
                     };
                 }
             }
+        }
 
-            // JSON mode
-            if (actualParams.settings?.responseFormat === 'json') {
-                if (actualParams.settings?.jsonSchema) {
-                    const schemaObject = SchemaValidator.getSchemaObject(actualParams.settings.jsonSchema.schema);
-                    openAIParams.response_format = { type: 'json_schema', json_schema: { "strict": true, name: actualParams.settings.jsonSchema.name, schema: schemaObject } };
-                } else {
-                    openAIParams.response_format = { type: 'json_object' };
+        // Tools (from UniversalChatParams not UniversalChatSettings)
+        if (actualParams.tools && actualParams.tools.length > 0) {
+            openAIParams.tools = actualParams.tools.map((tool: any) => ({
+                type: 'function',
+                function: {
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: tool.parameters
                 }
+            }));
+        }
+
+        // JSON mode (from UniversalChatParams not UniversalChatSettings)
+        if (actualParams.responseFormat === 'json') {
+            if (actualParams.jsonSchema) {
+                const schemaObject = SchemaValidator.getSchemaObject(actualParams.jsonSchema.schema);
+                openAIParams.response_format = {
+                    type: 'json_schema',
+                    json_schema: {
+                        "strict": true,
+                        name: actualParams.jsonSchema.name,
+                        schema: schemaObject
+                    }
+                };
+            } else {
+                openAIParams.response_format = { type: 'json_object' };
             }
         }
 

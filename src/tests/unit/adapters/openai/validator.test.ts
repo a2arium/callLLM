@@ -26,14 +26,15 @@ describe('Validator', () => {
             });
 
             it('should throw error when messages array is empty', () => {
-                const params: UniversalChatParams = { messages: [] };
+                const params: UniversalChatParams = { messages: [], model: 'test-model' };
                 expect(() => validator.validateParams(params)).toThrow(AdapterError);
                 expect(() => validator.validateParams(params)).toThrow('Messages array is required and cannot be empty');
             });
 
             it('should throw error when message is missing role', () => {
                 const params: UniversalChatParams = {
-                    messages: [{ content: 'test' }] as any
+                    messages: [{ content: 'test' } as any],
+                    model: 'test-model'
                 };
                 expect(() => validator.validateParams(params)).toThrow(AdapterError);
                 expect(() => validator.validateParams(params)).toThrow('Each message must have a role');
@@ -41,7 +42,8 @@ describe('Validator', () => {
 
             it('should throw error when message is missing content', () => {
                 const params: UniversalChatParams = {
-                    messages: [{ role: 'user' }] as any
+                    messages: [{ role: 'user' } as any],
+                    model: 'test-model'
                 };
                 expect(() => validator.validateParams(params)).toThrow(AdapterError);
                 expect(() => validator.validateParams(params)).toThrow('Each message must have either content or tool calls');
@@ -49,7 +51,8 @@ describe('Validator', () => {
 
             it('should throw error when message has invalid role', () => {
                 const params: UniversalChatParams = {
-                    messages: [{ role: 'invalid' as any, content: 'test' }]
+                    messages: [{ role: 'invalid' as any, content: 'test' }],
+                    model: 'test-model'
                 };
                 expect(() => validator.validateParams(params)).toThrow(AdapterError);
                 expect(() => validator.validateParams(params)).toThrow('Invalid message role. Must be one of: system, user, assistant, function, tool');
@@ -63,7 +66,8 @@ describe('Validator', () => {
                             role,
                             content: 'test',
                             name: role === 'function' ? 'testFunction' : undefined
-                        }]
+                        }],
+                        model: 'test-model'
                     };
                     expect(() => validator.validateParams(params)).not.toThrow();
                 });
@@ -76,7 +80,8 @@ describe('Validator', () => {
                 testCases.forEach(temperature => {
                     const params: UniversalChatParams = {
                         messages: [validMessage],
-                        settings: { temperature }
+                        settings: { temperature },
+                        model: 'test-model'
                     };
                     expect(() => validator.validateParams(params)).toThrow(AdapterError);
                     expect(() => validator.validateParams(params)).toThrow('Temperature must be between 0 and 2');
@@ -88,7 +93,8 @@ describe('Validator', () => {
                 testCases.forEach(temperature => {
                     const params: UniversalChatParams = {
                         messages: [validMessage],
-                        settings: { temperature }
+                        settings: { temperature },
+                        model: 'test-model'
                     };
                     expect(() => validator.validateParams(params)).not.toThrow();
                 });
@@ -99,7 +105,8 @@ describe('Validator', () => {
                 testCases.forEach(maxTokens => {
                     const params: UniversalChatParams = {
                         messages: [validMessage],
-                        settings: { maxTokens }
+                        settings: { maxTokens },
+                        model: 'test-model'
                     };
                     expect(() => validator.validateParams(params)).toThrow(AdapterError);
                     expect(() => validator.validateParams(params)).toThrow('Max tokens must be greater than 0');
@@ -109,7 +116,8 @@ describe('Validator', () => {
             it('should accept valid maxTokens values', () => {
                 const params: UniversalChatParams = {
                     messages: [validMessage],
-                    settings: { maxTokens: 1 }
+                    settings: { maxTokens: 1 },
+                    model: 'test-model'
                 };
                 expect(() => validator.validateParams(params)).not.toThrow();
             });
@@ -119,7 +127,8 @@ describe('Validator', () => {
                 testCases.forEach(topP => {
                     const params: UniversalChatParams = {
                         messages: [validMessage],
-                        settings: { topP }
+                        settings: { topP },
+                        model: 'test-model'
                     };
                     expect(() => validator.validateParams(params)).toThrow(AdapterError);
                     expect(() => validator.validateParams(params)).toThrow('Top P must be between 0 and 1');
@@ -131,7 +140,8 @@ describe('Validator', () => {
                 testCases.forEach(topP => {
                     const params: UniversalChatParams = {
                         messages: [validMessage],
-                        settings: { topP }
+                        settings: { topP },
+                        model: 'test-model'
                     };
                     expect(() => validator.validateParams(params)).not.toThrow();
                 });
@@ -142,7 +152,8 @@ describe('Validator', () => {
                 testCases.forEach(frequencyPenalty => {
                     const params: UniversalChatParams = {
                         messages: [validMessage],
-                        settings: { frequencyPenalty }
+                        settings: { frequencyPenalty },
+                        model: 'test-model'
                     };
                     expect(() => validator.validateParams(params)).toThrow(AdapterError);
                     expect(() => validator.validateParams(params)).toThrow('Frequency penalty must be between -2 and 2');
@@ -154,7 +165,8 @@ describe('Validator', () => {
                 testCases.forEach(frequencyPenalty => {
                     const params: UniversalChatParams = {
                         messages: [validMessage],
-                        settings: { frequencyPenalty }
+                        settings: { frequencyPenalty },
+                        model: 'test-model'
                     };
                     expect(() => validator.validateParams(params)).not.toThrow();
                 });
@@ -165,7 +177,8 @@ describe('Validator', () => {
                 testCases.forEach(presencePenalty => {
                     const params: UniversalChatParams = {
                         messages: [validMessage],
-                        settings: { presencePenalty }
+                        settings: { presencePenalty },
+                        model: 'test-model'
                     };
                     expect(() => validator.validateParams(params)).toThrow(AdapterError);
                     expect(() => validator.validateParams(params)).toThrow('Presence penalty must be between -2 and 2');
@@ -177,7 +190,8 @@ describe('Validator', () => {
                 testCases.forEach(presencePenalty => {
                     const params: UniversalChatParams = {
                         messages: [validMessage],
-                        settings: { presencePenalty }
+                        settings: { presencePenalty },
+                        model: 'test-model'
                     };
                     expect(() => validator.validateParams(params)).not.toThrow();
                 });
@@ -185,7 +199,8 @@ describe('Validator', () => {
 
             it('should accept params without settings', () => {
                 const params: UniversalChatParams = {
-                    messages: [validMessage]
+                    messages: [validMessage],
+                    model: 'test-model'
                 };
                 expect(() => validator.validateParams(params)).not.toThrow();
             });

@@ -77,11 +77,13 @@ describe('ToolOrchestrator', () => {
 
             expect(result.requiresResubmission).toBe(true);
             expect(result.newToolCalls).toBe(1);
-            expect(historyManager.addToolCallToHistory).toHaveBeenCalledWith(
-                'testTool',
-                {},
+            expect(historyManager.addMessage).toHaveBeenCalledWith(
+                'tool',
                 'Tool execution successful',
-                undefined
+                {
+                    toolCallId: 'test-id',
+                    name: 'testTool'
+                }
             );
         });
 
@@ -108,11 +110,12 @@ describe('ToolOrchestrator', () => {
             expect(result.requiresResubmission).toBe(true);
             expect(result.newToolCalls).toBe(1);
             expect(toolController.resetIterationCount).toHaveBeenCalled();
-            expect(historyManager.addToolCallToHistory).toHaveBeenCalledWith(
-                'testTool',
-                { shouldFail: true },
-                undefined,
-                'Tool error'
+            expect(historyManager.addMessage).toHaveBeenCalledWith(
+                'tool',
+                'Error executing tool testTool: Tool error',
+                {
+                    toolCallId: 'test-id'
+                }
             );
         });
 

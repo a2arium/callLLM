@@ -5,22 +5,26 @@ import { z } from 'zod';
 export class ResponseProcessor {
     constructor() { }
 
+    /**
+     * Validates a response based on the provided parameters.
+     * This handles schema validation, JSON parsing, and content filtering.
+     */
     public async validateResponse<T extends z.ZodType | undefined = undefined>(
         response: UniversalChatResponse,
-        settings: UniversalChatParams['settings']
+        params: UniversalChatParams
     ): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
-        // Case 1: No special handling needed - return as is
-        if (!settings?.jsonSchema && settings?.responseFormat !== 'json') {
-            return response as UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>;
+        // Case 1: If we have a JSON Schema, validate against it
+        if (params.jsonSchema && params.jsonSchema.schema) {
+            return this.validateWithSchema<T>(response, params.jsonSchema.schema, params);
         }
 
-        // Case 2: Schema validation (either Zod or JSON Schema)
-        if (settings?.jsonSchema) {
-            return this.validateWithSchema<T>(response, settings.jsonSchema.schema, settings);
+        // Case 2: If JSON format is requested but no schema, just parse without validation
+        if (params.responseFormat === 'json') {
+            return this.parseJson<T extends z.ZodType ? z.infer<T> : unknown>(response);
         }
 
-        // Case 3: JSON parsing without schema
-        return this.parseJson<T extends z.ZodType ? z.infer<T> : unknown>(response);
+        // Case 3: No JSON processing needed, return as-is
+        return response as UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>;
     }
 
     private async parseJson<T>(
@@ -50,7 +54,7 @@ export class ResponseProcessor {
     private async validateWithSchema<T extends z.ZodType | undefined = undefined>(
         response: UniversalChatResponse,
         schema: JSONSchemaDefinition,
-        settings: UniversalChatParams['settings']
+        params: UniversalChatParams
     ): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
         // Use contentText if available (for StreamResponse), otherwise use content
         const contentToUse = 'contentText' in response ?
@@ -66,9 +70,9 @@ export class ResponseProcessor {
             if (typeof contentToParse === 'object' &&
                 contentToParse !== null &&
                 !Array.isArray(contentToParse) &&
-                settings?.jsonSchema?.name) {
+                params.jsonSchema?.name) {
 
-                const schemaName = settings.jsonSchema.name.toLowerCase();
+                const schemaName = params.jsonSchema.name.toLowerCase();
                 const keys = Object.keys(contentToParse);
 
                 // Find a matching key (case insensitive)
@@ -99,7 +103,10 @@ export class ResponseProcessor {
                     contentObject: contentToParse as T extends z.ZodType ? z.infer<T> : unknown,
                     metadata: {
                         ...response.metadata,
-                        validationErrors: error.validationErrors,
+                        validationErrors: error.validationErrors.map(err => ({
+                            message: err.message,
+                            path: Array.isArray(err.path) ? err.path : [err.path]
+                        })),
                         finishReason: FinishReason.CONTENT_FILTER
                     }
                 };
@@ -114,7 +121,7 @@ export class ResponseProcessor {
     }
 
     public validateJsonMode(model: { capabilities?: { jsonMode?: boolean } }, params: UniversalChatParams): void {
-        if (params.settings?.jsonSchema || params.settings?.responseFormat === 'json') {
+        if (params.jsonSchema || params.responseFormat === 'json') {
             if (!model?.capabilities?.jsonMode) {
                 throw new Error('Selected model does not support JSON mode');
             }

@@ -475,10 +475,12 @@ describe('HistoryManager', () => {
             expect(messages[0].role).toBe('assistant');
             expect(messages[0].content).toBe('');
             expect(messages[0].toolCalls).toBeDefined();
-            expect(messages[0].toolCalls![0].name).toBe(toolName);
-            expect(messages[0].toolCalls![0].arguments).toEqual(args);
+            // Use type assertion to access the properties
+            const toolCall = messages[0].toolCalls![0] as unknown as { name: string; arguments: Record<string, unknown>; id: string };
+            expect(toolCall.name).toBe(toolName);
+            expect(toolCall.arguments).toEqual(args);
             // Don't test the exact ID which may vary, just check that it exists and has the expected prefix
-            expect(messages[0].toolCalls![0].id).toMatch(/^call_\d+_/);
+            expect(toolCall.id).toMatch(/^call_\d+_/);
 
             // Check tool response message
             expect(messages[1].role).toBe('tool');
@@ -499,7 +501,9 @@ describe('HistoryManager', () => {
             // Check assistant message with tool call
             expect(messages[0].role).toBe('assistant');
             expect(messages[0].toolCalls).toBeDefined();
-            expect(messages[0].toolCalls![0].name).toBe(toolName);
+            // Use type assertion to access the properties
+            const toolCall = messages[0].toolCalls![0] as unknown as { name: string; arguments: Record<string, unknown> };
+            expect(toolCall.name).toBe(toolName);
 
             // Check error message
             expect(messages[1].role).toBe('system');
@@ -520,6 +524,9 @@ describe('HistoryManager', () => {
             // Check assistant message with tool call
             expect(messages[0].role).toBe('assistant');
             expect(messages[0].toolCalls).toBeDefined();
+            // Use type assertion to access the properties
+            const toolCall = messages[0].toolCalls![0] as unknown as { name: string; arguments: Record<string, unknown> };
+            expect(toolCall.name).toBe(toolName);
 
             // Check tool response message
             expect(messages[1].role).toBe('tool');

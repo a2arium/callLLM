@@ -92,14 +92,14 @@ async function main() {
     caller.addTool(timeTool);
     caller.addTool(calculateTool);
 
-    // 1. Basic Tool Call
+    // 1. Basic Tool Call (recommended approach with tools at root level)
     console.log('1. Basic Tool Call');
     console.log('------------------');
     const weatherResponse = await caller.call(
         'What\'s the weather like in San Francisco?',
         {
+            tools: [weatherTool],
             settings: {
-                tools: [weatherTool],
                 toolChoice: 'auto'
             }
         }
@@ -107,49 +107,133 @@ async function main() {
     console.log('Response:', weatherResponse);
     console.log(caller.getHistoricalMessages());
 
-    // 2. Multi-Tool Call
+    // 2. Multi-Tool Call (recommended approach with tools at root level)
     console.log('\n2. Multi-Tool Call');
     console.log('------------------');
-    const multiToolResponse = await caller.call(
-        'What\'s the weather in New York and what time is it there?',
-        {
-            settings: {
-                tools: [weatherTool, timeTool],
-                toolChoice: 'auto'
+    try {
+        // Debug: Log the complete history before the API call
+        console.log('\n=== Message History Before Multi-Tool Call ===');
+        const historyBefore = caller.getHistoricalMessages();
+        historyBefore.forEach((msg, i) => {
+            console.log(`Message ${i + 1} - Role: ${msg.role}`);
+            if (msg.toolCalls) {
+                console.log(`  Tool Calls: ${JSON.stringify(msg.toolCalls.map(tc => tc.id || 'unknown'))}`);
             }
-        }
-    );
-    console.log('Response:', multiToolResponse);
+            if (msg.toolCallId) {
+                console.log(`  Tool Call ID: ${msg.toolCallId}`);
+            }
+        });
+        console.log('=== End Message History ===\n');
 
-    // 3. Calculation Tool Call
+        const multiToolResponses = await caller.call(
+            'What\'s the weather in New York and what time is it there?',
+            {
+                tools: [weatherTool, timeTool],
+                settings: {
+                    toolChoice: 'auto'
+                }
+            }
+        );
+
+        // Debug: Log the response with tool calls
+        console.log('\n=== Tool Call Response ===');
+        if (multiToolResponses[0].toolCalls) {
+            console.log(`Tool Calls in Response: ${JSON.stringify(multiToolResponses[0].toolCalls.map(tc => ({ id: tc.id, name: tc.name })))}`);
+        }
+        console.log('=== End Tool Call Response ===\n');
+
+        const multiToolResponse = multiToolResponses[0]; // Get the first response from the array
+        console.log('Response:', multiToolResponse);
+
+        // Check if there are tool calls that need responses
+        if (multiToolResponse.toolCalls && multiToolResponse.toolCalls.length > 0) {
+            // Process each tool call and add results to history
+            for (const toolCall of multiToolResponse.toolCalls) {
+                let result;
+                if (toolCall.name === 'get_weather') {
+                    result = await weatherTool.callFunction(toolCall.arguments);
+                } else if (toolCall.name === 'get_time') {
+                    result = await timeTool.callFunction(toolCall.arguments);
+                }
+
+                // Add the tool result with the exact toolCallId from the response
+                if (result) {
+                    // Ensure we use the exact toolCallId from the API response
+                    // This is critical for OpenAI to match tool calls with their responses
+                    if (!toolCall.id) {
+                        console.warn('Tool call missing ID - this may cause message history issues');
+                        continue;
+                    }
+
+                    caller.addToolResult(
+                        toolCall.id,
+                        JSON.stringify(result),
+                        toolCall.name || 'unknown_tool' // Provide a default if name is undefined
+                    );
+                }
+            }
+
+            // Debug: Log the history after adding tool results
+            console.log('\n=== Message History After Adding Tool Results ===');
+            const historyAfter = caller.getHistoricalMessages();
+            historyAfter.forEach((msg, i) => {
+                console.log(`Message ${i + 1} - Role: ${msg.role}`);
+                if (msg.toolCalls) {
+                    console.log(`  Tool Calls: ${JSON.stringify(msg.toolCalls.map(tc => tc.id || 'unknown'))}`);
+                }
+                if (msg.toolCallId) {
+                    console.log(`  Tool Call ID: ${msg.toolCallId}`);
+                }
+            });
+            console.log('=== End Message History ===\n');
+
+            // Get final response after tool execution
+            const finalResponses = await caller.call(
+                'What did you find about the weather and time in New York?',
+                {
+                    tools: [weatherTool, timeTool],
+                    settings: {
+                        toolChoice: 'auto'
+                    }
+                }
+            );
+            const finalResponse = finalResponses[0]; // Get the first response from the array
+            console.log('Final Response after tool execution:', finalResponse);
+        }
+    } catch (error) {
+        console.error('Error in Multi-Tool Call:', error);
+    }
+
+    // 3. Calculation Tool Call (recommended approach with tools at root level)
     console.log('\n3. Calculation Tool Call');
     console.log('------------------------');
+
     const calculationResponse = await caller.call(
         'Calculate 15% of 85',
         {
+            tools: [calculateTool],
             settings: {
-                tools: [calculateTool],
                 toolChoice: 'auto'
             }
         }
     );
     console.log('Response:', calculationResponse);
 
-    // 4. Time Tool Call
+    // 4. Time Tool Call (recommended approach with tools at root level)
     console.log('\n4. Time Tool Call');
     console.log('----------------');
     const timeResponse = await caller.call(
         'What time is it in Tokyo?',
         {
+            tools: [timeTool],
             settings: {
-                tools: [timeTool],
                 toolChoice: 'auto'
             }
         }
     );
     console.log('Response:', timeResponse);
 
-    // 5. Tool Call Stream Demonstration
+    // 5. Tool Call Stream Demonstration (recommended approach with tools at root level)
     console.log('\n5. Tool Call Stream Demonstration');
     console.log('---------------------------------------------------------------');
     console.log('Starting the stream - you\'ll see content as it arrives in real-time');
@@ -160,8 +244,8 @@ async function main() {
         const stream = await caller.stream(
             'What is the current time in Tokyo? write a haiku about the current time',
             {
+                tools: [timeTool],
                 settings: {
-                    tools: [timeTool],
                     toolChoice: 'auto',
                     stream: true
                 }
@@ -208,14 +292,14 @@ async function main() {
         }
     }
 
-    // 6. Multi-Tool Call Stream Demonstration
+    // 6. Multi-Tool Call Stream Demonstration (recommended approach with tools at root level)
     console.log('\n6. Multi-Tool Call Stream Demonstration');
     console.log('---------------------------------------------------------------');
     const multiToolStream = await caller.stream(
         'What is the current time and weather in Tokyo?',
         {
+            tools: [timeTool, weatherTool],
             settings: {
-                tools: [timeTool, weatherTool],
                 toolChoice: 'auto',
                 stream: true
             }
@@ -249,8 +333,8 @@ async function main() {
         }
     } catch (error) {
         console.error('\nError processing stream:', error);
-        throw error;
     }
 }
 
+// Run the example
 main().catch(console.error);

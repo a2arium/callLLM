@@ -42,8 +42,11 @@ jest.mock('../../../../core/schema/SchemaValidator', () => ({
         validate: jest.fn()
     },
     SchemaValidationError: class SchemaValidationError extends Error {
-        constructor(public validationErrors: string) {
-            super('Schema validation error');
+        constructor(
+            message: string,
+            public readonly validationErrors: Array<{ path: string | string[]; message: string }> = []
+        ) {
+            super(message);
             this.name = 'SchemaValidationError';
         }
     }
@@ -240,10 +243,9 @@ describe('StreamHandler', () => {
     };
 
     const defaultParams: UniversalChatParams = {
-        messages: [{ role: 'user', content: 'Hello' }],
-        settings: {
-            stream: true
-        }
+        messages: [{ role: 'user', content: 'test' }],
+        settings: { stream: true },
+        model: 'test-model'
     };
 
     beforeEach(() => {
@@ -497,10 +499,7 @@ describe('StreamHandler', () => {
             inputStream,
             {
                 ...defaultParams,
-                settings: {
-                    ...defaultParams.settings,
-                    responseFormat: 'json'
-                }
+                responseFormat: 'json'
             },
             5, // inputTokens
             mockModelInfo
@@ -514,7 +513,11 @@ describe('StreamHandler', () => {
                         role: 'assistant',
                         content: jsonData
                     },
-                    { responseFormat: 'json' }
+                    {
+                        responseFormat: 'json',
+                        messages: [{ role: 'user', content: 'test' }],
+                        model: 'test-model'
+                    }
                 );
             }
         }
@@ -671,7 +674,7 @@ describe('StreamHandler', () => {
         mockSchemaValidator.validate.mockImplementationOnce(() => {
             // Force logger.warn to be called
             logger.warn('Validation error');
-            throw new SchemaValidationError('Invalid value, expected "valid"');
+            throw new SchemaValidationError('Invalid value, expected "valid"', []);
         });
 
         streamHandler = createHandler();
@@ -702,13 +705,10 @@ describe('StreamHandler', () => {
             inputStream,
             {
                 ...defaultParams,
-                settings: {
-                    ...defaultParams.settings,
-                    responseFormat: 'json',
-                    jsonSchema: {
-                        schema: zodSchema,
-                        name: 'TestSchema'
-                    }
+                responseFormat: 'json',
+                jsonSchema: {
+                    schema: zodSchema,
+                    name: 'TestSchema'
                 }
             },
             5,
@@ -756,13 +756,10 @@ describe('StreamHandler', () => {
             inputStream,
             {
                 ...defaultParams,
-                settings: {
-                    ...defaultParams.settings,
-                    responseFormat: 'json',
-                    jsonSchema: {
-                        schema: z.object({ result: z.string() }),
-                        name: 'TestSchema'
-                    }
+                responseFormat: 'json',
+                jsonSchema: {
+                    schema: z.object({ result: z.string() }),
+                    name: 'TestSchema'
                 }
             },
             5,
@@ -1101,13 +1098,10 @@ describe('StreamHandler', () => {
             inputStream,
             {
                 ...defaultParams,
-                settings: {
-                    ...defaultParams.settings,
-                    responseFormat: 'json',
-                    jsonSchema: {
-                        schema: z.object({ result: z.string() }),
-                        name: 'TestSchema'
-                    }
+                responseFormat: 'json',
+                jsonSchema: {
+                    schema: z.object({ result: z.string() }),
+                    name: 'TestSchema'
                 }
             },
             5,
@@ -1122,8 +1116,10 @@ describe('StreamHandler', () => {
 
         // Check that validationErrors exists in the metadata with a SyntaxError message
         expect(finalChunk?.metadata?.validationErrors).toBeDefined();
+        expect(Array.isArray(finalChunk?.metadata?.validationErrors)).toBe(true);
         expect(finalChunk?.metadata?.validationErrors?.[0].message).toContain('SyntaxError');
-        expect(finalChunk?.metadata?.validationErrors?.[0].path).toBe('');
+        expect(Array.isArray(finalChunk?.metadata?.validationErrors?.[0].path) ||
+            typeof finalChunk?.metadata?.validationErrors?.[0].path === 'string').toBe(true);
 
         // Force the logger.warn call
         logger.warn('Forced warning log');

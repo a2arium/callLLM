@@ -24,14 +24,14 @@ export class Converter {
         this.currentParams = params;
     }
 
-    private getResponseFormat(settings: UniversalChatParams['settings']): ChatCompletionCreateParams['response_format'] {
-        if (settings?.jsonSchema) {
-            const schema = settings.jsonSchema.schema;
+    private getResponseFormat(params: UniversalChatParams): ChatCompletionCreateParams['response_format'] {
+        if (params.jsonSchema) {
+            const schema = params.jsonSchema.schema;
 
             // Handle Zod schema
             if (schema instanceof z.ZodObject) {
                 // Use a default name if none provided
-                const schemaName = settings.jsonSchema.name || 'response';
+                const schemaName = params.jsonSchema.name || 'response';
                 return zodResponseFormat(schema, schemaName);
             }
 
@@ -42,7 +42,7 @@ export class Converter {
                     return {
                         type: 'json_schema',
                         json_schema: {
-                            name: settings.jsonSchema.name || 'response',
+                            name: params.jsonSchema.name || 'response',
                             schema: jsonSchema
                         }
                     };
@@ -55,7 +55,7 @@ export class Converter {
         }
 
         // Default JSON format if requested
-        if (settings?.responseFormat === 'json') {
+        if (params.responseFormat === 'json') {
             return { type: 'json_object' };
         }
 
@@ -93,14 +93,22 @@ export class Converter {
                         return {
                             ...baseMessage,
                             role: 'assistant',
-                            tool_calls: msg.toolCalls.map(call => ({
-                                id: call.id,
-                                type: 'function' as const,
-                                function: {
-                                    name: call.name,
-                                    arguments: JSON.stringify(call.arguments)
+                            tool_calls: msg.toolCalls.map(call => {
+                                if ('function' in call) {
+                                    // Already in OpenAI format
+                                    return call;
+                                } else {
+                                    // Convert our format to OpenAI format
+                                    return {
+                                        id: call.id,
+                                        type: 'function' as const,
+                                        function: {
+                                            name: call.name,
+                                            arguments: JSON.stringify(call.arguments)
+                                        }
+                                    };
                                 }
-                            }))
+                            })
                         } as ChatCompletionMessageParam;
                     }
                     return { ...baseMessage, role: 'assistant' } as ChatCompletionMessageParam;
@@ -166,7 +174,7 @@ export class Converter {
 
         // Convert tool settings if tool calls are enabled
         const toolSettings = hasToolCalls ? {
-            tools: settings.tools?.map((tool: ToolDefinition) => ({
+            tools: params.tools?.map((tool: ToolDefinition) => ({
                 type: 'function' as const,
                 function: {
                     name: tool.name,
@@ -177,9 +185,12 @@ export class Converter {
             tool_choice: settings.toolChoice,
             // Only include tool_calls if parallel tool calls are supported
             ...(hasParallelToolCalls && settings.toolCalls && {
-                tool_calls: settings.toolCalls.map((call: { name: string; arguments: Record<string, unknown> }) => ({
-                    name: call.name,
-                    arguments: call.arguments
+                tool_calls: settings.toolCalls.map((call) => ({
+                    type: 'function' as const,
+                    function: {
+                        name: call.name,
+                        arguments: JSON.stringify(call.arguments)
+                    }
                 }))
             })
         } : {};
@@ -194,7 +205,7 @@ export class Converter {
             max_completion_tokens: settings.maxTokens,
             presence_penalty: settings.presencePenalty,
             frequency_penalty: settings.frequencyPenalty,
-            response_format: this.getResponseFormat(settings),
+            response_format: this.getResponseFormat(params),
             ...toolSettings
         };
     }
@@ -244,11 +255,21 @@ export class Converter {
                     {
                         role: 'function',
                         content: resultContent,
-                        toolCalls: originalMessage.tool_calls?.map(call => ({
-                            name: call.function.name,
-                            arguments: JSON.parse(call.function.arguments),
-                            id: call.id
-                        }))
+                        toolCalls: originalMessage.tool_calls?.map(call => {
+                            if ('function' in call) {
+                                // OpenAI format - convert to our format
+                                return {
+                                    id: call.id || `tool-${call.id}`,
+                                    name: call.function.name,
+                                    arguments: typeof call.function.arguments === 'string'
+                                        ? JSON.parse(call.function.arguments)
+                                        : call.function.arguments
+                                };
+                            } else {
+                                // Our format - already correct
+                                return call;
+                            }
+                        })
                     }
                 ]
             };
@@ -360,11 +381,21 @@ export class Converter {
                         {
                             role: 'function',
                             content: resultContent,
-                            toolCalls: message.toolCalls?.map((call, index) => ({
-                                id: call.id || `tool-${index}`,
-                                name: call.name,
-                                arguments: call.arguments
-                            }))
+                            toolCalls: message.toolCalls?.map((call, index) => {
+                                if ('function' in call) {
+                                    // OpenAI format - convert to our format
+                                    return {
+                                        id: call.id || `tool-${index}`,
+                                        name: call.function.name,
+                                        arguments: typeof call.function.arguments === 'string'
+                                            ? JSON.parse(call.function.arguments)
+                                            : call.function.arguments
+                                    };
+                                } else {
+                                    // Our format - already correct
+                                    return call;
+                                }
+                            })
                         }
                     ]
                 };

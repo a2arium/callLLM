@@ -1,39 +1,20 @@
 import { UniversalMessage, UniversalChatSettings } from '../interfaces/UniversalInterfaces';
+import {
+    ToolDefinition,
+    ToolParameters,
+    ToolParameterSchema,
+    ToolCall
+} from '../types/tooling';
 
-export { UniversalMessage };
+export {
+    UniversalMessage,
+    ToolDefinition,
+    ToolParameters,
+    ToolParameterSchema,
+    ToolCall
+};
 
 export type SupportedProviders = 'openai' | 'anthropic' | 'google';
-
-export type ToolParameterSchema = {
-    type: string;
-    description?: string;
-    properties?: Record<string, ToolParameterSchema>;
-    items?: ToolParameterSchema;
-    required?: string[];
-    [key: string]: unknown;
-};
-
-export type ToolParameters = {
-    type: 'object';
-    properties: Record<string, ToolParameterSchema>;
-    required?: string[];
-};
-
-export type ToolDefinition = {
-    name: string;
-    description: string;
-    parameters: ToolParameters;
-    callFunction: <TParams extends Record<string, unknown>, TResponse>(params: TParams) => Promise<TResponse>;
-    postCallLogic?: <TResponse>(rawResponse: TResponse) => Promise<string[]>;
-};
-
-export type ToolsManager = {
-    getTool(name: string): ToolDefinition | undefined;
-    addTool(tool: ToolDefinition): void;
-    removeTool(name: string): void;
-    updateTool(name: string, updated: Partial<ToolDefinition>): void;
-    listTools(): ToolDefinition[];
-};
 
 export type ToolChoice =
     | 'none'
@@ -67,8 +48,10 @@ export type ToolCallResponse = {
     };
 };
 
-export type ToolCall = {
-    id: string;
-    name: string;
-    arguments: Record<string, unknown>;
+export type ToolsManager = {
+    getTool(name: string): ToolDefinition | undefined;
+    addTool(tool: ToolDefinition): void;
+    removeTool(name: string): void;
+    updateTool(name: string, updated: Partial<ToolDefinition>): void;
+    listTools(): ToolDefinition[];
 };

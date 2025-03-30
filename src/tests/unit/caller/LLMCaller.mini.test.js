@@ -254,10 +254,11 @@ describe('LLMCaller', () => {
             // Check the stream was created with the right parameters
             expect(streamingInstance.createStream).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    messages: [...historicalMessages, { role: 'user', content: 'Test message' }]
+                    messages: historicalMessages,
+                    model: 'test-model'
                 }),
                 'test-model',
-                expect.any(String)
+                undefined // SystemMessage is no longer passed separately
             );
         });
     });

@@ -40,9 +40,12 @@ describe('ResponseProcessor', () => {
                 role: 'assistant'
             };
 
-            const settings: UniversalChatParams['settings'] = {};
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test message' }],
+                model: 'test-model'
+            };
 
-            const result = await processor.validateResponse(response, settings);
+            const result = await processor.validateResponse(response, params);
             expect(result).toEqual(response);
         });
 
@@ -54,11 +57,13 @@ describe('ResponseProcessor', () => {
                 metadata: { responseFormat: 'json' }
             };
 
-            const settings: UniversalChatParams['settings'] = {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test message' }],
+                model: 'test-model',
                 responseFormat: 'json'
             };
 
-            const result = await processor.validateResponse(response, settings);
+            const result = await processor.validateResponse(response, params);
             expect(result.contentObject).toEqual(jsonContent);
         });
 
@@ -76,13 +81,15 @@ describe('ResponseProcessor', () => {
                 role: 'assistant'
             };
 
-            const settings: UniversalChatParams['settings'] = {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test message' }],
+                model: 'test-model',
                 jsonSchema: {
                     schema: testSchema
                 }
             };
 
-            const result = await processor.validateResponse(response, settings);
+            const result = await processor.validateResponse(response, params);
             expect(result.contentObject).toEqual(validContent);
             expect(SchemaValidator.validate).toHaveBeenCalledWith(validContent, testSchema);
         });
@@ -105,15 +112,17 @@ describe('ResponseProcessor', () => {
                 role: 'assistant'
             };
 
-            const settings: UniversalChatParams['settings'] = {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test message' }],
+                model: 'test-model',
                 jsonSchema: {
                     schema: testSchema
                 }
             };
 
-            const result = await processor.validateResponse(response, settings);
+            const result = await processor.validateResponse(response, params);
             expect(result.metadata?.validationErrors).toEqual([
-                { path: 'age', message: 'age is required' }
+                { path: ['age'], message: 'age is required' }
             ]);
             expect(result.metadata?.finishReason).toBe(FinishReason.CONTENT_FILTER);
         });
@@ -132,13 +141,15 @@ describe('ResponseProcessor', () => {
                 role: 'assistant'
             };
 
-            const settings: UniversalChatParams['settings'] = {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test message' }],
+                model: 'test-model',
                 jsonSchema: {
                     schema: testSchema
                 }
             };
 
-            await expect(processor.validateResponse(response, settings)).rejects.toThrow(
+            await expect(processor.validateResponse(response, params)).rejects.toThrow(
                 'Failed to validate response: Unexpected validation error'
             );
         });
@@ -157,13 +168,15 @@ describe('ResponseProcessor', () => {
                 role: 'assistant'
             };
 
-            const settings: UniversalChatParams['settings'] = {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test message' }],
+                model: 'test-model',
                 jsonSchema: {
                     schema: testSchema
                 }
             };
 
-            await expect(processor.validateResponse(response, settings)).rejects.toThrow(
+            await expect(processor.validateResponse(response, params)).rejects.toThrow(
                 'Failed to validate response: Unknown error'
             );
         });
@@ -183,14 +196,16 @@ describe('ResponseProcessor', () => {
                 role: 'assistant'
             };
 
-            const settings: UniversalChatParams['settings'] = {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test message' }],
+                model: 'test-model',
                 jsonSchema: {
                     name: 'userProfile',  // Schema name matches wrapper object key
                     schema: testSchema
                 }
             };
 
-            const result = await processor.validateResponse(response, settings);
+            const result = await processor.validateResponse(response, params);
             expect(result.contentObject).toEqual(validContent);
             expect(SchemaValidator.validate).toHaveBeenCalledWith(validContent, testSchema);
         });
@@ -210,14 +225,16 @@ describe('ResponseProcessor', () => {
                 role: 'assistant'
             };
 
-            const settings: UniversalChatParams['settings'] = {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'test message' }],
+                model: 'test-model',
                 jsonSchema: {
                     name: 'userProfile',  // Schema name in different case
                     schema: testSchema
                 }
             };
 
-            const result = await processor.validateResponse(response, settings);
+            const result = await processor.validateResponse(response, params);
             expect(result.contentObject).toEqual(validContent);
             expect(SchemaValidator.validate).toHaveBeenCalledWith(validContent, testSchema);
         });
@@ -262,51 +279,34 @@ describe('ResponseProcessor', () => {
     });
 
     describe('validateJsonMode', () => {
-        it('should not throw for model with JSON mode capability', () => {
-            const model = {
-                capabilities: {
-                    jsonMode: true
-                }
-            };
+        it('should throw when model does not support JSON mode with jsonSchema', () => {
+            const model = { capabilities: { jsonMode: false } };
             const params: UniversalChatParams = {
-                messages: [],
-                settings: {
-                    jsonSchema: { schema: z.object({}) }
-                }
+                messages: [{ role: 'user', content: 'test message' }],
+                model: 'test-model',
+                jsonSchema: { schema: z.object({}) }
             };
-            expect(() => processor.validateJsonMode(model, params)).not.toThrow();
+            expect(() => processor.validateJsonMode(model, params)).toThrow('Selected model does not support JSON mode');
         });
 
-        it('should not throw for model with JSON response format', () => {
-            const model = {
-                capabilities: {
-                    jsonMode: true
-                }
-            };
+        it('should throw when model does not support JSON mode with responseFormat', () => {
+            const model = { capabilities: { jsonMode: false } };
             const params: UniversalChatParams = {
-                messages: [],
-                settings: {
-                    responseFormat: 'json' as ResponseFormat
-                }
+                messages: [{ role: 'user', content: 'test message' }],
+                model: 'test-model',
+                responseFormat: 'json' as ResponseFormat
             };
-            expect(() => processor.validateJsonMode(model, params)).not.toThrow();
+            expect(() => processor.validateJsonMode(model, params)).toThrow('Selected model does not support JSON mode');
         });
 
-        it('should throw for model without JSON mode capability', () => {
-            const model = {
-                capabilities: {
-                    jsonMode: false
-                }
-            };
+        it('should not throw when model supports JSON mode with jsonSchema', () => {
+            const model = { capabilities: { jsonMode: true } };
             const params: UniversalChatParams = {
-                messages: [],
-                settings: {
-                    jsonSchema: { schema: z.object({}) }
-                }
+                messages: [{ role: 'user', content: 'test message' }],
+                model: 'test-model',
+                jsonSchema: { schema: z.object({}) }
             };
-            expect(() => processor.validateJsonMode(model, params)).toThrow(
-                'Selected model does not support JSON mode'
-            );
+            expect(() => processor.validateJsonMode(model, params)).not.toThrow();
         });
     });
 }); 

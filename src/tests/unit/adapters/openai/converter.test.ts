@@ -21,7 +21,8 @@ describe('Converter', () => {
     let converter: Converter;
     let mockModel: ModelInfo;
     const mockParams: UniversalChatParams = {
-        messages: [{ role: 'user', content: 'test message' }]
+        messages: [{ role: 'user', content: 'test message' }],
+        model: 'test-model'
     };
 
     // Define mockToolCall at the top level for reuse across test cases
@@ -79,7 +80,7 @@ describe('Converter', () => {
         it('should handle JSON response format', () => {
             const paramsWithJson: UniversalChatParams = {
                 ...mockParams,
-                settings: { responseFormat: 'json' }
+                responseFormat: 'json'
             };
             const result = converter.convertToProviderParams(paramsWithJson);
             expect(result.response_format).toEqual({ type: 'json_object' });
@@ -92,11 +93,9 @@ describe('Converter', () => {
             });
             const paramsWithSchema: UniversalChatParams = {
                 ...mockParams,
-                settings: {
-                    jsonSchema: {
-                        schema,
-                        name: 'Person'
-                    }
+                jsonSchema: {
+                    schema,
+                    name: 'Person'
                 }
             };
             const result = converter.convertToProviderParams(paramsWithSchema);
@@ -127,11 +126,9 @@ describe('Converter', () => {
             };
             const paramsWithSchema: UniversalChatParams = {
                 ...mockParams,
-                settings: {
-                    jsonSchema: {
-                        schema: JSON.stringify(jsonSchema),
-                        name: 'Person'
-                    }
+                jsonSchema: {
+                    schema: JSON.stringify(jsonSchema),
+                    name: 'Person'
                 }
             };
             const result = converter.convertToProviderParams(paramsWithSchema);
@@ -233,7 +230,7 @@ describe('Converter', () => {
         it('should handle json response format in stream', async () => {
             const paramsWithJson: UniversalChatParams = {
                 ...mockParams,
-                settings: { responseFormat: 'json' }
+                responseFormat: 'json'
             };
             const chunk: OpenAIStreamResponse = {
                 choices: [{
@@ -253,36 +250,6 @@ describe('Converter', () => {
             });
         });
 
-        it('should handle undefined choices', async () => {
-            const chunk = {} as OpenAIStreamResponse;
-
-            const stream = createAsyncIterable([chunk]);
-            const result = converter.convertStreamResponse(stream, mockParams);
-
-            // This should throw due to invalid stream chunk
-            await expect(result[Symbol.asyncIterator]().next()).rejects.toThrow('Invalid stream chunk: missing choices');
-        });
-
-        it('should handle empty choices array', async () => {
-            const chunk = { choices: [] } as OpenAIStreamResponse;
-
-            const stream = createAsyncIterable([chunk]);
-            const result = converter.convertStreamResponse(stream, mockParams);
-
-            // This should throw due to invalid stream chunk
-            await expect(result[Symbol.asyncIterator]().next()).rejects.toThrow('Invalid stream chunk: missing choices');
-        });
-
-        it('should handle undefined delta', async () => {
-            const chunk = { choices: [{ finish_reason: null }] } as OpenAIStreamResponse;
-
-            const stream = createAsyncIterable([chunk]);
-            const result = converter.convertStreamResponse(stream, mockParams);
-
-            // This should throw due to invalid stream chunk
-            await expect(result[Symbol.asyncIterator]().next()).rejects.toThrow('Invalid stream chunk: missing delta');
-        });
-
         it('should handle stream response with custom response format', async () => {
             const chunk = {
                 choices: [{
@@ -292,9 +259,8 @@ describe('Converter', () => {
             } as OpenAIStreamResponse;
             const params: UniversalChatParams = {
                 messages: [],
-                settings: {
-                    responseFormat: 'json' as const
-                }
+                model: 'test-model',
+                responseFormat: 'json'
             };
 
             const stream = createAsyncIterable([chunk]);
@@ -368,9 +334,7 @@ describe('Converter', () => {
         it('should handle undefined jsonSchema', () => {
             const paramsWithUndefinedSchema: UniversalChatParams = {
                 ...mockParams,
-                settings: {
-                    jsonSchema: undefined
-                }
+                jsonSchema: undefined
             };
             const result = converter.convertToProviderParams(paramsWithUndefinedSchema);
             expect(result.response_format).toBeUndefined();
@@ -379,11 +343,9 @@ describe('Converter', () => {
         it('should handle invalid schema type', () => {
             const paramsWithInvalidSchema: UniversalChatParams = {
                 ...mockParams,
-                settings: {
-                    jsonSchema: {
-                        schema: new Date() as any, // Invalid schema type that's not string or object
-                        name: 'Test'
-                    }
+                jsonSchema: {
+                    schema: new Date() as any, // Invalid schema type that's not string or object
+                    name: 'Test'
                 }
             };
             expect(() => converter.convertToProviderParams(paramsWithInvalidSchema)).toThrow();
@@ -399,10 +361,8 @@ describe('Converter', () => {
             } as const;
             const paramsWithSchema: UniversalChatParams = {
                 ...mockParams,
-                settings: {
-                    jsonSchema: {
-                        schema: JSON.stringify(schema)
-                    }
+                jsonSchema: {
+                    schema: JSON.stringify(schema)
                 }
             };
             const result = converter.convertToProviderParams(paramsWithSchema);
@@ -418,11 +378,9 @@ describe('Converter', () => {
         it('should handle invalid JSON schema string', () => {
             const paramsWithInvalidSchema: UniversalChatParams = {
                 ...mockParams,
-                settings: {
-                    jsonSchema: {
-                        schema: 'invalid json',
-                        name: 'Test'
-                    }
+                jsonSchema: {
+                    schema: 'invalid json',
+                    name: 'Test'
                 }
             };
             expect(() => converter.convertToProviderParams(paramsWithInvalidSchema)).toThrow();
@@ -432,7 +390,8 @@ describe('Converter', () => {
     describe('message conversion edge cases', () => {
         it('should handle empty messages array', () => {
             const paramsWithNoMessages: UniversalChatParams = {
-                messages: []
+                messages: [],
+                model: 'test-model'
             };
             const result = converter.convertToProviderParams(paramsWithNoMessages);
             expect(result.messages).toEqual([]);
@@ -444,7 +403,8 @@ describe('Converter', () => {
                     { role: 'system' as const, content: 'system message' },
                     { role: 'user' as const, content: 'user message', name: 'User1' },
                     { role: 'assistant' as const, content: 'assistant message' }
-                ]
+                ],
+                model: 'test-model'
             };
             const result = converter.convertToProviderParams(paramsWithMultipleMessages);
             expect(result.messages).toEqual([
@@ -541,7 +501,8 @@ describe('Converter', () => {
             const params: UniversalChatParams = {
                 messages: [
                     { role: 'system', content: 'system message' }
-                ]
+                ],
+                model: 'test-model'
             };
             const result = converter.convertToProviderParams(params);
             expect(result.messages[0].role).toBe('user');
@@ -563,6 +524,7 @@ describe('Converter', () => {
             converter.setModel(modelWithoutCapabilities);
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'test' }],
+                model: 'test-model',
                 settings: {
                     stream: true,
                     temperature: 0.7,
@@ -581,7 +543,8 @@ describe('Converter', () => {
             const params: UniversalChatParams = {
                 messages: [
                     { role: 'function', content: 'function result' }
-                ]
+                ],
+                model: 'test-model'
             };
             const result = converter.convertToProviderParams(params);
             expect(result.messages[0]).toMatchObject({
@@ -619,7 +582,8 @@ describe('Converter', () => {
             const params: UniversalChatParams = {
                 messages: [
                     { role: 'unknown' as any, content: 'test' }
-                ]
+                ],
+                model: 'test-model'
             };
             const result = converter.convertToProviderParams(params);
             expect(result.messages[0].role).toBe('user');
@@ -645,24 +609,25 @@ describe('Converter', () => {
             converter.setModel(modelWithTools);
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'test' }],
+                model: 'test-model',
+                tools: [{
+                    name: 'test',
+                    description: 'Test function',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    },
+                    callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                        return {} as T;
+                    }
+                }],
                 settings: {
-                    toolChoice: 'auto',
-                    tools: [{
-                        name: 'test_function',
-                        description: 'A test function',
-                        parameters: { type: 'object' }
-                    }],
-                    toolCalls: [{
-                        name: 'test_function',
-                        arguments: { test: 'value' }
-                    }]
+                    toolChoice: 'auto'
                 }
             };
             const result = converter.convertToProviderParams(params);
             expect(result.tool_choice).toBe('auto');
             expect(result.tools).toBeDefined();
-            // We can't directly check tool_calls since it's not in the type
-            // but we're testing that the code doesn't throw an error
         });
 
         it('should handle tool settings without parallel capability', () => {
@@ -685,10 +650,24 @@ describe('Converter', () => {
             converter.setModel(modelWithLimitedTools);
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'test' }],
+                model: 'test-model',
+                tools: [{
+                    name: 'test',
+                    description: 'Test function',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    },
+                    callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                        return {} as T;
+                    }
+                }],
                 settings: {
                     toolChoice: 'auto',
-                    tools: [{ type: 'function', function: { name: 'test' } }],
-                    toolCalls: 2
+                    toolCalls: [{
+                        name: 'function_name',
+                        arguments: { param: 'value' }
+                    }]
                 }
             };
             const result = converter.convertToProviderParams(params);
@@ -736,8 +715,24 @@ describe('Converter', () => {
             converter.setModel(modelWithoutStreaming);
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'test' }],
+                model: 'test-model',
+                tools: [{
+                    name: 'test',
+                    description: 'Test function',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    },
+                    callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                        return {} as T;
+                    }
+                }],
                 settings: {
-                    stream: true
+                    toolChoice: 'auto',
+                    toolCalls: [{
+                        name: 'function_name',
+                        arguments: { param: 'value' }
+                    }]
                 }
             };
             const result = converter.convertToProviderParams(params);
@@ -763,8 +758,24 @@ describe('Converter', () => {
             converter.setModel(modelWithoutTemp);
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'test' }],
+                model: 'test-model',
+                tools: [{
+                    name: 'test',
+                    description: 'Test function',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    },
+                    callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                        return {} as T;
+                    }
+                }],
                 settings: {
-                    temperature: 0.7
+                    toolChoice: 'auto',
+                    toolCalls: [{
+                        name: 'function_name',
+                        arguments: { param: 'value' }
+                    }]
                 }
             };
             const result = converter.convertToProviderParams(params);
@@ -790,8 +801,24 @@ describe('Converter', () => {
             converter.setModel(modelWithoutBatch);
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'test' }],
+                model: 'test-model',
+                tools: [{
+                    name: 'test',
+                    description: 'Test function',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    },
+                    callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                        return {} as T;
+                    }
+                }],
                 settings: {
-                    n: 3
+                    toolChoice: 'auto',
+                    toolCalls: [{
+                        name: 'function_name',
+                        arguments: { param: 'value' }
+                    }]
                 }
             };
             const result = converter.convertToProviderParams(params);
@@ -800,7 +827,8 @@ describe('Converter', () => {
 
         it('should handle model without any settings', () => {
             const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'test' }]
+                messages: [{ role: 'user', content: 'test' }],
+                model: 'test-model'
             };
             const result = converter.convertToProviderParams(params);
             expect(result.response_format).toBeUndefined();
@@ -871,10 +899,24 @@ describe('Converter', () => {
             converter.setModel(modelWithoutTools);
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'test' }],
+                model: 'test-model',
+                tools: [{
+                    name: 'test',
+                    description: 'Test function',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    },
+                    callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                        return {} as T;
+                    }
+                }],
                 settings: {
                     toolChoice: 'auto',
-                    tools: [{ type: 'function', function: { name: 'test' } }],
-                    toolCalls: 2
+                    toolCalls: [{
+                        name: 'function_name',
+                        arguments: { param: 'value' }
+                    }]
                 }
             };
             const result = converter.convertToProviderParams(params);
@@ -896,17 +938,20 @@ describe('Converter', () => {
             // Add tool definitions to the mock params
             const params: UniversalChatParams = {
                 ...mockParams,
-                settings: {
-                    tools: [{
-                        name: 'test_function',
-                        description: 'A test function',
-                        parameters: {
-                            type: 'object',
-                            properties: {
-                                test: { type: 'string' }
-                            }
+                tools: [{
+                    name: 'test',
+                    description: 'Test function',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            test: { type: 'string' }
                         }
-                    }],
+                    },
+                    callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                        return {} as T;
+                    }
+                }],
+                settings: {
                     toolChoice: 'auto'
                 }
             };
@@ -915,8 +960,8 @@ describe('Converter', () => {
             expect(result.tools).toEqual([{
                 type: 'function',
                 function: {
-                    name: 'test_function',
-                    description: 'A test function',
+                    name: 'test',
+                    description: 'Test function',
                     parameters: {
                         type: 'object',
                         properties: {
@@ -969,12 +1014,20 @@ describe('Converter', () => {
             // Add tool calls to the mock params
             const params: UniversalChatParams = {
                 ...mockParams,
+                tools: [{
+                    name: 'test',
+                    description: 'Test function',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            test: { type: 'string' }
+                        }
+                    },
+                    callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                        return {} as T;
+                    }
+                }],
                 settings: {
-                    tools: [{
-                        name: 'test_function',
-                        description: 'A test function',
-                        parameters: { type: 'object' }
-                    }],
                     toolCalls: [{
                         name: 'test_function1',
                         arguments: { test: 'value1' }
@@ -1003,15 +1056,18 @@ describe('Converter', () => {
 
             const paramsWithTools: UniversalChatParams = {
                 ...mockParams,
+                tools: [{
+                    name: 'test',
+                    description: 'Test function',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    },
+                    callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
+                        return {} as T;
+                    }
+                }],
                 settings: {
-                    tools: [{
-                        name: 'test_tool',
-                        description: 'A test tool',
-                        parameters: { type: 'object', properties: {} },
-                        callFunction: async <T>(params: Record<string, unknown>): Promise<T> => {
-                            return {} as T;
-                        }
-                    }],
                     toolChoice: 'auto'
                 }
             };

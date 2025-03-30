@@ -1,4 +1,16 @@
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, Usage, FinishReason, UniversalMessage } from '../../interfaces/UniversalInterfaces';
+import {
+    UniversalChatParams,
+    UniversalChatResponse,
+    UniversalStreamResponse,
+    Usage,
+    FinishReason,
+    UniversalMessage,
+    // Import the new types
+    UniversalChatSettings,
+    LLMCallOptions,
+    JSONSchemaDefinition,
+    ResponseFormat
+} from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { ProviderManager } from './ProviderManager';
 import { SupportedProviders } from '../types';
@@ -6,7 +18,7 @@ import { ModelManager } from '../models/ModelManager';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { ResponseProcessor } from '../processors/ResponseProcessor';
 import { v4 as uuidv4 } from 'uuid';
-import { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces';
+import { UsageCallback } from '../../interfaces/UsageInterfaces';
 import { RequestProcessor } from '../processors/RequestProcessor';
 import { DataSplitter } from '../processors/DataSplitter';
 import { RetryManager } from '../retry/RetryManager';
@@ -15,11 +27,12 @@ import { ChatController } from '../chat/ChatController';
 import { ToolsManager } from '../tools/ToolsManager';
 import { ToolController } from '../tools/ToolController';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator';
-import { ChunkController } from '../chunks/ChunkController';
+import { ChunkController, ChunkProcessingParams } from '../chunks/ChunkController';
 import { StreamingService } from '../streaming/StreamingService';
 import type { ToolDefinition, ToolCall } from '../../types/tooling';
 import { StreamController } from '../streaming/StreamController';
 import { HistoryManager } from '../history/HistoryManager';
+import { logger } from '../../utils/logger';
 
 /**
  * Interface that matches the StreamController's required methods
@@ -29,7 +42,7 @@ interface StreamControllerInterface {
     createStream(
         model: string,
         params: UniversalChatParams,
-        inputTokens: number
+        inputTokens: number // Might be calculated within the service now
     ): Promise<AsyncIterable<UniversalStreamResponse>>;
 }
 
@@ -40,7 +53,8 @@ export type LLMCallerOptions = {
     apiKey?: string;
     callerId?: string;
     usageCallback?: UsageCallback;
-    settings?: UniversalChatParams['settings'];
+    // Use the refined UniversalChatSettings here for initial settings
+    settings?: UniversalChatSettings;
     // Dependency injection options for testing
     providerManager?: ProviderManager;
     modelManager?: ModelManager;
@@ -50,9 +64,12 @@ export type LLMCallerOptions = {
     tokenCalculator?: TokenCalculator;
     responseProcessor?: ResponseProcessor;
     retryManager?: RetryManager;
-    historyManager?: HistoryManager; // Make optional in type signature for backward compatibility
+    historyManager?: HistoryManager;
 };
 
+/**
+ * Main LLM Caller class
+ */
 export class LLMCaller {
     private providerManager: ProviderManager;
     private modelManager: ModelManager;
@@ -60,20 +77,21 @@ export class LLMCaller {
     private responseProcessor: ResponseProcessor;
     private retryManager: RetryManager;
     private model: string;
-    private systemMessage: string;
+    private systemMessage: string; // Keep track of the initial system message
     private callerId: string;
     private usageCallback?: UsageCallback;
     private requestProcessor: RequestProcessor;
     private dataSplitter: DataSplitter;
-    private settings?: UniversalChatParams['settings'];
+    // Store initial settings using the refined type
+    private initialSettings?: UniversalChatSettings;
     private usageTracker: UsageTracker;
-    private streamingService: StreamingService;
-    private chatController: ChatController;
+    private streamingService!: StreamingService;
+    private chatController!: ChatController;
     private toolsManager: ToolsManager;
     private toolController: ToolController;
-    private toolOrchestrator: ToolOrchestrator;
-    private chunkController: ChunkController;
-    private historyManager: HistoryManager;
+    private toolOrchestrator!: ToolOrchestrator;
+    private chunkController!: ChunkController;
+    private historyManager: HistoryManager; // HistoryManager now manages system message internally
 
     constructor(
         providerName: SupportedProviders,
@@ -95,44 +113,45 @@ export class LLMCaller {
         this.responseProcessor = options?.responseProcessor ||
             new ResponseProcessor();
 
+        // Pass initial settings to RetryManager if maxRetries is set
         this.retryManager = options?.retryManager ||
             new RetryManager({
                 baseDelay: 1000,
                 maxRetries: options?.settings?.maxRetries ?? 3
             });
 
-        this.systemMessage = systemMessage;
-        this.settings = options?.settings;
+        this.dataSplitter = new DataSplitter(this.tokenCalculator);
+
+        // Store config
+        this.systemMessage = systemMessage; // Store initial system message
+        this.initialSettings = options?.settings;
         this.callerId = options?.callerId || uuidv4();
         this.usageCallback = options?.usageCallback;
 
-        // Initialize model
-        const resolvedModel = this.modelManager.getModel(modelOrAlias);
-        if (!resolvedModel) {
-            throw new Error(`Model ${modelOrAlias} not found for provider ${providerName}`);
-        }
-        this.model = resolvedModel.name;
-
-        this.usageTracker = new UsageTracker(
-            this.tokenCalculator,
-            this.usageCallback,
-            this.callerId
-        );
-
-        // Initialize request processors
-        this.requestProcessor = new RequestProcessor();
-        this.dataSplitter = new DataSplitter(this.tokenCalculator);
+        // Initialize history manager with system message (it adds it internally)
+        this.historyManager = options?.historyManager || new HistoryManager(systemMessage);
 
         // Initialize the Tools subsystem
         this.toolsManager = options?.toolsManager || new ToolsManager();
 
-        // Initialize history manager with system message
-        this.historyManager = options?.historyManager || new HistoryManager(systemMessage);
+        // Resolve model
+        const resolvedModel = this.modelManager.getModel(modelOrAlias);
+        if (!resolvedModel) throw new Error(`Model ${modelOrAlias} not found for provider ${providerName}`);
+        this.model = resolvedModel.name;
+
+        // Initialize UsageTracker
+        this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
+
+        // Re-add initialization for requestProcessor
+        this.requestProcessor = new RequestProcessor();
 
         // Initialize tool controller (doesn't depend on chat or stream controllers)
         this.toolController = new ToolController(this.toolsManager);
 
-        // Initialize ChatController (initially without toolOrchestrator)
+        // Defer initialization of components that depend on each other
+        // or initialize with placeholders if necessary
+
+        // Initialize ChatController (pass dependencies)
         this.chatController = options?.chatController || new ChatController(
             this.providerManager,
             this.modelManager,
@@ -145,36 +164,41 @@ export class LLMCaller {
         );
 
         // Initialize stream controller adapter
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        const self = this; // Capture context for adapter
         const streamControllerAdapter: StreamControllerInterface = {
             createStream: async (
                 model: string,
                 params: UniversalChatParams,
                 inputTokens: number
             ): Promise<AsyncIterable<UniversalStreamResponse>> => {
-                params.callerId = params.callerId || this.callerId;
-                return this.streamingService.createStream(
-                    params,
+                params.callerId = params.callerId || self.callerId;
+                // StreamingService should be initialized by now
+                if (!self.streamingService) {
+                    throw new Error("StreamingService not initialized when creating stream adapter");
+                }
+                return self.streamingService.createStream(
+                    params, // Pass the complete params
                     model,
-                    params.messages.find(m => m.role === 'system')?.content
+                    undefined // System message comes from history manager via params
                 );
             }
         };
 
-        // Initialize ToolOrchestrator
+        // Initialize ToolOrchestrator with dependencies including the adapter
         this.toolOrchestrator = new ToolOrchestrator(
             this.toolController,
             this.chatController,
-            streamControllerAdapter as StreamController,
+            streamControllerAdapter as StreamController, // Cast needed
             this.historyManager
         );
 
-        // Now we can update the ChatController's toolOrchestrator reference
-        if (this.chatController['toolOrchestrator'] === undefined) {
-            // Use private field access to update the reference
-            (this.chatController as any).toolOrchestrator = this.toolOrchestrator;
-        }
+        // Now link the orchestrator back to the chat controller
+        // Assuming ChatController has a method like setToolOrchestrator or similar
+        // If not, constructor dependency injection is the primary way
+        (this.chatController as any).toolOrchestrator = this.toolOrchestrator; // Use workaround if no setter
 
-        // Initialize StreamingService after toolController and toolOrchestrator
+        // Initialize StreamingService *after* toolOrchestrator is created
         this.streamingService = options?.streamingService ||
             new StreamingService(
                 this.providerManager,
@@ -183,18 +207,22 @@ export class LLMCaller {
                 this.retryManager,
                 this.usageCallback,
                 this.callerId,
-                { tokenBatchSize: 100 },
+                { tokenBatchSize: 100 }, // Example config
                 this.toolController,
-                this.toolOrchestrator
+                this.toolOrchestrator // Pass the created orchestrator
             );
 
+        // Initialize ChunkController
         this.chunkController = new ChunkController(
             this.tokenCalculator,
             this.chatController,
-            streamControllerAdapter as StreamController,
+            streamControllerAdapter as StreamController, // Pass the adapter
             this.historyManager,
-            20
+            20 // Example batch size
         );
+
+        // No need to call initializeDependentControllers here, it's done above
+        // this.initializeDependentControllers(options);
     }
 
     // Model management methods - delegated to ModelManager
@@ -221,32 +249,35 @@ export class LLMCaller {
     }): void {
         const { provider, nameOrAlias, apiKey } = options;
 
-        // If provider is specified and different, switch provider
-        if (provider) {
+        const currentProvider = this.providerManager.getCurrentProviderName();
+        let providerChanged = false;
+
+        // If provider is specified and different, switch provider and re-init model manager
+        if (provider && provider !== currentProvider) {
             this.providerManager.switchProvider(provider, apiKey);
             this.modelManager = new ModelManager(provider);
+            providerChanged = true;
         }
 
         // Resolve and set new model
         const resolvedModel = this.modelManager.getModel(nameOrAlias);
         if (!resolvedModel) {
-            throw new Error(`Model ${nameOrAlias} not found in provider ${provider || 'current'}`);
+            throw new Error(`Model ${nameOrAlias} not found in provider ${provider || currentProvider}`);
         }
+        const modelChanged = this.model !== resolvedModel.name;
         this.model = resolvedModel.name;
+
+        // If provider changed, we need to re-initialize dependent components
+        if (providerChanged) {
+            this.reinitializeControllers();
+        }
+        // If only the model changed, typically controllers don't need full re-init,
+        // as the model name is passed per-request.
     }
 
-    // Add methods to manage ID and callback
-    public setCallerId(newId: string): void {
-        this.callerId = newId;
-        // Update the callerId in all relevant services
-        this.streamingService.setCallerId(newId);
-        // Update the UsageTracker to use the new callerId
-        this.usageTracker = new UsageTracker(
-            this.tokenCalculator,
-            this.usageCallback,
-            newId
-        );
-        // Also update chatController with the new usageTracker
+    // Helper to re-initialize controllers after major changes (e.g., provider switch)
+    private reinitializeControllers(): void {
+        // Re-initialize ChatController
         this.chatController = new ChatController(
             this.providerManager,
             this.modelManager,
@@ -254,103 +285,187 @@ export class LLMCaller {
             this.retryManager,
             this.usageTracker,
             this.toolController,
-            this.toolOrchestrator,
+            undefined, // Orchestrator needs to be re-linked
             this.historyManager
         );
+
+        // Re-initialize StreamingService
+        this.streamingService = new StreamingService(
+            this.providerManager,
+            this.modelManager,
+            this.historyManager,
+            this.retryManager,
+            this.usageCallback,
+            this.callerId,
+            { tokenBatchSize: 100 },
+            this.toolController,
+            this.toolOrchestrator // ToolOrchestrator itself might not need re-init if its deps are stable
+        );
+
+        // Re-link ToolOrchestrator to the new ChatController instance
+        // The adapter used by ToolOrchestrator also needs to point to the new StreamingService
+        const streamControllerAdapter: StreamControllerInterface = {
+            createStream: async (
+                model: string,
+                params: UniversalChatParams,
+                inputTokens: number
+            ): Promise<AsyncIterable<UniversalStreamResponse>> => {
+                params.callerId = params.callerId || this.callerId;
+                return this.streamingService.createStream(params, model, undefined);
+            }
+        };
+        this.toolOrchestrator = new ToolOrchestrator(
+            this.toolController,
+            this.chatController,
+            streamControllerAdapter as StreamController,
+            this.historyManager
+        );
+
+        // Link the new orchestrator back to the new chat controller
+        (this.chatController as any).toolOrchestrator = this.toolOrchestrator; // Use workaround if no setter
+
+        // Re-initialize ChunkController with the new ChatController and adapter
+        this.chunkController = new ChunkController(
+            this.tokenCalculator,
+            this.chatController,
+            streamControllerAdapter as StreamController,
+            this.historyManager,
+            20 // Keep batch size or make configurable
+        );
+    }
+
+
+    // Add methods to manage ID and callback
+    public setCallerId(newId: string): void {
+        this.callerId = newId;
+
+        // Update the UsageTracker to use the new callerId
+        this.usageTracker = new UsageTracker(
+            this.tokenCalculator,
+            this.usageCallback,
+            newId
+        );
+
+        // Update components that depend on UsageTracker or callerId
+        // Re-initialize controllers as they depend on usageTracker
+        this.reinitializeControllers();
     }
 
     public setUsageCallback(callback: UsageCallback): void {
         this.usageCallback = callback;
-        this.streamingService.setUsageCallback(callback);
+
+        // Update the UsageTracker to use the new callback
+        this.usageTracker = new UsageTracker(
+            this.tokenCalculator,
+            callback, // Pass new callback
+            this.callerId
+        );
+
+        // Re-initialize controllers as they depend on usageTracker/usageCallback
+        this.reinitializeControllers();
     }
 
-    public updateSettings(newSettings: UniversalChatParams['settings']): void {
-        this.settings = { ...this.settings, ...newSettings };
+    public updateSettings(newSettings: UniversalChatSettings): void {
+        // Update the stored initial/class-level settings
+        const oldMaxRetries = this.initialSettings?.maxRetries ?? 3;
+        this.initialSettings = { ...this.initialSettings, ...newSettings };
+
+        // Update RetryManager if maxRetries changed
+        const newMaxRetries = this.initialSettings?.maxRetries ?? 3;
+        if (newSettings.maxRetries !== undefined && newMaxRetries !== oldMaxRetries) {
+            this.retryManager = new RetryManager({
+                baseDelay: 1000, // Or get from existing config
+                maxRetries: newMaxRetries
+            });
+            // Re-initialize controllers as they depend on retryManager
+            this.reinitializeControllers();
+        }
+        // Other settings changes usually don't require controller re-initialization
+        // as they are passed per-request via the settings object.
     }
 
-    private mergeSettings(methodSettings?: UniversalChatParams['settings']): UniversalChatParams['settings'] | undefined {
-        if (!this.settings && !methodSettings) return undefined;
-        return { ...this.settings, ...methodSettings };
+    // Merge initial/class-level settings with method-level settings
+    private mergeSettings(methodSettings?: UniversalChatSettings): UniversalChatSettings | undefined {
+        if (!this.initialSettings && !methodSettings) return undefined;
+        // Method settings take precedence
+        return { ...this.initialSettings, ...methodSettings };
     }
 
-    // Basic chat completion method - now private
-    private async chatCall(
-        message: string,
-        settings?: UniversalChatParams['settings'],
-        historicalMessages?: UniversalMessage[]
+    // Basic chat completion method - internal helper
+    private async internalChatCall(
+        // Takes the full parameter object
+        params: UniversalChatParams
     ): Promise<UniversalChatResponse> {
-        // Reset tool iteration counter at the beginning of each chat call
-        this.toolController.resetIterationCount();
+        this.toolController.resetIterationCount(); // Reset tool iteration
 
-        if (historicalMessages) this.historyManager.setHistoricalMessages(historicalMessages);
+        // Ensure essential parameters are present
+        params.callerId = params.callerId || this.callerId;
+        params.model = params.model || this.model;
+        // System message is typically part of params.messages handled by HistoryManager
 
-        this.historyManager.addMessage('user', message);
+        // Pass params excluding systemMessage if ChatController doesn't expect it explicitly
+        // Assuming ChatController gets system message from params.messages
+        const { systemMessage, ...paramsForController } = params;
 
-        // Execute the base chat call
-        const initialResponse = await this.chatController.execute({
-            model: this.model,
-            systemMessage: this.systemMessage,
-            settings: this.mergeSettings(settings)
-        });
+        // Ensure the type passed matches ChatController.execute's expectation
+        const response = await this.chatController.execute(paramsForController as any); // Cast needed if signature mismatch persists
 
-        return initialResponse;
+        return response;
     }
+
 
     /**
-     * Streams a response from the LLM.
-     * with the system message prepended, historical messages in the middle, and the user message appended.
-     * Now private as public API has been standardized to stream() method.
+     * Internal streaming method.
      */
-    private async streamCall(
-        messageOrMessages: string | UniversalMessage[],
-        settings?: UniversalChatParams['settings'],
-        historicalMessages?: UniversalMessage[]
+    private async internalStreamCall(
+        // Takes the full parameter object
+        params: UniversalChatParams
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
-        // Reset tool iteration counter at the beginning of each stream call
-        this.toolController.resetIterationCount();
+        this.toolController.resetIterationCount(); // Reset tool iteration
 
-        let finalParams: UniversalChatParams;
+        // Ensure essential parameters are present
+        params.callerId = params.callerId || this.callerId;
+        params.model = params.model || this.model;
 
-        // Build the final params object based on input
-        if (Array.isArray(messageOrMessages)) {
-            // If messages are provided directly, use them
-            finalParams = {
-                messages: messageOrMessages,
-                settings
-            };
-        } else {
-            // Store user message in history
-            this.historyManager.addMessage('user', messageOrMessages);
+        // Use the StreamingService to create the stream
+        const stream = await this.streamingService.createStream(
+            params,
+            params.model, // Pass the model name explicitly
+            undefined // System message comes from history manager via params
+        );
 
-            // Construct messages from internal historical messages or override if provided
-            const messagesHistory = historicalMessages ||
-                this.historyManager.getHistoricalMessages();
+        // Wrap the stream to add the final assistant message to history
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        const self = this; // Capture 'this' context
+        async function* historyAwareStream(): AsyncIterable<UniversalStreamResponse> {
+            let finalChunk: UniversalStreamResponse | null = null;
+            try {
+                for await (const chunk of stream) {
+                    if (chunk.isComplete) {
+                        finalChunk = chunk;
+                    }
+                    yield chunk;
+                }
+            } finally {
+                // After the stream is fully consumed (or fails),
+                // add the final assistant message based on the last complete chunk
+                // But ONLY if it doesn't have tool calls - those are handled by the specialized tool call code
+                if (finalChunk) {
+                    const hasTool = finalChunk.toolCalls && finalChunk.toolCalls.length > 0;
+                    const isToolCall = finalChunk.metadata?.finishReason === 'tool_calls';
 
-            const userMessage: UniversalMessage = {
-                role: 'user',
-                content: messageOrMessages
-            };
-
-            finalParams = {
-                messages: [
-                    ...messagesHistory,
-                    userMessage
-                ],
-                settings
-            };
+                    // Only add to history if this is NOT a tool call response
+                    // Tool call responses are handled by the StreamHistoryProcessor or specialized tool handling code
+                    if (!hasTool && !isToolCall && finalChunk.contentText) {
+                        self.historyManager.addMessage('assistant', finalChunk.contentText);
+                    }
+                }
+            }
         }
 
-        // Ensure settings are merged
-        finalParams.settings = this.mergeSettings(finalParams.settings);
-
-        // Use the StreamingService to create the stream, which will automatically
-        // use the history manager we provided in its pipeline
-        return this.streamingService.createStream(
-            finalParams,
-            this.model,
-            this.systemMessage
-        );
+        return historyAwareStream();
     }
+
 
     /**
      * Processes a message and streams the response.
@@ -358,15 +473,14 @@ export class LLMCaller {
      */
     public async stream(
         message: string,
-        { data, endingMessage, settings }: {
-            data?: any;
-            endingMessage?: string;
-            settings?: UniversalChatParams['settings'];
-        } = {}
+        // Use the new LLMCallOptions type
+        options: LLMCallOptions = {}
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
-        // Use the RequestProcessor to process the request
+        const { data, endingMessage, settings, jsonSchema, responseFormat, tools } = options;
+
+        // Use the RequestProcessor to process the request (handles chunking if needed)
         const modelInfo = this.modelManager.getModel(this.model)!;
-        const messages = await this.requestProcessor.processRequest({
+        const processedMessages = await this.requestProcessor.processRequest({
             message,
             data,
             endingMessage,
@@ -374,36 +488,56 @@ export class LLMCaller {
             maxResponseTokens: settings?.maxTokens
         });
 
-        // If there's only one chunk, just do a regular stream call
-        if (messages.length === 1) {
-            this.historyManager.addMessage('user', message);
-            return this.streamCall(messages[0], settings);
+        const effectiveTools = tools ?? this.toolsManager.listTools();
+        const mergedSettings = this.mergeSettings(settings);
+
+        // Add the original user message to history *before* the call
+        this.historyManager.addMessage('user', message);
+
+        // If there's only one chunk (no splitting occurred)
+        if (processedMessages.length === 1) {
+            // Construct the params for the single call
+            const params: UniversalChatParams = {
+                model: this.model,
+                messages: this.historyManager.getHistoricalMessages(), // Use method from HistoryManager
+                settings: mergedSettings,
+                jsonSchema: jsonSchema,
+                responseFormat: responseFormat,
+                tools: effectiveTools,
+                callerId: this.callerId
+            };
+            // History update for assistant response happens inside internalStreamCall wrapper
+            return this.internalStreamCall(params);
         }
 
-        // Use ChunkController to stream all chunks with the correct parameter structure
-        return this.chunkController.streamChunks(messages, {
+        // If chunking occurred, use ChunkController
+        const historyForChunks = this.historyManager.getHistoricalMessages(); // Get history *before* the latest user msg
+
+        // ChunkController's streamChunks should also handle adding the final assistant messages to history internally
+        return this.chunkController.streamChunks(processedMessages, {
             model: this.model,
-            systemMessage: this.systemMessage,
-            settings: this.mergeSettings(settings),
-            historicalMessages: this.historyManager.getHistoricalMessages()
+            settings: mergedSettings,
+            jsonSchema: jsonSchema,
+            responseFormat: responseFormat,
+            tools: effectiveTools,
+            historicalMessages: historyForChunks // Pass history prior to the current message
         });
     }
 
     /**
-     * Processes a message and returns the response.
+     * Processes a message and returns the response(s).
      * This is the standardized public API for getting responses.
      */
     public async call(
         message: string,
-        { data, endingMessage, settings }: {
-            data?: any;
-            endingMessage?: string;
-            settings?: UniversalChatParams['settings'];
-        } = {}
+        // Use the new LLMCallOptions type
+        options: LLMCallOptions = {}
     ): Promise<UniversalChatResponse[]> {
+        const { data, endingMessage, settings, jsonSchema, responseFormat, tools } = options;
+
         // Use the RequestProcessor to process the request
         const modelInfo = this.modelManager.getModel(this.model)!;
-        const messages = await this.requestProcessor.processRequest({
+        const processedMessages = await this.requestProcessor.processRequest({
             message,
             data,
             endingMessage,
@@ -411,35 +545,60 @@ export class LLMCaller {
             maxResponseTokens: settings?.maxTokens
         });
 
-        // Add the initial user message to the history
+        const effectiveTools = tools ?? this.toolsManager.listTools();
+        const mergedSettings = this.mergeSettings(settings);
+
+        // Add the original user message to history *before* the call
         this.historyManager.addMessage('user', message);
 
-        // If there's only one chunk, just do a regular chat call
-        if (messages.length === 1) {
-            const response = await this.chatCall(messages[0], settings);
+        // If there's only one chunk (no splitting occurred)
+        if (processedMessages.length === 1) {
+            const params: UniversalChatParams = {
+                model: this.model,
+                messages: this.historyManager.getHistoricalMessages(), // Use method from HistoryManager
+                settings: mergedSettings,
+                jsonSchema: jsonSchema,
+                responseFormat: responseFormat,
+                tools: effectiveTools,
+                callerId: this.callerId
+            };
+            // History update for assistant happens inside internalChatCall
+            const response = await this.internalChatCall(params);
             return [response];
         }
 
-        // Use ChunkController to process all chunks with the correct parameter structure
-        const responses = await this.chunkController.processChunks(messages, {
+        // If chunking occurred, use ChunkController
+        const historyForChunks = this.historyManager.getHistoricalMessages(); // Get history *before* the latest user msg
+
+        // ChunkController processes chunks and returns responses
+        const responses = await this.chunkController.processChunks(processedMessages, {
             model: this.model,
-            systemMessage: this.systemMessage,
-            settings: this.mergeSettings(settings),
-            historicalMessages: this.historyManager.getHistoricalMessages()
+            settings: mergedSettings,
+            jsonSchema: jsonSchema,
+            responseFormat: responseFormat,
+            tools: effectiveTools,
+            historicalMessages: historyForChunks
         });
 
-        // Add each chunk response to our history
-        responses.forEach(response => {
-            this.historyManager.addMessage('assistant', response.content || '');
-        });
+        // Add assistant responses from all chunks to history AFTER all chunks are processed
+        // This ensures history is consistent after the multi-chunk operation completes
+        // BUT skip this history addition for tool calls, as the ChatController already adds these
+        if (processedMessages.length > 1) {
+            responses.forEach(response => {
+                // Only add non-tool response messages, since tool messages are already added in ChatController
+                if (response.content && (!response.toolCalls || response.toolCalls.length === 0) &&
+                    response.metadata?.finishReason !== 'tool_calls') {
+                    this.historyManager.addMessage('assistant', response.content);
+                }
+            });
+        }
 
         return responses;
     }
 
     // Tool management methods - delegated to ToolsManager
     public addTool(tool: ToolDefinition): void {
-        // Safely add the tool using ToolsManager
-        this.toolsManager.addTool(tool as any);
+        this.toolsManager.addTool(tool);
     }
 
     public removeTool(name: string): void {
@@ -447,8 +606,7 @@ export class LLMCaller {
     }
 
     public updateTool(name: string, updated: Partial<ToolDefinition>): void {
-        // Safely update the tool using ToolsManager
-        this.toolsManager.updateTool(name, updated as any);
+        this.toolsManager.updateTool(name, updated);
     }
 
     public listTools(): ToolDefinition[] {
@@ -462,36 +620,53 @@ export class LLMCaller {
     // History management methods - delegated to HistoryManager
 
     /**
-     * Gets the current historical messages
-     * @returns Array of historical messages
+     * Gets the current historical messages (excluding the initial system message unless requested)
+     * Check HistoryManager implementation for exact behavior.
+     * @returns Array of historical messages (typically user/assistant/tool roles)
      */
     public getHistoricalMessages(): UniversalMessage[] {
         return this.historyManager.getHistoricalMessages();
     }
 
     /**
+     * Gets all messages including the system message.
+     * @returns Array of all messages.
+     */
+    public getMessages(): UniversalMessage[] {
+        // Use the HistoryManager's getMessages method which already includes the system message
+        return this.historyManager.getMessages();
+    }
+
+
+    /**
      * Adds a message to the historical messages
      * @param role The role of the message sender
      * @param content The content of the message
-     * @param additionalFields Additional fields to include in the message
+     * @param additionalFields Additional fields to include in the message (e.g., toolCalls, toolCallId)
      */
     public addMessage(
         role: 'user' | 'assistant' | 'system' | 'tool' | 'function' | 'developer',
-        content: string,
+        content: string | null, // Allow null content, e.g., for assistant messages with only tool calls
         additionalFields?: Partial<UniversalMessage>
     ): void {
-        this.historyManager.addMessage(role, content, additionalFields);
+        // History manager should handle null content appropriately
+        this.historyManager.addMessage(role, content ?? '', additionalFields);
     }
 
     /**
-     * Clears all historical messages
+     * Clears all historical messages, including the system message.
+     * Use updateSystemMessage to reset the system message if needed.
      */
     public clearHistory(): void {
         this.historyManager.clearHistory();
+        // Re-add the initial system message after clearing if desired
+        this.historyManager.addMessage('system', this.systemMessage);
     }
 
     /**
-     * Sets the historical messages
+     * Sets the historical messages, replacing existing ones.
+     * Note: This typically replaces the system message as well if present in the input array.
+     * Consider using clearHistory and addMessage if you want to preserve the original system message.
      * @param messages The messages to set
      */
     public setHistoricalMessages(messages: UniversalMessage[]): void {
@@ -532,33 +707,52 @@ export class LLMCaller {
      */
     public deserializeHistory(serialized: string): void {
         this.historyManager.deserializeHistory(serialized);
+        // Update the local systemMessage variable if the deserialized history contains a system message
+        const systemMsgInHistory = this.historyManager.getHistoricalMessages().find((m: UniversalMessage) => m.role === 'system');
+        this.systemMessage = systemMsgInHistory ? systemMsgInHistory.content : 'You are a helpful assistant.'; // Use default if none found
     }
 
     /**
-     * Updates the system message and reinitializes history if requested
+     * Updates the system message in the history.
      * @param systemMessage The new system message
-     * @param preserveHistory Whether to preserve the existing history (default: true)
+     * @param preserveHistory Whether to keep the rest of the history (default: true)
      */
     public updateSystemMessage(systemMessage: string, preserveHistory = true): void {
+        // Update the local variable as well
         this.systemMessage = systemMessage;
         this.historyManager.updateSystemMessage(systemMessage, preserveHistory);
     }
 
     /**
-     * Adds a tool call to the historical messages
-     * @param toolName Name of the tool
-     * @param args Arguments passed to the tool
-     * @param result Result returned by the tool
-     * @param error Error from tool execution, if any
+     * Adds a tool result to the message history
+     * @param toolCallId The ID of the tool call (MUST match the exact ID provided by the LLM)
+     * @param result The stringified result returned by the tool
+     * @param isError Optional flag indicating if the result is an error message
      */
-    public addToolCallToHistory(
-        toolName: string,
-        args: Record<string, unknown>,
-        result?: string,
-        error?: string
+    public addToolResult(
+        toolCallId: string,
+        result: string,
+        toolName?: string, // Make name optional as it might not always be needed by the role message
+        isError = false // Consider how to represent errors in the content string
     ): void {
-        this.historyManager.addToolCallToHistory(toolName, args, result, error);
+        const content = isError ? `Error processing tool ${toolName || 'call'}: ${result}` : result;
+
+        // Ensure we have a valid toolCallId that exactly matches the original assistant message's tool call
+        // This is crucial for OpenAI to recognize the response is linked to the original tool call
+        if (!toolCallId) {
+            logger.warn('Adding tool result without toolCallId - this may cause message history issues');
+            this.historyManager.addMessage('tool', content, { name: toolName });
+            return;
+        }
+
+        // OpenAI format requires role: 'tool', tool_call_id: exact_id, and content: result
+        // This is enforced through our adapter layer
+        this.historyManager.addMessage('tool', content, { toolCallId, name: toolName });
+
+        // Log for debugging
+        logger.debug(`Added tool result for ${toolCallId} with content ${content.substring(0, 30)}...`);
     }
+
 
     /**
      * Gets a condensed summary of the conversation history
@@ -572,9 +766,33 @@ export class LLMCaller {
     } = {}): Array<{
         role: string;
         contentPreview: string;
-        hasToolCalls: boolean;
-        timestamp?: number;
+        hasToolCalls: boolean; // Indicates if the original message had tool calls *requested*
+        timestamp?: number; // Timestamp from message metadata if available
     }> {
         return this.historyManager.getHistorySummary(options);
     }
+
+    // Deprecate old addToolCallToHistory if addToolResult is preferred
+    /** @deprecated Use addToolResult instead */
+    public addToolCallToHistory(
+        toolName: string,
+        args: Record<string, unknown>, // Keep old signature for compatibility if needed
+        result?: string,
+        error?: string
+    ): void {
+        // Basic adaptation: Assumes a single tool call/result structure
+        // This might need a more robust mapping if the old usage was complex
+        const toolCallId = `deprecated_tool_${Date.now()}`; // Generate a placeholder ID
+        const content = error ? `Error: ${error}` : result ?? 'Tool executed successfully (no textual result).';
+        this.addToolResult(toolCallId, content, toolName, !!error);
+    }
+
+    /**
+     * Gets the HistoryManager instance for direct operations
+     * @returns The HistoryManager instance
+     */
+    public getHistoryManager(): HistoryManager {
+        return this.historyManager;
+    }
+
 } 
