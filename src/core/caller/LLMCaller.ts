@@ -173,15 +173,13 @@ export class LLMCaller {
                 inputTokens: number
             ): Promise<AsyncIterable<UniversalStreamResponse>> => {
                 params.callerId = params.callerId || self.callerId;
-                // StreamingService should be initialized by now
+
+                // Check if streamingService exists before trying to access it
                 if (!self.streamingService) {
-                    throw new Error("StreamingService not initialized when creating stream adapter");
+                    throw new Error('StreamingService is not initialized');
                 }
-                return self.streamingService.createStream(
-                    params, // Pass the complete params
-                    model,
-                    undefined // System message comes from history manager via params
-                );
+
+                return self.streamingService.createStream(params, model, undefined);
             }
         };
 
@@ -311,6 +309,12 @@ export class LLMCaller {
                 inputTokens: number
             ): Promise<AsyncIterable<UniversalStreamResponse>> => {
                 params.callerId = params.callerId || this.callerId;
+
+                // Check if streamingService exists before trying to access it
+                if (!this.streamingService) {
+                    throw new Error('StreamingService is not initialized');
+                }
+
                 return this.streamingService.createStream(params, model, undefined);
             }
         };
