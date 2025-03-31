@@ -33,4 +33,6 @@ coverage/
 .cursorrules
 .notes/
 
+.repomix-output.txt
+
 READMEAI.md

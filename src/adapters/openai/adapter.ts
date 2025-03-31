@@ -44,16 +44,21 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
     private validator: Validator;
     private models: Map<string, ModelInfo>;
 
-    constructor(config?: Partial<AdapterConfig>) {
-        const apiKey = config?.apiKey || process.env.OPENAI_API_KEY;
+    constructor(config?: Partial<AdapterConfig> | string) {
+        // Handle the case where config is just an API key string for backward compatibility
+        const configObj = typeof config === 'string'
+            ? { apiKey: config }
+            : config;
+
+        const apiKey = configObj?.apiKey || process.env.OPENAI_API_KEY;
         if (!apiKey) {
             throw new Error('OpenAI API key is required. Please provide it in the config or set OPENAI_API_KEY environment variable.');
         }
 
         super({
             apiKey,
-            organization: config?.organization || process.env.OPENAI_ORGANIZATION,
-            baseUrl: config?.baseUrl || process.env.OPENAI_API_BASE
+            organization: configObj?.organization || process.env.OPENAI_ORGANIZATION,
+            baseUrl: configObj?.baseUrl || process.env.OPENAI_API_BASE
         });
 
         this.client = new OpenAI({

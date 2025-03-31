@@ -46,6 +46,15 @@ export class Logger {
     }
 
     /**
+     * Static log method for backward compatibility with older code
+     * @param message Message to log
+     * @param args Additional arguments
+     */
+    public static log(message: string, ...args: unknown[]): void {
+        Logger.getInstance().info(message, ...args);
+    }
+
+    /**
      * Create a new isolated logger instance with its own configuration
      * @param config Optional configuration (level defaults to process.env.LOG_LEVEL)
      * @returns A new Logger instance with isolated state

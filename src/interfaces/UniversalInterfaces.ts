@@ -8,7 +8,8 @@ export enum FinishReason {
     LENGTH = 'length',       // Incomplete model output due to max_tokens parameter or token limit
     CONTENT_FILTER = 'content_filter',  // Omitted content due to a flag from content filters
     TOOL_CALLS = 'tool_calls',    // Model made tool calls
-    NULL = 'null'            // Stream not finished yet
+    NULL = 'null',            // Stream not finished yet
+    ERROR = 'error'
 }
 
 export type UniversalMessage = {

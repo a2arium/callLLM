@@ -99,6 +99,9 @@ export class ToolController {
 
             try {
                 log.debug(`Executing tool: ${name}`);
+                if (!tool.callFunction) {
+                    throw new ToolExecutionError(name, 'Tool does not have a callFunction implementation');
+                }
                 const result = await tool.callFunction(args);
                 let processedMessages: string[];
 
@@ -178,8 +181,32 @@ export class ToolController {
         }
 
         try {
+            // Validate parameters against schema
+            const args = toolCall.arguments || {};
+            const schema = tool.parameters;
+
+            // Check required parameters
+            if (schema.required) {
+                for (const requiredParam of schema.required) {
+                    if (!(requiredParam in args)) {
+                        throw new Error(`Missing required parameter: ${requiredParam}`);
+                    }
+                }
+            }
+
+            // Check for additional properties if not allowed
+            if (schema.additionalProperties === false) {
+                const extraProps = Object.keys(args).filter(key => !(key in schema.properties));
+                if (extraProps.length > 0) {
+                    throw new Error(`Unexpected additional parameters: ${extraProps.join(', ')}`);
+                }
+            }
+
             // Execute the tool
-            const result = await tool.callFunction(toolCall.arguments);
+            if (!tool.callFunction) {
+                throw new ToolExecutionError(toolCall.name, 'Tool does not have a callFunction implementation');
+            }
+            const result = await tool.callFunction(args);
             log.debug(`Tool execution successful: ${toolCall.name}`, {
                 id: toolCall.id,
                 resultType: typeof result

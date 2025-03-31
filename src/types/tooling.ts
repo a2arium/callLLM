@@ -27,6 +27,7 @@ export type ToolParameters = {
     type: 'object'; // Tools always expect an object wrapper
     properties: Record<string, ToolParameterSchema>;
     required?: string[];
+    additionalProperties?: boolean;  // Whether to allow additional properties not defined in the schema
 };
 
 // Updated ToolDefinition using ToolParameters
@@ -34,9 +35,10 @@ export type ToolDefinition = {
     name: string;
     description: string;
     parameters: ToolParameters; // Use the stricter, object-based parameters type
-    callFunction: <TParams extends Record<string, unknown>, TResponse = unknown>(
+    callFunction?: <TParams extends Record<string, unknown>, TResponse = unknown>(
         params: TParams
     ) => Promise<TResponse>; // Keep generic default
+    handler?: (args: any) => Promise<any>; // Added for backward compatibility with older code
     postCallLogic?: (rawResult: unknown) => Promise<string[]>; // Use unknown for flexibility
 };
 
@@ -46,6 +48,7 @@ export type ToolCall = {
     arguments: Record<string, unknown>; // Parsed arguments object
     result?: string; // Stringified result after execution
     error?: string; // Error message if execution failed
+    executionReady?: boolean; // Flag indicating this tool call is ready for execution
 };
 
 // TODO: we shouldn't have it in types folder

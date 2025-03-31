@@ -1,6 +1,7 @@
 import { ModelInfo, ModelAlias } from '../../interfaces/UniversalInterfaces';
 import { ModelSelector } from './ModelSelector';
 import { defaultModels as openAIModels } from '../../adapters/openai/models';
+import { defaultModels as openAIResponseModels } from '../../adapters/openai-response/models';
 import { SupportedProviders } from '../types';
 
 export class ModelManager {
@@ -15,6 +16,9 @@ export class ModelManager {
         switch (providerName) {
             case 'openai':
                 openAIModels.forEach(model => this.models.set(model.name, model));
+                break;
+            case 'openai-response':
+                openAIResponseModels.forEach(model => this.models.set(model.name, model));
                 break;
             // Add other providers here when implemented
             default:
@@ -60,14 +64,12 @@ export class ModelManager {
     }
 
     private validateModelConfiguration(model: ModelInfo): void {
-        if (
-            model.inputPricePerMillion < 0 ||
-            model.outputPricePerMillion < 0 ||
-            model.maxRequestTokens <= 0 ||
-            model.maxResponseTokens <= 0
-        ) {
-            throw new Error('Invalid model configuration');
-        }
+        if (!model.name) throw new Error('Model name is required');
+        if (model.inputPricePerMillion === undefined) throw new Error('Input price is required');
+        if (model.outputPricePerMillion === undefined) throw new Error('Output price is required');
+        if (!model.maxRequestTokens) throw new Error('Max request tokens is required');
+        if (!model.maxResponseTokens) throw new Error('Max response tokens is required');
+        if (!model.characteristics) throw new Error('Model characteristics are required');
     }
 
     public resolveModel(nameOrAlias: string): string {

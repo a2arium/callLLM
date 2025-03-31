@@ -2,7 +2,7 @@ import { LLMCaller } from '../src/core/caller/LLMCaller';
 
 async function main() {
     // Initialize the caller with OpenAI
-    const caller = new LLMCaller('openai', 'gpt-4o-mini');
+    const caller = new LLMCaller('openai-response', 'gpt-4o-mini');
 
     try {
         // Test regular chat call
