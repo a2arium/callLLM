@@ -70,6 +70,10 @@ export class ModelManager {
         if (!model.maxRequestTokens) throw new Error('Max request tokens is required');
         if (!model.maxResponseTokens) throw new Error('Max response tokens is required');
         if (!model.characteristics) throw new Error('Model characteristics are required');
+
+        // Check for negative prices
+        if (model.inputPricePerMillion < 0) throw new Error('Invalid model configuration');
+        if (model.outputPricePerMillion < 0) throw new Error('Invalid model configuration');
     }
 
     public resolveModel(nameOrAlias: string): string {

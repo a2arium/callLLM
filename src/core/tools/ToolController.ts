@@ -186,7 +186,7 @@ export class ToolController {
             const schema = tool.parameters;
 
             // Check required parameters
-            if (schema.required) {
+            if (schema && schema.required && Array.isArray(schema.required)) {
                 for (const requiredParam of schema.required) {
                     if (!(requiredParam in args)) {
                         throw new Error(`Missing required parameter: ${requiredParam}`);
@@ -195,7 +195,7 @@ export class ToolController {
             }
 
             // Check for additional properties if not allowed
-            if (schema.additionalProperties === false) {
+            if (schema && schema.properties && schema.additionalProperties === false) {
                 const extraProps = Object.keys(args).filter(key => !(key in schema.properties));
                 if (extraProps.length > 0) {
                     throw new Error(`Unexpected additional parameters: ${extraProps.join(', ')}`);
