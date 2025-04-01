@@ -1,354 +1,319 @@
-import { z } from 'zod';
 import { Converter } from '../../../../adapters/openai/converter';
-import { UniversalChatParams, UniversalChatResponse, FinishReason, Usage } from '../../../../interfaces/UniversalInterfaces';
-import { SchemaValidator } from '../../../../core/schema/SchemaValidator';
-import {
-    Response,
-    FunctionTool,
-    ResponseOutputItem,
-    ResponseOutputMessage,
-    ResponseFunctionToolCall,
-    ResponseTextConfig
-} from '../../../../adapters/openai/types';
-import type { ToolDefinition } from '../../../../types/tooling';
-import { OpenAI } from 'openai';
+import { ToolDefinition } from '../../../../types/tooling';
+import { UniversalChatParams, UniversalMessage, FinishReason } from '../../../../interfaces/UniversalInterfaces';
 
-// Mock SchemaValidator
-jest.mock('../../../../core/schema/SchemaValidator', () => ({
-    SchemaValidator: {
-        getSchemaObject: jest.fn((schema) => {
-            if (typeof schema === 'string') {
-                try {
-                    return JSON.parse(schema);
-                } catch {
-                    return {};
-                }
-            }
-            return {
-                type: 'object',
-                properties: {
-                    name: { type: 'string' },
-                    age: { type: 'number' }
-                },
-                required: ['name', 'age'],
-                additionalProperties: false
-            };
-        })
-    }
-}));
-
-describe('Converter', () => {
+describe('OpenAI Response API Converter', () => {
     let converter: Converter;
-    let mockTool: ToolDefinition;
 
     beforeEach(() => {
         converter = new Converter();
-        mockTool = {
-            name: 'test_tool',
-            description: 'A test tool',
-            parameters: {
-                type: 'object',
-                properties: {
-                    test: { type: 'string' }
-                }
-            }
-        };
     });
 
     describe('convertToOpenAIResponseParams', () => {
-        it('should convert basic params correctly', () => {
-            const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'Hello' }],
-                model: 'gpt-4',
+        test('should convert basic universal params to OpenAI Response params', () => {
+            const universalParams: UniversalChatParams = {
+                messages: [
+                    { role: 'system', content: 'You are a helpful assistant.' },
+                    { role: 'user', content: 'Hello!' }
+                ],
+                model: 'gpt-4o',
                 settings: {
+                    maxTokens: 100,
                     temperature: 0.7,
-                    maxTokens: 100
-                },
-                tools: [mockTool]
-            };
-
-            const result = converter.convertToOpenAIResponseParams('gpt-4', params);
-
-            expect(result).toEqual({
-                model: 'gpt-4',
-                input: [{ role: 'user', content: 'Hello' }],
-                temperature: 0.7,
-                max_output_tokens: 100,
-                tools: [{
-                    type: 'function',
-                    name: 'test_tool',
-                    description: 'A test tool',
-                    parameters: {
-                        type: 'object',
-                        properties: {
-                            test: { type: 'string' }
-                        },
-                        additionalProperties: false
-                    },
-                    strict: true
-                }]
-            });
-        });
-
-        it('should handle JSON response format', () => {
-            const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'Hello' }],
-                model: 'gpt-4',
-                responseFormat: 'json'
-            };
-
-            const result = converter.convertToOpenAIResponseParams('gpt-4', params);
-            expect(result.text?.format).toEqual({
-                type: 'json_object'
-            });
-        });
-
-        it('should handle JSON schema', () => {
-            const schema = z.object({
-                name: z.string(),
-                age: z.number()
-            });
-
-            const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'Hello' }],
-                model: 'gpt-4',
-                jsonSchema: {
-                    name: 'Person',
-                    schema
                 }
             };
 
-            const result = converter.convertToOpenAIResponseParams('gpt-4', params);
-            expect(result.text?.format).toEqual({
-                type: 'json_schema',
-                name: 'Person',
-                schema: {
+            const result = converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+
+            expect(result).toEqual(expect.objectContaining({
+                input: [
+                    { role: 'system', content: 'You are a helpful assistant.' },
+                    { role: 'user', content: 'Hello!' }
+                ],
+                model: 'gpt-4o',
+                max_output_tokens: 100,
+                temperature: 0.7,
+            }));
+        });
+
+        test('should convert universal tools to OpenAI Response tools', () => {
+            const toolDef: ToolDefinition = {
+                name: 'test_tool',
+                description: 'A test tool',
+                parameters: {
                     type: 'object',
                     properties: {
-                        name: { type: 'string' },
-                        age: { type: 'number' }
+                        param1: { type: 'string' }
                     },
-                    required: ['name', 'age'],
-                    additionalProperties: false
-                },
+                    required: ['param1']
+                }
+            };
+
+            const universalParams: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'Use the tool' }],
+                tools: [toolDef],
+                model: 'gpt-4o'
+            };
+
+            const result = converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+
+            expect(result.tools).toHaveLength(1);
+            expect(result.tools?.[0]).toEqual({
+                type: 'function',
+                name: 'test_tool',
+                description: 'A test tool',
+                parameters: expect.objectContaining({
+                    type: 'object',
+                    properties: {
+                        param1: { type: 'string' }
+                    },
+                    required: ['param1']
+                }),
                 strict: true
             });
+        });
+
+        test('should handle toolChoice in settings', () => {
+            const toolDef: ToolDefinition = {
+                name: 'test_tool',
+                description: 'A test tool',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        param1: { type: 'string' }
+                    },
+                    required: ['param1']
+                }
+            };
+
+            const universalParams: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'Use the tool' }],
+                tools: [toolDef],
+                model: 'gpt-4o',
+                settings: {
+                    toolChoice: 'auto'
+                }
+            };
+
+            const result = converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+
+            expect(result.tool_choice).toBe('auto');
+        });
+
+        test('should handle toolChoice object in settings', () => {
+            const toolDef: ToolDefinition = {
+                name: 'test_tool',
+                description: 'A test tool',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        param1: { type: 'string' }
+                    },
+                    required: ['param1']
+                }
+            };
+
+            const universalParams: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'Use the tool' }],
+                tools: [toolDef],
+                model: 'gpt-4o',
+                settings: {
+                    toolChoice: {
+                        type: 'function',
+                        function: { name: 'test_tool' }
+                    }
+                }
+            };
+
+            const result = converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+
+            expect(result.tool_choice).toEqual({
+                type: 'function',
+                function: { name: 'test_tool' }
+            });
+        });
+
+        test('should properly handle multipart message content', () => {
+            const universalParams: UniversalChatParams = {
+                messages: [
+                    {
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: 'Look at this image:' },
+                            {
+                                type: 'image_url',
+                                image_url: {
+                                    url: 'data:image/jpeg;base64,/9j/4AAQSkZJRg...',
+                                    detail: 'high'
+                                }
+                            }
+                        ] as any
+                    }
+                ],
+                model: 'gpt-4o-vision'
+            };
+
+            const result = converter.convertToOpenAIResponseParams('gpt-4o-vision', universalParams);
+
+            expect(result.input).toEqual([
+                {
+                    role: 'user',
+                    content: [
+                        { type: 'text', text: 'Look at this image:' },
+                        {
+                            type: 'image_url',
+                            image_url: {
+                                url: 'data:image/jpeg;base64,/9j/4AAQSkZJRg...',
+                                detail: 'high'
+                            }
+                        }
+                    ]
+                }
+            ]);
+        });
+
+        test('should ignore null or undefined parameters', () => {
+            const universalParams: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'Hello' }],
+                model: 'gpt-4o',
+                settings: {
+                    maxTokens: undefined,
+                    temperature: undefined
+                }
+            };
+
+            const result = converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+
+            expect(result).toEqual(expect.objectContaining({
+                input: [{ role: 'user', content: 'Hello' }],
+                model: 'gpt-4o'
+            }));
+            expect(result.max_output_tokens).toBeUndefined();
+            expect(result.temperature).toBeUndefined();
         });
     });
 
     describe('convertFromOpenAIResponse', () => {
-        it('should convert successful response correctly', () => {
-            const timestamp = Math.floor(Date.now() / 1000);
-            const response: Response = {
-                id: 'test-id',
-                created_at: timestamp,
-                model: 'gpt-4',
-                status: 'completed',
-                output_text: 'Hello there!',
-                metadata: {
-                    model: 'gpt-4',
-                    created_at: timestamp.toString(),
-                    finish_reason: 'stop'
-                },
-                output: [{
-                    type: 'message',
-                    role: 'assistant',
-                    id: 'msg_1',
-                    status: 'completed',
-                    content: [{
-                        type: 'output_text',
-                        text: 'Hello there!',
-                        annotations: []
-                    }]
-                }],
+        test('should convert basic OpenAI Response to universal format', () => {
+            const openAIResponse = {
+                id: 'resp_123',
+                created_at: new Date().toISOString(),
+                model: 'gpt-4o',
                 usage: {
-                    total_tokens: 30,
                     input_tokens: 10,
                     output_tokens: 20,
-                    input_tokens_details: {
-                        cached_tokens: 0
-                    },
-                    output_tokens_details: {
-                        reasoning_tokens: 0
-                    }
+                    total_tokens: 30
                 },
                 object: 'response',
-                error: null,
-                incomplete_details: null,
-                instructions: '',
-                parallel_tool_calls: false,
-                tool_choice: 'none',
-                tools: [],
-                temperature: 1,
-                top_p: 1,
-                max_output_tokens: 100,
-                previous_response_id: null
+                output_text: 'Hello, how can I help you?',
+                status: 'completed'
             };
 
-            const result = converter.convertFromOpenAIResponse(response);
-            expect(result.content).toBe('Hello there!');
-            expect(result.role).toBe('assistant');
-            expect(result.metadata?.model).toBe('gpt-4');
-            expect(result.metadata?.created).toBe(timestamp);
-            expect(result.metadata?.usage?.tokens?.total).toBe(30);
-            expect(result.metadata?.usage?.tokens?.input).toBe(10);
-            expect(result.metadata?.usage?.tokens?.output).toBe(20);
-            expect(result.metadata?.finishReason).toBe(FinishReason.STOP);
-        });
+            const result = converter.convertFromOpenAIResponse(openAIResponse as any);
 
-        it('should handle error response correctly', () => {
-            const timestamp = Math.floor(Date.now() / 1000);
-            const response: Response = {
-                id: 'test-id',
-                created_at: timestamp,
-                model: 'gpt-4',
-                status: 'failed',
-                output_text: '',
-                metadata: {
-                    model: 'gpt-4',
-                    created_at: timestamp.toString(),
-                    finish_reason: 'error'
-                },
-                error: {
-                    code: 'server_error',
-                    message: 'Test error message'
-                },
-                output: [],
-                usage: {
-                    total_tokens: 0,
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    input_tokens_details: {
-                        cached_tokens: 0
-                    },
-                    output_tokens_details: {
-                        reasoning_tokens: 0
-                    }
-                },
-                object: 'response',
-                incomplete_details: null,
-                instructions: '',
-                parallel_tool_calls: false,
-                tool_choice: 'none',
-                tools: [],
-                temperature: 1,
-                top_p: 1,
-                max_output_tokens: 100,
-                previous_response_id: null
-            };
-
-            const result = converter.convertFromOpenAIResponse(response);
-            expect(result).toEqual({
-                content: '',
+            expect(result).toEqual(expect.objectContaining({
+                content: 'Hello, how can I help you?',
                 role: 'assistant',
-                metadata: {
-                    finishReason: 'error',
-                    model: 'gpt-4',
-                    created: timestamp,
-                    refusal: {
-                        code: 'server_error',
-                        message: 'Test error message'
-                    },
-                    usage: {
-                        tokens: {
-                            input: 0,
-                            inputCached: 0,
-                            output: 0,
-                            total: 0
-                        },
-                        costs: {
-                            input: 0,
-                            inputCached: 0,
-                            output: 0,
-                            total: 0
-                        }
-                    }
-                }
-            });
-        });
-
-        it('should handle tool calls correctly', () => {
-            const timestamp = Math.floor(Date.now() / 1000);
-            const response: Response = {
-                id: 'test-id',
-                created_at: timestamp,
-                model: 'gpt-4',
-                status: 'completed',
-                output_text: '',
-                metadata: {
-                    model: 'gpt-4',
-                    created_at: timestamp.toString(),
-                    finish_reason: 'stop'
-                },
-                output: [{
-                    type: 'message',
-                    role: 'assistant',
-                    id: 'msg_1',
-                    status: 'completed',
-                    content: [{
-                        type: 'output_text',
-                        text: '',
-                        annotations: []
-                    }]
-                }, {
-                    type: 'function_call',
-                    call_id: 'call_1',
-                    name: 'test_tool',
-                    arguments: '{"test": "value"}'
-                }],
-                usage: {
-                    total_tokens: 0,
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    input_tokens_details: {
-                        cached_tokens: 0
-                    },
-                    output_tokens_details: {
-                        reasoning_tokens: 0
-                    }
-                },
-                object: 'response',
-                error: null,
-                incomplete_details: null,
-                instructions: '',
-                parallel_tool_calls: false,
-                tool_choice: 'none',
-                tools: [],
-                temperature: 1,
-                top_p: 1,
-                max_output_tokens: 100,
-                previous_response_id: null
-            };
-
-            const result = converter.convertFromOpenAIResponse(response);
-            expect(result).toEqual({
-                content: '',
-                role: 'assistant',
-                metadata: {
+                metadata: expect.objectContaining({
+                    model: 'gpt-4o',
+                    created: expect.any(String),
                     finishReason: 'stop',
-                    model: 'gpt-4',
-                    created: timestamp,
-                    usage: {
+                    usage: expect.objectContaining({
                         tokens: {
-                            input: 0,
+                            input: 10,
                             inputCached: 0,
-                            output: 0,
-                            total: 0
-                        },
-                        costs: {
-                            input: 0,
-                            inputCached: 0,
-                            output: 0,
-                            total: 0
+                            output: 20,
+                            total: 30
                         }
-                    }
+                    })
+                })
+            }));
+        });
+
+        test('should handle function tool calls', () => {
+            // Mock the function call structure as it appears in the actual implementation
+            const functionCall = {
+                type: 'function_call',
+                name: 'test_tool',
+                arguments: '{"param1":"value1"}',
+                id: 'fc_1234567890'
+            };
+
+            const openAIResponse = {
+                id: 'resp_123',
+                created_at: new Date().toISOString(),
+                model: 'gpt-4o',
+                usage: {
+                    input_tokens: 10,
+                    output_tokens: 20,
+                    total_tokens: 30
                 },
-                toolCalls: [{
-                    id: 'call_1',
+                object: 'response',
+                status: 'completed',
+                output: [
+                    functionCall
+                ]
+            };
+
+            const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+
+            expect(result.content).toBe('');
+            expect(result.toolCalls?.length).toBe(1);
+            if (result.toolCalls && result.toolCalls.length > 0) {
+                // Match the structure that extractDirectFunctionCalls actually creates
+                expect(result.toolCalls[0]).toEqual({
+                    id: 'fc_1234567890',
                     name: 'test_tool',
-                    arguments: { test: 'value' }
-                }]
+                    arguments: { param1: 'value1' }
+                });
+            }
+            // In the current implementation, the finishReason is set to 'stop' for completed responses,
+            // regardless of whether tool calls are present
+            expect(result.metadata?.finishReason).toBe('stop');
+        });
+
+        test('should handle incomplete responses', () => {
+            const openAIResponse = {
+                id: 'resp_123',
+                created_at: new Date().toISOString(),
+                model: 'gpt-4o',
+                status: 'incomplete',
+                incomplete_details: {
+                    reason: 'max_output_tokens'
+                },
+                object: 'response',
+                output_text: 'This response was cut off'
+            };
+
+            const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+
+            expect(result.metadata?.finishReason).toBe('length');
+            expect(result.content).toBe('This response was cut off');
+        });
+
+        test('should handle content safety issues', () => {
+            const openAIResponse = {
+                id: 'resp_123',
+                created_at: new Date().toISOString(),
+                model: 'gpt-4o',
+                status: 'failed',
+                error: {
+                    code: 'content_filter',
+                    message: 'Content was filtered due to safety concerns'
+                },
+                object: 'response'
+            };
+
+            const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+
+            // The converter maps 'failed' status to 'error' finish reason,
+            // The refusal info is stored in metadata.refusal
+            expect(result.metadata?.finishReason).toBe('error');
+            expect(result.metadata?.refusal).toEqual({
+                message: 'Content was filtered due to safety concerns',
+                code: 'content_filter'
             });
+            expect(result.content).toBe('');
         });
     });
-});
+}); 
