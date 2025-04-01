@@ -10,8 +10,8 @@ jest.mock('../../../../core/models/ModelSelector', () => ({
     }
 }));
 
-// Mock OpenAI models
-jest.mock('../../../../adapters/openai/models', () => ({
+// Mock OpenAI Completion models
+jest.mock('../../../../adapters/openai-completion/models', () => ({
     defaultModels: [
         {
             name: "mock-model-1",
@@ -23,6 +23,24 @@ jest.mock('../../../../adapters/openai/models', () => ({
                 qualityIndex: 70,
                 outputSpeed: 100,
                 firstTokenLatency: 1000
+            }
+        }
+    ]
+}));
+
+// Mock OpenAI Response models
+jest.mock('../../../../adapters/openai/models', () => ({
+    defaultModels: [
+        {
+            name: "mock-response-model-1",
+            inputPricePerMillion: 1.5,
+            outputPricePerMillion: 2.5,
+            maxRequestTokens: 2000,
+            maxResponseTokens: 2000,
+            characteristics: {
+                qualityIndex: 80,
+                outputSpeed: 200,
+                firstTokenLatency: 500
             }
         }
     ]
@@ -50,14 +68,24 @@ describe('ModelManager', () => {
         mockSelectModel.mockImplementation(() => {
             throw new Error('Unknown alias');
         });
-        manager = new ModelManager('openai');
+        // For this test, use openai-completion provider to get mock-model-1
+        manager = new ModelManager('openai-completion');
     });
 
     describe('constructor', () => {
         it('should initialize with mock models', () => {
-            const models = manager.getAvailableModels();
+            // Create a manager for openai-completion provider
+            const completionManager = new ModelManager('openai-completion');
+            const models = completionManager.getAvailableModels();
             expect(models.length).toBe(1);
             expect(models[0].name).toBe('mock-model-1');
+        });
+
+        it('should initialize with openai-response models', () => {
+            const responseManager = new ModelManager('openai');
+            const models = responseManager.getAvailableModels();
+            expect(models.length).toBe(1);
+            expect(models[0].name).toBe('mock-response-model-1');
         });
 
         it('should throw error for unsupported provider', () => {
@@ -75,10 +103,52 @@ describe('ModelManager', () => {
             expect(model).toEqual(validModel);
         });
 
-        it('should throw error for invalid model configuration', () => {
+        it('should throw error for invalid model configuration with negative input price', () => {
             const invalidModel = { ...validModel, inputPricePerMillion: -1 };
             expect(() => manager.addModel(invalidModel))
                 .toThrow('Invalid model configuration');
+        });
+
+        it('should throw error for invalid model configuration with negative output price', () => {
+            const invalidModel = { ...validModel, outputPricePerMillion: -2 };
+            expect(() => manager.addModel(invalidModel))
+                .toThrow('Invalid model configuration');
+        });
+
+        it('should throw error when model name is missing', () => {
+            const invalidModel = { ...validModel, name: "" };
+            expect(() => manager.addModel(invalidModel))
+                .toThrow('Model name is required');
+        });
+
+        it('should throw error when input price is undefined', () => {
+            const invalidModel = { ...validModel, inputPricePerMillion: undefined } as any;
+            expect(() => manager.addModel(invalidModel))
+                .toThrow('Input price is required');
+        });
+
+        it('should throw error when output price is undefined', () => {
+            const invalidModel = { ...validModel, outputPricePerMillion: undefined } as any;
+            expect(() => manager.addModel(invalidModel))
+                .toThrow('Output price is required');
+        });
+
+        it('should throw error when maxRequestTokens is missing', () => {
+            const invalidModel = { ...validModel, maxRequestTokens: 0 };
+            expect(() => manager.addModel(invalidModel))
+                .toThrow('Max request tokens is required');
+        });
+
+        it('should throw error when maxResponseTokens is missing', () => {
+            const invalidModel = { ...validModel, maxResponseTokens: 0 };
+            expect(() => manager.addModel(invalidModel))
+                .toThrow('Max response tokens is required');
+        });
+
+        it('should throw error when characteristics is missing', () => {
+            const invalidModel = { ...validModel, characteristics: undefined } as any;
+            expect(() => manager.addModel(invalidModel))
+                .toThrow('Model characteristics are required');
         });
 
         it('should override existing model', () => {

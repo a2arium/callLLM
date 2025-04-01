@@ -1,4 +1,4 @@
-import { Validator } from '../../../../adapters/openai/validator';
+import { Validator } from '../../../../adapters/openai-completion/validator';
 import { AdapterError } from '../../../../adapters/base/baseAdapter';
 import type { UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
 

@@ -1,8 +1,8 @@
 import { ProviderManager } from '../../../../core/caller/ProviderManager';
-import { OpenAIAdapter } from '../../../../adapters/openai/adapter';
+import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter';
 import { SupportedProviders } from '../../../../core/types';
 
-// Mock OpenAIAdapter
+// Mock OpenAIResponseAdapter
 jest.mock('../../../../adapters/openai/adapter');
 
 describe('ProviderManager', () => {
@@ -10,19 +10,19 @@ describe('ProviderManager', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
-        (OpenAIAdapter as jest.Mock).mockClear();
+        (OpenAIResponseAdapter as jest.Mock).mockClear();
     });
 
     describe('constructor', () => {
         it('should initialize with OpenAI provider', () => {
             const manager = new ProviderManager('openai', mockApiKey);
-            expect(OpenAIAdapter).toHaveBeenCalledWith({ apiKey: mockApiKey });
+            expect(OpenAIResponseAdapter).toHaveBeenCalledWith({ apiKey: mockApiKey });
             expect(manager.getCurrentProviderName()).toBe('openai');
         });
 
         it('should initialize without API key', () => {
             const manager = new ProviderManager('openai');
-            expect(OpenAIAdapter).toHaveBeenCalledWith({});
+            expect(OpenAIResponseAdapter).toHaveBeenCalledWith({});
             expect(manager.getCurrentProviderName()).toBe('openai');
         });
 
@@ -36,26 +36,26 @@ describe('ProviderManager', () => {
         it('should return the current provider', () => {
             const manager = new ProviderManager('openai', mockApiKey);
             const provider = manager.getProvider();
-            expect(provider).toBeInstanceOf(OpenAIAdapter);
+            expect(provider).toBeInstanceOf(OpenAIResponseAdapter);
         });
     });
 
     describe('switchProvider', () => {
         it('should switch to a new provider', () => {
             const manager = new ProviderManager('openai', mockApiKey);
-            (OpenAIAdapter as jest.Mock).mockClear();
+            (OpenAIResponseAdapter as jest.Mock).mockClear();
 
             manager.switchProvider('openai', 'new-api-key');
-            expect(OpenAIAdapter).toHaveBeenCalledWith({ apiKey: 'new-api-key' });
+            expect(OpenAIResponseAdapter).toHaveBeenCalledWith({ apiKey: 'new-api-key' });
             expect(manager.getCurrentProviderName()).toBe('openai');
         });
 
         it('should switch provider without API key', () => {
             const manager = new ProviderManager('openai', mockApiKey);
-            (OpenAIAdapter as jest.Mock).mockClear();
+            (OpenAIResponseAdapter as jest.Mock).mockClear();
 
             manager.switchProvider('openai');
-            expect(OpenAIAdapter).toHaveBeenCalledWith({});
+            expect(OpenAIResponseAdapter).toHaveBeenCalledWith({});
             expect(manager.getCurrentProviderName()).toBe('openai');
         });
 
@@ -82,7 +82,7 @@ describe('ProviderManager', () => {
 
     describe('error handling', () => {
         it('should handle OpenAIAdapter initialization errors', () => {
-            (OpenAIAdapter as jest.Mock).mockImplementationOnce(() => {
+            (OpenAIResponseAdapter as jest.Mock).mockImplementationOnce(() => {
                 throw new Error('API key required');
             });
 
@@ -92,7 +92,7 @@ describe('ProviderManager', () => {
 
         it('should handle provider switch errors', () => {
             const manager = new ProviderManager('openai', mockApiKey);
-            (OpenAIAdapter as jest.Mock).mockImplementationOnce(() => {
+            (OpenAIResponseAdapter as jest.Mock).mockImplementationOnce(() => {
                 throw new Error('Invalid API key');
             });
 

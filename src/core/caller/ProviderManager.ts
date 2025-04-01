@@ -1,6 +1,6 @@
 import { LLMProvider } from '../../interfaces/LLMProvider';
-import { OpenAIAdapter } from '../../adapters/openai/adapter';
-import { OpenAIResponseAdapter } from '../../adapters/openai-response/adapter';
+import { OpenAIAdapter } from '../../adapters/openai-completion/adapter';
+import { OpenAIResponseAdapter } from '../../adapters/openai/adapter';
 import { SupportedProviders } from '../types';
 import { AdapterConfig } from '../../adapters/base/baseAdapter';
 
@@ -15,9 +15,9 @@ export class ProviderManager {
         const config: Partial<AdapterConfig> = apiKey ? { apiKey } : {};
 
         switch (providerName) {
-            case 'openai':
+            case 'openai-completion':
                 return new OpenAIAdapter(config);
-            case 'openai-response':
+            case 'openai':
                 return new OpenAIResponseAdapter(config);
             default:
                 throw new Error(`Provider ${providerName} is not supported yet`);
@@ -34,9 +34,9 @@ export class ProviderManager {
 
     public getCurrentProviderName(): SupportedProviders {
         if (this.provider instanceof OpenAIAdapter) {
-            return 'openai';
+            return 'openai-completion';
         } else if (this.provider instanceof OpenAIResponseAdapter) {
-            return 'openai-response';
+            return 'openai';
         }
         // Add other provider checks when implemented
         throw new Error('Unknown provider type');

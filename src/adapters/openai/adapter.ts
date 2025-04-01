@@ -1,50 +1,40 @@
 import { OpenAI } from 'openai';
+import type { Stream } from 'openai/streaming';
 import { BaseAdapter, AdapterConfig } from '../base/baseAdapter';
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason, ModelInfo } from '../../interfaces/UniversalInterfaces';
-import { LLMProvider } from '../../interfaces/LLMProvider';
-import { SchemaValidator } from '../../core/schema/SchemaValidator';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason } from '../../interfaces/UniversalInterfaces';
+import { OpenAIResponseAdapterError, OpenAIResponseValidationError, OpenAIResponseAuthError, OpenAIResponseRateLimitError, OpenAIResponseNetworkError } from './errors';
 import { Converter } from './converter';
 import { StreamHandler } from './stream';
 import { Validator } from './validator';
-import { OpenAIResponse, OpenAIModelParams } from './types';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
-import { defaultModels } from './models';
-import { ChatCompletionChunk, ChatCompletionMessage, ChatCompletionMessageToolCall } from 'openai/resources/chat';
-import { Stream } from 'openai/streaming';
-import type { ProviderAdapter, ProviderSpecificParams, ProviderSpecificResponse, ProviderSpecificStream } from '../types';
-import type { StreamChunk } from '../../core/streaming/types';
 import { logger } from '../../utils/logger';
-import type { ToolCall } from '../../types/tooling';
+import type { ToolDefinition } from '../../types/tooling';
+import {
+    ResponseCreateParamsNonStreaming,
+    ResponseCreateParamsStreaming,
+    Response,
+    ResponseStreamEvent,
+    Tool,
+    ResponseContentPartAddedEvent
+} from './types';
 
 // Load environment variables
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
-type ToolCallFunction = { name: string; arguments: string };
-type ValidToolCall = { function: ToolCallFunction; type: 'function'; id: string };
-
-type StreamDelta = Partial<ChatCompletionMessage> & {
-    finish_reason?: string | null;
-    created?: number;
-    model?: string;
-    tool_calls?: Array<ChatCompletionMessageToolCall>;
-};
+// Set debug level
+const DEBUG_LEVEL = process.env.DEBUG_LEVEL || 'info'; // 'debug', 'info', 'error'
 
 /**
- * OpenAI Adapter implementing both LLMProvider and ProviderAdapter interfaces.
- * 
- * This adapter is responsible for converting between OpenAI-specific formats
- * and our universal formats. According to Phase 4 refactoring, it focuses on 
- * format conversion with business logic moved to core components.
+ * OpenAI Response Adapter implementing the OpenAI /v1/responses API endpoint
  */
-export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderAdapter {
+export class OpenAIResponseAdapter extends BaseAdapter {
     private client: OpenAI;
     private converter: Converter;
     private streamHandler: StreamHandler;
     private validator: Validator;
-    private models: Map<string, ModelInfo>;
 
-    constructor(config?: Partial<AdapterConfig> | string) {
+    constructor(config: Partial<AdapterConfig> | string) {
         // Handle the case where config is just an API key string for backward compatibility
         const configObj = typeof config === 'string'
             ? { apiKey: config }
@@ -52,7 +42,7 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
 
         const apiKey = configObj?.apiKey || process.env.OPENAI_API_KEY;
         if (!apiKey) {
-            throw new Error('OpenAI API key is required. Please provide it in the config or set OPENAI_API_KEY environment variable.');
+            throw new OpenAIResponseAdapterError('OpenAI API key is required. Please provide it in the config or set OPENAI_API_KEY environment variable.');
         }
 
         super({
@@ -66,367 +56,308 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
             organization: this.config.organization,
             baseURL: this.config.baseUrl,
         });
+
         this.converter = new Converter();
         this.streamHandler = new StreamHandler();
         this.validator = new Validator();
-        this.models = new Map(defaultModels.map(model => [model.name, model]));
-        logger.setConfig({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'OpenAIAdapter' });
-    }
-
-    private mapFinishReason(reason: string | null): FinishReason {
-        if (!reason) return FinishReason.NULL;
-        switch (reason) {
-            case 'stop': return FinishReason.STOP;
-            case 'length': return FinishReason.LENGTH;
-            case 'content_filter': return FinishReason.CONTENT_FILTER;
-            case 'tool_calls': return FinishReason.TOOL_CALLS;
-            case 'function_call': return FinishReason.TOOL_CALLS;
-            default: return FinishReason.NULL;
-        }
+        logger.setConfig({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'OpenAIResponseAdapter' });
     }
 
     async chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.chatCall' });
+        log.debug('Validating universal params:', params);
+
+        // Validate input parameters
+        this.validator.validateParams(params);
+
+        // Validate tools specifically for OpenAI Response API
+        if (params.tools) {
+            this.validator.validateTools(params.tools);
+        }
+
+        // Convert parameters to OpenAI Response format using native types
+        // The converter needs to return a type compatible with ResponseCreateParamsNonStreaming base
+        const baseParams = this.converter.convertToOpenAIResponseParams(model, params);
+        const openAIParams: ResponseCreateParamsNonStreaming = {
+            ...(baseParams as any),
+            stream: false,
+        };
+        log.debug('Converted params before sending:', JSON.stringify(openAIParams, null, 2));
+
+        // Validate tools format based on the native Tool type
+        this.validateToolsFormat(openAIParams.tools);
+
         try {
-            this.validator.validateParams(params);
-            const modelInfo = this.models.get(model);
-            if (modelInfo) {
-                this.converter.setModel(modelInfo);
-                // Validate tool calling capabilities
-                if (params.tools && params.tools.length > 0 && !modelInfo.capabilities?.toolCalls) {
-                    throw new Error('Model does not support tool calls');
+            // Use the SDK's responses.create method with native types
+            const response: Response = await this.client.responses.create(openAIParams);
+
+            // Convert the native response to UniversalChatResponse using our converter
+            const universalResponse = this.converter.convertFromOpenAIResponse(response as any);
+            log.debug('Converted response:', universalResponse);
+            return universalResponse;
+        } catch (error: any) {
+            // Log the specific error received from the OpenAI SDK call
+            console.error(`[OpenAIResponseAdapter.chatCall] API call failed. Error Status: ${error.status}, Error Response:`, error.response?.data || error.message);
+            log.error('API call failed:', error);
+
+            // Handle specific OpenAI API error types
+            if (error instanceof OpenAI.APIError) {
+                if (error.status === 401) {
+                    throw new OpenAIResponseAuthError('Invalid API key or authentication error');
+                } else if (error.status === 429) {
+                    const retryAfter = error.headers?.['retry-after'];
+                    throw new OpenAIResponseRateLimitError('Rate limit exceeded',
+                        retryAfter ? parseInt(retryAfter, 10) : 60);
+                } else if (error.status >= 500) {
+                    throw new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`);
+                } else if (error.status === 400) {
+                    throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
                 }
             }
-            this.converter.setParams(params);
 
-            // Use a temporary type with _stream property
-            type ParamsWithStream = UniversalChatParams & { _stream?: boolean };
-            const paramsWithStream = { ...params, model, _stream: false } as ParamsWithStream;
-
-            const openAIParams = this.convertToProviderParams(paramsWithStream);
-
-            // Use as unknown to first erase the type, then cast to ProviderSpecificResponse
-            const response = await this.client.chat.completions.create(openAIParams as any) as unknown as ProviderSpecificResponse;
-            return this.convertFromProviderResponse(response);
-        } catch (error) {
-            if (error instanceof Error && error.message === 'Model not set') {
-                throw new Error('Model not found');
-            }
-            throw this.mapProviderError(error);
+            throw new OpenAIResponseAdapterError(`OpenAI API error: ${error?.message || String(error)}`);
         }
     }
 
     async streamCall(model: string, params: UniversalChatParams): Promise<AsyncIterable<UniversalStreamResponse>> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.streamCall' });
+        log.debug('Validating universal params:', params);
+
+        // Validate input parameters
+        this.validator.validateParams(params);
+
+        // Validate tools specifically for OpenAI Response API
+        if (params.tools) {
+            this.validator.validateTools(params.tools);
+        }
+
+        // Convert parameters to OpenAI Response format using native types
+        // The converter needs to return a type compatible with ResponseCreateParamsStreaming base
+        const baseParams = this.converter.convertToOpenAIResponseParams(model, params);
+        const openAIParams: ResponseCreateParamsStreaming = {
+            ...(baseParams as any),
+            stream: true,
+        };
+
+        log.debug('Converted params for streaming:', JSON.stringify(openAIParams, null, 2));
+
+        // Validate tools format based on the native Tool type
+        this.validateToolsFormat(openAIParams.tools);
+
         try {
-            this.validator.validateParams(params);
-            const modelInfo = this.models.get(model);
-            if (modelInfo) {
-                this.converter.setModel(modelInfo);
-                // Validate tool calling capabilities
-                if (params.tools && params.tools.length > 0 && !modelInfo.capabilities?.toolCalls) {
-                    throw new Error('Model does not support tool calls');
-                }
-            }
-            this.converter.setParams(params);
+            // Use the SDK's streaming capability with native types
+            // The stream yields ResponseStreamEvent types
+            const stream: Stream<ResponseStreamEvent> = await this.client.responses.create(openAIParams);
 
-            // Use a temporary type with _stream property
-            type ParamsWithStream = UniversalChatParams & { _stream?: boolean };
-            const paramsWithStream = { ...params, model, _stream: true } as ParamsWithStream;
+            // Initialize a new StreamHandler with the tools if available
+            if (params.tools && params.tools.length > 0) {
+                log.debug(`Initializing StreamHandler with ${params.tools.length} tools: ${params.tools.map(t => t.name).join(', ')}`);
+                this.streamHandler = new StreamHandler(params.tools);
 
-            const openAIParams = this.convertToProviderParams(paramsWithStream);
-
-            const stream = await this.client.chat.completions.create({ ...openAIParams as any, stream: true }) as unknown as Stream<ChatCompletionChunk>;
-
-            // Convert provider stream to StreamChunk format
-            const streamChunks = this.convertProviderStream(stream);
-
-            return streamChunks;
-        } catch (error) {
-            throw this.mapProviderError(error);
-        }
-    }
-
-    // Implementations for BaseAdapter interface
-    // This method is kept for backward compatibility with BaseAdapter
-    convertToProviderParams(model: string, params: UniversalChatParams): unknown;
-    // This method is for the ProviderAdapter interface
-    convertToProviderParams<T extends ProviderSpecificParams = Record<string, unknown>>(params: UniversalChatParams): T;
-    // Implementation that handles both signatures
-    convertToProviderParams<T extends ProviderSpecificParams = Record<string, unknown>>(
-        modelOrParams: string | UniversalChatParams,
-        params?: UniversalChatParams
-    ): T {
-        const log = logger.createLogger({ prefix: 'OpenAIAdapter.convertToProviderParams' });
-        log.debug('Converting to provider params:', modelOrParams, params);
-        // Handle different method signatures
-        let model: string | undefined;
-        let actualParams: UniversalChatParams;
-        let streamMode = false; // Default stream mode
-
-        if (typeof modelOrParams === 'string') {
-            model = modelOrParams;
-            actualParams = params as UniversalChatParams;
-        } else {
-            model = undefined;
-            actualParams = modelOrParams;
-            // Check if stream property was passed (used by our specific implementation)
-            if ('_stream' in actualParams) {
-                streamMode = Boolean(actualParams._stream);
-                // Remove non-standard property to avoid TypeScript errors
-                delete actualParams._stream;
-            }
-        }
-
-        const openAIParams: Record<string, any> = {
-            messages: actualParams.messages.map((msg) => {
-                // Base message properties
-                const openAIMsg: Record<string, unknown> = {
-                    role: msg.role,
-                    content: msg.content || ''
-                };
-
-                // Handle tool calls (for function calling)
-                if (msg.toolCalls && msg.toolCalls.length > 0) {
-                    openAIMsg.tool_calls = msg.toolCalls.map(call => {
-                        // Handle both our ToolCall type and OpenAI format
-                        if ('name' in call && 'arguments' in call) {
-                            // Our ToolCall format
-                            return {
-                                id: call.id || `tool_${Date.now()}`,
-                                type: 'function',
-                                function: {
-                                    name: call.name,
-                                    arguments: JSON.stringify(call.arguments || {})
-                                }
-                            };
-                        } else if (call.function) {
-                            // Already in OpenAI format
-                            return call;
-                        } else {
-                            // Fallback (shouldn't happen with proper types)
-                            return {
-                                id: call.id || `tool_${Date.now()}`,
-                                type: 'function',
-                                function: {
-                                    name: 'unknown',
-                                    arguments: '{}'
-                                }
-                            };
-                        }
-                    });
-                }
-
-                // Handle tool responses
-                if (msg.toolCallId) {
-                    openAIMsg.role = 'tool'; // Ensure role is 'tool' for OpenAI
-                    openAIMsg.tool_call_id = msg.toolCallId;
-                    // For OpenAI, content must be a string
-                    if (typeof openAIMsg.content !== 'string') {
-                        openAIMsg.content = JSON.stringify(openAIMsg.content);
-                    }
-                }
-
-                return openAIMsg;
-            }),
-            model: model || actualParams.model || '', // First use provided model, then fallback to params.model, then empty string
-            stream: streamMode // Use the extracted stream mode
-        };
-
-        // Handle settings from UniversalChatSettings
-        if (actualParams.settings) {
-            const settings = actualParams.settings;
-
-            // Temperature
-            if (settings.temperature !== undefined) {
-                openAIParams.temperature = settings.temperature;
-            }
-
-            // Max tokens
-            if (settings.maxTokens !== undefined) {
-                openAIParams.max_tokens = settings.maxTokens;
-            }
-
-            // Top P
-            if (settings.topP !== undefined) {
-                openAIParams.top_p = settings.topP;
-            }
-
-            // Frequency penalty
-            if (settings.frequencyPenalty !== undefined) {
-                openAIParams.frequency_penalty = settings.frequencyPenalty;
-            }
-
-            // Presence penalty
-            if (settings.presencePenalty !== undefined) {
-                openAIParams.presence_penalty = settings.presencePenalty;
-            }
-
-            // User identifier
-            if (settings.user !== undefined) {
-                openAIParams.user = settings.user;
-            }
-
-            // Stop sequences
-            if (settings.stop !== undefined) {
-                openAIParams.stop = settings.stop;
-            }
-
-            // Number of completions
-            if (settings.n !== undefined) {
-                openAIParams.n = settings.n;
-            }
-
-            // Tool choice
-            if (settings.toolChoice) {
-                if (settings.toolChoice === 'auto') {
-                    openAIParams.tool_choice = 'auto';
-                } else if (settings.toolChoice === 'none') {
-                    openAIParams.tool_choice = 'none';
-                } else if (typeof settings.toolChoice === 'object') {
-                    openAIParams.tool_choice = {
-                        type: 'function',
-                        function: {
-                            name: settings.toolChoice.function.name
-                        }
-                    };
-                }
-            }
-        }
-
-        // Tools (from UniversalChatParams not UniversalChatSettings)
-        if (actualParams.tools && actualParams.tools.length > 0) {
-            openAIParams.tools = actualParams.tools.map((tool: any) => ({
-                type: 'function',
-                function: {
-                    name: tool.name,
-                    description: tool.description,
-                    parameters: tool.parameters
-                }
-            }));
-        }
-
-        // JSON mode (from UniversalChatParams not UniversalChatSettings)
-        if (actualParams.responseFormat === 'json') {
-            if (actualParams.jsonSchema) {
-                const schemaObject = SchemaValidator.getSchemaObject(actualParams.jsonSchema.schema);
-                openAIParams.response_format = {
-                    type: 'json_schema',
-                    json_schema: {
-                        "strict": true,
-                        name: actualParams.jsonSchema.name,
-                        schema: schemaObject
-                    }
-                };
+                // Register tools for execution with the enhanced properties
+                this.registerToolsForExecution(params.tools);
             } else {
-                openAIParams.response_format = { type: 'json_object' };
+                log.debug('Initializing StreamHandler without tools');
+                this.streamHandler = new StreamHandler();
             }
-        }
 
-        return openAIParams as T;
+            // Process the stream with our handler, passing the native stream type
+            return this.streamHandler.handleStream(stream);
+        } catch (error: any) {
+            // Handle specific OpenAI API error types
+            if (error instanceof OpenAI.APIError) {
+                if (error.status === 401) {
+                    throw new OpenAIResponseAuthError('Invalid API key or authentication error');
+                } else if (error.status === 429) {
+                    const retryAfter = error.headers?.['retry-after'];
+                    throw new OpenAIResponseRateLimitError('Rate limit exceeded',
+                        retryAfter ? parseInt(retryAfter, 10) : 60);
+                } else if (error.status >= 500) {
+                    throw new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`);
+                } else if (error.status === 400) {
+                    throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
+                }
+            }
+            log.error('Stream API call failed:', error);
+            throw new OpenAIResponseAdapterError(`OpenAI API stream error: ${error?.message || String(error)}`);
+        }
     }
 
     /**
-     * Converts an OpenAI-specific response to universal format
+     * Creates a debugging wrapper around a stream to inspect events
      */
-    convertFromProviderResponse<T extends ProviderSpecificResponse = Record<string, unknown>>(
-        response: T
-    ): UniversalChatResponse {
-        // Cast the response to any to bypass type checking
-        // This is necessary because OpenAI's response type doesn't match our ProviderSpecificResponse type
-        const typedResponse = response as any;
+    private async *createDebugStreamWrapper(
+        stream: AsyncIterable<UniversalStreamResponse>
+    ): AsyncGenerator<UniversalStreamResponse> {
+        if (DEBUG_LEVEL !== 'debug') {
+            // If not in debug mode, just pass through the stream
+            yield* stream;
+            return;
+        }
 
-        // Basic response structure
-        const universalResponse: UniversalChatResponse = {
+        let eventCount = 0;
+        for await (const chunk of stream) {
+            eventCount++;
+
+            // Log diagnostic information about each chunk
+            console.log(`[DEBUG] Stream Event #${eventCount}:`, JSON.stringify({
+                hasContent: !!chunk.content && chunk.content.length > 0,
+                contentLength: chunk.content?.length || 0,
+                isComplete: chunk.isComplete,
+                hasToolCalls: chunk.toolCalls && chunk.toolCalls.length > 0,
+                toolCallsCount: chunk.toolCalls?.length || 0,
+                finishReason: chunk.metadata?.finishReason
+            }, null, 2));
+
+            // If there are tool calls, log them in full
+            if (chunk.toolCalls && chunk.toolCalls.length > 0) {
+                console.log(`[DEBUG] Tool Calls in Event #${eventCount}:`, JSON.stringify(chunk.toolCalls, null, 2));
+            }
+
+            // Pass the chunk through to the caller
+            yield chunk;
+        }
+
+        console.log(`[DEBUG] Stream completed after ${eventCount} events`);
+    }
+
+    // Update method signatures to use native types
+    // Note: The return type from converter might need adjustment to align with the base param type
+    convertToProviderParams(model: string, params: UniversalChatParams): ResponseCreateParamsNonStreaming {
+        const baseParams = this.converter.convertToOpenAIResponseParams(model, params);
+        return {
+            ...(baseParams as any),
+            stream: false
+        } as ResponseCreateParamsNonStreaming;
+    }
+
+    // Update method signatures to use native types
+    convertFromProviderResponse(response: Response): UniversalChatResponse {
+        return this.converter.convertFromOpenAIResponse(response as any);
+    }
+
+    /**
+     * Validate that tools are properly formatted using the native OpenAI Response Tool type
+     * @param tools Array of native OpenAI Response Tools
+     * @throws OpenAIResponseValidationError if tools are not properly formatted
+     */
+    private validateToolsFormat(tools: Tool[] | undefined | null): void {
+        if (!tools || !Array.isArray(tools)) {
+            return;
+        }
+
+        // Validate each tool using the native type structure
+        tools.forEach((tool: Tool, index) => {
+            if (!tool.type) {
+                throw new OpenAIResponseValidationError(`Tool at index ${index} is missing 'type' field`);
+            }
+
+            if (tool.type === 'function') {
+                // For function tools (using the native FunctionTool structure)
+                const functionTool = tool as OpenAI.Responses.FunctionTool;
+                if (!functionTool.name) {
+                    throw new OpenAIResponseValidationError(`Function tool at index ${index} is missing 'name' field`);
+                }
+                if (!functionTool.parameters) {
+                    throw new OpenAIResponseValidationError(`Function tool at index ${index} is missing 'parameters' field`);
+                }
+            }
+            // Add validation for other tool types like 'file_search' or 'web_search' if needed
+            else if (tool.type === 'file_search') {
+                // Validate file_search specific fields if needed
+                const fileSearchTool = tool as OpenAI.Responses.FileSearchTool;
+                if (!fileSearchTool.vector_store_ids || !Array.isArray(fileSearchTool.vector_store_ids)) {
+                    throw new OpenAIResponseValidationError(`File search tool at index ${index} is missing 'vector_store_ids' field`);
+                }
+            } else if (tool.type === 'web_search_preview') {
+                // No specific validation needed for web search at this time
+            } else if (tool.type === 'computer-preview') {
+                // No specific validation needed for computer-preview at this time
+            } else {
+                // Handle potentially unknown tool types
+                logger.warn(`Unknown tool type encountered during validation: ${tool.type}`);
+            }
+        });
+    }
+
+    // Update method signature for stream response conversion
+    convertFromProviderStreamResponse(chunk: ResponseStreamEvent): UniversalStreamResponse {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.convertFromProviderStreamResponse' });
+
+        // Basic structure for handling stream events
+        let content = '';
+        let contentText = '';
+        let finishReason = FinishReason.NULL;
+        let isComplete = false;
+        let toolCalls: UniversalStreamResponse['toolCalls'] = undefined;
+
+        // Handle different event types
+        if (chunk.type === 'response.output_text.delta') {
+            content = chunk.delta || '';
+            contentText = content;
+            log.debug(`Processing text delta: '${content}'`);
+        } else if (chunk.type === 'response.completed') {
+            log.debug('Processing completion event');
+            isComplete = true;
+            finishReason = FinishReason.STOP;
+        } else if (chunk.type === 'response.function_call_arguments.done') {
+            log.debug('Processing function call arguments done event');
+            finishReason = FinishReason.TOOL_CALLS;
+
+            // In a real implementation, we'd need to track the tool call state
+            // This is handled more completely in the StreamHandler
+        } else if (chunk.type === 'response.failed') {
+            log.debug('Processing failed event');
+            isComplete = true;
+            finishReason = FinishReason.ERROR;
+        } else if (chunk.type === 'response.incomplete') {
+            log.debug('Processing incomplete event');
+            isComplete = true;
+            finishReason = FinishReason.LENGTH;
+        } else if (chunk.type === 'response.content_part.added') {
+            const contentPartEvent = chunk as ResponseContentPartAddedEvent;
+            content = contentPartEvent.content || '';
+            contentText = content;
+            log.debug(`Processing content part: '${content}'`);
+        } else {
+            log.debug(`Unhandled event type: ${chunk.type}`);
+        }
+
+        return {
+            content,
+            contentText,
             role: 'assistant',
-            content: '',
-            metadata: {}
+            isComplete,
+            toolCalls,
+            metadata: { finishReason }
         };
-
-        // Extract content from the first choice
-        if (typedResponse.choices && typedResponse.choices.length > 0) {
-            const choice = typedResponse.choices[0];
-
-            if (choice.message) {
-                universalResponse.content = choice.message.content || '';
-
-                // Extract tool calls if present
-                if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
-                    universalResponse.toolCalls = choice.message.tool_calls.map((call: any) => ({
-                        id: call.id,
-                        name: call.function.name,
-                        arguments: JSON.parse(call.function.arguments)
-                    }));
-                }
-            }
-
-            // Add finish reason to metadata
-            if (choice.finish_reason && universalResponse.metadata) {
-                universalResponse.metadata.finishReason = this.mapFinishReason(choice.finish_reason);
-            }
-        }
-
-        // Add model info to metadata
-        if (typedResponse.model && universalResponse.metadata) {
-            universalResponse.metadata.model = typedResponse.model;
-        }
-
-        // Add usage info if available
-        if (typedResponse.usage && universalResponse.metadata) {
-            universalResponse.metadata.usage = {
-                tokens: {
-                    input: typedResponse.usage.prompt_tokens,
-                    inputCached: 0,
-                    output: typedResponse.usage.completion_tokens,
-                    total: typedResponse.usage.total_tokens
-                },
-                costs: {
-                    input: 0, // Calculate these based on model pricing
-                    inputCached: 0,
-                    output: 0,
-                    total: 0
-                }
-            };
-        }
-
-        return universalResponse;
-    }
-
-    convertFromProviderStreamResponse(chunk: unknown): UniversalStreamResponse {
-        const log = logger.createLogger({ prefix: 'OpenAIAdapter.convertFromProviderStreamResponse' });
-        log.debug('Chunk:', chunk);
-        return chunk as UniversalStreamResponse;
-    }
-
-
-    /**
-     * Converts an OpenAI-specific stream to universal format
-     */
-    convertProviderStream<T extends ProviderSpecificStream>(
-        stream: T
-    ): AsyncIterable<UniversalStreamResponse> {
-        return this.streamHandler.convertProviderStream(stream as any);
     }
 
     /**
-     * Maps an OpenAI-specific error to a universal error format
+     * Registers a copy of the tools with the streamHandler to ensure IDs are consistent across execution
+     * This is critical for the StreamPipeline to properly execute tool calls
      */
-    mapProviderError(error: unknown): Error {
-        if (error instanceof Error) {
-            // Extract OpenAI error details if available
-            const openAIError = error as any;
-            if (openAIError.response && openAIError.response.data) {
-                const errorData = openAIError.response.data;
-                return new Error(`OpenAI Error (${errorData.error?.type}): ${errorData.error?.message}`);
-            }
-            return error;
-        }
-        return new Error(String(error));
-    }
+    private registerToolsForExecution(tools: ToolDefinition[]): void {
+        if (!tools || tools.length === 0) return;
 
-    // For testing purposes only
-    setModelForTesting(name: string, model: ModelInfo): void {
-        if (process.env.NODE_ENV !== 'test') {
-            throw new Error('This method is only available in test environment');
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.registerToolsForExecution' });
+        log.debug(`Registering ${tools.length} tools for execution with StreamPipeline`);
+
+        const mappedTools = tools.map(tool => ({
+            ...tool,
+            // Add a special property to the tool definition to flag it for execution
+            executionEnabled: true
+        }));
+
+        // Update the tools in the stream handler
+        if (this.streamHandler) {
+            this.streamHandler.updateTools(mappedTools);
+            log.debug('Tools updated in StreamHandler for execution');
         }
-        this.models.set(name, model);
+
+        // Log the registered tools for debugging
+        mappedTools.forEach(tool => {
+            log.debug(`Registered tool: ${tool.name} (executionEnabled: ${tool.executionEnabled})`);
+        });
     }
-} 
+}

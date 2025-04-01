@@ -1,8 +1,8 @@
-import { OpenAIAdapter } from '../../../../adapters/openai/adapter';
+import { OpenAIAdapter } from '../../../../adapters/openai-completion/adapter';
 import { OpenAI } from 'openai';
 import { FinishReason } from '../../../../interfaces/UniversalInterfaces';
 import type { UniversalChatParams, ModelInfo, UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces';
-import type { OpenAIResponse, OpenAIStreamResponse } from '../../../../adapters/openai/types';
+import type { OpenAIResponse, OpenAIStreamResponse } from '../../../../adapters/openai-completion/types';
 import type { ToolDefinition } from '../../../../core/types';
 
 const mockCreate = jest.fn();

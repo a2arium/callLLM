@@ -7,7 +7,7 @@ async function main() {
     const historyManager = new HistoryManager('You are a helpful assistant that can call tools.');
 
     // Initialize LLMCaller with OpenAI
-    const caller = new LLMCaller('openai-response', 'gpt-4o-mini', 'You are a helpful assistant that can call tools.', {
+    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant that can call tools.', {
         historyManager
     });
 

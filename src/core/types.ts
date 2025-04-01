@@ -14,7 +14,7 @@ export {
     ToolCall
 };
 
-export type SupportedProviders = 'openai' | 'anthropic' | 'google' | 'openai-response';
+export type SupportedProviders = 'openai' | 'anthropic' | 'google' | 'openai-completion';
 
 export type ToolChoice =
     | 'none'

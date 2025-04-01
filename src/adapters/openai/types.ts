@@ -1,88 +1,45 @@
-import { ChatCompletionCreateParams, ChatCompletionMessage, ChatCompletion, ChatCompletionMessageParam } from 'openai/resources/chat';
-import { ToolDefinition, ToolChoice } from '../../core/types';
+import { OpenAI } from 'openai';
 
-/**
- * All possible message roles supported across different models
- */
-export type OpenAIRole = ChatCompletionMessageParam['role'] | 'developer' | 'tool';
+// Type aliases for OpenAI Response API
+export type ResponseCreateParams = OpenAI.Responses.ResponseCreateParams;
+export type ResponseCreateParamsNonStreaming = OpenAI.Responses.ResponseCreateParamsNonStreaming;
+export type ResponseCreateParamsStreaming = OpenAI.Responses.ResponseCreateParamsStreaming;
+export type Response = OpenAI.Responses.Response;
+export type ResponseStreamEvent = OpenAI.Responses.ResponseStreamEvent;
+export type ResponseOutputTextDeltaEvent = OpenAI.Responses.ResponseTextDeltaEvent;
+export type ResponseOutputTextDoneEvent = OpenAI.Responses.ResponseTextDoneEvent;
+export type ResponseFunctionCallArgumentsDeltaEvent = OpenAI.Responses.ResponseFunctionCallArgumentsDeltaEvent;
+export type ResponseFunctionCallArgumentsDoneEvent = OpenAI.Responses.ResponseFunctionCallArgumentsDoneEvent;
+export type ResponseOutputItemAddedEvent = OpenAI.Responses.ResponseOutputItemAddedEvent;
+export type ResponseFailedEvent = OpenAI.Responses.ResponseFailedEvent;
+export type ResponseCompletedEvent = OpenAI.Responses.ResponseCompletedEvent;
+export type ResponseFunctionToolCall = OpenAI.Responses.ResponseFunctionToolCall;
+export type FunctionTool = OpenAI.Responses.FunctionTool;
+export type Tool = OpenAI.Responses.Tool;
+export type ResponseOutputItem = OpenAI.Responses.ResponseOutputItem;
+export type ResponseOutputMessage = OpenAI.Responses.ResponseOutputMessage;
+export type ResponseInputItem = OpenAI.Responses.ResponseInputItem;
+export type ResponseContent = OpenAI.Responses.ResponseContent;
+export type ResponseInputText = OpenAI.Responses.ResponseInputText;
+export type ResponseUsage = OpenAI.Responses.ResponseUsage;
+export type ResponseTextConfig = OpenAI.Responses.ResponseTextConfig;
+export type EasyInputMessage = OpenAI.Responses.EasyInputMessage;
 
-/**
- * Extended version of OpenAI's ChatCompletionMessage to support all role variants
- */
-export type OpenAIChatMessage = ChatCompletionMessageParam;
-
-export type OpenAIToolCall = {
-    id: string;
-    type: 'function';
-    function: {
-        name: string;
-        arguments: string;
-    };
-    index?: number;
+// Additional event types (if not already exposed by the OpenAI SDK)
+export type ResponseCreatedEvent = { type: 'response.created' };
+export type ResponseInProgressEvent = { type: 'response.in_progress' };
+export type ResponseContentPartAddedEvent = {
+    type: 'response.content_part.added';
+    content?: string;
 };
+export type ResponseContentPartDoneEvent = { type: 'response.content_part.done' };
+export type ResponseOutputItemDoneEvent = { type: 'response.output_item.done' };
+export type ResponseIncompleteEvent = { type: 'response.incomplete' };
 
-export type OpenAIAssistantMessage = ChatCompletionMessage & {
-    tool_calls?: OpenAIToolCall[];
+// Custom internal types
+export type InternalToolCall = {
+    id?: string;
+    name: string;
+    arguments: Record<string, unknown>;
+    rawArguments?: string;
 };
-
-export type OpenAIModelParams = Omit<ChatCompletionCreateParams, 'messages'> & {
-    messages: ChatCompletionMessageParam[];
-    tools?: Array<{
-        type: 'function';
-        function: {
-            name: string;
-            description: string;
-            parameters: Record<string, unknown>;
-        };
-    }>;
-    tool_choice?: ToolChoice;
-};
-
-export type OpenAIUsage = {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-    prompt_tokens_details?: {
-        cached_tokens?: number;
-    };
-    completion_tokens_details?: {
-        reasoning_tokens?: number;
-        accepted_prediction_tokens?: number;
-        rejected_prediction_tokens?: number;
-    };
-};
-
-export type OpenAIResponse = ChatCompletion & {
-    usage: OpenAIUsage;
-    choices: Array<{
-        index: number;
-        logprobs: null;
-        message: OpenAIAssistantMessage;
-        finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
-    }>;
-};
-
-export type OpenAIStreamResponse = {
-    choices: Array<{
-        delta: Partial<ChatCompletionMessage>;
-        finish_reason: string | null;
-    }>;
-};
-
-export type ResponseFormatText = {
-    type: 'text';
-};
-
-export type ResponseFormatJSONObject = {
-    type: 'json_object';
-};
-
-export type ResponseFormatJSONSchema = {
-    type: 'json_schema';
-    json_schema: {
-        strict: boolean;
-        schema: object;
-    };
-};
-
-export type ResponseFormat = ResponseFormatText | ResponseFormatJSONObject | ResponseFormatJSONSchema; 

@@ -1,5 +1,5 @@
 import { AdapterError } from '../../../../adapters/base';
-import { OpenAIAdapterError, OpenAIValidationError, OpenAIStreamError } from '../../../../adapters/openai/errors';
+import { OpenAIAdapterError, OpenAIValidationError, OpenAIStreamError } from '../../../../adapters/openai-completion/errors';
 
 describe('OpenAI Errors', () => {
     describe('OpenAIAdapterError', () => {
