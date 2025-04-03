@@ -1,6 +1,6 @@
 import { ModelManager } from '../../../../core/models/ModelManager';
 import { ModelInfo, ModelAlias } from '../../../../interfaces/UniversalInterfaces';
-import { SupportedProviders } from '../../../../core/types';
+import { RegisteredProviders } from '../../../../adapters';
 
 // Mock the ModelSelector
 const mockSelectModel = jest.fn();
@@ -69,28 +69,29 @@ describe('ModelManager', () => {
             throw new Error('Unknown alias');
         });
         // For this test, use openai-completion provider to get mock-model-1
-        manager = new ModelManager('openai-completion');
+        manager = new ModelManager('openai-completion' as RegisteredProviders);
     });
 
     describe('constructor', () => {
         it('should initialize with mock models', () => {
             // Create a manager for openai-completion provider
-            const completionManager = new ModelManager('openai-completion');
+            const completionManager = new ModelManager('openai-completion' as RegisteredProviders);
             const models = completionManager.getAvailableModels();
             expect(models.length).toBe(1);
             expect(models[0].name).toBe('mock-model-1');
         });
 
         it('should initialize with openai-response models', () => {
-            const responseManager = new ModelManager('openai');
+            const responseManager = new ModelManager('openai' as RegisteredProviders);
             const models = responseManager.getAvailableModels();
             expect(models.length).toBe(1);
             expect(models[0].name).toBe('mock-response-model-1');
         });
 
         it('should throw error for unsupported provider', () => {
-            expect(() => new ModelManager('unsupported' as SupportedProviders))
-                .toThrow('Provider unsupported is not supported yet');
+            // @ts-expect-error Testing invalid provider
+            expect(() => new ModelManager('unsupported'))
+                .toThrow('Unsupported provider: unsupported');
         });
     });
 

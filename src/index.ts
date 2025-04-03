@@ -1,7 +1,7 @@
 // Core exports
 export { LLMCaller } from './core/caller/LLMCaller';
+export { RegisteredProviders } from './adapters';
 export type { LLMCallerOptions } from './core/caller/LLMCaller';
-export { SupportedProviders } from './core/types';
 
 // Universal Types
 export type {

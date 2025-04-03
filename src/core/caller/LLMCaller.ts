@@ -13,7 +13,7 @@ import {
 } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { ProviderManager } from './ProviderManager';
-import { SupportedProviders } from '../types';
+import { RegisteredProviders } from '../../adapters/index';
 import { ModelManager } from '../models/ModelManager';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { ResponseProcessor } from '../processors/ResponseProcessor';
@@ -94,17 +94,17 @@ export class LLMCaller {
     private historyManager: HistoryManager; // HistoryManager now manages system message internally
 
     constructor(
-        providerName: SupportedProviders,
+        providerName: RegisteredProviders,
         modelOrAlias: string,
         systemMessage = 'You are a helpful assistant.',
         options?: LLMCallerOptions
     ) {
         // Initialize dependencies with dependency injection
         this.providerManager = options?.providerManager ||
-            new ProviderManager(providerName, options?.apiKey);
+            new ProviderManager(providerName as RegisteredProviders, options?.apiKey);
 
         this.modelManager = options?.modelManager ||
-            new ModelManager(providerName);
+            new ModelManager(providerName as RegisteredProviders);
 
         // Initialize core processors
         this.tokenCalculator = options?.tokenCalculator ||
@@ -241,32 +241,27 @@ export class LLMCaller {
     }
 
     public setModel(options: {
-        provider?: SupportedProviders;
+        provider?: RegisteredProviders;
         nameOrAlias: string;
         apiKey?: string;
     }): void {
         const { provider, nameOrAlias, apiKey } = options;
 
-        const currentProvider = this.providerManager.getCurrentProviderName();
-        let providerChanged = false;
-
-        // If provider is specified and different, switch provider and re-init model manager
-        if (provider && provider !== currentProvider) {
-            this.providerManager.switchProvider(provider, apiKey);
-            this.modelManager = new ModelManager(provider);
-            providerChanged = true;
+        if (provider) {
+            this.providerManager.switchProvider(provider as RegisteredProviders, apiKey);
+            this.modelManager = new ModelManager(provider as RegisteredProviders);
         }
 
         // Resolve and set new model
         const resolvedModel = this.modelManager.getModel(nameOrAlias);
         if (!resolvedModel) {
-            throw new Error(`Model ${nameOrAlias} not found in provider ${provider || currentProvider}`);
+            throw new Error(`Model ${nameOrAlias} not found in provider ${provider || this.providerManager.getCurrentProviderName()}`);
         }
         const modelChanged = this.model !== resolvedModel.name;
         this.model = resolvedModel.name;
 
         // If provider changed, we need to re-initialize dependent components
-        if (providerChanged) {
+        if (provider) {
             this.reinitializeControllers();
         }
         // If only the model changed, typically controllers don't need full re-init,
@@ -483,7 +478,10 @@ export class LLMCaller {
         const { data, endingMessage, settings, jsonSchema, responseFormat, tools } = options;
 
         // Use the RequestProcessor to process the request (handles chunking if needed)
-        const modelInfo = this.modelManager.getModel(this.model)!;
+        const modelInfo = this.modelManager.getModel(this.model);
+        if (!modelInfo) {
+            throw new Error(`Model ${this.model} not found`);
+        }
         const processedMessages = await this.requestProcessor.processRequest({
             message,
             data,
@@ -540,7 +538,10 @@ export class LLMCaller {
         const { data, endingMessage, settings, jsonSchema, responseFormat, tools } = options;
 
         // Use the RequestProcessor to process the request
-        const modelInfo = this.modelManager.getModel(this.model)!;
+        const modelInfo = this.modelManager.getModel(this.model);
+        if (!modelInfo) {
+            throw new Error(`Model ${this.model} not found`);
+        }
         const processedMessages = await this.requestProcessor.processRequest({
             message,
             data,

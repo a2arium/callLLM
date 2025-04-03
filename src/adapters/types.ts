@@ -1,5 +1,7 @@
 import type { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse } from '../interfaces/UniversalInterfaces';
 import type { StreamChunk } from '../core/streaming/types';
+import { BaseAdapter } from './base/baseAdapter';
+import type { AdapterConfig } from './base/baseAdapter';
 
 /**
  * Base type for provider-specific parameters
@@ -57,4 +59,27 @@ export type ProviderAdapter = {
      * @returns A standardized error object
      */
     mapProviderError: (error: unknown) => Error;
-}; 
+};
+
+/**
+ * Type for adapter class constructor that can be registered in the adapter registry
+ */
+export type AdapterConstructor = new (config: Partial<AdapterConfig>) => BaseAdapter;
+
+/**
+ * Type for an entry in the adapter registry
+ */
+export type AdapterEntry = {
+    name: string;
+    AdapterClass: AdapterConstructor;
+};
+
+/**
+ * Error thrown when a requested provider is not found in the registry
+ */
+export class ProviderNotFoundError extends Error {
+    constructor(providerName: string) {
+        super(`Provider "${providerName}" not found in registry`);
+        this.name = 'ProviderNotFoundError';
+    }
+} 

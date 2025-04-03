@@ -2,17 +2,17 @@ import { ModelInfo, ModelAlias } from '../../interfaces/UniversalInterfaces';
 import { ModelSelector } from './ModelSelector';
 import { defaultModels as openAIModels } from '../../adapters/openai-completion/models';
 import { defaultModels as openAIResponseModels } from '../../adapters/openai/models';
-import { SupportedProviders } from '../types';
+import { RegisteredProviders } from '../../adapters';
 
 export class ModelManager {
     private models: Map<string, ModelInfo>;
 
-    constructor(providerName: SupportedProviders) {
+    constructor(providerName: RegisteredProviders) {
         this.models = new Map();
         this.initializeModels(providerName);
     }
 
-    private initializeModels(providerName: SupportedProviders): void {
+    private initializeModels(providerName: RegisteredProviders): void {
         switch (providerName) {
             case 'openai-completion':
                 openAIModels.forEach(model => this.models.set(model.name, model));
@@ -22,7 +22,7 @@ export class ModelManager {
                 break;
             // Add other providers here when implemented
             default:
-                throw new Error(`Provider ${providerName} is not supported yet`);
+                throw new Error(`Unsupported provider: ${providerName}`);
         }
     }
 

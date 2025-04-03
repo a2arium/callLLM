@@ -230,6 +230,21 @@ Currently supported LLM providers:
 - OpenAI (ChatGPT)
 - More coming soon (Anthropic, Google, etc.)
 
+### Adding New Providers
+
+The library uses an extensible adapter pattern that makes it easy to add support for new LLM providers. To add a new provider:
+
+1. Create a new adapter class implementing the `ProviderAdapter` interface
+2. Add the adapter to the adapter registry in `src/adapters/index.ts`
+3. The provider will automatically be added to the `RegisteredProviders` type
+
+See [ADAPTERS.md](ADAPTERS.md) for detailed instructions on implementing new provider adapters.
+
+```typescript
+// Example usage with a new provider
+const caller = new LLMCaller('your-provider', 'your-model', 'You are a helpful assistant.');
+```
+
 ## Token Counting
 
 The library uses tiktoken for accurate token counting. Since newer models might not be directly supported by tiktoken, you can specify which model's tokenizer to use:

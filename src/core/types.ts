@@ -5,6 +5,7 @@ import {
     ToolParameterSchema,
     ToolCall
 } from '../types/tooling';
+import { RegisteredProviders } from '../adapters';
 
 export {
     UniversalMessage,
@@ -14,8 +15,6 @@ export {
     ToolCall
 };
 
-export type SupportedProviders = 'openai' | 'anthropic' | 'google' | 'openai-completion';
-
 export type ToolChoice =
     | 'none'
     | 'auto'
@@ -23,7 +22,7 @@ export type ToolChoice =
 
 export type UniversalChatParams = {
     model: string;
-    provider: SupportedProviders;
+    provider: RegisteredProviders;
     messages: Array<{
         role: string;
         content: string;
@@ -37,7 +36,6 @@ export type UniversalChatParams = {
         schema?: Record<string, unknown>;
     };
 };
-
 
 export type ToolCallResponse = {
     id: string;
@@ -54,4 +52,9 @@ export type ToolsManager = {
     removeTool(name: string): void;
     updateTool(name: string, updated: Partial<ToolDefinition>): void;
     listTools(): ToolDefinition[];
+};
+
+export type UsageData = {
+    provider: RegisteredProviders;
+    // ... rest of type definition ...
 };
