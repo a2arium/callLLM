@@ -949,6 +949,12 @@ caller.setCallerId('new-conversation-id');
 
 The library now supports OpenAI's function calling feature through a unified tool calling interface. This allows you to define tools (functions) that the model can use to perform actions or retrieve information.
 
+### Tool Behavior
+
+When making a call, you can control which tools are available to the model in two ways:
+- Provide a specific `tools` array in your call options to make only those tools available for that specific call
+- Omit the `tools` option to make all previously registered tools (via `addTool`) available to the model
+
 ## Overview
 
 The library now supports OpenAI's function calling feature through a unified tool calling interface. This allows you to define tools (functions) that the model can use to perform actions or retrieve information.
