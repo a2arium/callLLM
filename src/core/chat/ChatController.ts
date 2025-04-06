@@ -127,6 +127,9 @@ export class ChatController {
         const response = await localRetryManager.executeWithRetry(
             async () => {
                 const resp = await this.providerManager.getProvider().chatCall(model, chatParamsForProvider);
+                if (!resp) {
+                    throw new Error('No response received from provider');
+                }
                 if (!resp.metadata) resp.metadata = {};
 
                 const systemContentForUsage = systemMessageContent;
@@ -143,11 +146,25 @@ export class ChatController {
                 }
                 return resp;
             },
-            (error: unknown) => true
+            (error: unknown) => {
+                // Only retry if the error is due to content triggering retry
+                if (error instanceof Error) {
+                    return error.message === "Response content triggered retry";
+                }
+                return false;
+            }
         );
 
+        // Ensure we have a valid response object before validation
+        if (!response) {
+            throw new Error('No response received from provider');
+        }
+
         // Process tool calls if detected in the response
-        const hasToolCalls = (response.toolCalls && response.toolCalls.length > 0) || response.metadata?.finishReason === FinishReason.TOOL_CALLS;
+        const hasToolCalls = Boolean(
+            (response.toolCalls?.length ?? 0) > 0 ||
+            response.metadata?.finishReason === FinishReason.TOOL_CALLS
+        );
 
         if (hasToolCalls && this.toolController && this.toolOrchestrator && this.historyManager) {
             logger.debug('Tool calls detected, processing...');
@@ -188,7 +205,13 @@ export class ChatController {
             jsonSchema: params.jsonSchema,
             responseFormat: params.responseFormat
         };
+
         const validatedResponse = await this.responseProcessor.validateResponse<T>(response, validationParams);
+
+        // Ensure we have a valid response after validation
+        if (!validatedResponse) {
+            throw new Error('Response validation failed');
+        }
 
         // Ensure the final assistant message (if not already added during tool call flow) is in history
         if (!hasToolCalls) {

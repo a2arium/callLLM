@@ -54,16 +54,18 @@ export class RetryManager {
                 lastError = error;
                 // If the error is not deemed retryable, do not continue trying.
                 if (!shouldRetry(error)) break;
-                attempt++;
+
+                attempt++; // Increment attempt before calculating delay
+
                 // For testing environments, use a minimal delay; otherwise, use the configured base delay.
                 const baseDelay = process.env.NODE_ENV === 'test' ? 1 : (this.config.baseDelay ?? 1000);
                 // Calculate an exponential backoff delay.
-                const delay = baseDelay * Math.pow(2, attempt);
+                const delay = baseDelay * Math.pow(2, attempt); // Use attempt for delay calculation
                 // Wait for the specified delay before the next attempt.
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
         // If all retry attempts fail, throw an error with the details of the last encountered error.
-        throw new Error(`Failed after ${this.config.maxRetries ?? 3} retries. Last error: ${(lastError instanceof Error) ? lastError.message : lastError}`);
+        throw new Error(`Failed after ${attempt - 1} retries. Last error: ${(lastError instanceof Error) ? lastError.message : lastError}`);
     }
 }

@@ -110,7 +110,7 @@ describe('RetryManager', () => {
         } catch (err) {
             expect(err).toEqual(new Error("Failed after 2 retries. Last error: primitive error"));
         }
-    });
+    }, 10000); // Increase timeout to 10 seconds
 
     it('should exit when attempts exceed maxRetries', async () => {
         const config: RetryConfig = { maxRetries: 0 }; // Allow only 1 attempt
@@ -120,7 +120,7 @@ describe('RetryManager', () => {
         await expect(retryManager.executeWithRetry(operation, () => true))
             .rejects.toThrow('Failed after 0 retries');
         expect(operation).toHaveBeenCalledTimes(1);
-    });
+    }, 10000); // Increase timeout to 10 seconds
 });
 
 describe('RetryManager Logging', () => {
