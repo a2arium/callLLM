@@ -64,9 +64,23 @@ export type OpenAIResponse = ChatCompletion & {
 
 export type OpenAIStreamResponse = {
     choices: Array<{
-        delta: Partial<ChatCompletionMessage>;
+        delta: OpenAIStreamDelta;
         finish_reason: string | null;
     }>;
+};
+
+export type OpenAIStreamDelta = {
+    role?: string;
+    content?: string;
+    tool_calls?: Array<{
+        id: string;
+        type: 'function';
+        function?: {
+            name?: string;
+            arguments?: string;
+        };
+    }>;
+    finish_reason?: string;
 };
 
 export type ResponseFormatText = {

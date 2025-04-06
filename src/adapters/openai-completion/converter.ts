@@ -4,7 +4,7 @@ import { ToolDefinition } from '../../core/types';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { ChatCompletionCreateParams, ChatCompletionMessageParam } from 'openai/resources/chat';
 import { z } from 'zod';
-import { OpenAIStreamResponse } from './types';
+import { OpenAIStreamResponse, OpenAIStreamDelta } from './types';
 import { ToolCall } from '../../core/types';
 import { logger } from '../../utils/logger';
 
@@ -132,6 +132,7 @@ export class Converter {
         if (!toolCalls?.length) return undefined;
 
         return toolCalls.map(call => ({
+            id: call.id,
             name: call.function.name,
             arguments: JSON.parse(call.function.arguments)
         }));
@@ -214,57 +215,20 @@ export class Converter {
                 message.role === 'system' ? 'system' :
                     message.role === 'function' ? 'function' : 'user';
 
-        if (role === 'function' && message.content) {
-            // Keep the original function call message exactly as received
-            const originalMessage = { ...message };
-            // Get the result content before we clear it from original message
-            const resultContent = originalMessage.content || '';
-            // Clear content from original message as it should only contain function call details
-            originalMessage.content = '';
-
-            // Convert OpenAI's snake_case to our camelCase
-            const toolResponse: UniversalChatResponse = {
-                content: resultContent,
-                role: 'function',
-                messages: [
-                    // Convert the original message to our format
-                    {
-                        role: 'function',
-                        content: originalMessage.content || ''
-                    },
-                    // Convert the tool message to our format using camelCase property names
-                    {
-                        role: 'function',
-                        content: resultContent,
-                        toolCalls: originalMessage.tool_calls?.map(call => {
-                            if ('function' in call) {
-                                // OpenAI format - convert to our format
-                                return {
-                                    id: call.id || `tool-${call.id}`,
-                                    name: call.function.name,
-                                    arguments: typeof call.function.arguments === 'string'
-                                        ? JSON.parse(call.function.arguments)
-                                        : call.function.arguments
-                                };
-                            } else {
-                                // Our format - already correct
-                                return call;
-                            }
-                        })
-                    }
-                ]
-            };
-            // Log and return tool response
-            logger.debug('Preparing tool result response:', JSON.stringify(toolResponse, null, 2));
-            return toolResponse;
-        }
-
         // Handle tool calls in the response
         const toolCalls = this.convertToolCalls(message.tool_calls);
+        const finishReason = this.mapFinishReason(response.choices[0].finish_reason);
+
         const normalResponse: UniversalChatResponse = {
             content: message.content || '',
             role,
-            toolCalls
+            toolCalls,
+            metadata: {
+                model: response.model,
+                created: response.created,
+                finishReason,
+                usage: this.convertUsage(response.usage)
+            }
         };
         logger.debug('Regular response:', JSON.stringify(normalResponse, null, 2));
         return normalResponse;
@@ -334,75 +298,98 @@ export class Converter {
         }
     }
 
-    async *convertStreamResponse(stream: AsyncIterable<OpenAIStreamResponse>, params: UniversalChatParams): AsyncIterable<UniversalStreamResponse> {
-        for await (const chunk of stream) {
-            const message = this.convertStreamChunk(chunk);
-            logger.debug('[Converter] Stream chunk message:', JSON.stringify(message, null, 2));
+    private convertStreamDelta(delta: OpenAIStreamDelta, toolCallArguments: Map<string, string>, lastToolCalls: Map<string, { id: string; name: string; arguments: string }>, finish_reason: string | null): UniversalStreamResponse {
+        const streamResponse: UniversalStreamResponse = {
+            role: delta.role ?? 'assistant',
+            content: delta.content ?? '',
+            isComplete: false,
+            metadata: {
+                finishReason: finish_reason ? this.mapFinishReason(finish_reason) : undefined
+            }
+        };
 
-            // Convert role to UniversalMessage role type
-            const role: UniversalMessage['role'] =
-                message.role === 'assistant' ? 'assistant' :
-                    message.role === 'system' ? 'system' :
-                        message.role === 'function' ? 'function' : 'user';
-
-            if (role === 'function' && message.content) {
-                // Keep the original function call message exactly as received
-                const originalMessage = { ...message };
-                // Get the result content before we clear it from original message
-                const resultContent = originalMessage.content;
-                // Clear content from original message as it should only contain function call details
-                originalMessage.content = '';
-
-                const streamToolResponse: UniversalStreamResponse = {
-                    content: resultContent,
-                    role: 'function',
-                    isComplete: false,
-                    messages: [
-                        originalMessage,
-                        {
-                            role: 'function',
-                            content: resultContent,
-                            toolCalls: message.toolCalls?.map((call, index) => {
-                                if ('function' in call) {
-                                    // OpenAI format - convert to our format
-                                    return {
-                                        id: call.id || `tool-${index}`,
-                                        name: call.function.name,
-                                        arguments: typeof call.function.arguments === 'string'
-                                            ? JSON.parse(call.function.arguments)
-                                            : call.function.arguments
-                                    };
-                                } else {
-                                    // Our format - already correct
-                                    return call;
-                                }
-                            })
-                        }
-                    ]
+        // If this is the final chunk with a finish reason, include all accumulated tool calls
+        if (finish_reason) {
+            const toolCalls = Array.from(lastToolCalls.values()).map(lastToolCall => {
+                const toolCall: ToolCall = {
+                    id: lastToolCall.id,
+                    name: lastToolCall.name,
+                    arguments: {}
                 };
-                logger.debug('Preparing stream tool result response:', JSON.stringify(streamToolResponse, null, 2));
-                yield streamToolResponse;
-            } else {
-                const streamResponse: UniversalStreamResponse = {
-                    content: message.content || '',
-                    role,
-                    isComplete: false
+
+                // Try to parse the accumulated arguments
+                const accumulatedArgs = toolCallArguments.get(lastToolCall.id) ?? '{}';
+                try {
+                    toolCall.arguments = JSON.parse(accumulatedArgs);
+                } catch {
+                    toolCall.arguments = {};
+                }
+
+                return toolCall;
+            });
+
+            if (toolCalls.length > 0) {
+                streamResponse.toolCalls = toolCalls;
+            }
+            return streamResponse;
+        }
+
+        if (delta.tool_calls) {
+            const toolCalls = delta.tool_calls.map((call) => {
+                const id = call.id;
+                const name = call.function?.name;
+                const args = call.function?.arguments ?? '';
+
+                // Store the tool call info for later use
+                if (name) {
+                    lastToolCalls.set(id, {
+                        id,
+                        name,
+                        arguments: args
+                    });
+                }
+
+                // Accumulate arguments
+                if (args) {
+                    const existingArgs = toolCallArguments.get(id) ?? '';
+                    const newArgs = existingArgs + args;
+                    toolCallArguments.set(id, newArgs);
+                }
+
+                const lastToolCall = lastToolCalls.get(id);
+                if (!lastToolCall?.name) {
+                    return null;
+                }
+
+                // For non-final chunks, only include the tool call without arguments
+                const toolCall: ToolCall = {
+                    id: lastToolCall.id,
+                    name: lastToolCall.name,
+                    arguments: {}
                 };
-                logger.debug('Regular stream response:', JSON.stringify(streamResponse, null, 2));
-                yield streamResponse;
+                return toolCall;
+            }).filter((call): call is ToolCall => call !== null);
+
+            if (toolCalls.length > 0) {
+                streamResponse.toolCalls = toolCalls;
             }
         }
+
+        return streamResponse;
     }
 
-    private convertStreamChunk(chunk: OpenAIStreamResponse): UniversalMessage {
-        if (!chunk.choices || chunk.choices.length === 0) {
-            throw new Error('Invalid stream chunk: missing choices');
+    public async *convertStreamResponse(stream: AsyncIterable<OpenAIStreamResponse>, params: UniversalChatParams): AsyncGenerator<UniversalStreamResponse> {
+        this.setParams(params);
+        const toolCallArguments = new Map<string, string>();
+        const lastToolCalls = new Map<string, { id: string; name: string; arguments: string }>();
+
+        for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta;
+            const finish_reason = chunk.choices[0]?.finish_reason;
+            if (!delta) continue;
+
+            yield this.convertStreamDelta(delta, toolCallArguments, lastToolCalls, finish_reason);
         }
-        const delta = chunk.choices[0].delta;
-        if (!delta) {
-            throw new Error('Invalid stream chunk: missing delta');
-        }
-        return delta as unknown as UniversalMessage;
     }
 
     public getCurrentParams(): UniversalChatParams | undefined {

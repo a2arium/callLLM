@@ -1,45 +1,14 @@
 import { z } from 'zod';
-import { Converter } from '../../../../adapters/openai/converter';
-import { UniversalChatParams, UniversalChatResponse, FinishReason, Usage } from '../../../../interfaces/UniversalInterfaces';
-import { SchemaValidator } from '../../../../core/schema/SchemaValidator';
-import {
-    Response,
-    FunctionTool,
-    ResponseOutputItem,
-    ResponseOutputMessage,
-    ResponseFunctionToolCall,
-    ResponseTextConfig
-} from '../../../../adapters/openai/types';
-import type { ToolDefinition } from '../../../../types/tooling';
-import { OpenAI } from 'openai';
-
-// Mock SchemaValidator
-jest.mock('../../../../core/schema/SchemaValidator', () => ({
-    SchemaValidator: {
-        getSchemaObject: jest.fn((schema) => {
-            if (typeof schema === 'string') {
-                try {
-                    return JSON.parse(schema);
-                } catch {
-                    return {};
-                }
-            }
-            return {
-                type: 'object',
-                properties: {
-                    name: { type: 'string' },
-                    age: { type: 'number' }
-                },
-                required: ['name', 'age'],
-                additionalProperties: false
-            };
-        })
-    }
-}));
+import { Converter } from '../../../../adapters/openai-completion/converter';
+import { UniversalChatParams, UniversalChatResponse, UniversalMessage, ModelInfo, UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces';
+import { OpenAIResponse, OpenAIStreamResponse, OpenAIToolCall, OpenAIAssistantMessage } from '../../../../adapters/openai-completion/types';
+import { ToolDefinition } from '../../../../core/types';
+import { ChatCompletionMessage } from 'openai/resources/chat';
 
 describe('Converter', () => {
     let converter: Converter;
     let mockTool: ToolDefinition;
+    let mockModel: ModelInfo;
 
     beforeEach(() => {
         converter = new Converter();
@@ -53,57 +22,62 @@ describe('Converter', () => {
                 }
             }
         };
+        mockModel = {
+            name: 'test-model',
+            inputPricePerMillion: 0.01,
+            outputPricePerMillion: 0.02,
+            maxRequestTokens: 4000,
+            maxResponseTokens: 1000,
+            characteristics: {
+                qualityIndex: 80,
+                outputSpeed: 100,
+                firstTokenLatency: 100
+            },
+            capabilities: {
+                streaming: true,
+                toolCalls: true,
+                systemMessages: true,
+                parallelToolCalls: true,
+                batchProcessing: true,
+                temperature: true
+            }
+        };
+        converter.setModel(mockModel);
     });
 
-    describe('convertToOpenAIResponseParams', () => {
+    describe('convertToProviderParams', () => {
         it('should convert basic params correctly', () => {
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'Hello' }],
-                model: 'gpt-4',
+                model: 'test-model',
                 settings: {
                     temperature: 0.7,
                     maxTokens: 100
-                },
-                tools: [mockTool]
+                }
             };
 
-            const result = converter.convertToOpenAIResponseParams('gpt-4', params);
+            const result = converter.convertToProviderParams(params);
 
-            expect(result).toEqual({
-                model: 'gpt-4',
-                input: [{ role: 'user', content: 'Hello' }],
+            expect(result).toMatchObject({
+                messages: [{ role: 'user', content: 'Hello' }],
                 temperature: 0.7,
-                max_output_tokens: 100,
-                tools: [{
-                    type: 'function',
-                    name: 'test_tool',
-                    description: 'A test tool',
-                    parameters: {
-                        type: 'object',
-                        properties: {
-                            test: { type: 'string' }
-                        },
-                        additionalProperties: false
-                    },
-                    strict: true
-                }]
+                max_completion_tokens: 100,
+                stream: false
             });
         });
 
         it('should handle JSON response format', () => {
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'Hello' }],
-                model: 'gpt-4',
+                model: 'test-model',
                 responseFormat: 'json'
             };
 
-            const result = converter.convertToOpenAIResponseParams('gpt-4', params);
-            expect(result.text?.format).toEqual({
-                type: 'json_object'
-            });
+            const result = converter.convertToProviderParams(params);
+            expect(result.response_format).toEqual({ type: 'json_object' });
         });
 
-        it('should handle JSON schema', () => {
+        it('should handle Zod schema', () => {
             const schema = z.object({
                 name: z.string(),
                 age: z.number()
@@ -111,243 +85,502 @@ describe('Converter', () => {
 
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'Hello' }],
-                model: 'gpt-4',
+                model: 'test-model',
                 jsonSchema: {
                     name: 'Person',
                     schema
                 }
             };
 
-            const result = converter.convertToOpenAIResponseParams('gpt-4', params);
-            expect(result.text?.format).toEqual({
+            const result = converter.convertToProviderParams(params);
+            expect(result.response_format).toMatchObject({
                 type: 'json_schema',
-                name: 'Person',
-                schema: {
-                    type: 'object',
-                    properties: {
-                        name: { type: 'string' },
-                        age: { type: 'number' }
-                    },
-                    required: ['name', 'age'],
-                    additionalProperties: false
-                },
-                strict: true
+                json_schema: {
+                    name: 'Person',
+                    schema: {
+                        type: 'object',
+                        properties: {
+                            name: { type: 'string' },
+                            age: { type: 'number' }
+                        },
+                        required: ['name', 'age']
+                    }
+                }
             });
+        });
+
+        it('should handle JSON schema string', () => {
+            const schemaStr = JSON.stringify({
+                type: 'object',
+                properties: {
+                    name: { type: 'string' }
+                }
+            });
+
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'Hello' }],
+                model: 'test-model',
+                jsonSchema: {
+                    name: 'Person',
+                    schema: schemaStr
+                }
+            };
+
+            const result = converter.convertToProviderParams(params);
+            expect(result.response_format).toMatchObject({
+                type: 'json_schema',
+                json_schema: {
+                    name: 'Person',
+                    schema: JSON.parse(schemaStr)
+                }
+            });
+        });
+
+        it('should handle invalid JSON schema string', () => {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'Hello' }],
+                model: 'test-model',
+                jsonSchema: {
+                    name: 'Person',
+                    schema: 'invalid json'
+                }
+            };
+
+            expect(() => converter.convertToProviderParams(params)).toThrow('Invalid JSON schema string');
+        });
+
+        it('should handle tool calls', () => {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'Hello' }],
+                model: 'test-model',
+                tools: [mockTool],
+                settings: {
+                    toolChoice: 'auto'
+                }
+            };
+
+            const result = converter.convertToProviderParams(params);
+            expect(result.tools).toEqual([{
+                type: 'function',
+                function: {
+                    name: 'test_tool',
+                    description: 'A test tool',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            test: { type: 'string' }
+                        }
+                    }
+                }
+            }]);
+            expect(result.tool_choice).toBe('auto');
+        });
+
+        it('should handle parallel tool calls', () => {
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'Hello' }],
+                model: 'test-model',
+                tools: [mockTool],
+                settings: {
+                    toolCalls: [{
+                        name: 'test_tool',
+                        arguments: { test: 'value' }
+                    }]
+                }
+            };
+
+            const result = converter.convertToProviderParams(params);
+            expect(result.tools).toEqual([{
+                type: 'function',
+                function: {
+                    name: 'test_tool',
+                    description: 'A test tool',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            test: { type: 'string' }
+                        }
+                    }
+                }
+            }]);
+            // Tool calls are handled by the provider adapter
+        });
+
+        it('should handle disabled capabilities', () => {
+            converter.setModel({
+                ...mockModel,
+                capabilities: {
+                    streaming: false,
+                    toolCalls: false,
+                    systemMessages: false,
+                    parallelToolCalls: false,
+                    batchProcessing: false,
+                    temperature: false
+                }
+            });
+
+            const params: UniversalChatParams = {
+                messages: [
+                    { role: 'system', content: 'System message' },
+                    { role: 'user', content: 'Hello' }
+                ],
+                model: 'test-model',
+                tools: [mockTool],
+                settings: {
+                    stream: true,
+                    temperature: 0.7,
+                    n: 2,
+                    toolCalls: [{
+                        name: 'test_tool',
+                        arguments: { test: 'value' }
+                    }]
+                }
+            };
+
+            const result = converter.convertToProviderParams(params);
+            expect(result).toMatchObject({
+                messages: [
+                    { role: 'user', content: 'System message' }, // System message converted to user
+                    { role: 'user', content: 'Hello' }
+                ],
+                stream: false,
+                temperature: undefined,
+                n: 1
+            });
+            expect(result.tools).toBeUndefined();
         });
     });
 
-    describe('convertFromOpenAIResponse', () => {
+    describe('convertFromProviderResponse', () => {
         it('should convert successful response correctly', () => {
-            const timestamp = Math.floor(Date.now() / 1000);
-            const response: Response = {
+            const response: OpenAIResponse = {
                 id: 'test-id',
-                created_at: timestamp,
-                model: 'gpt-4',
-                status: 'completed',
-                output_text: 'Hello there!',
-                metadata: {
-                    model: 'gpt-4',
-                    created_at: timestamp.toString(),
+                object: 'chat.completion',
+                created: 1234567890,
+                model: 'test-model',
+                choices: [{
+                    index: 0,
+                    logprobs: null,
+                    message: {
+                        role: 'assistant',
+                        content: 'Hello there!',
+                        refusal: null
+                    },
                     finish_reason: 'stop'
-                },
-                output: [{
-                    type: 'message',
-                    role: 'assistant',
-                    id: 'msg_1',
-                    status: 'completed',
-                    content: [{
-                        type: 'output_text',
-                        text: 'Hello there!',
-                        annotations: []
-                    }]
                 }],
                 usage: {
-                    total_tokens: 30,
-                    input_tokens: 10,
-                    output_tokens: 20,
-                    input_tokens_details: {
-                        cached_tokens: 0
-                    },
-                    output_tokens_details: {
-                        reasoning_tokens: 0
-                    }
-                },
-                object: 'response',
-                error: null,
-                incomplete_details: null,
-                instructions: '',
-                parallel_tool_calls: false,
-                tool_choice: 'none',
-                tools: [],
-                temperature: 1,
-                top_p: 1,
-                max_output_tokens: 100,
-                previous_response_id: null
+                    prompt_tokens: 10,
+                    completion_tokens: 20,
+                    total_tokens: 30
+                }
             };
 
-            const result = converter.convertFromOpenAIResponse(response);
-            expect(result.content).toBe('Hello there!');
-            expect(result.role).toBe('assistant');
-            expect(result.metadata?.model).toBe('gpt-4');
-            expect(result.metadata?.created).toBe(timestamp);
-            expect(result.metadata?.usage?.tokens?.total).toBe(30);
-            expect(result.metadata?.usage?.tokens?.input).toBe(10);
-            expect(result.metadata?.usage?.tokens?.output).toBe(20);
-            expect(result.metadata?.finishReason).toBe(FinishReason.STOP);
-        });
-
-        it('should handle error response correctly', () => {
-            const timestamp = Math.floor(Date.now() / 1000);
-            const response: Response = {
-                id: 'test-id',
-                created_at: timestamp,
-                model: 'gpt-4',
-                status: 'failed',
-                output_text: '',
-                metadata: {
-                    model: 'gpt-4',
-                    created_at: timestamp.toString(),
-                    finish_reason: 'error'
-                },
-                error: {
-                    code: 'server_error',
-                    message: 'Test error message'
-                },
-                output: [],
-                usage: {
-                    total_tokens: 0,
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    input_tokens_details: {
-                        cached_tokens: 0
-                    },
-                    output_tokens_details: {
-                        reasoning_tokens: 0
-                    }
-                },
-                object: 'response',
-                incomplete_details: null,
-                instructions: '',
-                parallel_tool_calls: false,
-                tool_choice: 'none',
-                tools: [],
-                temperature: 1,
-                top_p: 1,
-                max_output_tokens: 100,
-                previous_response_id: null
-            };
-
-            const result = converter.convertFromOpenAIResponse(response);
-            expect(result).toEqual({
-                content: '',
+            const result = converter.convertFromProviderResponse(response);
+            expect(result).toMatchObject({
+                content: 'Hello there!',
                 role: 'assistant',
                 metadata: {
-                    finishReason: 'error',
-                    model: 'gpt-4',
-                    created: timestamp,
-                    refusal: {
-                        code: 'server_error',
-                        message: 'Test error message'
-                    },
+                    model: 'test-model',
+                    created: 1234567890,
+                    finishReason: 'stop',
                     usage: {
                         tokens: {
-                            input: 0,
-                            inputCached: 0,
-                            output: 0,
-                            total: 0
-                        },
-                        costs: {
-                            input: 0,
-                            inputCached: 0,
-                            output: 0,
-                            total: 0
+                            input: 10,
+                            output: 20,
+                            total: 30
                         }
                     }
                 }
             });
         });
 
-        it('should handle tool calls correctly', () => {
-            const timestamp = Math.floor(Date.now() / 1000);
-            const response: Response = {
+        it('should handle tool calls in response', () => {
+            const response: OpenAIResponse = {
                 id: 'test-id',
-                created_at: timestamp,
-                model: 'gpt-4',
-                status: 'completed',
-                output_text: '',
-                metadata: {
-                    model: 'gpt-4',
-                    created_at: timestamp.toString(),
-                    finish_reason: 'stop'
-                },
-                output: [{
-                    type: 'message',
-                    role: 'assistant',
-                    id: 'msg_1',
-                    status: 'completed',
-                    content: [{
-                        type: 'output_text',
-                        text: '',
-                        annotations: []
-                    }]
-                }, {
-                    type: 'function_call',
-                    call_id: 'call_1',
-                    name: 'test_tool',
-                    arguments: '{"test": "value"}'
+                object: 'chat.completion',
+                created: 1234567890,
+                model: 'test-model',
+                choices: [{
+                    index: 0,
+                    logprobs: null,
+                    message: {
+                        role: 'assistant',
+                        content: null,
+                        refusal: null,
+                        tool_calls: [{
+                            id: 'call-1',
+                            type: 'function',
+                            function: {
+                                name: 'test_tool',
+                                arguments: JSON.stringify({ test: 'value' })
+                            }
+                        }]
+                    },
+                    finish_reason: 'tool_calls'
                 }],
                 usage: {
-                    total_tokens: 0,
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    input_tokens_details: {
-                        cached_tokens: 0
-                    },
-                    output_tokens_details: {
-                        reasoning_tokens: 0
-                    }
-                },
-                object: 'response',
-                error: null,
-                incomplete_details: null,
-                instructions: '',
-                parallel_tool_calls: false,
-                tool_choice: 'none',
-                tools: [],
-                temperature: 1,
-                top_p: 1,
-                max_output_tokens: 100,
-                previous_response_id: null
+                    prompt_tokens: 10,
+                    completion_tokens: 20,
+                    total_tokens: 30
+                }
             };
 
-            const result = converter.convertFromOpenAIResponse(response);
-            expect(result).toEqual({
+            const result = converter.convertFromProviderResponse(response);
+            expect(result).toMatchObject({
                 content: '',
                 role: 'assistant',
-                metadata: {
-                    finishReason: 'stop',
-                    model: 'gpt-4',
-                    created: timestamp,
-                    usage: {
-                        tokens: {
-                            input: 0,
-                            inputCached: 0,
-                            output: 0,
-                            total: 0
-                        },
-                        costs: {
-                            input: 0,
-                            inputCached: 0,
-                            output: 0,
-                            total: 0
-                        }
-                    }
-                },
                 toolCalls: [{
-                    id: 'call_1',
                     name: 'test_tool',
                     arguments: { test: 'value' }
+                }],
+                metadata: {
+                    finishReason: 'tool_calls'
+                }
+            });
+        });
+
+        it('should handle function messages', () => {
+            const response: OpenAIResponse = {
+                id: 'test-id',
+                object: 'chat.completion',
+                created: 1234567890,
+                model: 'test-model',
+                choices: [{
+                    index: 0,
+                    logprobs: null,
+                    message: {
+                        role: 'assistant',
+                        content: null,
+                        tool_calls: [{
+                            id: 'call-1',
+                            type: 'function',
+                            function: {
+                                name: 'test_function',
+                                arguments: JSON.stringify({ test: 'value' })
+                            }
+                        }],
+                        refusal: null
+                    },
+                    finish_reason: 'tool_calls'
+                }],
+                usage: {
+                    prompt_tokens: 10,
+                    completion_tokens: 20,
+                    total_tokens: 30
+                }
+            };
+
+            const result = converter.convertFromProviderResponse(response);
+            expect(result).toMatchObject({
+                content: '',
+                role: 'assistant',
+                toolCalls: [{
+                    id: 'call-1',
+                    name: 'test_function',
+                    arguments: { test: 'value' }
+                }],
+                metadata: {
+                    finishReason: 'tool_calls'
+                }
+            });
+        });
+
+        it('should handle invalid response structure', () => {
+            const response = {
+                id: 'test-id',
+                object: 'chat.completion',
+                created: 1234567890,
+                model: 'test-model',
+                choices: [],
+                usage: {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    total_tokens: 0
+                }
+            } as OpenAIResponse;
+
+            expect(() => converter.convertFromProviderResponse(response))
+                .toThrow('Invalid OpenAI response structure: missing choices or message');
+        });
+    });
+
+    describe('convertStreamResponse', () => {
+        it('should convert stream chunks correctly', async () => {
+            const mockStream: AsyncIterable<OpenAIStreamResponse> = {
+                async *[Symbol.asyncIterator]() {
+                    yield {
+                        id: 'test-id',
+                        object: 'chat.completion.chunk',
+                        created: 1234567890,
+                        model: 'test-model',
+                        choices: [{
+                            delta: {
+                                role: 'assistant',
+                                content: 'Hello'
+                            },
+                            finish_reason: null
+                        }]
+                    };
+                    yield {
+                        id: 'test-id',
+                        object: 'chat.completion.chunk',
+                        created: 1234567890,
+                        model: 'test-model',
+                        choices: [{
+                            delta: {
+                                content: ' there!'
+                            },
+                            finish_reason: null
+                        }]
+                    };
+                    yield {
+                        id: 'test-id',
+                        object: 'chat.completion.chunk',
+                        created: 1234567890,
+                        model: 'test-model',
+                        choices: [{
+                            delta: {},
+                            finish_reason: 'stop'
+                        }]
+                    };
+                }
+            };
+
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'Hi' }],
+                model: 'test-model'
+            };
+
+            const chunks: UniversalStreamResponse[] = [];
+            for await (const chunk of converter.convertStreamResponse(mockStream, params)) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks).toHaveLength(3);
+            expect(chunks[0]).toMatchObject({
+                role: 'assistant',
+                content: 'Hello',
+                isComplete: false
+            });
+            expect(chunks[1]).toMatchObject({
+                role: 'assistant',
+                content: ' there!',
+                isComplete: false
+            });
+            expect(chunks[2]).toMatchObject({
+                role: 'assistant',
+                content: '',
+                isComplete: false,
+                metadata: {
+                    finishReason: 'stop'
+                }
+            });
+        });
+
+        it('should handle tool calls in stream', async () => {
+            const mockStream: AsyncIterable<OpenAIStreamResponse> = {
+                async *[Symbol.asyncIterator]() {
+                    yield {
+                        id: 'test-id',
+                        object: 'chat.completion.chunk',
+                        created: 1234567890,
+                        model: 'test-model',
+                        choices: [{
+                            delta: {
+                                role: 'assistant',
+                                tool_calls: [{
+                                    id: 'call-1',
+                                    type: 'function',
+                                    function: {
+                                        name: 'test_tool',
+                                        arguments: ''
+                                    }
+                                }]
+                            },
+                            finish_reason: null
+                        }]
+                    };
+                    yield {
+                        id: 'test-id',
+                        object: 'chat.completion.chunk',
+                        created: 1234567890,
+                        model: 'test-model',
+                        choices: [{
+                            delta: {
+                                tool_calls: [{
+                                    id: 'call-1',
+                                    type: 'function',
+                                    function: {
+                                        arguments: '{"test":'
+                                    }
+                                }]
+                            },
+                            finish_reason: null
+                        }]
+                    };
+                    yield {
+                        id: 'test-id',
+                        object: 'chat.completion.chunk',
+                        created: 1234567890,
+                        model: 'test-model',
+                        choices: [{
+                            delta: {
+                                tool_calls: [{
+                                    id: 'call-1',
+                                    type: 'function',
+                                    function: {
+                                        arguments: '"value"}'
+                                    }
+                                }]
+                            },
+                            finish_reason: null
+                        }]
+                    };
+                    yield {
+                        id: 'test-id',
+                        object: 'chat.completion.chunk',
+                        created: 1234567890,
+                        model: 'test-model',
+                        choices: [{
+                            delta: {},
+                            finish_reason: 'tool_calls'
+                        }]
+                    };
+                }
+            };
+
+            const params: UniversalChatParams = {
+                messages: [{ role: 'user', content: 'Hi' }],
+                model: 'test-model'
+            };
+
+            const chunks: UniversalStreamResponse[] = [];
+            for await (const chunk of converter.convertStreamResponse(mockStream, params)) {
+                chunks.push(chunk);
+            }
+
+            expect(chunks).toHaveLength(4);
+            expect(chunks[0]).toMatchObject({
+                role: 'assistant',
+                content: '',
+                isComplete: false,
+                toolCalls: [{
+                    id: 'call-1',
+                    name: 'test_tool'
                 }]
+            });
+            expect(chunks[3]).toMatchObject({
+                role: 'assistant',
+                content: '',
+                isComplete: false,
+                toolCalls: [{
+                    id: 'call-1',
+                    name: 'test_tool',
+                    arguments: { test: 'value' }
+                }],
+                metadata: {
+                    finishReason: 'tool_calls'
+                }
             });
         });
     });
