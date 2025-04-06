@@ -113,5 +113,30 @@ describe('LLMCaller Tool Management', () => {
         it('should return empty array when no tools exist', () => {
             expect(llmCaller.listTools()).toEqual([]);
         });
+
+        it('should add multiple tools successfully', () => {
+            const mockTools = [
+                {
+                    name: 'tool1',
+                    description: 'First tool',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    }
+                },
+                {
+                    name: 'tool2',
+                    description: 'Second tool',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    }
+                }
+            ] as ToolDefinition[];
+
+            llmCaller.addTools(mockTools);
+            expect(llmCaller.getTool('tool1')).toEqual(mockTools[0]);
+            expect(llmCaller.getTool('tool2')).toEqual(mockTools[1]);
+        });
     });
 }); 

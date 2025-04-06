@@ -88,21 +88,13 @@ async function main() {
     };
 
     // Add tools to the caller
-    caller.addTool(weatherTool);
-    caller.addTool(timeTool);
-    caller.addTool(calculateTool);
+    caller.addTools([weatherTool, timeTool, calculateTool]);
 
     // 1. Basic Tool Call
     console.log('1. Basic Tool Call');
     console.log('------------------');
     const weatherResponse = await caller.call(
-        'What\'s the weather like in San Francisco?',
-        {
-            tools: [weatherTool],
-            settings: {
-                toolChoice: 'auto'
-            }
-        }
+        'What\'s the weather like in San Francisco?'
     );
     console.log('Response:', weatherResponse);
     console.log(caller.getHistoricalMessages());

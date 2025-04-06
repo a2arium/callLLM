@@ -49,6 +49,7 @@ export type ToolCallResponse = {
 export type ToolsManager = {
     getTool(name: string): ToolDefinition | undefined;
     addTool(tool: ToolDefinition): void;
+    addTools(tools: ToolDefinition[]): void;
     removeTool(name: string): void;
     updateTool(name: string, updated: Partial<ToolDefinition>): void;
     listTools(): ToolDefinition[];

@@ -953,7 +953,65 @@ The library now supports OpenAI's function calling feature through a unified too
 
 When making a call, you can control which tools are available to the model in two ways:
 - Provide a specific `tools` array in your call options to make only those tools available for that specific call
-- Omit the `tools` option to make all previously registered tools (via `addTool`) available to the model
+- Omit the `tools` option to make all previously registered tools (via `addTool` or `addTools`) available to the model
+
+### Adding Tools
+
+You can add tools individually using `addTool`:
+
+```typescript
+caller.addTool({
+    name: 'get_weather',
+    description: 'Get the current weather',
+    parameters: {
+        type: 'object',
+        properties: {
+            location: {
+                type: 'string',
+                description: 'The city and state'
+            }
+        },
+        required: ['location']
+    }
+});
+```
+
+Or add multiple tools at once using `addTools`:
+
+```typescript
+caller.addTools([
+    {
+        name: 'get_weather',
+        description: 'Get the current weather',
+        parameters: {
+            type: 'object',
+            properties: {
+                location: {
+                    type: 'string',
+                    description: 'The city and state'
+                }
+            },
+            required: ['location']
+        }
+    },
+    {
+        name: 'get_time',
+        description: 'Get the current time',
+        parameters: {
+            type: 'object',
+            properties: {
+                timezone: {
+                    type: 'string',
+                    description: 'The timezone'
+                }
+            },
+            required: ['timezone']
+        }
+    }
+]);
+```
+
+This is more efficient than adding tools individually when you have multiple tools to register.
 
 ## Overview
 

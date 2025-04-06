@@ -53,4 +53,24 @@ export class ToolsManager implements IToolsManager {
     listTools(): ToolDefinition[] {
         return Array.from(this.tools.values());
     }
+
+    addTools(tools: ToolDefinition[]): void {
+        // Check for duplicate names within the array
+        const uniqueNames = new Set(tools.map(tool => tool.name));
+        if (uniqueNames.size !== tools.length) {
+            throw new Error('Duplicate tool names found in the tools array');
+        }
+
+        // Check for conflicts with existing tools
+        for (const tool of tools) {
+            if (this.tools.has(tool.name)) {
+                throw new Error(`Tool with name '${tool.name}' already exists`);
+            }
+        }
+
+        // Add all tools
+        for (const tool of tools) {
+            this.tools.set(tool.name, tool);
+        }
+    }
 } 

@@ -606,6 +606,10 @@ export class LLMCaller {
         this.toolsManager.addTool(tool);
     }
 
+    public addTools(tools: ToolDefinition[]): void {
+        this.toolsManager.addTools(tools);
+    }
+
     public removeTool(name: string): void {
         this.toolsManager.removeTool(name);
     }

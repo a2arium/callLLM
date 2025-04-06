@@ -120,4 +120,72 @@ describe('ToolsManager', () => {
             expect(tools).toEqual(expect.arrayContaining([mockTool, secondTool]));
         });
     });
+
+    describe('addTools', () => {
+        it('should add multiple tools successfully', () => {
+            const mockTools = [
+                {
+                    name: 'tool1',
+                    description: 'First tool',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    }
+                },
+                {
+                    name: 'tool2',
+                    description: 'Second tool',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    }
+                }
+            ] as ToolDefinition[];
+
+            toolsManager.addTools(mockTools);
+            expect(toolsManager.getTool('tool1')).toEqual(mockTools[0]);
+            expect(toolsManager.getTool('tool2')).toEqual(mockTools[1]);
+        });
+
+        it('should throw error when adding tools with duplicate names within array', () => {
+            const mockTools = [
+                {
+                    name: 'tool1',
+                    description: 'First tool',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    }
+                },
+                {
+                    name: 'tool1',
+                    description: 'Duplicate tool',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    }
+                }
+            ] as ToolDefinition[];
+
+            expect(() => toolsManager.addTools(mockTools))
+                .toThrow('Duplicate tool names found in the tools array');
+        });
+
+        it('should throw error when adding tools with existing names', () => {
+            toolsManager.addTool(mockTool);
+            const mockTools = [
+                {
+                    name: mockTool.name,
+                    description: 'Conflicting tool',
+                    parameters: {
+                        type: 'object',
+                        properties: {}
+                    }
+                }
+            ] as ToolDefinition[];
+
+            expect(() => toolsManager.addTools(mockTools))
+                .toThrow(`Tool with name '${mockTool.name}' already exists`);
+        });
+    });
 }); 

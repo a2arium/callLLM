@@ -47,6 +47,7 @@ describe('Tool Interfaces', () => {
             const toolsManager: ToolsManager = {
                 getTool: (name: string) => undefined,
                 addTool: (tool: ToolDefinition) => { },
+                addTools: (tools: ToolDefinition[]) => { },
                 removeTool: (name: string) => { },
                 updateTool: (name: string, updated: Partial<ToolDefinition>) => { },
                 listTools: () => []
@@ -55,6 +56,7 @@ describe('Tool Interfaces', () => {
             expect(toolsManager).toBeDefined();
             expect(typeof toolsManager.getTool).toBe('function');
             expect(typeof toolsManager.addTool).toBe('function');
+            expect(typeof toolsManager.addTools).toBe('function');
             expect(typeof toolsManager.removeTool).toBe('function');
             expect(typeof toolsManager.updateTool).toBe('function');
             expect(typeof toolsManager.listTools).toBe('function');
