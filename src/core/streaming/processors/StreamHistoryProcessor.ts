@@ -40,7 +40,7 @@ export class StreamHistoryProcessor implements IStreamProcessor {
 
             // Save to history if this is the final chunk
             if (chunk.isComplete) {
-                log.debug('Captured complete response in history');
+                log.debug('Captured complete response in history: ', finalContent);
 
                 // Skip adding the message to history if it contains tool calls
                 // Tool calls will be handled by the special tool call handling code in StreamHandler

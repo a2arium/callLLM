@@ -32,6 +32,9 @@ export type UniversalMessage = {
 export type JSONSchemaDefinition = string | z.ZodType;
 export type ResponseFormat = 'json' | 'text';
 
+// Define the history mode type
+export type HistoryMode = 'full' | 'truncate' | 'stateless';
+
 // Define explicit properties for UniversalChatSettings
 export type UniversalChatSettings = {
     /**
@@ -143,6 +146,13 @@ export type UniversalChatSettings = {
             strictness?: 'low' | 'medium' | 'high';
         }>
     };
+    /**
+     * Controls how historical messages are sent to the model.
+     * - 'full': Send all historical messages
+     * - 'truncate': Intelligently truncate history if it exceeds the model's token limit
+     * - 'stateless': Only send system message and current user message
+     */
+    historyMode?: HistoryMode;
 };
 
 // Define the new options structure for call/stream methods
@@ -171,6 +181,14 @@ export type LLMCallOptions = {
      * Optional list of tools the model may call.
      */
     tools?: ToolDefinition[];
+    /**
+     * Controls how historical messages are sent to the model.
+     * - 'full': Send all historical messages (default)
+     * - 'truncate': Intelligently truncate history if it exceeds the model's token limit
+     * - 'stateless': Only send system message and current user message
+     * @default 'stateless'
+     */
+    historyMode?: HistoryMode;
 };
 
 export type UniversalChatParams = {
@@ -188,6 +206,8 @@ export type UniversalChatParams = {
     model: string;
     // System message might be handled differently (e.g., within messages), but include if needed directly
     systemMessage?: string;
+    // Include historyMode as it needs to be passed down to controllers
+    historyMode?: HistoryMode;
 };
 
 // Universal interface for chat response

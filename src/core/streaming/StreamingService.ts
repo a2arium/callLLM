@@ -1,4 +1,4 @@
-import { UniversalChatParams, UniversalStreamResponse, ModelInfo } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalStreamResponse, ModelInfo, HistoryMode } from '../../interfaces/UniversalInterfaces';
 import { ProviderManager } from '../caller/ProviderManager';
 import { ModelManager } from '../models/ModelManager';
 import { TokenCalculator } from '../models/TokenCalculator';
@@ -13,6 +13,7 @@ import { ContentAccumulator } from './processors/ContentAccumulator';
 import { ToolController } from '../tools/ToolController';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator';
 import { HistoryManager } from '../history/HistoryManager';
+import { HistoryTruncator } from '../history/HistoryTruncator';
 
 /**
  * StreamingService
@@ -33,6 +34,7 @@ export class StreamingService {
     private streamHandler: StreamHandler;
     private usageTracker: UsageTracker;
     private retryManager: RetryManager;
+    private historyTruncator: HistoryTruncator;
 
     constructor(
         private providerManager: ProviderManager,
@@ -68,6 +70,7 @@ export class StreamingService {
             maxRetries: 3,
             baseDelay: 1000
         });
+        this.historyTruncator = new HistoryTruncator(this.tokenCalculator);
 
         logger.setConfig({
             level: process.env.LOG_LEVEL as any || 'info',
@@ -101,6 +104,12 @@ export class StreamingService {
                 { role: 'system', content: systemMessage },
                 ...params.messages
             ];
+        }
+
+        // Log the history mode if it's set
+        if (params.historyMode || (params.settings && params.settings.historyMode)) {
+            const effectiveHistoryMode = params.historyMode || params.settings?.historyMode;
+            logger.debug('Using history mode:', effectiveHistoryMode);
         }
 
         // Calculate input tokens
@@ -168,6 +177,40 @@ export class StreamingService {
         const startTime = Date.now();
 
         try {
+            // Check for history mode
+            const effectiveHistoryMode = params.historyMode || params.settings?.historyMode;
+
+            if (effectiveHistoryMode?.toLowerCase() === 'truncate') {
+                logger.debug('Using truncate history mode for streaming - intelligently truncating history');
+
+                // Get all historical messages
+                const allMessages = this.historyManager.getMessages();
+
+                // If we have messages to truncate, do the truncation
+                if (allMessages.length > 0) {
+                    // Use the history truncator to intelligently truncate messages
+                    const truncatedMessages = this.historyTruncator.truncate(
+                        allMessages,
+                        modelInfo,
+                        modelInfo.maxResponseTokens
+                    );
+
+                    // Ensure current user message is included
+                    const currentUserMessages = params.messages || [];
+
+                    // Update the params with truncated messages + current user message
+                    params = {
+                        ...params,
+                        messages: [...truncatedMessages, ...currentUserMessages]
+                    };
+
+                    logger.debug(`Truncate mode: streaming with ${params.messages.length} messages to provider (from original ${allMessages.length})`);
+
+                    // Recalculate input tokens based on the truncated messages
+                    inputTokens = this.tokenCalculator.calculateTotalTokens(params.messages);
+                }
+            }
+
             logger.debug('Requesting provider stream', {
                 provider: provider.constructor.name,
                 model,

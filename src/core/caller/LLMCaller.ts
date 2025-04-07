@@ -9,7 +9,8 @@ import {
     UniversalChatSettings,
     LLMCallOptions,
     JSONSchemaDefinition,
-    ResponseFormat
+    ResponseFormat,
+    HistoryMode
 } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { ProviderManager } from './ProviderManager';
@@ -55,6 +56,8 @@ export type LLMCallerOptions = {
     usageCallback?: UsageCallback;
     // Use the refined UniversalChatSettings here for initial settings
     settings?: UniversalChatSettings;
+    // Default history mode for all calls
+    historyMode?: HistoryMode;
     // Dependency injection options for testing
     providerManager?: ProviderManager;
     modelManager?: ModelManager;
@@ -92,6 +95,7 @@ export class LLMCaller {
     private toolOrchestrator!: ToolOrchestrator;
     private chunkController!: ChunkController;
     private historyManager: HistoryManager; // HistoryManager now manages system message internally
+    private historyMode: HistoryMode; // Store the default history mode
 
     constructor(
         providerName: RegisteredProviders,
@@ -127,6 +131,7 @@ export class LLMCaller {
         this.initialSettings = options?.settings;
         this.callerId = options?.callerId || uuidv4();
         this.usageCallback = options?.usageCallback;
+        this.historyMode = options?.historyMode || 'stateless'; // Default to stateless mode if not specified
 
         // Initialize history manager with system message (it adds it internally)
         this.historyManager = options?.historyManager || new HistoryManager(systemMessage);
@@ -390,6 +395,12 @@ export class LLMCaller {
         return { ...this.initialSettings, ...methodSettings };
     }
 
+    // Merge the history mode setting from class-level and method-level options
+    private mergeHistoryMode(methodHistoryMode?: HistoryMode): HistoryMode {
+        // Method-level setting takes precedence over class-level setting
+        return methodHistoryMode || this.historyMode;
+    }
+
     // Basic chat completion method - internal helper
     private async internalChatCall(
         // Takes the full parameter object
@@ -433,36 +444,7 @@ export class LLMCaller {
             undefined // System message comes from history manager via params
         );
 
-        // Wrap the stream to add the final assistant message to history
-        // eslint-disable-next-line @typescript-eslint/no-this-alias
-        const self = this; // Capture 'this' context
-        async function* historyAwareStream(): AsyncIterable<UniversalStreamResponse> {
-            let finalChunk: UniversalStreamResponse | null = null;
-            try {
-                for await (const chunk of stream) {
-                    if (chunk.isComplete) {
-                        finalChunk = chunk;
-                    }
-                    yield chunk;
-                }
-            } finally {
-                // After the stream is fully consumed (or fails),
-                // add the final assistant message based on the last complete chunk
-                // But ONLY if it doesn't have tool calls - those are handled by the specialized tool call code
-                if (finalChunk) {
-                    const hasTool = finalChunk.toolCalls && finalChunk.toolCalls.length > 0;
-                    const isToolCall = finalChunk.metadata?.finishReason === 'tool_calls';
-
-                    // Only add to history if this is NOT a tool call response
-                    // Tool call responses are handled by the StreamHistoryProcessor or specialized tool handling code
-                    if (!hasTool && !isToolCall && finalChunk.contentText) {
-                        self.historyManager.addMessage('assistant', finalChunk.contentText);
-                    }
-                }
-            }
-        }
-
-        return historyAwareStream();
+        return stream;
     }
 
 
@@ -475,7 +457,7 @@ export class LLMCaller {
         // Use the new LLMCallOptions type
         options: LLMCallOptions = {}
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
-        const { data, endingMessage, settings, jsonSchema, responseFormat, tools } = options;
+        const { data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode } = options;
 
         // Use the RequestProcessor to process the request (handles chunking if needed)
         const modelInfo = this.modelManager.getModel(this.model);
@@ -492,6 +474,19 @@ export class LLMCaller {
 
         const effectiveTools = tools ?? this.toolsManager.listTools();
         const mergedSettings = this.mergeSettings(settings);
+        // Get the effective history mode
+        const effectiveHistoryMode = this.mergeHistoryMode(historyMode);
+
+        // If mergedSettings exists, add the history mode to it
+        if (mergedSettings) {
+            mergedSettings.historyMode = effectiveHistoryMode;
+        }
+
+        // Check if we're in stateless mode, where we only send the current message
+        // In this case, we need to make sure the system message is included
+        if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
+            this.historyManager.initializeWithSystemMessage();
+        }
 
         // Add the original user message to history *before* the call
         this.historyManager.addMessage('user', message);
@@ -506,7 +501,8 @@ export class LLMCaller {
                 jsonSchema: jsonSchema,
                 responseFormat: responseFormat,
                 tools: effectiveTools,
-                callerId: this.callerId
+                callerId: this.callerId,
+                historyMode: effectiveHistoryMode
             };
             // History update for assistant response happens inside internalStreamCall wrapper
             return this.internalStreamCall(params);
@@ -516,7 +512,7 @@ export class LLMCaller {
         const historyForChunks = this.historyManager.getHistoricalMessages(); // Get history *before* the latest user msg
 
         // ChunkController's streamChunks should also handle adding the final assistant messages to history internally
-        return this.chunkController.streamChunks(processedMessages, {
+        const stream = this.chunkController.streamChunks(processedMessages, {
             model: this.model,
             settings: mergedSettings,
             jsonSchema: jsonSchema,
@@ -524,6 +520,23 @@ export class LLMCaller {
             tools: effectiveTools,
             historicalMessages: historyForChunks // Pass history prior to the current message
         });
+
+        // Wrap the stream to handle stateless mode reset if needed
+        if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
+            const self = this;
+            return (async function* statelessStream() {
+                try {
+                    for await (const chunk of stream) {
+                        yield chunk;
+                    }
+                } finally {
+                    // Reset history after stream completes in stateless mode
+                    self.historyManager.initializeWithSystemMessage();
+                }
+            })();
+        }
+
+        return stream;
     }
 
     /**
@@ -535,7 +548,7 @@ export class LLMCaller {
         // Use the new LLMCallOptions type
         options: LLMCallOptions = {}
     ): Promise<UniversalChatResponse[]> {
-        const { data, endingMessage, settings, jsonSchema, responseFormat, tools } = options;
+        const { data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode } = options;
 
         // Use the RequestProcessor to process the request
         const modelInfo = this.modelManager.getModel(this.model);
@@ -552,6 +565,18 @@ export class LLMCaller {
 
         const effectiveTools = tools ?? this.toolsManager.listTools();
         const mergedSettings = this.mergeSettings(settings);
+        // Get the effective history mode
+        const effectiveHistoryMode = this.mergeHistoryMode(historyMode);
+
+        // If mergedSettings exists, add the history mode to it
+        if (mergedSettings) {
+            mergedSettings.historyMode = effectiveHistoryMode;
+        }
+
+        // If in stateless mode, get system message only
+        if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
+            this.historyManager.initializeWithSystemMessage();
+        }
 
         // Add the original user message to history *before* the call
         this.historyManager.addMessage('user', message);
@@ -565,7 +590,8 @@ export class LLMCaller {
                 jsonSchema: jsonSchema,
                 responseFormat: responseFormat,
                 tools: effectiveTools,
-                callerId: this.callerId
+                callerId: this.callerId,
+                historyMode: effectiveHistoryMode
             };
             // History update for assistant happens inside internalChatCall
             const response = await this.internalChatCall(params);
@@ -596,6 +622,11 @@ export class LLMCaller {
                     this.historyManager.addMessage('assistant', response.content);
                 }
             });
+        }
+
+        // Reset history if stateless mode was used for this call
+        if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
+            this.historyManager.initializeWithSystemMessage();
         }
 
         return responses;

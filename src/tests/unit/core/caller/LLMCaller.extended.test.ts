@@ -63,7 +63,8 @@ describe('LLMCaller - Model Management', () => {
             serializeHistory: jest.fn(),
             getHistorySummary: jest.fn(),
             getMessages: jest.fn().mockReturnValue([]),
-            deserializeHistory: jest.fn()
+            deserializeHistory: jest.fn(),
+            initializeWithSystemMessage: jest.fn()
         } as unknown as jest.Mocked<HistoryManager>;
 
         const mockTool = {
@@ -152,7 +153,7 @@ describe('LLMCaller - Model Management', () => {
             ]);
 
             // Verify final message was added to history
-            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('assistant', 'complete');
+            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message);
         });
     });
 

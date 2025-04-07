@@ -13,6 +13,9 @@ export class HistoryManager {
      * @param systemMessage Optional system message to initialize the history with
      */
     constructor(systemMessage?: string) {
+        const log = logger.createLogger({ prefix: 'HistoryManager.constructor' });
+        log.debug('Initializing HistoryManager with system message:', systemMessage);
+
         this.systemMessage = systemMessage || '';
 
         logger.setConfig({
@@ -30,9 +33,12 @@ export class HistoryManager {
      * Initializes the history with the system message
      */
     public initializeWithSystemMessage(): void {
+        const log = logger.createLogger({ prefix: 'HistoryManager.initializeWithSystemMessage' });
+        log.debug('Initializing history with system message:', this.systemMessage);
+
+        // Clear any existing history first to avoid duplication
+        this.clearHistory();
         if (this.systemMessage) {
-            // Clear any existing history first to avoid duplication
-            this.clearHistory();
             // Add the system message as the first message
             this.addMessage('system', this.systemMessage);
         }
@@ -92,7 +98,7 @@ export class HistoryManager {
         };
 
         const validatedMessage = this.validateMessage(message);
-
+        logger.debug('Adding message to history: ', validatedMessage);
         if (validatedMessage) this.historicalMessages.push(validatedMessage);
     }
 

@@ -5,17 +5,20 @@ import { ModelManager } from '../models/ModelManager';
 import { ResponseProcessor } from '../processors/ResponseProcessor';
 import { RetryManager } from '../retry/RetryManager';
 import { UsageTracker } from '../telemetry/UsageTracker';
-import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage, UniversalChatSettings, JSONSchemaDefinition } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage, UniversalChatSettings, JSONSchemaDefinition, HistoryMode } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent";
 import { logger } from '../../utils/logger';
 import { ToolController } from '../tools/ToolController';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator';
 import { HistoryManager } from '../history/HistoryManager';
+import { HistoryTruncator } from '../history/HistoryTruncator';
+import { TokenCalculator } from '../models/TokenCalculator';
 
 export class ChatController {
     // Keep track of the orchestrator - needed for recursive calls
     private toolOrchestrator?: ToolOrchestrator;
+    private historyTruncator: HistoryTruncator;
 
     constructor(
         private providerManager: ProviderManager,
@@ -29,6 +32,8 @@ export class ChatController {
         private historyManager?: HistoryManager // Keep optional for flexibility
     ) {
         this.toolOrchestrator = toolOrchestrator; // Store the orchestrator
+        this.historyTruncator = new HistoryTruncator(new TokenCalculator());
+
         logger.setConfig({
             prefix: 'ChatController',
             level: process.env.LOG_LEVEL as any || 'info'
@@ -50,18 +55,28 @@ export class ChatController {
         // Update signature to accept UniversalChatParams
         params: UniversalChatParams
     ): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
+        const log = logger.createLogger({ prefix: 'ChatController.execute' });
+
+        log.debug('Executing chat call with params:', params);
+
         // Extract necessary info directly from params
         const {
             model,
-            messages, // Use messages directly from params
+            messages,
             settings,
             jsonSchema,
             responseFormat,
             tools,
-            callerId
+            callerId,
+            historyMode
         } = params;
 
         const mergedSettings = { ...settings }; // Work with a mutable copy
+
+        // Store the history mode setting in mergedSettings if it exists
+        if (historyMode) {
+            mergedSettings.historyMode = historyMode;
+        }
 
         // Determine effective response format based on jsonSchema or explicit format
         let effectiveResponseFormat = responseFormat || 'text';
@@ -69,8 +84,35 @@ export class ChatController {
             effectiveResponseFormat = 'json';
         }
 
+        // Get the model info early for history truncation
+        const modelInfo = this.modelManager.getModel(model);
+        if (!modelInfo) throw new Error(`Model ${model} not found`);
+
+        // Get message list according to history mode
+        let messagesForProvider = messages;
+        const effectiveHistoryMode = historyMode || mergedSettings.historyMode;
+
+        if (effectiveHistoryMode?.toLowerCase() === 'truncate' && this.historyManager) {
+            log.debug('Using truncate history mode for chat - intelligently truncating history');
+
+            // Get all historical messages
+            const allMessages = this.historyManager.getMessages();
+
+            // If we have a truncator and messages to truncate, do the truncation
+            if (allMessages.length > 0) {
+                // Use the history truncator to intelligently truncate messages
+                messagesForProvider = this.historyTruncator.truncate(
+                    allMessages,
+                    modelInfo,
+                    modelInfo.maxResponseTokens
+                );
+
+                log.debug(`Truncate mode: sending ${messagesForProvider.length} messages to provider (from original ${allMessages.length})`);
+            }
+        }
+
         // Find the system message within the provided messages array
-        const systemMessageContent = messages.find(m => m.role === 'system')?.content || '';
+        const systemMessageContent = messagesForProvider.find(m => m.role === 'system')?.content || '';
 
         // Append JSON instruction to system message if needed
         const fullSystemMessageContent =
@@ -79,7 +121,7 @@ export class ChatController {
                 : systemMessageContent;
 
         // Update system message content in the messages array if necessary
-        const finalMessages = messages.map(msg =>
+        const finalMessages = messagesForProvider.map(msg =>
             msg.role === 'system' ? { ...msg, content: fullSystemMessageContent } : msg
         );
 
@@ -105,14 +147,13 @@ export class ChatController {
             jsonSchema: jsonSchema, // Pass schema info if provider needs it
             responseFormat: effectiveResponseFormat, // Pass effective format
             tools: tools, // Pass tool definitions
-            callerId: callerId
+            callerId: callerId,
+            historyMode: historyMode // Pass history mode
         };
 
-        logger.debug('Sending messages:', JSON.stringify(chatParamsForProvider.messages, null, 2));
-        if (tools && tools.length > 0) logger.debug('With tools:', tools.map(t => t.name));
-
-        const modelInfo = this.modelManager.getModel(model);
-        if (!modelInfo) throw new Error(`Model ${model} not found`);
+        log.debug('Sending messages:', JSON.stringify(chatParamsForProvider.messages, null, 2));
+        if (tools && tools.length > 0) log.debug('With tools:', tools.map(t => t.name));
+        if (historyMode) log.debug('Using history mode:', historyMode);
 
         // Get last user message content for usage tracking (best effort)
         const lastUserMessage = [...validatedMessages].reverse().find(m => m.role === 'user')?.content || '';
@@ -167,14 +208,14 @@ export class ChatController {
         );
 
         if (hasToolCalls && this.toolController && this.toolOrchestrator && this.historyManager) {
-            logger.debug('Tool calls detected, processing...');
+            log.debug('Tool calls detected, processing...');
 
             this.historyManager.addMessage('assistant', response.content ?? '', { toolCalls: response.toolCalls });
 
             const { requiresResubmission } = await this.toolOrchestrator.processToolCalls(response);
 
             if (requiresResubmission) {
-                logger.debug('Tool results require resubmission to model.');
+                log.debug('Tool results require resubmission to model.');
 
                 // Get the updated messages including the tool results that were just added
                 const updatedMessages = this.historyManager.getMessages();
@@ -192,7 +233,7 @@ export class ChatController {
                     responseFormat: 'text',
                 };
 
-                logger.debug('Resubmitting with updated messages including tool results');
+                log.debug('Resubmitting with updated messages including tool results');
                 return this.execute<T>(recursiveParams);
             }
         }

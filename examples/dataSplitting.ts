@@ -89,7 +89,7 @@ async function processStreamExample(caller: LLMCaller, message: string, data: an
 
 async function main() {
     // Initialize with the default model
-    const caller = new LLMCaller('openai', 'fast');
+    const caller = new LLMCaller('openai', 'gpt-4o-mini');
 
     // Update the gpt-4o-mini model to split data into roughly 3 parts
     // For 26,352 total tokens, we want each chunk to be ~8,800 tokens

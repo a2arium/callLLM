@@ -943,6 +943,105 @@ You can change the caller ID during runtime:
 caller.setCallerId('new-conversation-id');
 ```
 
+### History Modes
+
+The library provides three different history management modes that control how conversation history is handled:
+
+```typescript
+// Initialize with specific history mode
+const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+    apiKey: process.env.OPENAI_API_KEY,
+    historyMode: 'full' // One of: 'full', 'truncate', 'stateless'
+});
+
+// Or update history mode after initialization
+caller.updateSettings({
+    historyMode: 'truncate'
+});
+```
+
+#### Available History Modes
+
+1. **stateless** (Default): Only send system message and current user message to model
+   - No conversation history is sent to the model
+   - Each question is treated independently
+   - Most token-efficient option
+   - Best for independent questions or to avoid context contamination
+   - Default mode
+
+2. **truncate**: Intelligently truncate history if it exceeds the model's token limit
+   - Automatically manages token limits by removing older messages when needed
+   - Always preserves the system message and current question
+   - Prioritizes keeping recent context over older messages
+   - Best for long conversations with high token usage
+   - Ideal for production applications to prevent token limit errors
+
+3. **full**: Send all historical messages to the model
+   - Maintains complete conversation context
+   - Best for short to medium-length conversations
+   - Provides most coherent responses for context-dependent queries
+   - Will fail, if the history is too long
+
+
+#### History Mode Examples
+
+```typescript
+// 1. Full mode example - maintains complete context
+const fullModeCaller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+    apiKey: process.env.OPENAI_API_KEY,
+    historyMode: 'full'
+});
+
+// User can refer to previous messages
+await fullModeCaller.call('What is the capital of France?');
+const response = await fullModeCaller.call('What is its population?');
+// Model understands 'its' refers to Paris from previous context
+
+// 2. Truncate mode example - handles long conversations
+const truncateCaller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+    apiKey: process.env.OPENAI_API_KEY,
+    historyMode: 'truncate'
+});
+
+// When conversation gets too long, older messages are removed automatically
+// but recent context is preserved
+
+// 3. Stateless mode example - for independent questions
+const statelessCaller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+    apiKey: process.env.OPENAI_API_KEY,
+    historyMode: 'stateless'
+});
+
+// Each question is treated independently
+await statelessCaller.call('What is the capital of France?');
+const response = await statelessCaller.call('What is its population?');
+// Model won't understand 'its' refers to Paris, as there's no history context
+```
+
+#### Streaming with History Modes
+
+All three history modes work seamlessly with streaming:
+
+```typescript
+// Streaming with history modes
+const streamingCaller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+    apiKey: process.env.OPENAI_API_KEY,
+    historyMode: 'full' // or 'truncate' or 'stateless'
+});
+
+// Stream with history context
+const stream = await streamingCaller.stream('Tell me about the solar system');
+for await (const chunk of stream) {
+    process.stdout.write(chunk.content);
+}
+```
+
+#### When to Use Each History Mode
+
+- **full**: Use for conversational applications where context continuity is important, such as chatbots or virtual assistants.
+- **truncate**: Use for applications with long conversations or large amounts of context, where you need to manage token limits automatically.
+- **stateless**: Use for applications where each query should be treated independently, such as one-off analysis tasks or when you want to avoid context contamination.
+
 ## Error Handling 
 
 ## Tool Calling
@@ -1247,7 +1346,9 @@ Example of correct tool call handling:
 // Receive a response with tool calls from the API
 const response = await caller.call('What time is it in Tokyo?', {
   tools: [timeTool],
-  settings: { toolChoice: 'auto' }
+  settings: {
+    toolChoice: 'auto'
+  }
 });
 
 // Process each tool call with the EXACT same ID
