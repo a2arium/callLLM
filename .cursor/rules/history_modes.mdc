@@ -1,6 +1,130 @@
 ---
-description: 
-globs: 
+description: Guidelines for implementing and using history modes to manage conversation context
+globs: ["src/**/history*.ts", "src/**/*History*.ts", "src/**/LLMCaller.ts"]
 alwaysApply: false
 ---
- 
+
+# History Modes Overview
+
+## Core Principles
+
+1. **Case-Insensitive Mode Handling**
+   - All history mode values must be lowercase in type definition (`'full'`, `'truncate'`, `'stateless'`)
+   - Implementations must handle case-insensitive comparison
+   - Always convert to lowercase before comparing mode values
+
+2. **Clear Type Definitions**
+   - Use the `HistoryMode` type consistently
+   - Avoid hardcoding string values
+   - Apply proper typing to function parameters
+
+3. **Consistent Implementation**
+   - Each mode should behave consistently across all modules
+   - Same behavior in streaming and non-streaming contexts
+   - Same behavior across different provider adapters
+
+## History Mode Types
+
+### Full Mode
+- **Purpose**: Maintain complete conversation history
+- **Implementation**:
+  - Send all historical messages to the model
+  - Preserve full context across calls
+  - No message filtering or removal
+
+### Truncate Mode
+- **Purpose**: Manage token limits
+- **Implementation**:
+  - Intelligently truncate history when exceeding token limits
+  - Always preserve system message and recent context
+  - Use `HistoryTruncator` for consistent truncation logic
+
+### Stateless Mode
+- **Purpose**: Provide context-free interactions
+- **Implementation**:
+  - Only send system message and current query
+  - Reset history state after each call
+  - No conversation context preserved between calls
+
+## Implementation Guidelines
+
+### LLMCaller
+- Accept history mode in constructor and settings
+- Apply mode-specific logic in call/stream methods
+- Validate mode values with proper error messages
+- Maintain backward compatibility for historical camelCase versions
+
+### ChatController
+- Handle history modes consistently
+- Apply truncation when in truncate mode
+- Clear history when in stateless mode
+- Preserve history when in full mode
+
+### StreamingService
+- Apply same history mode logic as ChatController
+- Ensure streaming behavior matches non-streaming
+- Handle stream accumulation appropriately for each mode
+
+## Testing Requirements
+
+### Full Mode Tests
+- Verify all messages are preserved
+- Check follow-up questions with context work
+- Ensure streaming contexts maintain all messages
+
+### Truncate Mode Tests
+- Verify truncation occurs at appropriate token limits
+- Check system message is always preserved
+- Ensure recent context is prioritized
+
+### Stateless Mode Tests
+- Verify only system and current message are sent
+- Check history is reset after each call
+- Ensure no context leakage between calls
+
+## Error Handling
+
+- Proper validation of historyMode values
+- Graceful fallback to default mode if invalid
+- Clear error messages for invalid configurations
+- Type safety through HistoryMode type
+
+## Usage Examples
+
+### Full Mode
+```typescript
+const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
+  historyMode: 'full'
+});
+
+// All messages preserved for context
+await caller.call('What is the capital of France?');
+await caller.call('What is its population?'); // 'its' refers to Paris
+```
+
+### Truncate Mode
+```typescript
+const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
+  historyMode: 'truncate'
+});
+
+// Messages preserved until token limit reached
+// Then older messages removed while keeping recent context
+```
+
+### Stateless Mode
+```typescript
+const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
+  historyMode: 'stateless'
+});
+
+// No context between messages
+await caller.call('What is the capital of France?');
+await caller.call('What is its population?'); // 'its' is unclear
+```
+
+# References
+- See @src/interfaces/UniversalInterfaces.ts for HistoryMode type definition
+- See @src/core/caller/LLMCaller.ts for implementation
+- See @src/core/history/HistoryTruncator.ts for truncation logic
+- See @examples/historyModes.ts for usage examples 
