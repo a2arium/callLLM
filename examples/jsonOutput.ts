@@ -37,7 +37,7 @@ async function main() {
         console.log(caller.getHistoricalMessages());
 
         // Example 2: Using raw JSON Schema (recommended approach with properties at root level)
-        console.log('\nExample 2: Using raw JSON Schema');
+        console.log('\nExample 2: Using raw JSON Schema + force prompt enhancement mode');
         const recipeSchema = {
             type: 'object',
             properties: {
@@ -71,6 +71,7 @@ async function main() {
                 },
                 responseFormat: 'json',
                 settings: {
+                    jsonMode: 'force-prompt',
                     temperature: 0.7
                 }
             }

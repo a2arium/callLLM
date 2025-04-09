@@ -79,7 +79,28 @@ export class StreamHandler {
             modelName: modelInfo.name
         });
 
-        // Create the content accumulator
+        // Determine JSON mode behavior
+        const isJsonRequested = params.responseFormat === 'json' || params.jsonSchema;
+        const hasNativeJsonSupport = modelInfo.capabilities?.jsonMode;
+        const jsonMode = params.settings?.jsonMode ?? 'fallback';
+
+        // Log JSON mode configuration
+        console.log('[StreamHandler] Using JSON mode:', {
+            mode: jsonMode,
+            hasNativeSupport: hasNativeJsonSupport,
+            isJsonRequested,
+            modelName: modelInfo.name,
+            schemaProvided: Boolean(params.jsonSchema)
+        });
+
+        // Determine if we should use prompt injection based on jsonMode setting
+        const usePromptInjection = jsonMode === 'force-prompt' ||
+            (jsonMode === 'fallback' && !hasNativeJsonSupport);
+
+        // Get schema if available
+        const schema = params.jsonSchema?.schema;
+
+        // Initialize content accumulator
         const contentAccumulator = new ContentAccumulator();
 
         // Create the usage processor
@@ -112,9 +133,6 @@ export class StreamHandler {
         const processedStream = pipeline.processStream(streamChunks);
 
         try {
-            const schema = params.jsonSchema?.schema as T;
-            const isJsonMode = params.responseFormat === 'json';
-
             let chunkCount = 0;
             let hasExecutedTools = false;
             let currentMessages: UniversalMessage[] = params.messages ? [...params.messages] : [];
@@ -125,11 +143,19 @@ export class StreamHandler {
                 chunkCount++;
 
                 // Map tool calls from StreamChunk format to UniversalStreamResponse format
-                const toolCalls = chunk.toolCalls?.map(call => ({
-                    name: call.name,
-                    arguments: call.arguments || {},
-                    id: (call as any).id
-                }));
+                const toolCalls = chunk.toolCalls?.map(call => {
+                    if ('function' in call) {
+                        return {
+                            id: call.id ?? `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+                            function: call.function
+                        };
+                    }
+                    return {
+                        id: call.id ?? `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+                        name: call.name,
+                        arguments: call.arguments ?? {}
+                    };
+                }) as ToolCall[] | undefined;
 
                 // Create a universal response from the processed chunk
                 const response: UniversalStreamResponse<T extends z.ZodType ? z.infer<T> : unknown> = {
@@ -165,165 +191,101 @@ export class StreamHandler {
                     const completedToolCalls = contentAccumulator.getCompletedToolCalls();
 
                     if (completedToolCalls.length > 0) {
-                        // Add the current response as an assistant message
+                        // Properly cast the completed tool calls
+                        const mappedToolCalls = completedToolCalls.map(call => {
+                            if ('function' in call) {
+                                return {
+                                    id: call.id ?? `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+                                    type: 'function' as const,
+                                    function: {
+                                        name: typeof call.function === 'object' && call.function && 'name' in call.function
+                                            ? String(call.function.name)
+                                            : 'unknown',
+                                        arguments: typeof call.function === 'object' && call.function && 'arguments' in call.function
+                                            ? String(call.function.arguments)
+                                            : '{}'
+                                    }
+                                };
+                            }
+                            return {
+                                id: call.id ?? `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+                                name: call.name,
+                                arguments: call.arguments ?? {}
+                            };
+                        }) as ToolCall[];
+
                         const assistantMessage: UniversalMessage = {
                             role: 'assistant',
                             content: contentAccumulator.getAccumulatedContent(),
-                            toolCalls: completedToolCalls.map(call => ({
-                                id: call.id || `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-                                name: call.name,
-                                arguments: call.arguments || {}
-                            }))
+                            toolCalls: mappedToolCalls
                         };
+
+                        // Add the message to the history manager to maintain conversation context
+                        if (this.historyManager) {
+                            this.historyManager.addMessage(
+                                assistantMessage.role,
+                                assistantMessage.content,
+                                { toolCalls: assistantMessage.toolCalls }
+                            );
+                        }
 
                         yield {
                             ...assistantMessage,
                             isComplete: false,
-                            toolCalls: assistantMessage.toolCalls?.map(call => {
-                                if ('function' in call) {
-                                    // Handle OpenAI-style tool calls
-                                    return {
-                                        id: call.id || '',
-                                        name: call.function.name,
-                                        arguments: typeof call.function.arguments === 'string'
-                                            ? JSON.parse(call.function.arguments)
-                                            : call.function.arguments
-                                    };
-                                } else {
-                                    // Handle our standard ToolCall format
-                                    return {
-                                        id: call.id || '',
-                                        name: call.name,
-                                        arguments: call.arguments || {}
-                                    };
-                                }
-                            })
+                            toolCalls: assistantMessage.toolCalls
+                        } as UniversalStreamResponse<T extends z.ZodType ? z.infer<T> : unknown>;
+
+                        // Process tool calls - fixing argument count and callback types
+                        const toolCallsResponse: UniversalChatResponse<unknown> = {
+                            content: '',
+                            role: 'assistant',
+                            toolCalls: completedToolCalls
                         };
 
-                        // Process each tool call
-                        log.debug(`Processing ${completedToolCalls.length} tool calls`);
-
-                        // First, ensure the assistant message with tool calls is added to history
-                        // This is critical for OpenAI which requires that tool messages reference
-                        // tool call IDs from a preceding assistant message
-                        this.historyManager.addMessage('assistant', contentAccumulator.getAccumulatedContent(), {
-                            toolCalls: completedToolCalls.map(call => ({
-                                id: call.id || `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-                                name: call.name,
-                                arguments: call.arguments || {}
-                            }))
-                        });
-
-                        const { requiresResubmission } = await this.toolOrchestrator?.processToolCalls(response);
-                        if (!requiresResubmission) return; // If no need to submit tool calls, return
-
-                        // Get updated history for creating a continuation stream
-                        const updatedMessages = this.historyManager.getHistoricalMessages();
-
-                        log.debug('Creating continuation stream with updated history', {
-                            messagesCount: updatedMessages.length
-                        });
-
-                        // Add detailed debug logging for history structure
-                        log.debug('Message history structure before continuation:',
-                            updatedMessages.map((msg, index) => ({
-                                index,
-                                role: msg.role,
-                                hasContent: Boolean(msg.content && msg.content.length > 0),
-                                contentLength: msg.content?.length || 0,
-                                hasToolCalls: Boolean(msg.toolCalls && msg.toolCalls.length > 0),
-                                toolCallsCount: msg.toolCalls?.length || 0,
-                                toolCallIds: msg.toolCalls?.map(tc => tc.id || 'missing_id') || [],
-                                hasToolCallId: Boolean(msg.toolCallId),
-                                toolCallId: msg.toolCallId || 'none'
-                            }))
+                        const toolCallsResult = await this.toolOrchestrator.processToolCalls(
+                            toolCallsResponse
                         );
 
-                        // Check for tool messages without corresponding tool calls
-                        const toolMessages = updatedMessages.filter(msg => msg.role === 'tool');
-                        const toolCallIds = updatedMessages
-                            .filter(msg => msg.toolCalls)
-                            .flatMap(msg => msg.toolCalls?.map(tc => tc.id) || []);
+                        // If we have StreamingService, continue the stream with tool results
+                        if (toolCallsResult.requiresResubmission && this.streamingService) {
+                            // Create continuation messages
+                            const toolMessages = this.historyManager.getLastMessages(5) || []; // Using existing method instead of getToolResultMessages, ensuring it's always an array
 
-                        const orphanedToolMessages = toolMessages.filter(
-                            msg => !msg.toolCallId || !toolCallIds.includes(msg.toolCallId)
-                        );
+                            // Add the continuation to the stream
+                            const continuationParams: UniversalChatParams = {
+                                ...params,
+                                messages: [...currentMessages, assistantMessage, ...(Array.isArray(toolMessages) ? toolMessages : [])]
+                            };
 
-                        if (orphanedToolMessages.length > 0) {
-                            log.warn('Found orphaned tool messages without matching tool calls', {
-                                count: orphanedToolMessages.length,
-                                toolCallIds: orphanedToolMessages.map(msg => msg.toolCallId)
-                            });
-                        }
-
-                        // Extract system message
-                        const systemMessage = params.messages?.find(m => m.role === 'system')?.content || '';
-
-                        try {
-                            // Make sure we have streamingService before using it
-                            if (!this.streamingService) {
-                                throw new Error("StreamingService not available for creating continuation stream");
-                            }
-
-                            // Create a new stream using StreamingService with updated history
                             const continuationStream = await this.streamingService.createStream(
-                                {
-                                    messages: updatedMessages,
-                                    settings: {
-                                        ...params.settings,
-                                        stream: true,
-                                        // Remove toolChoice if we're not including tools
-                                        toolChoice: undefined
-                                    },
-                                    tools: undefined, // No tools in the continuation
-                                    responseFormat: params.responseFormat,
-                                    jsonSchema: params.jsonSchema,
-                                    model: modelInfo.name
-                                },
-                                modelInfo.name,
-                                systemMessage
+                                continuationParams,
+                                params.model
                             );
 
-                            // Forward the stream chunks to the client
-                            log.debug('Starting to process continuation stream chunks');
-                            let forwardedChunks = 0;
-
-                            for await (const chunk of continuationStream) {
-                                log.debug('Forwarding continuation chunk', {
-                                    chunkNumber: ++forwardedChunks,
-                                    hasContent: Boolean(chunk.content),
-                                    contentLength: chunk.content?.length || 0,
-                                    isComplete: chunk.isComplete
-                                });
-
-                                yield {
-                                    ...chunk,
-                                    contentObject: null as any
-                                };
-
-                                if (chunk.isComplete) {
-                                    // Add the final response to history
-                                    if (chunk.content) {
-                                        // Don't add the message here as it will be added by StreamHistoryProcessor
-                                        // this.historyManager.addMessage('assistant', chunk.content);
-                                    }
-
-                                    log.debug('Continuation stream complete', {
-                                        totalChunks: forwardedChunks
-                                    });
+                            // Process the continuation stream
+                            if (continuationStream) {
+                                for await (const continuationChunk of continuationStream) {
+                                    yield continuationChunk as UniversalStreamResponse<T extends z.ZodType ? z.infer<T> : unknown>;
                                 }
                             }
-                        } catch (error) {
-                            log.error('Error in continuation stream:', error);
+                        } else if (toolCallsResult.requiresResubmission && !this.streamingService) {
+                            // Handle case where StreamingService is not available
+                            const errorMsg = 'StreamingService not available for tool call continuation';
+                            log.error(errorMsg);
+
                             yield {
                                 role: 'assistant',
-                                content: `Error generating response: ${error instanceof Error ? error.message : String(error)}`,
-                                isComplete: true
-                            };
+                                content: `Error: ${errorMsg}. Tool results cannot be processed further.`,
+                                isComplete: true,
+                                metadata: {
+                                    error: errorMsg,
+                                    finishReason: FinishReason.ERROR
+                                }
+                            } as UniversalStreamResponse<T extends z.ZodType ? z.infer<T> : unknown>;
                         }
 
-                        // We've handled the full stream, so return
-                        return;
+                        // Skip yielding the completed chunk since we've already handled it
+                        continue;
                     }
                 }
 
@@ -333,32 +295,81 @@ export class StreamHandler {
                     response.contentText = accumulatedContent;
 
                     // Handle JSON validation and parsing
-                    if (isJsonMode && schema) {
+                    if (isJsonRequested && schema) {
                         try {
-                            // Parse and validate JSON content
-                            const formattedResponse = {
-                                content: accumulatedContent,
-                                role: 'assistant'
-                            };
+                            // For prompt injection or force-prompt mode, use ResponseProcessor
+                            if (usePromptInjection) {
+                                log.info('Using prompt enhancement for JSON handling');
+                                const validatedResponse = await this.responseProcessor.validateResponse({
+                                    content: accumulatedContent,
+                                    role: 'assistant'
+                                }, {
+                                    model: params.model,
+                                    messages: [],
+                                    jsonSchema: params.jsonSchema,
+                                    responseFormat: 'json'
+                                }, modelInfo, { usePromptInjection: true });
 
-                            // Use SchemaValidator directly since ResponseProcessor doesn't have validateJsonResponse
-                            const parsedJson = SchemaValidator.validate(
-                                JSON.parse(accumulatedContent),
-                                schema
-                            );
+                                response.contentObject = validatedResponse.contentObject as any;
 
-                            response.contentObject = parsedJson as any;
-                        } catch (error) {
-                            log.warn('JSON validation failed', { error });
-                            if (response.metadata) {
-                                response.metadata.validationErrors =
-                                    error instanceof SchemaValidationError
-                                        ? error.validationErrors.map(err => ({
+                                // Make sure validation errors are included in the metadata
+                                if (validatedResponse.metadata?.validationErrors) {
+                                    response.metadata = response.metadata || {};
+                                    response.metadata.validationErrors = validatedResponse.metadata.validationErrors;
+                                    log.warn('JSON validation errors:', validatedResponse.metadata.validationErrors);
+                                }
+                            } else {
+                                log.info('Using native JSON mode');
+                                // For native JSON mode, use direct schema validation
+                                try {
+                                    const parsedContent = JSON.parse(accumulatedContent);
+                                    const parsedJson = SchemaValidator.validate(
+                                        parsedContent,
+                                        schema
+                                    );
+                                    response.contentObject = parsedJson as any;
+                                } catch (validationError: unknown) {
+                                    log.warn('JSON validation error in native mode:', validationError);
+                                    response.metadata = response.metadata || {};
+
+                                    if (validationError instanceof SchemaValidationError) {
+                                        response.metadata.validationErrors = validationError.validationErrors.map(err => ({
                                             message: err.message,
                                             path: Array.isArray(err.path) ? err.path : [err.path]
-                                        }))
-                                        : [{ message: String(error), path: [''] }];
+                                        }));
+                                    } else {
+                                        // Improved handling of non-SchemaValidationError types
+                                        response.metadata.validationErrors = [{
+                                            message: validationError instanceof Error
+                                                ? validationError.message
+                                                : String(validationError),
+                                            path: [''] // Default path when specific path isn't available
+                                        }];
+                                    }
+
+                                    response.metadata.finishReason = FinishReason.CONTENT_FILTER;
+                                }
                             }
+                        } catch (error: unknown) {
+                            log.warn('JSON validation failed', { error });
+                            response.metadata = response.metadata || {};
+
+                            // Handle different error types consistently
+                            if (error instanceof SchemaValidationError) {
+                                response.metadata.validationErrors = error.validationErrors.map(err => ({
+                                    message: err.message,
+                                    path: Array.isArray(err.path) ? err.path : [err.path]
+                                }));
+                            } else {
+                                response.metadata.validationErrors = [{
+                                    message: error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                    path: ['']
+                                }];
+                            }
+
+                            response.metadata.finishReason = FinishReason.CONTENT_FILTER;
                         }
                     }
 
@@ -369,15 +380,24 @@ export class StreamHandler {
 
                     log.debug('Stream processing complete', {
                         processingTimeMs: Date.now() - startTime,
-                        totalChunks: chunkCount
+                        totalChunks: chunkCount,
+                        isJsonPromptInjection: usePromptInjection,
+                        hasValidationErrors: Boolean(response.metadata?.validationErrors)
                     });
-
                 }
 
                 yield response;
             }
-        } catch (error: unknown) {
-            log.error('Error in stream processing', { error });
+
+            // Update metrics
+            const totalTime = Date.now() - startTime;
+            log.debug('Stream processing completed', {
+                chunkCount,
+                totalTimeMs: totalTime,
+                model: modelInfo.name
+            });
+        } catch (error) {
+            log.error('Error in stream processing:', error);
             throw error;
         }
     }

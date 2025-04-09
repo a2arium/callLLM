@@ -24,12 +24,12 @@ const response = await caller.call({
 *   **Multi-Provider Support**: Easily switch between different LLM providers (currently OpenAI, with others planned).
 *   **Streaming**: Native support for handling streaming responses.
 *   **Large Data Handling**: Automatic chunking and processing of large text or JSON data that exceeds model context limits.
-*   **JSON Mode & Schema Validation**: Robust support for enforcing JSON output, validating against Zod or JSON schemas.
+*   **JSON Mode & Schema Validation**: Support for enforcing JSON output with native JSON mode or prompt enhancement fallback for models that don't support structured output. Validation against Zod or JSON schemas.
 *   **Tool Calling**: Unified interface for defining and using tools (function calling) with LLMs.
 *   **Cost Tracking**: Automatic calculation and reporting of token usage and costs per API call.
 *   **Model Management**: Flexible model selection using aliases (`fast`, `cheap`, `balanced`, `premium`) or specific names, with built-in defaults and support for custom models.
 *   **Retry Mechanisms**: Built-in resilience against transient API errors using exponential backoff.
-*   **History Management**: Easy management of conversation history.
+*   **History Management**: Conversation history management to build chat based conversation or stateless calls without prior history.
 
 
 ```bash
@@ -487,6 +487,79 @@ In both cases:
 ## JSON Mode and Schema Validation
 
 The library supports structured outputs with schema validation using either Zod schemas or JSON Schema. You can configure these parameters either at the root level of the options object or within the settings property:
+
+### JSON Mode Support
+
+The library provides flexible control over how JSON responses are handled through the `jsonMode` setting:
+
+1. **Native JSON Mode**: Uses the model's built-in JSON mode (e.g., GPT-4 Turbo)
+2. **Prompt Enhancement**: Uses prompt engineering to ensure JSON output
+
+You can control this behavior with three modes:
+
+```typescript
+// Default behavior: Use native if available, fallback to prompt if not
+const response = await caller.call(
+    'Generate a user profile',
+    {
+        responseFormat: 'json',
+        jsonSchema: {
+            name: 'UserProfile',
+            schema: UserSchema
+        },
+        settings: {
+            jsonMode: 'fallback'  // Default value
+        }
+    }
+);
+
+// Require native JSON mode support
+const response = await caller.call(
+    'Generate a user profile',
+    {
+        responseFormat: 'json',
+        jsonSchema: {
+            name: 'UserProfile',
+            schema: UserSchema
+        },
+        settings: {
+            jsonMode: 'native-only'  // Will throw error if model doesn't support JSON mode
+        }
+    }
+);
+
+// Force using prompt enhancement
+const response = await caller.call(
+    'Generate a user profile',
+    {
+        responseFormat: 'json',
+        jsonSchema: {
+            name: 'UserProfile',
+            schema: UserSchema
+        },
+        settings: {
+            jsonMode: 'force-prompt'  // Always use prompt enhancement, even if native JSON mode is available
+        }
+    }
+);
+```
+
+The three modes are:
+
+- **fallback** (default): 
+  - Uses native JSON mode if the model supports it
+  - Falls back to prompt enhancement if native support is unavailable
+  - Ensures consistent JSON output across all supported models
+
+- **native-only**:
+  - Only uses native JSON mode
+  - Throws an error if the model doesn't support JSON mode
+  - Useful when you need guaranteed native JSON support
+
+- **force-prompt**:
+  - Always uses prompt enhancement
+  - Ignores native JSON mode even if available
+  - Useful when you prefer the prompt-based approach or need consistent behavior across different models
 
 ### Using Zod Schema
 

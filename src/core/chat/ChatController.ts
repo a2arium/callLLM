@@ -88,6 +88,9 @@ export class ChatController {
         const modelInfo = this.modelManager.getModel(model);
         if (!modelInfo) throw new Error(`Model ${model} not found`);
 
+        // Validate JSON mode capability if needed and get injection flag
+        const { usePromptInjection } = this.responseProcessor.validateJsonMode(modelInfo, params) || { usePromptInjection: false };
+
         // Get message list according to history mode
         let messagesForProvider = messages;
         const effectiveHistoryMode = historyMode || mergedSettings.historyMode;
@@ -157,9 +160,6 @@ export class ChatController {
 
         // Get last user message content for usage tracking (best effort)
         const lastUserMessage = [...validatedMessages].reverse().find(m => m.role === 'user')?.content || '';
-
-        // Validate JSON mode capability if needed
-        this.responseProcessor.validateJsonMode(modelInfo, chatParamsForProvider);
 
         const effectiveMaxRetries = mergedSettings?.maxRetries ?? 3;
         const localRetryManager = new RetryManager({ baseDelay: 1000, maxRetries: effectiveMaxRetries });
@@ -241,13 +241,18 @@ export class ChatController {
         // Validate the FINAL response (original or from recursion)
         const validationParams: UniversalChatParams = {
             messages: [],  // Required by UniversalChatParams but not used in validation
-            model: '',     // Required by UniversalChatParams but not used in validation
+            model: model,  // Pass actual model name
             settings: mergedSettings,
             jsonSchema: params.jsonSchema,
             responseFormat: params.responseFormat
         };
 
-        const validatedResponse = await this.responseProcessor.validateResponse<T>(response, validationParams);
+        const validatedResponse = await this.responseProcessor.validateResponse<T>(
+            response,
+            validationParams,
+            modelInfo,
+            { usePromptInjection }
+        );
 
         // Ensure we have a valid response after validation
         if (!validatedResponse) {

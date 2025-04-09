@@ -72,7 +72,6 @@ This is a universal LLM caller library designed to provide a unified interface f
 ## Streaming Implementation
 - NEVER implement fake streaming (i.e., sending a non-streaming request and then streaming the complete response)
 - NEVER include mock/hard-coded data in streaming implementations (except in tests and examples)
-- Always consume LLM provider streams directly and forward to clients
 - Properly handle tool calls during streaming, collecting tool arguments before execution
 - Ensure retry policy, JSON mode, and tool calling work correctly with streaming
 

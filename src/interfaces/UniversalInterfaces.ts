@@ -35,6 +35,11 @@ export type ResponseFormat = 'json' | 'text';
 // Define the history mode type
 export type HistoryMode = 'full' | 'truncate' | 'stateless';
 
+/**
+ * Specifies how JSON responses should be handled
+ */
+export type JsonModeType = 'native-only' | 'fallback' | 'force-prompt';
+
 // Define explicit properties for UniversalChatSettings
 export type UniversalChatSettings = {
     /**
@@ -85,6 +90,14 @@ export type UniversalChatSettings = {
      * @default true
      */
     shouldRetryDueToContent?: boolean;
+    /**
+     * Controls how JSON responses are handled:
+     * - 'native-only': Only use native JSON mode, error if not supported
+     * - 'fallback': Use native if supported, fallback to prompt if not (default)
+     * - 'force-prompt': Always use prompt enhancement, even if native JSON mode is supported
+     * @default 'fallback'
+     */
+    jsonMode?: JsonModeType;
     /**
      * Used for parallel tool calls, containing an array of tool call objects.
      * Each tool call specifies a tool to call with specific arguments.
@@ -243,6 +256,9 @@ export interface UniversalChatResponse<T = unknown> {
         jsonSchemaUsed?: { name?: string; schema: JSONSchemaDefinition };
         responseFormat?: ResponseFormat;
         validationErrors?: Array<{ message: string; path: (string | number)[] }>; // Zod-like error path
+        // Add JSON repair metadata
+        jsonRepaired?: boolean;
+        originalContent?: string;
     };
 }
 

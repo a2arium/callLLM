@@ -1,5 +1,5 @@
 import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
-import { UniversalChatResponse, UniversalChatParams, FinishReason, ResponseFormat } from '../../../../interfaces/UniversalInterfaces';
+import { UniversalChatResponse, UniversalChatParams, FinishReason, ResponseFormat, ModelInfo } from '../../../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 
 // Mock SchemaValidator
@@ -45,7 +45,20 @@ describe('ResponseProcessor', () => {
                 model: 'test-model'
             };
 
-            const result = await processor.validateResponse(response, params);
+            const mockModelInfo: ModelInfo = {
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                }
+            };
+
+            const result = await processor.validateResponse(response, params, mockModelInfo);
             expect(result).toEqual(response);
         });
 
@@ -63,7 +76,20 @@ describe('ResponseProcessor', () => {
                 responseFormat: 'json'
             };
 
-            const result = await processor.validateResponse(response, params);
+            const mockModelInfo: ModelInfo = {
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                }
+            };
+
+            const result = await processor.validateResponse(response, params, mockModelInfo);
             expect(result.contentObject).toEqual(jsonContent);
         });
 
@@ -89,7 +115,20 @@ describe('ResponseProcessor', () => {
                 }
             };
 
-            const result = await processor.validateResponse(response, params);
+            const mockModelInfo: ModelInfo = {
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                }
+            };
+
+            const result = await processor.validateResponse(response, params, mockModelInfo);
             expect(result.contentObject).toEqual(validContent);
             expect(SchemaValidator.validate).toHaveBeenCalledWith(validContent, testSchema);
         });
@@ -120,7 +159,20 @@ describe('ResponseProcessor', () => {
                 }
             };
 
-            const result = await processor.validateResponse(response, params);
+            const mockModelInfo: ModelInfo = {
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                }
+            };
+
+            const result = await processor.validateResponse(response, params, mockModelInfo);
             expect(result.metadata?.validationErrors).toEqual([
                 { path: ['age'], message: 'age is required' }
             ]);
@@ -149,7 +201,20 @@ describe('ResponseProcessor', () => {
                 }
             };
 
-            await expect(processor.validateResponse(response, params)).rejects.toThrow(
+            const mockModelInfo: ModelInfo = {
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                }
+            };
+
+            await expect(processor.validateResponse(response, params, mockModelInfo)).rejects.toThrow(
                 'Failed to validate response: Unexpected validation error'
             );
         });
@@ -176,7 +241,20 @@ describe('ResponseProcessor', () => {
                 }
             };
 
-            await expect(processor.validateResponse(response, params)).rejects.toThrow(
+            const mockModelInfo: ModelInfo = {
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                }
+            };
+
+            await expect(processor.validateResponse(response, params, mockModelInfo)).rejects.toThrow(
                 'Failed to validate response: Unknown error'
             );
         });
@@ -188,26 +266,39 @@ describe('ResponseProcessor', () => {
             });
 
             const validContent = { name: 'test', age: 25 };
-            const wrappedContent = { userProfile: validContent };  // Content wrapped in named object
             (SchemaValidator.validate as jest.Mock).mockReturnValueOnce(validContent);
 
             const response: UniversalChatResponse = {
-                content: JSON.stringify(wrappedContent),
-                role: 'assistant'
+                role: 'assistant',
+                content: JSON.stringify({ userProfile: validContent }),
+                metadata: {}
             };
 
             const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'test message' }],
+                messages: [],
                 model: 'test-model',
                 jsonSchema: {
-                    name: 'userProfile',  // Schema name matches wrapper object key
-                    schema: testSchema
+                    schema: testSchema,
+                    name: 'userProfile'
                 }
             };
 
-            const result = await processor.validateResponse(response, params);
+            const mockModelInfo: ModelInfo = {
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                }
+            };
+
+            const result = await processor.validateResponse(response, params, mockModelInfo);
             expect(result.contentObject).toEqual(validContent);
-            expect(SchemaValidator.validate).toHaveBeenCalledWith(validContent, testSchema);
+            expect(SchemaValidator.validate).toHaveBeenCalledWith({ name: 'test', age: 25 }, testSchema);
         });
 
         it('should handle case-insensitive schema name matching', async () => {
@@ -217,26 +308,307 @@ describe('ResponseProcessor', () => {
             });
 
             const validContent = { name: 'test', age: 25 };
-            const wrappedContent = { UserProfile: validContent };  // Different case in wrapper
             (SchemaValidator.validate as jest.Mock).mockReturnValueOnce(validContent);
 
             const response: UniversalChatResponse = {
-                content: JSON.stringify(wrappedContent),
-                role: 'assistant'
+                role: 'assistant',
+                content: JSON.stringify({ UserProfile: validContent }),
+                metadata: {}
             };
 
             const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'test message' }],
+                messages: [],
                 model: 'test-model',
                 jsonSchema: {
-                    name: 'userProfile',  // Schema name in different case
-                    schema: testSchema
+                    schema: testSchema,
+                    name: 'userProfile'
                 }
             };
 
-            const result = await processor.validateResponse(response, params);
+            const mockModelInfo: ModelInfo = {
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                }
+            };
+
+            const result = await processor.validateResponse(response, params, mockModelInfo);
             expect(result.contentObject).toEqual(validContent);
-            expect(SchemaValidator.validate).toHaveBeenCalledWith(validContent, testSchema);
+            expect(SchemaValidator.validate).toHaveBeenCalledWith({ name: 'test', age: 25 }, testSchema);
+        });
+
+        describe('JSON repair functionality', () => {
+            it('should repair and parse slightly malformed JSON without schema', async () => {
+                const malformedJson = '{ name: "test", age: 25 }'; // Missing quotes around property names
+                const response: UniversalChatResponse = {
+                    content: malformedJson,
+                    role: 'assistant'
+                };
+
+                const params: UniversalChatParams = {
+                    messages: [{ role: 'user', content: 'test message' }],
+                    model: 'test-model',
+                    responseFormat: 'json'
+                };
+
+                const mockModelInfo: ModelInfo = {
+                    name: 'test-model',
+                    inputPricePerMillion: 0.01,
+                    outputPricePerMillion: 0.02,
+                    maxRequestTokens: 4000,
+                    maxResponseTokens: 1000,
+                    characteristics: {
+                        qualityIndex: 80,
+                        outputSpeed: 20,
+                        firstTokenLatency: 500
+                    }
+                };
+
+                const result = await processor.validateResponse(response, params, mockModelInfo);
+                expect(result.contentObject).toEqual({ name: 'test', age: 25 });
+                expect(result.metadata?.jsonRepaired).toBe(true);
+                expect(result.metadata?.originalContent).toBe(malformedJson);
+            });
+
+            it('should repair and parse slightly malformed JSON with schema validation', async () => {
+                const testSchema = z.object({
+                    name: z.string(),
+                    age: z.number()
+                });
+
+                const malformedJson = '{ name: "test", age: 25 }'; // Missing quotes around property names
+                const validContent = { name: 'test', age: 25 };
+                (SchemaValidator.validate as jest.Mock).mockReturnValueOnce(validContent);
+
+                const response: UniversalChatResponse = {
+                    content: malformedJson,
+                    role: 'assistant'
+                };
+
+                const params: UniversalChatParams = {
+                    messages: [{ role: 'user', content: 'test message' }],
+                    model: 'test-model',
+                    jsonSchema: {
+                        schema: testSchema
+                    }
+                };
+
+                const mockModelInfo: ModelInfo = {
+                    name: 'test-model',
+                    inputPricePerMillion: 0.01,
+                    outputPricePerMillion: 0.02,
+                    maxRequestTokens: 4000,
+                    maxResponseTokens: 1000,
+                    characteristics: {
+                        qualityIndex: 80,
+                        outputSpeed: 20,
+                        firstTokenLatency: 500
+                    }
+                };
+
+                const result = await processor.validateResponse(response, params, mockModelInfo);
+                expect(result.contentObject).toEqual(validContent);
+                expect(result.metadata?.jsonRepaired).toBe(true);
+                expect(result.metadata?.originalContent).toBe(malformedJson);
+            });
+
+            it('should handle JSON with trailing commas', async () => {
+                const jsonWithTrailingComma = '{ "name": "test", "age": 25, }';
+                const response: UniversalChatResponse = {
+                    content: jsonWithTrailingComma,
+                    role: 'assistant'
+                };
+
+                const params: UniversalChatParams = {
+                    messages: [{ role: 'user', content: 'test message' }],
+                    model: 'test-model',
+                    responseFormat: 'json'
+                };
+
+                const mockModelInfo: ModelInfo = {
+                    name: 'test-model',
+                    inputPricePerMillion: 0.01,
+                    outputPricePerMillion: 0.02,
+                    maxRequestTokens: 4000,
+                    maxResponseTokens: 1000,
+                    characteristics: {
+                        qualityIndex: 80,
+                        outputSpeed: 20,
+                        firstTokenLatency: 500
+                    }
+                };
+
+                const result = await processor.validateResponse(response, params, mockModelInfo);
+                expect(result.contentObject).toEqual({ name: 'test', age: 25 });
+                expect(result.metadata?.jsonRepaired).toBe(true);
+                expect(result.metadata?.originalContent).toBe(jsonWithTrailingComma);
+            });
+
+            it('should throw error for badly malformed JSON that cannot be repaired', async () => {
+                const badlyMalformedJson = '{ completely broken json )))';
+                const response: UniversalChatResponse = {
+                    content: badlyMalformedJson,
+                    role: 'assistant'
+                };
+
+                const params: UniversalChatParams = {
+                    messages: [{ role: 'user', content: 'test message' }],
+                    model: 'test-model',
+                    responseFormat: 'json'
+                };
+
+                const mockModelInfo: ModelInfo = {
+                    name: 'test-model',
+                    inputPricePerMillion: 0.01,
+                    outputPricePerMillion: 0.02,
+                    maxRequestTokens: 4000,
+                    maxResponseTokens: 1000,
+                    characteristics: {
+                        qualityIndex: 80,
+                        outputSpeed: 20,
+                        firstTokenLatency: 500
+                    }
+                };
+
+                await expect(processor.validateResponse(response, params, mockModelInfo)).rejects.toThrow('Failed to parse JSON response');
+            });
+
+            it('should handle schema validation errors after JSON repair', async () => {
+                const testSchema = z.object({
+                    name: z.string(),
+                    age: z.number()
+                });
+
+                const malformedJson = '{ name: "test", age: "25" }'; // age should be number, not string
+                (SchemaValidator.validate as jest.Mock).mockImplementationOnce(() => {
+                    throw new SchemaValidationError('Validation failed', [
+                        { path: 'age', message: 'Expected number, received string' }
+                    ]);
+                });
+
+                const response: UniversalChatResponse = {
+                    content: malformedJson,
+                    role: 'assistant'
+                };
+
+                const params: UniversalChatParams = {
+                    messages: [{ role: 'user', content: 'test message' }],
+                    model: 'test-model',
+                    jsonSchema: {
+                        schema: testSchema
+                    }
+                };
+
+                const mockModelInfo: ModelInfo = {
+                    name: 'test-model',
+                    inputPricePerMillion: 0.01,
+                    outputPricePerMillion: 0.02,
+                    maxRequestTokens: 4000,
+                    maxResponseTokens: 1000,
+                    characteristics: {
+                        qualityIndex: 80,
+                        outputSpeed: 20,
+                        firstTokenLatency: 500
+                    }
+                };
+
+                const result = await processor.validateResponse(response, params, mockModelInfo);
+                expect(result.metadata?.jsonRepaired).toBe(true);
+                expect(result.metadata?.originalContent).toBe(malformedJson);
+                expect(result.metadata?.validationErrors).toEqual([
+                    { path: ['age'], message: 'Expected number, received string' }
+                ]);
+                expect(result.metadata?.finishReason).toBe(FinishReason.CONTENT_FILTER);
+            });
+        });
+
+        it('should validate response with schema', async () => {
+            const mockModelInfo: ModelInfo = {
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                }
+            };
+
+            const params: UniversalChatParams = {
+                messages: [],
+                model: 'test-model',
+                jsonSchema: { schema: z.object({ name: z.string(), age: z.number() }) }
+            };
+            const response: UniversalChatResponse = {
+                role: 'assistant',
+                content: '{"name": "John", "age": 30}',
+                metadata: {}
+            };
+            const result = await processor.validateResponse(response, params, mockModelInfo);
+            expect(result.contentObject).toEqual({ name: 'John', age: 30 });
+        });
+
+        it('should validate response without schema', async () => {
+            const mockModelInfo: ModelInfo = {
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                }
+            };
+
+            const params: UniversalChatParams = {
+                messages: [],
+                model: 'test-model',
+                responseFormat: 'json'
+            };
+            const response: UniversalChatResponse = {
+                role: 'assistant',
+                content: '{"test": "value"}',
+                metadata: {}
+            };
+            const result = await processor.validateResponse(response, params, mockModelInfo);
+            expect(result.contentObject).toEqual({ test: 'value' });
+        });
+
+        it('should return non-JSON response as-is', async () => {
+            const mockModelInfo: ModelInfo = {
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                }
+            };
+
+            const params: UniversalChatParams = {
+                messages: [],
+                model: 'test-model'
+            };
+            const response: UniversalChatResponse = {
+                role: 'assistant',
+                content: 'plain text response',
+                metadata: {}
+            };
+            const result = await processor.validateResponse(response, params, mockModelInfo);
+            expect(result).toEqual(response);
         });
     });
 
@@ -267,9 +639,9 @@ describe('ResponseProcessor', () => {
                 role: 'assistant'
             };
 
-            // Simulate a non-Error object being thrown
+            // Mock JSON.parse to throw a non-Error object
             jest.spyOn(JSON, 'parse').mockImplementationOnce(() => {
-                throw { custom: 'error' };  // Not an Error instance
+                throw { toString: () => 'Unknown error' }; // Non-Error object that will result in 'Unknown error'
             });
 
             await expect(processor['parseJson'](response)).rejects.toThrow(
@@ -279,34 +651,72 @@ describe('ResponseProcessor', () => {
     });
 
     describe('validateJsonMode', () => {
-        it('should throw when model does not support JSON mode with jsonSchema', () => {
-            const model = { capabilities: { jsonMode: false } };
-            const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'test message' }],
-                model: 'test-model',
-                jsonSchema: { schema: z.object({}) }
+        it('should return usePromptInjection: false when model has native JSON support', () => {
+            const model: ModelInfo = {
+                name: 'test-model',
+                capabilities: { jsonMode: true },
+                inputPricePerMillion: 0,
+                outputPricePerMillion: 0,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 1,
+                    outputSpeed: 1,
+                    firstTokenLatency: 1
+                }
             };
-            expect(() => processor.validateJsonMode(model, params)).toThrow('Selected model does not support JSON mode');
+            const params: UniversalChatParams = {
+                messages: [],
+                model: 'test-model',
+                responseFormat: 'json'
+            };
+            expect(processor.validateJsonMode(model, params)).toEqual({ usePromptInjection: false });
         });
 
-        it('should throw when model does not support JSON mode with responseFormat', () => {
-            const model = { capabilities: { jsonMode: false } };
-            const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'test message' }],
-                model: 'test-model',
-                responseFormat: 'json' as ResponseFormat
+        it('should throw error when model does not have native JSON support and fallback is disabled', () => {
+            const model: ModelInfo = {
+                name: 'test-model',
+                capabilities: { jsonMode: false },
+                inputPricePerMillion: 0,
+                outputPricePerMillion: 0,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 1,
+                    outputSpeed: 1,
+                    firstTokenLatency: 1
+                }
             };
-            expect(() => processor.validateJsonMode(model, params)).toThrow('Selected model does not support JSON mode');
+            const params: UniversalChatParams = {
+                messages: [],
+                model: 'test-model',
+                responseFormat: 'json',
+                settings: { jsonMode: 'native-only' }
+            };
+            expect(() => processor.validateJsonMode(model, params)).toThrow();
         });
 
-        it('should not throw when model supports JSON mode with jsonSchema', () => {
-            const model = { capabilities: { jsonMode: true } };
-            const params: UniversalChatParams = {
-                messages: [{ role: 'user', content: 'test message' }],
-                model: 'test-model',
-                jsonSchema: { schema: z.object({}) }
+        it('should return usePromptInjection: true when model does not have native JSON support but fallback is enabled', () => {
+            const model: ModelInfo = {
+                name: 'test-model',
+                capabilities: { jsonMode: false },
+                inputPricePerMillion: 0,
+                outputPricePerMillion: 0,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 1,
+                    outputSpeed: 1,
+                    firstTokenLatency: 1
+                }
             };
-            expect(() => processor.validateJsonMode(model, params)).not.toThrow();
+            const params: UniversalChatParams = {
+                messages: [],
+                model: 'test-model',
+                responseFormat: 'json',
+                settings: { jsonMode: 'fallback' }
+            };
+            expect(processor.validateJsonMode(model, params)).toEqual({ usePromptInjection: true });
         });
     });
 }); 

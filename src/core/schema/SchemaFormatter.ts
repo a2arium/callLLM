@@ -1,3 +1,7 @@
+import { JSONSchemaDefinition } from '../../interfaces/UniversalInterfaces';
+import { z } from 'zod';
+import { SchemaValidator } from './SchemaValidator';
+
 export type JSONSchemaObject = {
     type?: string;
     properties?: Record<string, JSONSchemaObject>;
@@ -52,4 +56,33 @@ export class SchemaFormatter {
         return result;
     }
 
+    /**
+     * Converts a schema definition to a readable string format
+     */
+    public static schemaToString(schema: JSONSchemaDefinition): string {
+        if (typeof schema === 'string') {
+            return schema;
+        }
+
+        if (schema instanceof z.ZodType) {
+            return this.zodSchemaToString(schema);
+        }
+
+        throw new Error('Unsupported schema type');
+    }
+
+    /**
+     * Converts a Zod schema to a readable string format
+     */
+    public static zodSchemaToString(schema: z.ZodType): string {
+        // Convert Zod schema to JSON Schema format
+        const jsonSchema = SchemaValidator.getSchemaObject(schema);
+
+        // Add any description as a property in the schema
+        if (schema.description) {
+            (jsonSchema as any).description = schema.description;
+        }
+
+        return JSON.stringify(jsonSchema);
+    }
 } 
