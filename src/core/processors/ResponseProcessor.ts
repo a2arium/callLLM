@@ -20,7 +20,8 @@ export class ResponseProcessor {
         const log = logger.createLogger({ prefix: 'ResponseProcessor.validateResponse' });
 
         // If no JSON processing is needed, return the original response
-        if (!params.jsonSchema && params.responseFormat !== 'json') {
+        if (!params.jsonSchema && params.responseFormat !== 'json' &&
+            !(params.responseFormat && typeof params.responseFormat === 'object' && params.responseFormat.type === 'json_object')) {
             return response as UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>;
         }
 
@@ -288,7 +289,8 @@ export class ResponseProcessor {
         params: UniversalChatParams
     ): { usePromptInjection: boolean } {
         const log = logger.createLogger({ prefix: 'ResponseProcessor.validateJsonMode' });
-        const isJsonRequested = params.responseFormat === 'json' || params.jsonSchema;
+        const isJsonRequested = params.responseFormat === 'json' || params.jsonSchema ||
+            (params.responseFormat && typeof params.responseFormat === 'object' && params.responseFormat.type === 'json_object');
         const hasNativeJsonSupport = modelInfo.capabilities?.jsonMode;
         const jsonMode = params.settings?.jsonMode ?? 'fallback';
 
@@ -296,11 +298,7 @@ export class ResponseProcessor {
             return { usePromptInjection: false };
         }
 
-        log.info('Using JSON mode:', {
-            mode: jsonMode,
-            hasNativeSupport: hasNativeJsonSupport,
-            modelName: modelInfo.name
-        });
+        log.debug(`Using JSON mode: { mode: '${jsonMode}', hasNativeSupport: ${hasNativeJsonSupport}, modelName: '${modelInfo.name}' }`);
 
         if (jsonMode === 'native-only' && !hasNativeJsonSupport) {
             throw new Error('Selected model does not support native JSON mode and native-only mode is required');

@@ -30,7 +30,7 @@ export type UniversalMessage = {
 
 // Define JSONSchemaDefinition and ResponseFormat before they are used
 export type JSONSchemaDefinition = string | z.ZodType;
-export type ResponseFormat = 'json' | 'text';
+export type ResponseFormat = 'json' | 'text' | { type: 'json_object' };
 
 // Define the history mode type
 export type HistoryMode = 'full' | 'truncate' | 'stateless';

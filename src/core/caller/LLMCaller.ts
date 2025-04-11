@@ -34,6 +34,7 @@ import type { ToolDefinition, ToolCall } from '../../types/tooling';
 import { StreamController } from '../streaming/StreamController';
 import { HistoryManager } from '../history/HistoryManager';
 import { logger } from '../../utils/logger';
+import { PromptEnhancer } from '../prompt/PromptEnhancer';
 
 /**
  * Interface that matches the StreamController's required methods
@@ -402,8 +403,7 @@ export class LLMCaller {
     }
 
     // Basic chat completion method - internal helper
-    private async internalChatCall(
-        // Takes the full parameter object
+    private async internalChatCall<T extends z.ZodType<any, z.ZodTypeDef, any>>(
         params: UniversalChatParams
     ): Promise<UniversalChatResponse> {
         this.toolController.resetIterationCount(); // Reset tool iteration
@@ -451,12 +451,13 @@ export class LLMCaller {
     /**
      * Processes a message and streams the response.
      * This is the standardized public API for streaming responses.
+     * @param input A string message or array of messages to process
+     * @param options Optional settings for the call
      */
-    public async stream(
-        message: string,
-        // Use the new LLMCallOptions type
+    public async *stream<T extends z.ZodType<any, z.ZodTypeDef, any> = z.ZodType<any, z.ZodTypeDef, any>>(
+        input: string | UniversalMessage[],
         options: LLMCallOptions = {}
-    ): Promise<AsyncIterable<UniversalStreamResponse>> {
+    ): AsyncGenerator<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>> {
         const { data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode } = options;
 
         // Use the RequestProcessor to process the request (handles chunking if needed)
@@ -464,8 +465,19 @@ export class LLMCaller {
         if (!modelInfo) {
             throw new Error(`Model ${this.model} not found`);
         }
+
+        // Convert string message to UniversalMessage array if needed
+        const messages = typeof input === 'string'
+            ? [{ role: 'user', content: input }]
+            : input;
+
+        // Get message content for processing
+        const messageContent = typeof input === 'string'
+            ? input
+            : messages.map(m => m.content || '').join('\n');
+
         const processedMessages = await this.requestProcessor.processRequest({
-            message,
+            message: messageContent,
             data,
             endingMessage,
             model: modelInfo,
@@ -489,61 +501,114 @@ export class LLMCaller {
         }
 
         // Add the original user message to history *before* the call
-        this.historyManager.addMessage('user', message);
+        this.historyManager.addMessage('user', messageContent);
 
-        // If there's only one chunk (no splitting occurred)
-        if (processedMessages.length === 1) {
-            // Construct the params for the single call
+        // Get the messages from history
+        let historyMessages = this.historyManager.getHistoricalMessages();
+
+        // Check if JSON is requested and whether to use native mode
+        const jsonRequested = responseFormat === 'json' || jsonSchema !== undefined;
+        const modelSupportsJsonMode = modelInfo.capabilities?.jsonMode ?? false;
+        const useNativeJsonMode = modelSupportsJsonMode && jsonRequested &&
+            !(settings?.jsonMode === 'force-prompt');
+
+        if (useNativeJsonMode) {
             const params: UniversalChatParams = {
                 model: this.model,
-                messages: this.historyManager.getHistoricalMessages(), // Use method from HistoryManager
+                messages: historyMessages,
                 settings: mergedSettings,
                 jsonSchema: jsonSchema,
-                responseFormat: responseFormat,
+                responseFormat: 'json', // Keep using simple 'json' format
                 tools: effectiveTools,
-                callerId: this.callerId,
                 historyMode: effectiveHistoryMode
             };
-            // History update for assistant response happens inside internalStreamCall wrapper
-            return this.internalStreamCall(params);
+            // History update for assistant happens inside internalChatCall
+            const response = await this.internalChatCall<T>(params);
+            if (response.content) {
+                const streamResponse: UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown> = {
+                    content: response.content,
+                    contentText: response.content,
+                    contentObject: response.contentObject as T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown,
+                    role: 'assistant',
+                    isComplete: true,
+                    messages: historyMessages,
+                    toolCalls: response.toolCalls,
+                    metadata: {
+                        ...response.metadata,
+                        processInfo: {
+                            currentChunk: 1,
+                            totalChunks: 1
+                        }
+                    }
+                };
+                yield streamResponse;
+                return;
+            }
+            return;
         }
 
         // If chunking occurred, use ChunkController
         const historyForChunks = this.historyManager.getHistoricalMessages(); // Get history *before* the latest user msg
 
-        // ChunkController's streamChunks should also handle adding the final assistant messages to history internally
-        const stream = this.chunkController.streamChunks(processedMessages, {
+        // ChunkController processes chunks and returns responses
+        const responses = await this.chunkController.processChunks(processedMessages, {
             model: this.model,
             settings: mergedSettings,
             jsonSchema: jsonSchema,
             responseFormat: responseFormat,
             tools: effectiveTools,
-            historicalMessages: historyForChunks // Pass history prior to the current message
+            historicalMessages: historyForChunks
         });
 
-        // Wrap the stream to handle stateless mode reset if needed
-        if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
-            const self = this;
-            return (async function* statelessStream() {
-                try {
-                    for await (const chunk of stream) {
-                        yield chunk;
-                    }
-                } finally {
-                    // Reset history after stream completes in stateless mode
-                    self.historyManager.initializeWithSystemMessage();
+        // Add assistant responses from all chunks to history AFTER all chunks are processed
+        // This ensures history is consistent after the multi-chunk operation completes
+        // BUT skip this history addition for tool calls, as the ChatController already adds these
+        if (responses.length > 1) {
+            responses.forEach(response => {
+                // Only add non-tool response messages, since tool messages are already added in ChatController
+                if (response.content && (!response.toolCalls || response.toolCalls.length === 0) &&
+                    response.metadata?.finishReason !== 'tool_calls') {
+                    this.historyManager.addMessage('assistant', response.content);
                 }
-            })();
+            });
         }
 
-        return stream;
+        // Reset history if stateless mode was used for this call
+        if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
+            this.historyManager.initializeWithSystemMessage();
+        }
+
+        // Convert array of responses to stream format
+        for (let i = 0; i < responses.length; i++) {
+            const response = responses[i];
+            const isLast = i === responses.length - 1;
+
+            const streamResponse: UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown> = {
+                content: response.content || '',
+                contentText: isLast ? response.content || '' : undefined,
+                contentObject: isLast ? response.contentObject as T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown : undefined,
+                role: response.role,
+                isComplete: isLast,
+                messages: historyMessages,
+                toolCalls: response.toolCalls,
+                metadata: {
+                    ...response.metadata,
+                    processInfo: {
+                        currentChunk: i + 1,
+                        totalChunks: responses.length
+                    }
+                }
+            };
+
+            yield streamResponse;
+        }
     }
 
     /**
      * Processes a message and returns the response(s).
      * This is the standardized public API for getting responses.
      */
-    public async call(
+    public async call<T extends z.ZodType<any, z.ZodTypeDef, any> = z.ZodType<any, z.ZodTypeDef, any>>(
         message: string,
         // Use the new LLMCallOptions type
         options: LLMCallOptions = {}
@@ -581,21 +646,30 @@ export class LLMCaller {
         // Add the original user message to history *before* the call
         this.historyManager.addMessage('user', message);
 
+        // Get the messages from history
+        let messages = this.historyManager.getHistoricalMessages();
+
+        // Check if JSON is requested and whether to use native mode
+        const jsonRequested = responseFormat === 'json' || jsonSchema !== undefined;
+        const modelSupportsJsonMode = modelInfo.capabilities?.jsonMode ?? false;
+        const useNativeJsonMode = modelSupportsJsonMode && jsonRequested &&
+            !(settings?.jsonMode === 'force-prompt');
+
         // If there's only one chunk (no splitting occurred)
         if (processedMessages.length === 1) {
             const params: UniversalChatParams = {
                 model: this.model,
-                messages: this.historyManager.getHistoricalMessages(), // Use method from HistoryManager
+                messages: messages,
                 settings: mergedSettings,
                 jsonSchema: jsonSchema,
-                responseFormat: responseFormat,
+                responseFormat: useNativeJsonMode ? 'json' : (jsonSchema ? 'text' : responseFormat),
                 tools: effectiveTools,
                 callerId: this.callerId,
                 historyMode: effectiveHistoryMode
             };
             // History update for assistant happens inside internalChatCall
-            const response = await this.internalChatCall(params);
-            return [response];
+            const response = await this.internalChatCall<T>(params);
+            return [response]; // Convert single response to array
         }
 
         // If chunking occurred, use ChunkController

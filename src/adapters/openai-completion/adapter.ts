@@ -319,6 +319,10 @@ export class OpenAIAdapter extends BaseAdapter implements LLMProvider, ProviderA
             } else {
                 openAIParams.response_format = { type: 'json_object' };
             }
+        } else if (actualParams.responseFormat && typeof actualParams.responseFormat === 'object' &&
+            actualParams.responseFormat.type === 'json_object') {
+            // For backward compatibility - convert object format to OpenAI format
+            openAIParams.response_format = { type: 'json_object' };
         }
 
         return openAIParams as T;

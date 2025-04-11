@@ -7,6 +7,7 @@ export type PromptEnhancementOptions = {
         schema: JSONSchemaDefinition;
     };
     responseFormat?: 'json' | 'text';
+    isNativeJsonMode?: boolean;
 };
 
 export class PromptEnhancer {
@@ -71,6 +72,10 @@ Schema:
      * Generates the instruction string based on options
      */
     private static generateInstructionString(options: PromptEnhancementOptions): string {
+        if (options.isNativeJsonMode) {
+            return 'Provide your response in valid JSON format.';
+        }
+
         if (!options.jsonSchema) {
             return this.JSON_INSTRUCTION;
         }

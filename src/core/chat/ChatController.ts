@@ -14,6 +14,7 @@ import { ToolOrchestrator } from '../tools/ToolOrchestrator';
 import { HistoryManager } from '../history/HistoryManager';
 import { HistoryTruncator } from '../history/HistoryTruncator';
 import { TokenCalculator } from '../models/TokenCalculator';
+import { PromptEnhancer } from '../prompt/PromptEnhancer';
 
 export class ChatController {
     // Keep track of the orchestrator - needed for recursive calls
@@ -117,19 +118,30 @@ export class ChatController {
         // Find the system message within the provided messages array
         const systemMessageContent = messagesForProvider.find(m => m.role === 'system')?.content || '';
 
-        // Append JSON instruction to system message if needed
-        const fullSystemMessageContent =
-            effectiveResponseFormat === 'json'
-                ? `${systemMessageContent}\n Provide your response in valid JSON format.`
-                : systemMessageContent;
+        // Use PromptEnhancer for adding JSON instructions
+        const enhancedMessages = effectiveResponseFormat === 'json'
+            ? PromptEnhancer.enhanceMessages(
+                // Only include the system message once to avoid duplication
+                messagesForProvider.filter(m => m.role !== 'system').concat([
+                    { role: 'system', content: systemMessageContent }
+                ]),
+                {
+                    responseFormat: 'json',
+                    jsonSchema: jsonSchema,
+                    isNativeJsonMode: !usePromptInjection
+                })
+            : messagesForProvider;
 
-        // Update system message content in the messages array if necessary
-        const finalMessages = messagesForProvider.map(msg =>
-            msg.role === 'system' ? { ...msg, content: fullSystemMessageContent } : msg
-        );
+        // Update the system message in history if available
+        if (this.historyManager && effectiveResponseFormat === 'json') {
+            const enhancedSystemMsg = enhancedMessages.find(msg => msg.role === 'system');
+            if (enhancedSystemMsg) {
+                this.historyManager.updateSystemMessage(enhancedSystemMsg.content, true);
+            }
+        }
 
         // Validate messages (ensure role, content/tool_calls validity)
-        const validatedMessages = finalMessages.map(msg => {
+        const validatedMessages = enhancedMessages.map(msg => {
             if (!msg.role) throw new Error('Message missing role');
             const hasContent = msg.content && msg.content.trim().length > 0;
             const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;

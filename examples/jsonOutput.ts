@@ -14,7 +14,16 @@ const UserSchema = z.object({
 
 async function main() {
     // Initialize the caller with OpenAI
-    const caller = new LLMCaller('openai', 'gpt-4o-mini');
+    const caller = new LLMCaller(
+        'openai',
+        'gpt-4o-mini',
+        'You are a helpful assistant.',
+        {
+            settings: {
+                // historyMode: 'truncate'
+            }
+        }
+    );
 
     try {
         // Example 1: Using Zod schema (recommended approach with properties at root level)
@@ -26,7 +35,6 @@ async function main() {
                     name: 'UserProfile',
                     schema: UserSchema
                 },
-                responseFormat: 'json',
                 settings: {
                     temperature: 0.7
                 }
@@ -34,7 +42,7 @@ async function main() {
         );
         console.log('\nStructured Response:');
         console.log(JSON.stringify(response1[0].contentObject, null, 2));
-        console.log(caller.getHistoricalMessages());
+        console.log(caller.getMessages());
 
         // Example 2: Using raw JSON Schema (recommended approach with properties at root level)
         console.log('\nExample 2: Using raw JSON Schema + force prompt enhancement mode');
@@ -78,6 +86,7 @@ async function main() {
         );
         console.log('\nJSON Schema Response:');
         console.log(JSON.stringify(response2[0].contentObject, null, 2));
+        console.log(caller.getMessages());
 
         // Example 3: Simple JSON mode without schema (recommended approach with properties at root level)
         console.log('\nExample 3: Simple JSON mode without schema');

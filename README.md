@@ -492,8 +492,8 @@ The library supports structured outputs with schema validation using either Zod 
 
 The library provides flexible control over how JSON responses are handled through the `jsonMode` setting:
 
-1. **Native JSON Mode**: Uses the model's built-in JSON mode (e.g., GPT-4 Turbo)
-2. **Prompt Enhancement**: Uses prompt engineering to ensure JSON output
+1. **Native JSON Mode**: Uses the model's built-in JSON mode 
+2. **Prompt Enhancement**: Uses prompt engineering and response parsing to ensure JSON output
 
 You can control this behavior with three modes:
 
