@@ -104,74 +104,55 @@ export class LLMCaller {
         systemMessage = 'You are a helpful assistant.',
         options?: LLMCallerOptions
     ) {
-        // Initialize dependencies with dependency injection
+        // Initialize dependencies that don't depend on each other first
         this.providerManager = options?.providerManager ||
             new ProviderManager(providerName as RegisteredProviders, options?.apiKey);
-
         this.modelManager = options?.modelManager ||
             new ModelManager(providerName as RegisteredProviders);
-
-        // Initialize core processors
         this.tokenCalculator = options?.tokenCalculator ||
             new TokenCalculator();
-
         this.responseProcessor = options?.responseProcessor ||
             new ResponseProcessor();
-
-        // Pass initial settings to RetryManager if maxRetries is set
         this.retryManager = options?.retryManager ||
             new RetryManager({
                 baseDelay: 1000,
                 maxRetries: options?.settings?.maxRetries ?? 3
             });
-
         this.dataSplitter = new DataSplitter(this.tokenCalculator);
-
-        // Store config
-        this.systemMessage = systemMessage; // Store initial system message
         this.initialSettings = options?.settings;
         this.callerId = options?.callerId || uuidv4();
         this.usageCallback = options?.usageCallback;
-        this.historyMode = options?.historyMode || 'stateless'; // Default to stateless mode if not specified
-
-        // Initialize history manager with system message (it adds it internally)
+        this.historyMode = options?.historyMode || 'stateless';
+        this.systemMessage = systemMessage;
         this.historyManager = options?.historyManager || new HistoryManager(systemMessage);
-
-        // Initialize the Tools subsystem
         this.toolsManager = options?.toolsManager || new ToolsManager();
+        this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
+        this.requestProcessor = new RequestProcessor();
+        this.toolController = new ToolController(this.toolsManager);
 
-        // Resolve model
         const resolvedModel = this.modelManager.getModel(modelOrAlias);
         if (!resolvedModel) throw new Error(`Model ${modelOrAlias} not found for provider ${providerName}`);
         this.model = resolvedModel.name;
 
-        // Initialize UsageTracker
-        this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
+        // **Initialize StreamingService early**
+        this.streamingService = options?.streamingService ||
+            new StreamingService(
+                this.providerManager, this.modelManager, this.historyManager, this.retryManager,
+                this.usageCallback, this.callerId, { tokenBatchSize: 100 }, this.toolController,
+                undefined // toolOrchestrator is set later
+            );
 
-        // Re-add initialization for requestProcessor
-        this.requestProcessor = new RequestProcessor();
-
-        // Initialize tool controller (doesn't depend on chat or stream controllers)
-        this.toolController = new ToolController(this.toolsManager);
-
-        // Defer initialization of components that depend on each other
-        // or initialize with placeholders if necessary
-
-        // Initialize ChatController (pass dependencies)
+        // **Initialize ChatController (without orchestrator initially)**
         this.chatController = options?.chatController || new ChatController(
-            this.providerManager,
-            this.modelManager,
-            this.responseProcessor,
-            this.retryManager,
-            this.usageTracker,
-            this.toolController,
-            undefined, // toolOrchestrator will be set later
+            this.providerManager, this.modelManager, this.responseProcessor, this.retryManager,
+            this.usageTracker, this.toolController,
+            undefined, // Pass undefined for toolOrchestrator for now
             this.historyManager
         );
 
-        // Initialize stream controller adapter
+        // **Create the adapter using initialized streamingService**
         // eslint-disable-next-line @typescript-eslint/no-this-alias
-        const self = this; // Capture context for adapter
+        const self = this;
         const streamControllerAdapter: StreamControllerInterface = {
             createStream: async (
                 model: string,
@@ -179,54 +160,37 @@ export class LLMCaller {
                 inputTokens: number
             ): Promise<AsyncIterable<UniversalStreamResponse>> => {
                 params.callerId = params.callerId || self.callerId;
-
-                // Check if streamingService exists before trying to access it
                 if (!self.streamingService) {
                     throw new Error('StreamingService is not initialized');
                 }
-
                 return self.streamingService.createStream(params, model, undefined);
             }
         };
 
-        // Initialize ToolOrchestrator with dependencies including the adapter
+        // **Initialize ToolOrchestrator, passing the ChatController**
         this.toolOrchestrator = new ToolOrchestrator(
             this.toolController,
-            this.chatController,
-            streamControllerAdapter as StreamController, // Cast needed
+            this.chatController, // Pass the initialized chatController
+            streamControllerAdapter as StreamController,
             this.historyManager
         );
 
-        // Now link the orchestrator back to the chat controller
-        // Assuming ChatController has a method like setToolOrchestrator or similar
-        // If not, constructor dependency injection is the primary way
-        (this.chatController as any).toolOrchestrator = this.toolOrchestrator; // Use workaround if no setter
+        // **Link ToolOrchestrator back to ChatController**
+        (this.chatController as any).toolOrchestrator = this.toolOrchestrator;
 
-        // Initialize StreamingService *after* toolOrchestrator is created
-        this.streamingService = options?.streamingService ||
-            new StreamingService(
-                this.providerManager,
-                this.modelManager,
-                this.historyManager,
-                this.retryManager,
-                this.usageCallback,
-                this.callerId,
-                { tokenBatchSize: 100 }, // Example config
-                this.toolController,
-                this.toolOrchestrator // Pass the created orchestrator
-            );
+        // **Link ToolOrchestrator back to StreamingService (if not mocked)**
+        if (!(options?.streamingService)) {
+            (this.streamingService as any).toolOrchestrator = this.toolOrchestrator;
+        }
 
-        // Initialize ChunkController
+        // Initialize ChunkController (now all dependencies should be ready)
         this.chunkController = new ChunkController(
             this.tokenCalculator,
             this.chatController,
-            streamControllerAdapter as StreamController, // Pass the adapter
+            streamControllerAdapter as StreamController,
             this.historyManager,
-            20 // Example batch size
+            20
         );
-
-        // No need to call initializeDependentControllers here, it's done above
-        // this.initializeDependentControllers(options);
     }
 
     // Model management methods - delegated to ModelManager

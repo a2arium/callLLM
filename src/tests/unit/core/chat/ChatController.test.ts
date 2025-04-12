@@ -234,7 +234,7 @@ describe('ChatController', () => {
         const mockChatParams = {
             model: 'test-model',
             messages: [{ role: 'user' as const, content: mockPrompt }],
-            historyMode: 'truncate' as HistoryMode
+            historyMode: 'dynamic' as HistoryMode
         };
 
         // Setup mock history with a system message and a long conversation history

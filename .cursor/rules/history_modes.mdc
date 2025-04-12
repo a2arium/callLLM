@@ -9,7 +9,7 @@ alwaysApply: false
 ## Core Principles
 
 1. **Case-Insensitive Mode Handling**
-   - All history mode values must be lowercase in type definition (`'full'`, `'truncate'`, `'stateless'`)
+   - All history mode values must be lowercase in type definition (`'full'`, `'dynamic'`, `'stateless'`)
    - Implementations must handle case-insensitive comparison
    - Always convert to lowercase before comparing mode values
 
@@ -32,7 +32,7 @@ alwaysApply: false
   - Preserve full context across calls
   - No message filtering or removal
 
-### Truncate Mode
+### Dynamic Mode
 - **Purpose**: Manage token limits
 - **Implementation**:
   - Intelligently truncate history when exceeding token limits
@@ -56,7 +56,7 @@ alwaysApply: false
 
 ### ChatController
 - Handle history modes consistently
-- Apply truncation when in truncate mode
+- Apply truncation when in dynamic mode
 - Clear history when in stateless mode
 - Preserve history when in full mode
 
@@ -72,7 +72,7 @@ alwaysApply: false
 - Check follow-up questions with context work
 - Ensure streaming contexts maintain all messages
 
-### Truncate Mode Tests
+### Dynamic Mode Tests
 - Verify truncation occurs at appropriate token limits
 - Check system message is always preserved
 - Ensure recent context is prioritized
@@ -102,10 +102,10 @@ await caller.call('What is the capital of France?');
 await caller.call('What is its population?'); // 'its' refers to Paris
 ```
 
-### Truncate Mode
+### Dynamic Mode
 ```typescript
 const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
-  historyMode: 'truncate'
+  historyMode: 'dynamic'
 });
 
 // Messages preserved until token limit reached

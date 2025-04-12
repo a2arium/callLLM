@@ -33,7 +33,7 @@ export type JSONSchemaDefinition = string | z.ZodType;
 export type ResponseFormat = 'json' | 'text' | { type: 'json_object' };
 
 // Define the history mode type
-export type HistoryMode = 'full' | 'truncate' | 'stateless';
+export type HistoryMode = 'full' | 'dynamic' | 'stateless';
 
 /**
  * Specifies how JSON responses should be handled
@@ -162,7 +162,7 @@ export type UniversalChatSettings = {
     /**
      * Controls how historical messages are sent to the model.
      * - 'full': Send all historical messages
-     * - 'truncate': Intelligently truncate history if it exceeds the model's token limit
+     * - 'dynamic': Intelligently truncate history if it exceeds the model's token limit
      * - 'stateless': Only send system message and current user message
      */
     historyMode?: HistoryMode;
@@ -197,7 +197,7 @@ export type LLMCallOptions = {
     /**
      * Controls how historical messages are sent to the model.
      * - 'full': Send all historical messages (default)
-     * - 'truncate': Intelligently truncate history if it exceeds the model's token limit
+     * - 'dynamic': Intelligently truncate history if it exceeds the model's token limit
      * - 'stateless': Only send system message and current user message
      * @default 'stateless'
      */

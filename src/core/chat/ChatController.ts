@@ -96,13 +96,13 @@ export class ChatController {
         let messagesForProvider = messages;
         const effectiveHistoryMode = historyMode || mergedSettings.historyMode;
 
-        if (effectiveHistoryMode?.toLowerCase() === 'truncate' && this.historyManager) {
-            log.debug('Using truncate history mode for chat - intelligently truncating history');
+        if (effectiveHistoryMode?.toLowerCase() === 'dynamic' && this.historyManager) {
+            log.debug('Using dynamic history mode for chat - intelligently truncating history');
 
             // Get all historical messages
             const allMessages = this.historyManager.getMessages();
 
-            // If we have a truncator and messages to truncate, do the truncation
+            // If we have a truncator and messages to dynamic, do the truncation
             if (allMessages.length > 0) {
                 // Use the history truncator to intelligently truncate messages
                 messagesForProvider = this.historyTruncator.truncate(
@@ -111,7 +111,7 @@ export class ChatController {
                     modelInfo.maxResponseTokens
                 );
 
-                log.debug(`Truncate mode: sending ${messagesForProvider.length} messages to provider (from original ${allMessages.length})`);
+                log.debug(`Dynamic mode: sending ${messagesForProvider.length} messages to provider (from original ${allMessages.length})`);
             }
         }
 

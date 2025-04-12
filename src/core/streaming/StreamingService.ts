@@ -180,8 +180,8 @@ export class StreamingService {
             // Check for history mode
             const effectiveHistoryMode = params.historyMode || params.settings?.historyMode;
 
-            if (effectiveHistoryMode?.toLowerCase() === 'truncate') {
-                logger.debug('Using truncate history mode for streaming - intelligently truncating history');
+            if (effectiveHistoryMode?.toLowerCase() === 'dynamic') {
+                logger.debug('Using dynamic history mode for streaming - intelligently truncating history');
 
                 // Get all historical messages
                 const allMessages = this.historyManager.getMessages();
@@ -204,7 +204,7 @@ export class StreamingService {
                         messages: [...truncatedMessages, ...currentUserMessages]
                     };
 
-                    logger.debug(`Truncate mode: streaming with ${params.messages.length} messages to provider (from original ${allMessages.length})`);
+                    logger.debug(`Dynamic mode: streaming with ${params.messages.length} messages to provider (from original ${allMessages.length})`);
 
                     // Recalculate input tokens based on the truncated messages
                     inputTokens = this.tokenCalculator.calculateTotalTokens(params.messages);

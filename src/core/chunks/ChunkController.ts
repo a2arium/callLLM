@@ -108,14 +108,24 @@ export class ChunkController {
             // Call execute with the full UniversalChatParams object
             const response = await this.chatController.execute(chatParams);
 
-            // Update temporary history
-            if (response.content) {
-                chunkProcessingHistory.addMessage('assistant', response.content);
-            } else if (response.toolCalls && response.toolCalls.length > 0) {
-                chunkProcessingHistory.addMessage('assistant', '', { toolCalls: response.toolCalls });
-            }
+            // Check if response exists before accessing properties
+            if (response) {
+                // Update temporary history - Safely access content
+                if (response.content) { // Check if content exists and is not null/undefined
+                    chunkProcessingHistory.addMessage('assistant', response.content);
+                } else if (response.toolCalls && response.toolCalls.length > 0) {
+                    // If no content but tool calls exist, add an empty assistant message with tool calls
+                    chunkProcessingHistory.addMessage('assistant', '', { toolCalls: response.toolCalls });
+                }
+                // If neither content nor tool calls exist, we might not add anything to history, or add an empty message depending on desired behavior.
+                // Current logic implicitly does nothing in that case.
 
-            responses.push(response);
+                responses.push(response);
+            } else {
+                // Handle the case where chatController.execute returns undefined/null
+                logger.warn('ChatController.execute returned no response for a chunk');
+                // Depending on desired behavior, you might push a placeholder or skip
+            }
         }
         return responses;
     }
@@ -183,13 +193,18 @@ export class ChunkController {
                 yield chunk;
             }
 
-            // Update temporary history
+            // Update temporary history - Safely access contentText
             if (finalChunkData) {
-                if (finalChunkData.contentText) {
+                if (finalChunkData.contentText) { // Check if contentText exists
                     chunkProcessingHistory.addMessage('assistant', finalChunkData.contentText);
                 } else if (finalChunkData.toolCalls && finalChunkData.toolCalls.length > 0) {
+                    // If no content but tool calls exist, add an empty assistant message with tool calls
                     chunkProcessingHistory.addMessage('assistant', '', { toolCalls: finalChunkData.toolCalls });
                 }
+                // Consider if an empty message should be added if neither content nor tool calls are present in the final chunk
+            } else {
+                // Handle case where the stream finished without a final data chunk
+                logger.debug('Stream finished without a final chunk containing content or tool calls.');
             }
         }
     }

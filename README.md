@@ -1024,12 +1024,12 @@ The library provides three different history management modes that control how c
 // Initialize with specific history mode
 const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
     apiKey: process.env.OPENAI_API_KEY,
-    historyMode: 'full' // One of: 'full', 'truncate', 'stateless'
+    historyMode: 'full' // One of: 'full', 'dynamic', 'stateless'
 });
 
 // Or update history mode after initialization
 caller.updateSettings({
-    historyMode: 'truncate'
+    historyMode: 'dynamic'
 });
 ```
 
@@ -1042,7 +1042,7 @@ caller.updateSettings({
    - Best for independent questions or to avoid context contamination
    - Default mode
 
-2. **truncate**: Intelligently truncate history if it exceeds the model's token limit
+2. **dynamic**: Keep the history within available context windows. Intelligently truncate history if it exceeds the model's token limit
    - Automatically manages token limits by removing older messages when needed
    - Always preserves the system message and current question
    - Prioritizes keeping recent context over older messages
@@ -1070,10 +1070,10 @@ await fullModeCaller.call('What is the capital of France?');
 const response = await fullModeCaller.call('What is its population?');
 // Model understands 'its' refers to Paris from previous context
 
-// 2. Truncate mode example - handles long conversations
+// 2. Dynamic mode example - handles long conversations
 const truncateCaller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
     apiKey: process.env.OPENAI_API_KEY,
-    historyMode: 'truncate'
+    historyMode: 'dynamic'
 });
 
 // When conversation gets too long, older messages are removed automatically
@@ -1099,7 +1099,7 @@ All three history modes work seamlessly with streaming:
 // Streaming with history modes
 const streamingCaller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
     apiKey: process.env.OPENAI_API_KEY,
-    historyMode: 'full' // or 'truncate' or 'stateless'
+    historyMode: 'full' // or 'dynamic' or 'stateless'
 });
 
 // Stream with history context
@@ -1112,7 +1112,7 @@ for await (const chunk of stream) {
 #### When to Use Each History Mode
 
 - **full**: Use for conversational applications where context continuity is important, such as chatbots or virtual assistants.
-- **truncate**: Use for applications with long conversations or large amounts of context, where you need to manage token limits automatically.
+- **dynamic**: Use for applications with long conversations or large amounts of context, where you need to manage token limits automatically.
 - **stateless**: Use for applications where each query should be treated independently, such as one-off analysis tasks or when you want to avoid context contamination.
 
 ## Error Handling 

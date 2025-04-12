@@ -64,7 +64,8 @@ describe('LLMCaller - Model Management', () => {
             getHistorySummary: jest.fn(),
             getMessages: jest.fn().mockReturnValue([]),
             deserializeHistory: jest.fn(),
-            initializeWithSystemMessage: jest.fn()
+            initializeWithSystemMessage: jest.fn(),
+            captureStreamResponse: jest.fn()
         } as unknown as jest.Mocked<HistoryManager>;
 
         const mockTool = {
@@ -119,8 +120,8 @@ describe('LLMCaller - Model Management', () => {
         it('should stream responses without chunking', async () => {
             const message = 'test message';
             const mockStream = [
-                { contentText: 'partial', role: 'assistant', isComplete: false },
-                { contentText: 'complete', role: 'assistant', isComplete: true }
+                { content: 'partial', role: 'assistant', isComplete: false },
+                { content: 'complete', role: 'assistant', isComplete: true }
             ];
             mockStreamingService.createStream.mockResolvedValue(async function* () {
                 for (const chunk of mockStream) {
@@ -128,32 +129,31 @@ describe('LLMCaller - Model Management', () => {
                 }
             }());
 
+            mockHistoryManager.addMessage.mockClear();
+            mockStreamingService.createStream.mockClear();
+
             const stream = await llmCaller.stream(message);
-            const responses = [];
+            const responses: UniversalStreamResponse[] = [];
             for await (const response of stream) {
                 responses.push(response);
             }
 
-            // Verify message was added to history
-            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message);
+            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message, expect.anything());
 
-            // Verify stream was created
+            expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
             expect(mockStreamingService.createStream).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    callerId: expect.any(String)
+                    model: 'test-model',
+                    messages: expect.arrayContaining([expect.objectContaining({ role: 'user', content: message })])
                 }),
                 'test-model',
                 undefined
             );
 
-            // Verify responses were collected
-            expect(responses).toEqual([
-                { contentText: 'partial', role: 'assistant', isComplete: false },
-                { contentText: 'complete', role: 'assistant', isComplete: true }
-            ]);
+            expect(responses.length).toBe(mockStream.length);
+            expect(responses).toEqual(mockStream);
 
-            // Verify final message was added to history
-            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message);
+            expect(mockHistoryManager.captureStreamResponse).toHaveBeenCalled();
         });
     });
 
@@ -236,36 +236,43 @@ describe('LLMCaller - Model Management', () => {
                 toolCalls: [{ id: 'tool1', name: 'test-tool', arguments: { param1: 'value1' } }]
             });
 
+            mockHistoryManager.addMessage.mockClear();
+            mockChatController.execute.mockClear();
+
             const responses = await llmCaller.call(message);
 
-            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message);
-            expect(mockHistoryManager.getHistoricalMessages).toHaveBeenCalled();
+            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message, expect.anything());
+            expect(mockChatController.execute).toHaveBeenCalledTimes(2);
             expect(responses).toHaveLength(1);
             expect(responses[0].content).toBe('response1');
+            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('assistant', 'response1', expect.objectContaining({ toolCalls: expect.any(Array) }));
         });
 
         it('should handle chunked messages in stream', async () => {
             const message = 'test message';
             mockRequestProcessor.processRequest.mockResolvedValue(['chunk1', 'chunk2']);
-            const mockStream = [
-                { contentText: 'partial', role: 'assistant', isComplete: false },
-                { contentText: 'complete', role: 'assistant', isComplete: true }
-            ];
+            const mockStreamChunk = { content: 'stream part', role: 'assistant', isComplete: false };
+            const mockFinalStreamChunk = { content: 'stream final', role: 'assistant', isComplete: true };
+
             mockStreamingService.createStream.mockResolvedValue(async function* () {
-                for (const chunk of mockStream) {
-                    yield chunk as UniversalStreamResponse;
-                }
+                yield mockStreamChunk as UniversalStreamResponse;
+                yield mockFinalStreamChunk as UniversalStreamResponse;
             }());
 
+            mockHistoryManager.addMessage.mockClear();
+            mockStreamingService.createStream.mockClear();
+
             const stream = await llmCaller.stream(message);
-            const responses = [];
+            const responses: UniversalStreamResponse[] = [];
             for await (const response of stream) {
                 responses.push(response);
             }
 
-            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message);
-            expect(mockHistoryManager.getHistoricalMessages).toHaveBeenCalled();
-            expect(responses).toHaveLength(2);
+            expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message, expect.anything());
+            expect(mockStreamingService.createStream).toHaveBeenCalledTimes(2);
+            expect(responses).toHaveLength(4);
+            expect(responses).toEqual([mockStreamChunk, mockFinalStreamChunk, mockStreamChunk, mockFinalStreamChunk]);
+            expect(mockHistoryManager.captureStreamResponse).toHaveBeenCalledTimes(2);
         });
     });
 

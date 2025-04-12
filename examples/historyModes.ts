@@ -5,7 +5,7 @@ import { RegisteredProviders } from '../src/adapters';
  * This example demonstrates the different history modes available in the LLMCaller:
  * 
  * 1. Full - Send all historical messages to the model (default)
- * 2. Truncate - Intelligently truncate history if it exceeds the model's token limit
+ * 2. Dynamic - Intelligently truncate history if it exceeds the model's token limit
  * 3. Stateless - Only send system message and current user message to model,
  *    then reset history state after each call
  * 
@@ -283,32 +283,32 @@ async function runHistoryModeExample() {
     // TRUNCATE MODE EXAMPLE
     // ────────────────────────────────────────────────────────────────────────
     console.log('┌────────────────────────────────────────┐');
-    console.log('│         TRUNCATE HISTORY MODE          │');
+    console.log('│         DYNAMIC HISTORY MODE          │');
     console.log('└────────────────────────────────────────┘');
 
-    // Create a new LLM caller instance with 'Truncate' mode
-    const truncateCaller = new LLMCaller(
+    // Create a new LLM caller instance with 'dynamic' mode
+    const dynamicCaller = new LLMCaller(
         'openai' as RegisteredProviders,
         'gpt-4o-mini',
         'You are a helpful assistant that maintains essential conversation context.',
         {
             apiKey: process.env.OPENAI_API_KEY,
-            historyMode: 'truncate'
+            historyMode: 'dynamic'
         }
     );
 
-    truncateCaller.updateModel('gpt-4o-mini', {
+    dynamicCaller.updateModel('gpt-4o-mini', {
         maxRequestTokens: 2000,
         maxResponseTokens: 1000
     });
 
 
     console.log('\n[1] First question:');
-    await truncateCaller.call('What is machine learning?');
+    await dynamicCaller.call('What is machine learning?');
     console.log(`User: What is machine learning?`);
 
     console.log('\n[2] Second question:');
-    await truncateCaller.call('What are the main types of machine learning?');
+    await dynamicCaller.call('What are the main types of machine learning?');
     console.log(`User: What are the main types of machine learning?`);
 
     // Add more messages to build history and trigger truncation
@@ -316,17 +316,17 @@ async function runHistoryModeExample() {
 
     // Add 10 more exchanges to build history
     for (let i = 1; i <= 4; i++) {
-        await truncateCaller.call(`Tell me more details about deep learning technique #${i}`);
+        await dynamicCaller.call(`Tell me more details about deep learning technique #${i}`);
         console.log(`Added message ${i}/10: Tell me more details about deep learning technique #${i}`);
     }
 
     console.log('\n[3] Follow-up question after building history:');
-    const truncateResponse = await truncateCaller.call('Compare supervised and unsupervised learning approaches.');
+    const truncateResponse = await dynamicCaller.call('Compare supervised and unsupervised learning approaches.');
     console.log(`User: Compare supervised and unsupervised learning approaches.`);
     console.log(`Assistant: ${truncateResponse[0]?.content?.substring(0, 200) || 'No response'}...`);
 
-    console.log('\nHistory after Truncate mode conversation:');
-    const truncateHistory = truncateCaller.getHistorySummary();
+    console.log('\nHistory after Dynamic mode conversation:');
+    const truncateHistory = dynamicCaller.getHistorySummary();
     console.log(`Total messages in history: ${truncateHistory.length}`);
     console.log('First few and last few messages:');
 
@@ -342,31 +342,31 @@ async function runHistoryModeExample() {
         console.log(`- ${msg.role}: ${msg.contentPreview}`);
     });
 
-    console.log('\n✓ Truncate mode intelligently removes older messages when token limit is reached');
+    console.log('\n✓ Dynamic mode intelligently removes older messages when token limit is reached');
     console.log('✓ Always preserves the system message and current question');
     console.log('✓ Prioritizes keeping recent context over older messages');
     console.log('✓ Best for long conversations with high token usage');
     console.log('✓ Ideal for production applications to prevent token limit errors\n');
 
     // ────────────────────────────────────────────────────────────────────────
-    // TRUNCATE STREAMING MODE EXAMPLE
+    // DYNAMIC STREAMING MODE EXAMPLE
     // ────────────────────────────────────────────────────────────────────────
     console.log('┌────────────────────────────────────────┐');
-    console.log('│      TRUNCATE STREAMING MODE           │');
+    console.log('│      DYNAMIC STREAMING MODE           │');
     console.log('└────────────────────────────────────────┘');
 
-    // Create a new LLM caller instance with 'Truncate' mode for streaming
-    const truncateStreamingCaller = new LLMCaller(
+    // Create a new LLM caller instance with 'dynamic' mode for streaming
+    const dynamicStreamingCaller = new LLMCaller(
         'openai' as RegisteredProviders,
         'gpt-4o-mini',
         'You are a helpful assistant that maintains essential conversation context.',
         {
             apiKey: process.env.OPENAI_API_KEY,
-            historyMode: 'truncate'
+            historyMode: 'dynamic'
         }
     );
 
-    truncateStreamingCaller.updateModel('gpt-4o-mini', {
+    dynamicStreamingCaller.updateModel('gpt-4o-mini', {
         maxRequestTokens: 2000,
         maxResponseTokens: 1000
     });
@@ -377,7 +377,7 @@ async function runHistoryModeExample() {
 
     // Process streaming chunks for first question
     let truncateStreamContent1 = '';
-    const truncateStream1 = await truncateStreamingCaller.stream('What is artificial intelligence?');
+    const truncateStream1 = await dynamicStreamingCaller.stream('What is artificial intelligence?');
     for await (const chunk of truncateStream1) {
         process.stdout.write(chunk.content);
         truncateStreamContent1 += chunk.contentText || '';
@@ -390,7 +390,7 @@ async function runHistoryModeExample() {
 
     // Process streaming chunks for second question
     let truncateStreamContent2 = '';
-    const truncateStream2 = await truncateStreamingCaller.stream('How does AI differ from machine learning?');
+    const truncateStream2 = await dynamicStreamingCaller.stream('How does AI differ from machine learning?');
     for await (const chunk of truncateStream2) {
         process.stdout.write(chunk.content);
         truncateStreamContent2 += chunk.contentText || '';
@@ -403,7 +403,7 @@ async function runHistoryModeExample() {
     // Add 4 more exchanges to build history
     for (let i = 1; i <= 4; i++) {
         console.log(`Adding message ${i}/4: Tell me about AI application #${i}`);
-        const bulkStream = await truncateStreamingCaller.stream(`Tell me about AI application #${i}`);
+        const bulkStream = await dynamicStreamingCaller.stream(`Tell me about AI application #${i}`);
         for await (const chunk of bulkStream) {
             // We're not displaying these intermediate responses to keep output clean
         }
@@ -415,15 +415,15 @@ async function runHistoryModeExample() {
 
     // Process streaming chunks for final question
     let truncateStreamContent3 = '';
-    const truncateStream3 = await truncateStreamingCaller.stream('What are the ethical concerns around AI development?');
+    const truncateStream3 = await dynamicStreamingCaller.stream('What are the ethical concerns around AI development?');
     for await (const chunk of truncateStream3) {
         process.stdout.write(chunk.content);
         truncateStreamContent3 += chunk.contentText || '';
     }
     console.log('\n');
 
-    console.log('\nHistory after Truncate streaming mode conversation:');
-    const truncateStreamingHistory = truncateStreamingCaller.getHistorySummary();
+    console.log('\nHistory after Dynamic streaming mode conversation:');
+    const truncateStreamingHistory = dynamicStreamingCaller.getHistorySummary();
     console.log(`Total messages in history: ${truncateStreamingHistory.length}`);
     console.log('First few and last few messages:');
 
@@ -439,7 +439,7 @@ async function runHistoryModeExample() {
         console.log(`- ${msg.role}: ${msg.contentPreview}`);
     });
 
-    console.log('\n✓ Truncate streaming mode combines streaming with intelligent history management');
+    console.log('\n✓ Dynamic streaming mode combines streaming with intelligent history management');
     console.log('✓ Response content arrives in real-time chunks for responsive UI experiences');
     console.log('✓ Automatically manages token limits by removing older messages when needed');
     console.log('✓ Preserves important context while allowing for long-running conversations');

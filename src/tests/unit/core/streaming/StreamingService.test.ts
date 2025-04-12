@@ -355,7 +355,7 @@ describe('StreamingService', () => {
         // Create params with truncate mode
         const params = createTestParams({
             messages: [currentUserMessage],
-            historyMode: 'truncate' as HistoryMode
+            historyMode: 'dynamic' as HistoryMode
         });
 
         // Act
