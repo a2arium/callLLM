@@ -643,6 +643,7 @@ export class LLMCaller {
             this.historyManager.initializeWithSystemMessage();
         }
 
+
         // Add the original user message to history *before* the call
         this.historyManager.addMessage('user', message);
 

@@ -35,7 +35,6 @@ export class HistoryManager {
     public initializeWithSystemMessage(): void {
         const log = logger.createLogger({ prefix: 'HistoryManager.initializeWithSystemMessage' });
         log.debug('Initializing history with system message:', this.systemMessage);
-
         // Clear any existing history first to avoid duplication
         this.clearHistory();
         if (this.systemMessage) {

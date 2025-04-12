@@ -49,21 +49,21 @@ Schema:
         // Generate the instruction string
         const instruction = this.generateInstructionString(options);
 
-        // Find the system message or create one
+        // Find the system message to insert after it
         const systemMessageIndex = enhancedMessages.findIndex(msg => msg.role === 'system');
-        if (systemMessageIndex >= 0) {
-            // Append to existing system message
-            enhancedMessages[systemMessageIndex] = {
-                ...enhancedMessages[systemMessageIndex],
-                content: `${enhancedMessages[systemMessageIndex].content}\n\n${instruction}`
-            };
-        } else {
-            // Add new system message at the start
-            enhancedMessages.unshift({
-                role: 'system',
-                content: instruction
-            });
-        }
+        const insertIndex = systemMessageIndex >= 0 ? systemMessageIndex + 1 : 0;
+
+        // Create an instruction message as a user message
+        const instructionMessage: UniversalMessage = {
+            role: 'user',
+            content: `Format instructions: ${instruction}`,
+            metadata: {
+                isFormatInstruction: true  // Add special metadata to identify this message
+            }
+        };
+
+        // Insert the instruction message after the system message
+        enhancedMessages.splice(insertIndex, 0, instructionMessage);
 
         return enhancedMessages;
     }

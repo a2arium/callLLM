@@ -132,13 +132,31 @@ export class ChatController {
                 })
             : messagesForProvider;
 
-        // Update the system message in history if available
+        // Add format instruction to history if present
         if (this.historyManager && effectiveResponseFormat === 'json') {
-            const enhancedSystemMsg = enhancedMessages.find(msg => msg.role === 'system');
-            if (enhancedSystemMsg) {
-                this.historyManager.updateSystemMessage(enhancedSystemMsg.content, true);
+            const formatInstruction = enhancedMessages.find(msg =>
+                msg.role === 'user' && msg.metadata?.isFormatInstruction);
+
+            if (formatInstruction) {
+                // Only add if we don't already have an instruction with the same content
+                const existingInstructions = this.historyManager.getMessages().filter(msg =>
+                    msg.metadata?.isFormatInstruction);
+
+                const alreadyHasInstruction = existingInstructions.some(msg =>
+                    msg.content === formatInstruction.content);
+
+                if (!alreadyHasInstruction) {
+                    this.historyManager.addMessage(
+                        formatInstruction.role,
+                        formatInstruction.content,
+                        { metadata: { isFormatInstruction: true } }
+                    );
+                }
             }
         }
+
+        // We no longer update the system message from enhanced messages
+        // This prevents accumulation of JSON instructions in the system message
 
         // Validate messages (ensure role, content/tool_calls validity)
         const validatedMessages = enhancedMessages.map(msg => {
@@ -171,7 +189,10 @@ export class ChatController {
         if (historyMode) log.debug('Using history mode:', historyMode);
 
         // Get last user message content for usage tracking (best effort)
-        const lastUserMessage = [...validatedMessages].reverse().find(m => m.role === 'user')?.content || '';
+        // Still ignore format instructions for usage tracking, but keep them in history
+        const lastUserMessage = [...validatedMessages]
+            .reverse()
+            .find(m => m.role === 'user' && !m.metadata?.isFormatInstruction)?.content || '';
 
         const effectiveMaxRetries = mergedSettings?.maxRetries ?? 3;
         const localRetryManager = new RetryManager({ baseDelay: 1000, maxRetries: effectiveMaxRetries });
@@ -231,6 +252,9 @@ export class ChatController {
 
                 // Get the updated messages including the tool results that were just added
                 const updatedMessages = this.historyManager.getMessages();
+
+                // No longer filtering out format instruction messages
+                // We want to keep them in the history for clarity
 
                 // Create a new params object with the updated messages that include tool results
                 const recursiveParams: UniversalChatParams = {

@@ -19,9 +19,7 @@ async function main() {
         'gpt-4o-mini',
         'You are a helpful assistant.',
         {
-            settings: {
-                // historyMode: 'truncate'
-            }
+            historyMode: 'full'
         }
     );
 
@@ -101,6 +99,7 @@ async function main() {
         );
         console.log('\nParsed object:');
         console.log(JSON.stringify(response3[0].contentObject, null, 2));
+        console.log(caller.getMessages());
 
         // Example 4: Streaming JSON with schema (recommended approach with properties at root level)
         console.log('\nExample 4: Streaming JSON with schema');
@@ -133,6 +132,8 @@ async function main() {
                 console.log("\nFinal contentObject (parsed JSON):");
                 try {
                     console.log(JSON.stringify(chunk.contentObject, null, 2));
+                    console.log(caller.getMessages());
+
                 } catch (err) {
                     console.log(chunk.contentObject);
                     console.log("\nError stringifying contentObject:", err);
