@@ -170,19 +170,110 @@ type ModelInfo = {
     maxRequestTokens: number;  // Maximum tokens in request
     maxResponseTokens: number; // Maximum tokens in response
     tokenizationModel?: string;  // Optional model name to use for token counting
-    capabilities?: {
-        streaming?: boolean;        // Support for streaming responses (default: true)
-        toolCalls?: boolean;        // Support for tool/function calling (default: false)
-        parallelToolCalls?: boolean; // Support parallel tool calls (default: false)
-        batchProcessing?: boolean;   // Support for batch processing (default: false)
-        systemMessages?: boolean;    // Support for system messages (default: true)
-        temperature?: boolean;       // Support for temperature setting (default: true)
-        jsonMode?: boolean;         // Support for JSON mode output (default: false)
-    };
+    capabilities?: ModelCapabilities;
     characteristics: {
         qualityIndex: number;      // 0-100 quality score
         outputSpeed: number;       // Tokens per second
         firstTokenLatency: number; // Time to first token in milliseconds
+    };
+};
+
+/**
+ * Model capabilities configuration.
+ * Defines what features the model supports.
+ */
+type ModelCapabilities = {
+    /**
+     * Whether the model supports streaming responses.
+     * @default true
+     */
+    streaming?: boolean;
+
+    /**
+     * Whether the model supports tool/function calling.
+     * @default false
+     */
+    toolCalls?: boolean;
+
+    /**
+     * Whether the model supports parallel tool/function calls.
+     * @default false
+     */
+    parallelToolCalls?: boolean;
+
+    /**
+     * Whether the model supports batch processing.
+     * @default false
+     */
+    batchProcessing?: boolean;
+    
+    /**
+     * Whether the model supports system messages.
+     * @default true
+     */
+    systemMessages?: boolean;
+    
+    /**
+     * Whether the model supports temperature settings.
+     * @default true
+     */
+    temperature?: boolean;
+
+    /**
+     * Capabilities related to model input.
+     * The presence of a modality key indicates support for that input type.
+     */
+    input: {
+        /**
+         * Text input capability.
+         * Boolean true indicates basic support, object provides configuration options.
+         */
+        text: true | {
+            // Additional text input configuration options could be added here
+        };
+
+        /**
+         * Image input capability.
+         * Boolean true indicates basic support, object provides configuration options.
+         */
+        image?: true | {
+            /** Supported image formats */
+            formats?: string[];
+            /** Maximum dimensions supported */
+            maxDimensions?: [number, number];
+            /** Maximum file size in bytes */
+            maxSize?: number;
+        };
+    };
+
+    /**
+     * Capabilities related to model output.
+     * The presence of a modality key indicates support for that output type.
+     */
+    output: {
+        /**
+         * Text output capability.
+         * Boolean true indicates basic text output only, object provides configuration options.
+         */
+        text: true | {
+            /**
+             * Supported text output formats.
+             * If 'json' is included, JSON output is supported.
+             * @default ['text']
+             */
+            textOutputFormats: ('text' | 'json')[];
+        };
+
+        /**
+         * Image output capability.
+         * Boolean true indicates basic support, object provides configuration options.
+         */
+        image?: true | {
+            /** Supported image formats */
+            formats?: string[];
+            /** Available image dimensions */
+            dimensions?: Array<[number, number]>;
+        };
     };
 };
 ```

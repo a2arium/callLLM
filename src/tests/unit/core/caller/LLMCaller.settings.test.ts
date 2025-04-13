@@ -137,8 +137,6 @@ describe('LLMCaller Settings & Configuration', () => {
                 toolCalls: true,
                 parallelToolCalls: true,
                 batchProcessing: true,
-                systemMessages: true,
-                temperature: true,
                 input: {
                     text: true
                 },

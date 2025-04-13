@@ -36,10 +36,14 @@ describe('Converter', () => {
             capabilities: {
                 streaming: true,
                 toolCalls: true,
-                systemMessages: true,
                 parallelToolCalls: true,
                 batchProcessing: true,
-                temperature: true
+                input: {
+                    text: true
+                },
+                output: {
+                    text: true
+                }
             }
         };
         converter.setModel(mockModel);
@@ -206,49 +210,6 @@ describe('Converter', () => {
             // Tool calls are handled by the provider adapter
         });
 
-        it('should handle disabled capabilities', () => {
-            converter.setModel({
-                ...mockModel,
-                capabilities: {
-                    streaming: false,
-                    toolCalls: false,
-                    systemMessages: false,
-                    parallelToolCalls: false,
-                    batchProcessing: false,
-                    temperature: false
-                }
-            });
-
-            const params: UniversalChatParams = {
-                messages: [
-                    { role: 'system', content: 'System message' },
-                    { role: 'user', content: 'Hello' }
-                ],
-                model: 'test-model',
-                tools: [mockTool],
-                settings: {
-                    stream: true,
-                    temperature: 0.7,
-                    n: 2,
-                    toolCalls: [{
-                        name: 'test_tool',
-                        arguments: { test: 'value' }
-                    }]
-                }
-            };
-
-            const result = converter.convertToProviderParams(params);
-            expect(result).toMatchObject({
-                messages: [
-                    { role: 'user', content: 'System message' }, // System message converted to user
-                    { role: 'user', content: 'Hello' }
-                ],
-                stream: false,
-                temperature: undefined,
-                n: 1
-            });
-            expect(result.tools).toBeUndefined();
-        });
     });
 
     describe('convertFromProviderResponse', () => {

@@ -345,19 +345,6 @@ export type ModelCapabilities = {
      */
     batchProcessing?: boolean;
 
-    /**
-     * Whether the model supports system messages.
-     * When false, system messages will be converted to user messages.
-     * @default true
-     */
-    systemMessages?: boolean;
-
-    /**
-     * Whether the model supports temperature settings.
-     * When false, temperature settings will be ignored.
-     * @default true
-     */
-    temperature?: boolean;
 
     /**
      * Capabilities related to model input.
@@ -406,7 +393,7 @@ export type ModelCapabilities = {
     output: {
         /**
          * Text output capability.
-         * Boolean true indicates basic text output only, object provides configuration options.
+         * Boolean ftrue indicates basic text output only, object provides configuration options.
          */
         text: true | {
             /**

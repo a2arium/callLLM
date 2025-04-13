@@ -28,6 +28,46 @@ This is a universal LLM caller library designed to provide a unified interface f
 - Maintain clear separation of concerns
 - Preserve existing functionality unless explicitly required to change
 
+## Prompt Enhancement
+- NEVER hardcode prompts in the codebase
+- Use prompt templates for consistent formatting
+- Maintain prompt templates in a centralized location
+- Version control prompt templates
+- Document prompt template parameters
+
+### Prompt Injection Guidelines
+1. **Purpose**
+   - Enhance model capabilities without modifying core functionality
+   - Add specific behaviors or formats to responses
+   - Support models lacking native capabilities
+
+2. **Implementation**
+   - Use system messages for behavior modification
+   - Inject format requirements before user messages
+   - Maintain clear separation between injected and user content
+   - Document all prompt injections
+
+3. **JSON Mode Enhancement**
+   - Use prompt injection for models without native JSON mode
+   - Inject JSON format requirements in system message
+   - Include schema requirements when available
+   - Maintain validation and repair capabilities
+   - Handle validation errors gracefully
+
+4. **Best Practices**
+   - Keep injected prompts minimal and focused
+   - Document prompt injection points
+   - Test prompt effectiveness
+   - Monitor prompt performance
+   - Version control prompt changes
+
+5. **Testing**
+   - Test prompt effectiveness
+   - Verify format compliance
+   - Check error handling
+   - Monitor performance impact
+   - Document test cases
+
 ## Development Process
 1. Before any changes:
    - Understand the task scope
@@ -73,10 +113,10 @@ This is a universal LLM caller library designed to provide a unified interface f
 - NEVER implement fake streaming (i.e., sending a non-streaming request and then streaming the complete response)
 - NEVER include mock/hard-coded data in streaming implementations (except in tests and examples)
 - Properly handle tool calls during streaming, collecting tool arguments before execution
-- Ensure retry policy, JSON mode, and tool calling work correctly with streaming
-
+- Ensure retry policy, JSON output formats, and tool calling work correctly with streaming
 
 # References
 - See @.cursor/rules/architecture.mdc for detailed architectural decisions
 - See @.cursor/rules/testing.mdc for testing conventions
 - See @src/core/types.ts for type definitions
+- See @src/core/prompts/templates.ts for prompt templates

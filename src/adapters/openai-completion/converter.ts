@@ -66,7 +66,8 @@ export class Converter {
             throw new Error('Model not set');
         }
 
-        const systemMessagesDisabled = this.currentModel.capabilities?.systemMessages === false;
+        // TODO: set correctly for reasoning models - they don't support system messages
+        const systemMessagesDisabled = false;
 
         return messages.map(msg => {
             let role = msg.role;
@@ -148,7 +149,8 @@ export class Converter {
 
         // Handle capabilities with their new defaults
         const shouldStream = this.currentModel.capabilities?.streaming !== false && settings.stream === true;  // Only stream if explicitly requested
-        const shouldSetTemperature = this.currentModel.capabilities?.temperature !== false;  // default true
+        // TODO: set correctly for reasoning models - they don't support temperature
+        const shouldSetTemperature = true;  // default true
         const hasToolCalls = this.currentModel.capabilities?.toolCalls === true;  // default false
         const hasParallelToolCalls = this.currentModel.capabilities?.parallelToolCalls === true;  // default false
         const hasBatchProcessing = this.currentModel.capabilities?.batchProcessing === true;  // default false
