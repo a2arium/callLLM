@@ -136,7 +136,7 @@ export class OpenAIResponseAdapter extends BaseAdapter {
         const baseParams = this.converter.convertToOpenAIResponseParams(model, params);
         const openAIParams: ResponseCreateParamsStreaming = {
             ...(baseParams as any),
-            stream: true,
+            stream: true, // IMPORTANT: Ensure stream is explicitly set to true
         };
 
         log.debug('Converted params for streaming:', JSON.stringify(openAIParams, null, 2));

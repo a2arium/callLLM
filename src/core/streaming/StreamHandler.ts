@@ -85,7 +85,7 @@ export class StreamHandler {
         const jsonMode = params.settings?.jsonMode ?? 'fallback';
 
         // Log JSON mode configuration
-        console.log('[StreamHandler] Using JSON mode:', {
+        log.info('[StreamHandler] Using JSON mode:', {
             mode: jsonMode,
             hasNativeSupport: hasNativeJsonSupport,
             isJsonRequested,
@@ -251,16 +251,31 @@ export class StreamHandler {
                             // Create continuation messages
                             const toolMessages = this.historyManager.getLastMessages(5) || []; // Using existing method instead of getToolResultMessages, ensuring it's always an array
 
+                            // Get all tool names that have been called
+                            const toolNames = completedToolCalls
+                                .map(call => call.name)
+                                .filter(Boolean)
+                                .join(', ');
+
+                            // Create continuation messages with a system instruction that mentions all tools
+                            const systemInstructionMessage: UniversalMessage = {
+                                role: 'system',
+                                content: `You have already called the following tools and received their results: ${toolNames}. Do not call these tools again for the same information. Use the information you have to complete your response.`
+                            };
+
                             // Add the continuation to the stream
                             const continuationParams: UniversalChatParams = {
                                 ...params,
-                                messages: [...currentMessages, assistantMessage, ...(Array.isArray(toolMessages) ? toolMessages : [])]
+                                messages: [...currentMessages, assistantMessage, ...(Array.isArray(toolMessages) ? toolMessages : []), systemInstructionMessage]
                             };
 
                             const continuationStream = await this.streamingService.createStream(
                                 continuationParams,
                                 params.model
                             );
+
+                            // Reset hasExecutedTools so we can process more tools if needed
+                            hasExecutedTools = false;
 
                             // Process the continuation stream
                             if (continuationStream) {
@@ -322,11 +337,22 @@ export class StreamHandler {
                                 log.info('Using native JSON mode');
                                 // For native JSON mode, use direct schema validation
                                 try {
+                                    log.debug('Validating accumulated JSON content:', {
+                                        contentLength: accumulatedContent.length,
+                                        contentPreview: accumulatedContent.slice(0, 100) + (accumulatedContent.length > 100 ? '...' : '')
+                                    });
+
+                                    // Try to parse the JSON content first
                                     const parsedContent = JSON.parse(accumulatedContent);
+
+                                    log.debug('Successfully parsed JSON, now validating against schema');
+                                    // Then validate against the schema
                                     const parsedJson = SchemaValidator.validate(
                                         parsedContent,
                                         schema
                                     );
+
+                                    log.debug('Schema validation passed successfully');
                                     response.contentObject = parsedJson as any;
                                 } catch (validationError: unknown) {
                                     log.warn('JSON validation error in native mode:', validationError);

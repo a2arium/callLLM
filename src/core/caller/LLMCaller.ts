@@ -15,6 +15,7 @@ import {
 import { z } from 'zod';
 import { ProviderManager } from './ProviderManager';
 import { RegisteredProviders } from '../../adapters/index';
+import { ProviderNotFoundError } from '../../adapters/types';
 import { ModelManager } from '../models/ModelManager';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { ResponseProcessor } from '../processors/ResponseProcessor';
@@ -180,7 +181,7 @@ export class LLMCaller {
 
         // **Link ToolOrchestrator back to StreamingService (if not mocked)**
         if (!(options?.streamingService)) {
-            (this.streamingService as any).toolOrchestrator = this.toolOrchestrator;
+            this.streamingService.setToolOrchestrator(this.toolOrchestrator);
         }
 
         // Initialize ChunkController (now all dependencies should be ready)
@@ -293,6 +294,9 @@ export class LLMCaller {
         // Link the new orchestrator back to the new chat controller
         (this.chatController as any).toolOrchestrator = this.toolOrchestrator; // Use workaround if no setter
 
+        // Link orchestrator to StreamingService using the proper setter
+        this.streamingService.setToolOrchestrator(this.toolOrchestrator);
+
         // Re-initialize ChunkController with the new ChatController and adapter
         this.chunkController = new ChunkController(
             this.tokenCalculator,
@@ -401,14 +405,23 @@ export class LLMCaller {
         params.callerId = params.callerId || this.callerId;
         params.model = params.model || this.model;
 
-        // Use the StreamingService to create the stream
-        const stream = await this.streamingService.createStream(
-            params,
-            params.model, // Pass the model name explicitly
-            undefined // System message comes from history manager via params
-        );
+        // Calculate tokens for usage tracking
+        const inputTokens = await this.tokenCalculator.calculateTotalTokens(params.messages);
 
-        return stream;
+        // Use the StreamingService to create the stream
+        try {
+            return await this.streamingService.createStream(
+                params,
+                params.model,
+                undefined  // System message comes from history manager via params
+            );
+        } catch (error) {
+            // Enhance error with context
+            if (error instanceof ProviderNotFoundError) {
+                throw new Error(`Provider for model "${params.model}" not found in registry`);
+            }
+            throw error;
+        }
     }
 
 
@@ -423,6 +436,11 @@ export class LLMCaller {
         options: LLMCallOptions = {}
     ): AsyncGenerator<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>> {
         const { data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode } = options;
+
+        // Reset tool call tracking at the beginning of each stream call
+        if (this.toolOrchestrator) {
+            this.toolOrchestrator.resetCalledTools();
+        }
 
         // Use the RequestProcessor to process the request (handles chunking if needed)
         const modelInfo = this.modelManager.getModel(this.model);
@@ -465,7 +483,7 @@ export class LLMCaller {
         }
 
         // Add the original user message to history *before* the call
-        this.historyManager.addMessage('user', messageContent);
+        this.historyManager.addMessage('user', messageContent, { metadata: { timestamp: Date.now() } });
 
         // Get the messages from history
         let historyMessages = this.historyManager.getHistoricalMessages();
@@ -476,7 +494,11 @@ export class LLMCaller {
         const useNativeJsonMode = modelSupportsJsonMode && jsonRequested &&
             !(settings?.jsonMode === 'force-prompt');
 
+        // When streaming JSON, we need to ensure we're using the direct streaming path
+        // even if native JSON mode is supported
         if (useNativeJsonMode) {
+            // For JSON streaming, we need to use the direct streaming path if we're in stream()
+            // but for call(), we use the regular JSON path
             const params: UniversalChatParams = {
                 model: this.model,
                 messages: historyMessages,
@@ -486,28 +508,28 @@ export class LLMCaller {
                 tools: effectiveTools,
                 historyMode: effectiveHistoryMode
             };
-            // History update for assistant happens inside internalChatCall
-            const response = await this.internalChatCall<T>(params);
-            if (response.content) {
-                const streamResponse: UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown> = {
-                    content: response.content,
-                    contentText: response.content,
-                    contentObject: response.contentObject as T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown,
-                    role: 'assistant',
-                    isComplete: true,
-                    messages: historyMessages,
-                    toolCalls: response.toolCalls,
-                    metadata: {
-                        ...response.metadata,
-                        processInfo: {
-                            currentChunk: 1,
-                            totalChunks: 1
-                        }
-                    }
-                };
-                yield streamResponse;
-                return;
-            }
+
+            // Use direct streaming for JSON with schema in stream()
+            const stream = await this.internalStreamCall(params);
+            yield* stream as AsyncIterable<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>>;
+            return;
+        }
+
+        // Use direct streaming when there's only one message (no chunking needed)
+        if (processedMessages.length === 1) {
+            const params: UniversalChatParams = {
+                model: this.model,
+                messages: historyMessages,
+                settings: mergedSettings,
+                jsonSchema: jsonSchema,
+                responseFormat: responseFormat,
+                tools: effectiveTools,
+                historyMode: effectiveHistoryMode
+            };
+
+            // Use direct streaming via StreamingService
+            const stream = await this.internalStreamCall(params);
+            yield* stream as AsyncIterable<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>>;
             return;
         }
 
@@ -579,6 +601,11 @@ export class LLMCaller {
     ): Promise<UniversalChatResponse[]> {
         const { data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode } = options;
 
+        // Reset tool call tracking at the beginning of each call
+        if (this.toolOrchestrator) {
+            this.toolOrchestrator.resetCalledTools();
+        }
+
         // Use the RequestProcessor to process the request
         const modelInfo = this.modelManager.getModel(this.model);
         if (!modelInfo) {
@@ -609,7 +636,7 @@ export class LLMCaller {
 
 
         // Add the original user message to history *before* the call
-        this.historyManager.addMessage('user', message);
+        this.historyManager.addMessage('user', message, { metadata: { timestamp: Date.now() } });
 
         // Get the messages from history
         let messages = this.historyManager.getHistoricalMessages();

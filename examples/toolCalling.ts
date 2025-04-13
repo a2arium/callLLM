@@ -3,13 +3,9 @@ import type { ToolDefinition } from '../src/core/types';
 import { HistoryManager } from '../src/core/history/HistoryManager';
 
 async function main() {
-    // Create a history manager
-    const historyManager = new HistoryManager('You are a helpful assistant that can call tools.');
 
     // Initialize LLMCaller with OpenAI
-    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant that can call tools.', {
-        historyManager
-    });
+    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant that can call tools.');
 
     // Define tools
     const weatherTool: ToolDefinition = {
@@ -140,6 +136,7 @@ async function main() {
         }
     );
     console.log('Response:', timeResponse);
+
 
     // 5. Tool Call Stream Demonstration
     console.log('\n5. Tool Call Stream Demonstration');

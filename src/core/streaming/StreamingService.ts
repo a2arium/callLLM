@@ -289,6 +289,29 @@ export class StreamingService {
     }
 
     /**
+     * Set the tool orchestrator
+     */
+    public setToolOrchestrator(toolOrchestrator: ToolOrchestrator): void {
+        this.toolOrchestrator = toolOrchestrator;
+
+        // Update the StreamHandler with the new toolOrchestrator
+        this.streamHandler = new StreamHandler(
+            this.tokenCalculator,
+            this.historyManager,
+            this.responseProcessor,
+            this.usageTracker['callback'], // Access the callback from usageTracker
+            this.usageTracker['callerId'], // Access the callerId from usageTracker
+            this.toolController,
+            toolOrchestrator,
+            this
+        );
+
+        logger.debug('ToolOrchestrator set on StreamingService', {
+            hasToolOrchestrator: Boolean(this.toolOrchestrator)
+        });
+    }
+
+    /**
      * Get the token calculator instance
      */
     public getTokenCalculator(): TokenCalculator {

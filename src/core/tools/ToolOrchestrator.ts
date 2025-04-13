@@ -7,6 +7,12 @@ import { logger } from '../../utils/logger';
 import { ToolCall, ToolDefinition, ToolNotFoundError } from '../../types/tooling';
 import { HistoryManager } from '../history/HistoryManager';
 
+// Type to track called tools with their arguments
+type CalledTool = {
+    name: string;
+    arguments: string; // JSON stringified arguments for comparison
+    timestamp: number;
+};
 
 
 /**
@@ -31,6 +37,8 @@ import { HistoryManager } from '../history/HistoryManager';
  */
 
 export class ToolOrchestrator {
+    // Track which tools have been called to prevent duplicate calls
+    private calledTools: CalledTool[] = [];
 
     /**
      * Creates a new ToolOrchestrator instance
@@ -49,6 +57,14 @@ export class ToolOrchestrator {
         logger.debug('Initialized');
     }
 
+    /**
+     * Reset the called tools tracking
+     */
+    public resetCalledTools(): void {
+        this.calledTools = [];
+        logger.debug('Called tools tracking reset');
+    }
+
 
     /**
      * Processes tool calls found in a response and adds their results to history
@@ -60,6 +76,42 @@ export class ToolOrchestrator {
     ): Promise<{ requiresResubmission: boolean; newToolCalls: number }> {
         // Reset iteration count at the beginning of each tool processing session
         this.toolController.resetIterationCount();
+
+        // Filter out tool calls that have already been made with the same arguments
+        if (response.toolCalls && response.toolCalls.length > 0) {
+            logger.debug(`Processing ${response.toolCalls.length} tool calls`);
+
+            const filteredToolCalls = response.toolCalls.filter(call => {
+                const argStr = JSON.stringify(call.arguments || {});
+                const isDuplicate = this.calledTools.some(
+                    t => t.name === call.name && t.arguments === argStr
+                );
+
+                if (isDuplicate) {
+                    logger.debug(`Skipping duplicate tool call: ${call.name} with args: ${argStr.substring(0, 100)}`);
+                    return false;
+                }
+
+                // Track this tool call
+                this.calledTools.push({
+                    name: call.name,
+                    arguments: argStr,
+                    timestamp: Date.now()
+                });
+
+                return true;
+            });
+
+            // If all tool calls were duplicates, return early
+            if (filteredToolCalls.length === 0 && response.toolCalls.length > 0) {
+                logger.debug('All tool calls were duplicates, skipping processing');
+                return { requiresResubmission: false, newToolCalls: 0 };
+            }
+
+            // Update the response with filtered tool calls
+            response.toolCalls = filteredToolCalls;
+            logger.debug(`After filtering: ${response.toolCalls.length} tool calls remaining`);
+        }
 
         // Process tools in the response
         const toolResult = await this.toolController.processToolCalls(
@@ -77,6 +129,8 @@ export class ToolOrchestrator {
 
         // Add tool executions to the tracking array and prepare messages
         if (toolResult?.toolCalls) {
+            logger.debug(`Processing ${toolResult.toolCalls.length} tool call results`);
+
             for (const call of toolResult.toolCalls) {
                 // CRITICAL: When processing tool calls, we need to add the tool response
                 // directly with the EXACT same tool call ID that was provided by the API.
@@ -93,11 +147,13 @@ export class ToolOrchestrator {
                         toolCallId: call.id,
                         name: call.toolName
                     });
+                    logger.debug(`Added tool result for ${call.toolName} with ID ${call.id}`);
                 } else if (call.error) {
                     // Handle error case
                     this.historyManager.addMessage('tool',
                         `Error executing tool ${call.toolName}: ${call.error}`,
                         { toolCallId: call.id });
+                    logger.debug(`Added tool error for ${call.toolName} with ID ${call.id}: ${call.error}`);
                 }
 
                 newToolCallsCount++;

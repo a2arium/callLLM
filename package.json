@@ -19,7 +19,8 @@
     "test:coverage": "jest --coverage",
     "example": "ts-node examples/historyModes.ts",
     "example2": "ts-node examples/simpleChat.ts",
-    "example3": "ts-node examples/jsonOutput.ts"
+    "example3": "ts-node examples/jsonOutput.ts",
+    "example4": "ts-node examples/toolCalling.ts"
   },
   "author": "",
   "license": "MIT",
