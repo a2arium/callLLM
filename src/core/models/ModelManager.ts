@@ -1,6 +1,5 @@
 import { ModelInfo, ModelAlias } from '../../interfaces/UniversalInterfaces';
 import { ModelSelector } from './ModelSelector';
-import { defaultModels as openAIModels } from '../../adapters/openai-completion/models';
 import { defaultModels as openAIResponseModels } from '../../adapters/openai/models';
 import { RegisteredProviders } from '../../adapters';
 
@@ -14,9 +13,6 @@ export class ModelManager {
 
     private initializeModels(providerName: RegisteredProviders): void {
         switch (providerName) {
-            case 'openai-completion':
-                openAIModels.forEach(model => this.models.set(model.name, model));
-                break;
             case 'openai':
                 openAIResponseModels.forEach(model => this.models.set(model.name, model));
                 break;

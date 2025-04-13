@@ -417,7 +417,7 @@ describe('LLMCaller Settings & Configuration', () => {
             // Setup
             const reinitSpy = jest.spyOn(llmCaller as any, 'reinitializeControllers');
             const newModelName = 'gemini-pro';
-            const newProvider = 'openai-completion' as RegisteredProviders;
+            const newProvider = 'openai' as RegisteredProviders;
             const newApiKey = 'new-api-key';
 
             // Create a new ModelManager instance for this test

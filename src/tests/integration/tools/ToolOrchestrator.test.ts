@@ -2,7 +2,7 @@ import { ToolOrchestrator } from '../../../core/tools/ToolOrchestrator';
 import { ToolController } from '../../../core/tools/ToolController';
 import { ChatController } from '../../../core/chat/ChatController';
 import { ToolsManager } from '../../../core/tools/ToolsManager';
-import type { ToolDefinition } from '../../../core/types';
+import type { ToolDefinition } from '../../../types/tooling';
 import type { UniversalChatResponse, UniversalMessage } from '../../../interfaces/UniversalInterfaces';
 import { StreamController } from '../../../core/streaming/StreamController';
 import { HistoryManager } from '../../../core/history/HistoryManager';

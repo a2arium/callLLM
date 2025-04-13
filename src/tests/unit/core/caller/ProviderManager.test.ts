@@ -1,6 +1,5 @@
 import { ProviderManager } from '../../../../core/caller/ProviderManager';
 import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter';
-import { OpenAIAdapter } from '../../../../adapters/openai-completion/adapter';
 import { adapterRegistry } from '../../../../adapters/index';
 import { ProviderNotFoundError } from '../../../../adapters/types';
 import type { AdapterConstructor } from '../../../../adapters/types';
@@ -11,14 +10,13 @@ jest.mock('../../../../adapters/index', () => {
     const mockMap = new Map<string, AdapterConstructor>();
     return {
         adapterRegistry: mockMap,
-        RegisteredProviders: ['openai', 'openai-completion'],
+        RegisteredProviders: ['openai'],
         __esModule: true
     };
 });
 
 // Mock OpenAIResponseAdapter
 jest.mock('../../../../adapters/openai/adapter');
-jest.mock('../../../../adapters/openai-completion/adapter');
 
 describe('ProviderManager', () => {
     const mockApiKey = 'test-api-key';
@@ -26,12 +24,10 @@ describe('ProviderManager', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         (OpenAIResponseAdapter as jest.Mock).mockClear();
-        (OpenAIAdapter as jest.Mock).mockClear();
 
         // Reset registry mocks
         adapterRegistry.clear();
         adapterRegistry.set('openai' as RegisteredProviders, OpenAIResponseAdapter as unknown as AdapterConstructor);
-        adapterRegistry.set('openai-completion' as RegisteredProviders, OpenAIAdapter as unknown as AdapterConstructor);
     });
 
     describe('constructor', () => {
@@ -62,24 +58,6 @@ describe('ProviderManager', () => {
     });
 
     describe('switchProvider', () => {
-        it('should switch to a new provider', () => {
-            const manager = new ProviderManager('openai' as RegisteredProviders, mockApiKey);
-            (OpenAIResponseAdapter as jest.Mock).mockClear();
-
-            manager.switchProvider('openai-completion' as RegisteredProviders, 'new-api-key');
-            expect(OpenAIAdapter).toHaveBeenCalledWith({ apiKey: 'new-api-key' });
-            expect(manager.getCurrentProviderName()).toBe('openai-completion');
-        });
-
-        it('should switch provider without API key', () => {
-            const manager = new ProviderManager('openai' as RegisteredProviders, mockApiKey);
-            (OpenAIResponseAdapter as jest.Mock).mockClear();
-
-            manager.switchProvider('openai-completion' as RegisteredProviders);
-            expect(OpenAIAdapter).toHaveBeenCalledWith({});
-            expect(manager.getCurrentProviderName()).toBe('openai-completion');
-        });
-
         it('should throw error when switching to unregistered provider', () => {
             const manager = new ProviderManager('openai' as RegisteredProviders, mockApiKey);
             expect(() => manager.switchProvider('unsupported' as RegisteredProviders))
@@ -91,9 +69,6 @@ describe('ProviderManager', () => {
         it('should return current provider name', () => {
             const manager = new ProviderManager('openai' as RegisteredProviders, mockApiKey);
             expect(manager.getCurrentProviderName()).toBe('openai');
-
-            manager.switchProvider('openai-completion' as RegisteredProviders);
-            expect(manager.getCurrentProviderName()).toBe('openai-completion');
         });
     });
 
@@ -105,16 +80,6 @@ describe('ProviderManager', () => {
 
             expect(() => new ProviderManager('openai' as RegisteredProviders))
                 .toThrow('API key required');
-        });
-
-        it('should handle provider switch errors', () => {
-            const manager = new ProviderManager('openai' as RegisteredProviders, mockApiKey);
-            (OpenAIAdapter as jest.Mock).mockImplementationOnce(() => {
-                throw new Error('Invalid API key');
-            });
-
-            expect(() => manager.switchProvider('openai-completion' as RegisteredProviders, 'invalid-key'))
-                .toThrow('Invalid API key');
         });
 
         it('should handle registry lookup errors', () => {

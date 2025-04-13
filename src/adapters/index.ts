@@ -1,4 +1,3 @@
-import { OpenAIAdapter } from './openai-completion/adapter';
 import { OpenAIResponseAdapter } from './openai/adapter';
 import type { AdapterConstructor } from './types';
 import { ProviderNotFoundError } from './types';
@@ -10,7 +9,6 @@ import { ProviderNotFoundError } from './types';
  * 2. Add an entry to this registry with the desired provider name
  */
 const ADAPTER_REGISTRY = {
-    'openai-completion': OpenAIAdapter as AdapterConstructor,
     'openai': OpenAIResponseAdapter as AdapterConstructor,
 } as const;
 

@@ -81,9 +81,12 @@ describe('UsageTracker', () => {
                 toolCalls: false,
                 parallelToolCalls: false,
                 batchProcessing: false,
-                systemMessages: false,
-                temperature: false,
-                jsonMode: false,
+                input: {
+                    text: true
+                },
+                output: {
+                    text: true
+                }
             },
             inputCachedPricePerMillion: 500 // Add cached price
         };

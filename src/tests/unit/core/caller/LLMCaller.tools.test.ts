@@ -1,5 +1,5 @@
 import { LLMCaller } from '../../../../core/caller/LLMCaller';
-import type { ToolDefinition } from '../../../../core/types';
+import type { ToolDefinition } from '../../../../types/tooling';
 import { ModelManager } from '../../../../core/models/ModelManager';
 
 jest.mock('../../../../core/models/ModelManager');

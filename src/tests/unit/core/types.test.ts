@@ -1,5 +1,5 @@
-import type { ToolDefinition, ToolsManager } from '../../../core/types';
-import { UniversalChatParams, ToolChoice } from '../../../core/types';
+import type { ToolDefinition, ToolsManager, ToolChoice } from '../../../types/tooling';
+import { UniversalChatParams } from '../../../interfaces/UniversalInterfaces';
 
 describe('Tool Interfaces', () => {
     describe('ToolDefinition', () => {
@@ -93,7 +93,6 @@ describe('Tool Calling Type Definitions', () => {
 
         const params: UniversalChatParams = {
             model: 'gpt-4',
-            provider: 'openai',
             messages: [
                 {
                     role: 'user',
@@ -101,13 +100,15 @@ describe('Tool Calling Type Definitions', () => {
                 }
             ],
             tools: [mockTool],
-            toolChoice: 'auto',
-            temperature: 0.7
+            settings: {
+                toolChoice: 'auto',
+                temperature: 0.7
+            }
         };
 
         expect(params.tools).toHaveLength(1);
         expect(params.tools?.[0].name).toBe('test_tool');
-        expect(params.toolChoice).toBe('auto');
+        expect(params.settings?.toolChoice).toBe('auto');
     });
 
     it('should support all valid tool choice options', () => {
@@ -119,14 +120,16 @@ describe('Tool Calling Type Definitions', () => {
 
         const params: UniversalChatParams = {
             model: 'gpt-4',
-            provider: 'openai',
-            messages: [{ role: 'user', content: 'test' }]
+            messages: [{ role: 'user', content: 'test' }],
+            settings: {}
         };
 
         // Verify each tool choice option is valid
         toolChoices.forEach(choice => {
-            params.toolChoice = choice;
-            expect(params.toolChoice).toBe(choice);
+            if (params.settings) {
+                params.settings.toolChoice = choice;
+                expect(params.settings.toolChoice).toBe(choice);
+            }
         });
     });
 }); 

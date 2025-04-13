@@ -729,7 +729,14 @@ describe('ResponseProcessor', () => {
                     firstTokenLatency: 500
                 },
                 capabilities: {
-                    jsonMode: true
+                    input: {
+                        text: true
+                    },
+                    output: {
+                        text: {
+                            textOutputFormats: ['text', 'json']
+                        }
+                    }
                 }
             };
 

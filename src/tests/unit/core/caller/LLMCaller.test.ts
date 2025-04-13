@@ -360,7 +360,16 @@ describe('LLMCaller', () => {
                 outputPricePerMillion: 1,
                 maxRequestTokens: 1000,
                 maxResponseTokens: 1000,
-                capabilities: { jsonMode: false },
+                capabilities: {
+                    input: {
+                        text: true
+                    },
+                    output: {
+                        text: {
+                            textOutputFormats: ['text', 'json']
+                        }
+                    }
+                },
                 characteristics: { qualityIndex: 1, outputSpeed: 1, firstTokenLatency: 1 }
             });
 

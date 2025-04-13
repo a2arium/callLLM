@@ -2,7 +2,6 @@ import { ToolOrchestrator } from '../../../../core/tools/ToolOrchestrator';
 import { ToolController } from '../../../../core/tools/ToolController';
 import { ChatController } from '../../../../core/chat/ChatController';
 import { ToolsManager } from '../../../../core/tools/ToolsManager';
-import type { ToolDefinition } from '../../../../core/types';
 import type { UniversalChatResponse, UniversalMessage, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
 import type { ProviderManager } from '../../../../core/caller/ProviderManager';
 import type { ModelManager } from '../../../../core/models/ModelManager';

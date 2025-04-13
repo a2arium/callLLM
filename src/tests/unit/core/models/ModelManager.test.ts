@@ -10,24 +10,6 @@ jest.mock('../../../../core/models/ModelSelector', () => ({
     }
 }));
 
-// Mock OpenAI Completion models
-jest.mock('../../../../adapters/openai-completion/models', () => ({
-    defaultModels: [
-        {
-            name: "mock-model-1",
-            inputPricePerMillion: 1,
-            outputPricePerMillion: 2,
-            maxRequestTokens: 1000,
-            maxResponseTokens: 1000,
-            characteristics: {
-                qualityIndex: 70,
-                outputSpeed: 100,
-                firstTokenLatency: 1000
-            }
-        }
-    ]
-}));
-
 // Mock OpenAI Response models
 jest.mock('../../../../adapters/openai/models', () => ({
     defaultModels: [
@@ -68,19 +50,11 @@ describe('ModelManager', () => {
         mockSelectModel.mockImplementation(() => {
             throw new Error('Unknown alias');
         });
-        // For this test, use openai-completion provider to get mock-model-1
-        manager = new ModelManager('openai-completion' as RegisteredProviders);
+        // Use openai provider for tests
+        manager = new ModelManager('openai' as RegisteredProviders);
     });
 
     describe('constructor', () => {
-        it('should initialize with mock models', () => {
-            // Create a manager for openai-completion provider
-            const completionManager = new ModelManager('openai-completion' as RegisteredProviders);
-            const models = completionManager.getAvailableModels();
-            expect(models.length).toBe(1);
-            expect(models[0].name).toBe('mock-model-1');
-        });
-
         it('should initialize with openai-response models', () => {
             const responseManager = new ModelManager('openai' as RegisteredProviders);
             const models = responseManager.getAvailableModels();
@@ -252,40 +226,27 @@ describe('ModelManager', () => {
 
     describe('clearModels', () => {
         it('should remove all models', () => {
+            // Add a model
+            manager.clearModels();
             manager.addModel(validModel);
-            expect(manager.getAvailableModels().length).toBeGreaterThan(0);
+            expect(manager.getAvailableModels().length).toBe(1);
 
+            // Clear models
             manager.clearModels();
             expect(manager.getAvailableModels().length).toBe(0);
-            expect(manager.hasModel('test-model')).toBe(false);
         });
     });
 
     describe('hasModel', () => {
         it('should return true for existing model', () => {
-            manager.clearModels(); // Start with a clean slate
+            manager.clearModels();
             manager.addModel(validModel);
             expect(manager.hasModel('test-model')).toBe(true);
         });
 
         it('should return false for non-existent model', () => {
-            manager.clearModels(); // Start with a clean slate
-            expect(manager.hasModel('non-existent')).toBe(false);
-        });
-    });
-
-    describe('getAvailableModels', () => {
-        it('should return all models', () => {
-            manager.clearModels(); // Start with a clean slate
-            manager.addModel(validModel);
-            const models = manager.getAvailableModels();
-            expect(models.length).toBe(1);
-            expect(models).toContainEqual(validModel);
-        });
-
-        it('should return empty array when no models', () => {
             manager.clearModels();
-            expect(manager.getAvailableModels()).toEqual([]);
+            expect(manager.hasModel('test-model')).toBe(false);
         });
     });
 }); 
