@@ -11,9 +11,14 @@ export const defaultModels: ModelInfo[] = [
             streaming: true,
             toolCalls: true,
             parallelToolCalls: true,
-            jsonMode: true,
-            systemMessages: true,
-            temperature: true,
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
         },
         characteristics: {
             qualityIndex: 95,
@@ -36,7 +41,14 @@ export const defaultModels: ModelInfo[] = [
         },
         capabilities: {
             toolCalls: true,
-            jsonMode: true,
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
         }
     },
     {
@@ -49,9 +61,14 @@ export const defaultModels: ModelInfo[] = [
             streaming: true,
             toolCalls: true,
             parallelToolCalls: true,
-            jsonMode: true,
-            systemMessages: true,
-            temperature: true,
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
         },
         characteristics: {
             qualityIndex: 98,
@@ -69,9 +86,14 @@ export const defaultModels: ModelInfo[] = [
             streaming: true,
             toolCalls: true,
             parallelToolCalls: true,
-            jsonMode: true,
-            systemMessages: true,
-            temperature: true,
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
         },
         characteristics: {
             qualityIndex: 90,
@@ -79,4 +101,30 @@ export const defaultModels: ModelInfo[] = [
             firstTokenLatency: 450,
         },
     },
+    {
+        name: "o3-mini",
+        inputPricePerMillion: 1.10,
+        inputCachedPricePerMillion: 0.55,
+        outputPricePerMillion: 4.40,
+        maxRequestTokens: 128000,
+        maxResponseTokens: 65536,
+        tokenizationModel: "gpt-4",
+        characteristics: {
+            qualityIndex: 86,
+            outputSpeed: 212.1,
+            firstTokenLatency: 10890 // latency in ms
+        },
+        capabilities: {
+            streaming: true,
+            toolCalls: false,
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
+        }
+    }
 ]; 

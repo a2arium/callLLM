@@ -206,13 +206,33 @@ Each model defines its capabilities, which determine what features are supported
 - **toolCalls**: Support for tool/function calling (default: false)
 - **parallelToolCalls**: Support for parallel tool calls (default: false)
 - **batchProcessing**: Support for batch processing (default: false)
-- **systemMessages**: Support for system messages (default: true)
-- **temperature**: Support for temperature setting (default: true)
-- **jsonMode**: Support for JSON mode output (default: false)
+- **input**: Supported input modalities:
+  - **text**: Text input support (required)
+  - **image**: Image input support (optional)
+  - **audio**: Audio input support (optional)
+- **output**: Supported output modalities:
+  - **text**: Text output support (required)
+    - **textOutputFormats**: Supported formats (e.g., ['text', 'json'])
 
 The library automatically handles unsupported features:
 - Requests using unsupported features will be rejected with clear error messages
-- Some features (like system messages) will be gracefully degraded when unsupported
+- Some features will be gracefully degraded when unsupported
+
+For example, a model with JSON support would have:
+```typescript
+capabilities: {
+  streaming: true,
+  toolCalls: true,
+  input: {
+    text: true // Basic text input support
+  },
+  output: {
+    text: {
+      textOutputFormats: ['text', 'json'] // Both text and JSON output supported
+    }
+  }
+}
+```
 
 ## Token Counting and Pricing
 

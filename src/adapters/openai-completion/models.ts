@@ -2,22 +2,29 @@ import { ModelInfo } from '../../interfaces/UniversalInterfaces';
 
 export const defaultModels: ModelInfo[] = [
     {
-        name: "gpt-4o",
-        inputPricePerMillion: 2.5,
-        inputCachedPricePerMillion: 1.25,
-        outputPricePerMillion: 10.0,
+        name: 'gpt-4o',
         maxRequestTokens: 128000,
-        maxResponseTokens: 16384,
-        tokenizationModel: "gpt-4",
-        characteristics: {
-            qualityIndex: 78,
-            outputSpeed: 109.3,
-            firstTokenLatency: 720 // latency in ms
-        },
+        maxResponseTokens: 4096,
+        inputPricePerMillion: 5.0,
+        outputPricePerMillion: 15.0,
         capabilities: {
+            streaming: true,
             toolCalls: true,
-            jsonMode: true
-        }
+            parallelToolCalls: true,
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 95,
+            outputSpeed: 30,
+            firstTokenLatency: 500,
+        },
     },
     {
         name: "gpt-4o-mini",
@@ -34,32 +41,68 @@ export const defaultModels: ModelInfo[] = [
         },
         capabilities: {
             toolCalls: true,
-            jsonMode: true,
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
         }
     },
     {
-        name: "o1",
-        inputPricePerMillion: 15.00,
-        inputCachedPricePerMillion: 7.50,
-        outputPricePerMillion: 60.00,
-        maxRequestTokens: 200000,
-        maxResponseTokens: 100000,
-        tokenizationModel: "gpt-4",
-        characteristics: {
-            qualityIndex: 85,
-            outputSpeed: 151.2,
-            firstTokenLatency: 22490 // latency in ms
-        },
+        name: 'o1-preview',
+        maxRequestTokens: 128000,
+        maxResponseTokens: 4096,
+        inputPricePerMillion: 15.0,
+        outputPricePerMillion: 75.0,
         capabilities: {
             streaming: true,
-            toolCalls: false,
-            systemMessages: false,
-            temperature: false,
-            jsonMode: true
-        }
+            toolCalls: true,
+            parallelToolCalls: true,
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 98,
+            outputSpeed: 25,
+            firstTokenLatency: 600,
+        },
     },
     {
-        name: "o1-mini",
+        name: 'o1-mini',
+        maxRequestTokens: 128000,
+        maxResponseTokens: 4096,
+        inputPricePerMillion: 5.0,
+        outputPricePerMillion: 25.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 90,
+            outputSpeed: 40,
+            firstTokenLatency: 450,
+        },
+    },
+    {
+        name: "o3-mini",
         inputPricePerMillion: 1.10,
         inputCachedPricePerMillion: 0.55,
         outputPricePerMillion: 4.40,
@@ -67,16 +110,21 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 65536,
         tokenizationModel: "gpt-4",
         characteristics: {
-            qualityIndex: 82,
+            qualityIndex: 86,
             outputSpeed: 212.1,
             firstTokenLatency: 10890 // latency in ms
         },
         capabilities: {
             streaming: true,
             toolCalls: false,
-            systemMessages: false,
-            temperature: false,
-            jsonMode: true
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
         }
     }
-];
+]; 

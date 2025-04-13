@@ -490,7 +490,8 @@ export class LLMCaller {
 
         // Check if JSON is requested and whether to use native mode
         const jsonRequested = responseFormat === 'json' || jsonSchema !== undefined;
-        const modelSupportsJsonMode = modelInfo.capabilities?.jsonMode ?? false;
+        const modelSupportsJsonMode = typeof modelInfo.capabilities?.output?.text === 'object' &&
+            modelInfo.capabilities.output.text.textOutputFormats?.includes('json');
         const useNativeJsonMode = modelSupportsJsonMode && jsonRequested &&
             !(settings?.jsonMode === 'force-prompt');
 
@@ -522,7 +523,7 @@ export class LLMCaller {
                 messages: historyMessages,
                 settings: mergedSettings,
                 jsonSchema: jsonSchema,
-                responseFormat: responseFormat,
+                responseFormat: jsonRequested ? 'json' : responseFormat,
                 tools: effectiveTools,
                 historyMode: effectiveHistoryMode
             };
@@ -643,7 +644,8 @@ export class LLMCaller {
 
         // Check if JSON is requested and whether to use native mode
         const jsonRequested = responseFormat === 'json' || jsonSchema !== undefined;
-        const modelSupportsJsonMode = modelInfo.capabilities?.jsonMode ?? false;
+        const modelSupportsJsonMode = typeof modelInfo.capabilities?.output?.text === 'object' &&
+            modelInfo.capabilities.output.text.textOutputFormats?.includes('json');
         const useNativeJsonMode = modelSupportsJsonMode && jsonRequested &&
             !(settings?.jsonMode === 'force-prompt');
 

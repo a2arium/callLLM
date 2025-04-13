@@ -315,7 +315,7 @@ export interface UniversalStreamResponse<T = unknown> {
 
 /**
  * Model capabilities configuration.
- * Specific capabilities have different defaults.
+ * Defines what features the model supports.
  */
 export type ModelCapabilities = {
     /**
@@ -353,17 +353,92 @@ export type ModelCapabilities = {
     systemMessages?: boolean;
 
     /**
-     * Whether the model supports setting temperature.
+     * Whether the model supports temperature settings.
+     * When false, temperature settings will be ignored.
      * @default true
      */
     temperature?: boolean;
 
     /**
-     * Whether the model supports JSON mode output.
-     * When true, the model can be instructed to return responses in JSON format.
-     * @default false
+     * Capabilities related to model input.
+     * The presence of a modality key indicates support for that input type.
      */
-    jsonMode?: boolean;
+    input: {
+        /**
+         * Text input capability.
+         * Boolean true indicates basic support, object provides configuration options.
+         */
+        text: true | {
+            // Additional text input configuration options could be added here
+        };
+
+        /**
+         * Image input capability.
+         * Boolean true indicates basic support, object provides configuration options.
+         */
+        image?: true | {
+            /** Supported image formats */
+            formats?: string[];
+            /** Maximum dimensions supported */
+            maxDimensions?: [number, number];
+            /** Maximum file size in bytes */
+            maxSize?: number;
+        };
+
+        /**
+         * Audio input capability.
+         * Boolean true indicates basic support, object provides configuration options.
+         */
+        audio?: true | {
+            /** Supported audio formats */
+            formats?: string[];
+            /** Maximum duration in seconds */
+            maxDuration?: number;
+            /** Maximum file size in bytes */
+            maxSize?: number;
+        };
+    };
+
+    /**
+     * Capabilities related to model output.
+     * The presence of a modality key indicates support for that output type.
+     */
+    output: {
+        /**
+         * Text output capability.
+         * Boolean true indicates basic text output only, object provides configuration options.
+         */
+        text: true | {
+            /**
+             * Supported text output formats.
+             * Replaces the old jsonMode flag. If 'json' is included, JSON output is supported.
+             * @default ['text']
+             */
+            textOutputFormats: ('text' | 'json')[];
+        };
+
+        /**
+         * Image output capability.
+         * Boolean true indicates basic support, object provides configuration options.
+         */
+        image?: true | {
+            /** Supported image formats */
+            formats?: string[];
+            /** Available image dimensions */
+            dimensions?: Array<[number, number]>;
+        };
+
+        /**
+         * Audio output capability.
+         * Boolean true indicates basic support, object provides configuration options.
+         */
+        audio?: true | {
+            /** Supported audio formats */
+            formats?: string[];
+            /** Maximum output duration in seconds */
+            maxDuration?: number;
+        };
+    };
 };
 
 export type ModelInfo = {

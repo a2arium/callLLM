@@ -291,7 +291,11 @@ export class ResponseProcessor {
         const log = logger.createLogger({ prefix: 'ResponseProcessor.validateJsonMode' });
         const isJsonRequested = params.responseFormat === 'json' || params.jsonSchema ||
             (params.responseFormat && typeof params.responseFormat === 'object' && params.responseFormat.type === 'json_object');
-        const hasNativeJsonSupport = modelInfo.capabilities?.jsonMode;
+
+        // Check if model supports JSON output format with the new structure
+        const hasNativeJsonSupport = typeof modelInfo.capabilities?.output?.text === 'object' &&
+            modelInfo.capabilities.output.text.textOutputFormats?.includes('json');
+
         const jsonMode = params.settings?.jsonMode ?? 'fallback';
 
         if (!isJsonRequested) {

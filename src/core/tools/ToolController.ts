@@ -1,4 +1,4 @@
-import type { ToolDefinition, ToolsManager } from '../types';
+import type { ToolDefinition, ToolsManager } from '../../types/tooling';
 import type { UniversalMessage, UniversalChatResponse } from '../../interfaces/UniversalInterfaces';
 import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../types/tooling';
 import { logger } from '../../utils/logger';

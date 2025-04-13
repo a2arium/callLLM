@@ -233,7 +233,13 @@ describe('StreamHandler', () => {
         maxRequestTokens: 4000,
         maxResponseTokens: 4000,
         capabilities: {
-            streaming: true
+            streaming: true,
+            input: {
+                text: true
+            },
+            output: {
+                text: true
+            }
         },
         characteristics: {
             qualityIndex: 80,
@@ -739,7 +745,16 @@ describe('StreamHandler', () => {
             5,
             {
                 ...mockModelInfo,
-                capabilities: { jsonMode: true } // Force native JSON mode
+                capabilities: {
+                    input: {
+                        text: true
+                    },
+                    output: {
+                        text: {
+                            textOutputFormats: ['text', 'json']
+                        }
+                    }
+                }
             }
         )) {
             output.push(chunk);
@@ -1143,10 +1158,20 @@ describe('StreamHandler', () => {
 
         const output: UniversalStreamResponse[] = [];
 
-        // Create a modelInfo with jsonMode capability to force native JSON mode
-        const jsonCapableModel = {
+        // Set up a test model info for JSON capability
+        const jsonCapableModel: ModelInfo = {
             ...mockModelInfo,
-            capabilities: { jsonMode: true }
+            capabilities: {
+                streaming: true,
+                input: {
+                    text: true
+                },
+                output: {
+                    text: {
+                        textOutputFormats: ['text', 'json'] as ('text' | 'json')[]
+                    }
+                }
+            }
         };
 
         for await (const chunk of streamHandler.processStream(
@@ -1244,7 +1269,16 @@ describe('StreamHandler', () => {
 
             // Set up a test model info that has jsonMode capability
             const testModelInfo = createTestModelInfo();
-            testModelInfo.capabilities = { jsonMode: true };
+            testModelInfo.capabilities = {
+                input: {
+                    text: true
+                },
+                output: {
+                    text: {
+                        textOutputFormats: ['text', 'json'] as ('text' | 'json')[]
+                    }
+                }
+            };
 
             // Create a stream function that simulates a completed JSON response
             const createTestStream = () => {
@@ -1329,7 +1363,16 @@ describe('StreamHandler', () => {
 
             // Set up a test model info that has jsonMode capability
             const testModelInfo = createTestModelInfo();
-            testModelInfo.capabilities = { jsonMode: true };
+            testModelInfo.capabilities = {
+                input: {
+                    text: true
+                },
+                output: {
+                    text: {
+                        textOutputFormats: ['text', 'json'] as ('text' | 'json')[]
+                    }
+                }
+            };
 
             // Create a stream function that simulates a completed JSON response with invalid data
             const createTestStream = () => {
@@ -1545,17 +1588,48 @@ describe('StreamHandler', () => {
         };
 
         const createMalformedTestStream = () => {
-            return {
-                [Symbol.asyncIterator]: async function* () {
-                    yield { role: 'assistant', content: '{name: "John"', isComplete: false };
-                    yield { role: 'assistant', content: ', age: 30}', isComplete: true };
-                }
-            };
+            return (async function* () {
+                yield {
+                    content: '{',
+                    role: 'assistant',
+                    isComplete: false
+                } as UniversalStreamResponse;
+
+                yield {
+                    content: '{name: "John", age: 30}',
+                    contentObject: { name: 'John', age: 30 },
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        usage: {
+                            tokens: {
+                                input: 5,
+                                output: 5,
+                                total: 10
+                            },
+                            costs: {
+                                input: 0.001,
+                                output: 0.002,
+                                total: 0.003
+                            }
+                        }
+                    }
+                } as UniversalStreamResponse;
+            })();
         };
 
         it('should handle JSON streaming with native JSON mode', async () => {
             const modelInfo = createTestModelInfo();
-            modelInfo.capabilities = { jsonMode: true };
+            modelInfo.capabilities = {
+                input: {
+                    text: true
+                },
+                output: {
+                    text: {
+                        textOutputFormats: ['text', 'json']
+                    }
+                }
+            };
 
             const params: UniversalChatParams = {
                 model: 'test-model',
@@ -1621,7 +1695,16 @@ describe('StreamHandler', () => {
 
         it('should handle JSON streaming with prompt injection', async () => {
             const modelInfo = createTestModelInfo();
-            modelInfo.capabilities = { jsonMode: false };
+            modelInfo.capabilities = {
+                input: {
+                    text: true
+                },
+                output: {
+                    text: {
+                        textOutputFormats: ['text', 'json']
+                    }
+                }
+            };
 
             const params: UniversalChatParams = {
                 model: 'test-model',
@@ -1629,6 +1712,9 @@ describe('StreamHandler', () => {
                 responseFormat: 'json',
                 jsonSchema: {
                     schema: testSchema
+                },
+                settings: {
+                    jsonMode: 'force-prompt'
                 }
             };
 
@@ -1673,7 +1759,16 @@ describe('StreamHandler', () => {
 
         it('should handle JSON validation errors in prompt injection mode', async () => {
             const modelInfo = createTestModelInfo();
-            modelInfo.capabilities = { jsonMode: false };
+            modelInfo.capabilities = {
+                input: {
+                    text: true
+                },
+                output: {
+                    text: {
+                        textOutputFormats: ['text', 'json']
+                    }
+                }
+            };
 
             const params: UniversalChatParams = {
                 model: 'test-model',
@@ -1681,13 +1776,17 @@ describe('StreamHandler', () => {
                 responseFormat: 'json',
                 jsonSchema: {
                     schema: testSchema
+                },
+                settings: {
+                    jsonMode: 'force-prompt'
                 }
             };
 
             // Mock the response processor to simulate validation error
-            const validationErrors = [{ message: 'Invalid JSON', path: [''] }];
+            const validationErrors = [{ message: 'Expected property name or \'}\' in JSON at position 1', path: [''] }];
             sharedMockResponseProcessorInstance.validateResponse.mockResolvedValue({
                 content: '{name: "John", age: "30"}',
+                contentObject: undefined,
                 role: 'assistant',
                 metadata: { validationErrors }
             });
@@ -1709,6 +1808,26 @@ describe('StreamHandler', () => {
             expect(chunks[1].metadata?.validationErrors).toEqual(validationErrors);
         });
     });
+
+    test('should handle JSON response with syntax error', async () => {
+        // Set up a test model info for JSON capability
+        const jsonCapableModel: ModelInfo = {
+            ...mockModelInfo,
+            capabilities: {
+                streaming: true,
+                input: {
+                    text: true
+                },
+                output: {
+                    text: {
+                        textOutputFormats: ['text', 'json'] as ('text' | 'json')[]
+                    }
+                }
+            }
+        };
+
+        // ... existing code ...
+    });
 });
 
 // Helper function to create a valid test ModelInfo object
@@ -1719,6 +1838,15 @@ function createTestModelInfo(name: string = 'test-model'): ModelInfo {
         outputPricePerMillion: 0.02,
         maxRequestTokens: 4000,
         maxResponseTokens: 4000,
+        capabilities: {
+            streaming: true,
+            input: {
+                text: true
+            },
+            output: {
+                text: true
+            }
+        },
         characteristics: {
             qualityIndex: 80,
             outputSpeed: 20,

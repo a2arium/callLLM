@@ -81,7 +81,8 @@ export class StreamHandler {
 
         // Determine JSON mode behavior
         const isJsonRequested = params.responseFormat === 'json' || params.jsonSchema;
-        const hasNativeJsonSupport = modelInfo.capabilities?.jsonMode;
+        const hasNativeJsonSupport = typeof modelInfo.capabilities?.output?.text === 'object' &&
+            modelInfo.capabilities.output.text.textOutputFormats?.includes('json');
         const jsonMode = params.settings?.jsonMode ?? 'fallback';
 
         // Log JSON mode configuration

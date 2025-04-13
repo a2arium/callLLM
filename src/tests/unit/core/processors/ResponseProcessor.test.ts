@@ -1061,7 +1061,16 @@ describe('ResponseProcessor', () => {
         it('should return usePromptInjection: false when model has native JSON support', () => {
             const model: ModelInfo = {
                 name: 'test-model',
-                capabilities: { jsonMode: true },
+                capabilities: {
+                    input: {
+                        text: true
+                    },
+                    output: {
+                        text: {
+                            textOutputFormats: ['text', 'json']
+                        }
+                    }
+                },
                 inputPricePerMillion: 0,
                 outputPricePerMillion: 0,
                 maxRequestTokens: 1000,
@@ -1083,7 +1092,14 @@ describe('ResponseProcessor', () => {
         it('should throw error when model does not have native JSON support and fallback is disabled', () => {
             const model: ModelInfo = {
                 name: 'test-model',
-                capabilities: { jsonMode: false },
+                capabilities: {
+                    input: {
+                        text: true
+                    },
+                    output: {
+                        text: true // No JSON support, just basic text
+                    }
+                },
                 inputPricePerMillion: 0,
                 outputPricePerMillion: 0,
                 maxRequestTokens: 1000,
@@ -1106,7 +1122,16 @@ describe('ResponseProcessor', () => {
         it('should return usePromptInjection: true when model does not have native JSON support but fallback is enabled', () => {
             const model: ModelInfo = {
                 name: 'test-model',
-                capabilities: { jsonMode: false },
+                capabilities: {
+                    input: {
+                        text: true
+                    },
+                    output: {
+                        text: {
+                            textOutputFormats: ['text'] // Only text, no JSON
+                        }
+                    }
+                },
                 inputPricePerMillion: 0,
                 outputPricePerMillion: 0,
                 maxRequestTokens: 1000,
@@ -1129,7 +1154,16 @@ describe('ResponseProcessor', () => {
         it('should handle force-prompt JSON mode', () => {
             const model: ModelInfo = {
                 name: 'test-model',
-                capabilities: { jsonMode: true },
+                capabilities: {
+                    input: {
+                        text: true
+                    },
+                    output: {
+                        text: {
+                            textOutputFormats: ['text', 'json']
+                        }
+                    }
+                },
                 inputPricePerMillion: 0,
                 outputPricePerMillion: 0,
                 maxRequestTokens: 1000,
@@ -1152,7 +1186,14 @@ describe('ResponseProcessor', () => {
         it('should return false when no JSON is requested', () => {
             const model: ModelInfo = {
                 name: 'test-model',
-                capabilities: { jsonMode: false },
+                capabilities: {
+                    input: {
+                        text: true
+                    },
+                    output: {
+                        text: true // Just basic text support
+                    }
+                },
                 inputPricePerMillion: 0,
                 outputPricePerMillion: 0,
                 maxRequestTokens: 1000,

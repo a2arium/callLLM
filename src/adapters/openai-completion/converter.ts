@@ -1,11 +1,10 @@
 import { UniversalChatParams, UniversalChatResponse, FinishReason, ModelInfo, UniversalStreamResponse, UniversalMessage } from '../../interfaces/UniversalInterfaces';
 import { OpenAIModelParams, OpenAIResponse, OpenAIChatMessage, OpenAIUsage, OpenAIRole, OpenAIToolCall, OpenAIAssistantMessage } from './types';
-import { ToolDefinition } from '../../core/types';
+import { ToolDefinition, ToolCall } from '../../types/tooling';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { ChatCompletionCreateParams, ChatCompletionMessageParam } from 'openai/resources/chat';
 import { z } from 'zod';
 import { OpenAIStreamResponse, OpenAIStreamDelta } from './types';
-import { ToolCall } from '../../core/types';
 import { logger } from '../../utils/logger';
 
 export class Converter {

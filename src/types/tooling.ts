@@ -51,6 +51,32 @@ export type ToolCall = {
     executionReady?: boolean; // Flag indicating this tool call is ready for execution
 };
 
+
+export type ToolsManager = {
+    getTool(name: string): ToolDefinition | undefined;
+    addTool(tool: ToolDefinition): void;
+    addTools(tools: ToolDefinition[]): void;
+    removeTool(name: string): void;
+    updateTool(name: string, updated: Partial<ToolDefinition>): void;
+    listTools(): ToolDefinition[];
+};
+
+export type ToolChoice =
+    | 'none'
+    | 'auto'
+    | { type: 'function'; function: { name: string } };
+
+
+export type ToolCallResponse = {
+    id: string;
+    type: 'function';
+    function: {
+        name: string;
+        arguments: string;
+    };
+};
+
+
 // TODO: we shouldn't have it in types folder
 export class ToolError extends Error {
     constructor(message: string) {

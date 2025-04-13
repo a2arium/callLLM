@@ -33,7 +33,7 @@ export type {
     ToolChoice,
     ToolCall,
     ToolCallResponse
-} from './core/types';
+} from './types/tooling';
 
 // Re-export key entities
 export { ModelManager } from './core/models/ModelManager';

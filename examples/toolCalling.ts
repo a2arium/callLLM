@@ -1,5 +1,5 @@
 import { LLMCaller } from '../src';
-import type { ToolDefinition } from '../src/core/types';
+import type { ToolDefinition } from '../src/types/tooling';
 import { HistoryManager } from '../src/core/history/HistoryManager';
 
 async function main() {

@@ -139,7 +139,14 @@ describe('LLMCaller Settings & Configuration', () => {
                 batchProcessing: true,
                 systemMessages: true,
                 temperature: true,
-                jsonMode: true
+                input: {
+                    text: true
+                },
+                output: {
+                    text: {
+                        textOutputFormats: ['text', 'json']
+                    }
+                }
             }
         };
 
@@ -390,7 +397,14 @@ describe('LLMCaller Settings & Configuration', () => {
                     batchProcessing: true,
                     systemMessages: true,
                     temperature: true,
-                    jsonMode: true
+                    input: {
+                        text: true
+                    },
+                    output: {
+                        text: {
+                            textOutputFormats: ['text', 'json']
+                        }
+                    }
                 }
             } as ModelInfo);
 
