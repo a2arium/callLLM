@@ -60,9 +60,9 @@ export const defaultModels: ModelInfo[] = [
     },
     {
         name: "o1-mini",
-        inputPricePerMillion: 3.00,
-        inputCachedPricePerMillion: 1.50,
-        outputPricePerMillion: 12.00,
+        inputPricePerMillion: 1.10,
+        inputCachedPricePerMillion: 0.55,
+        outputPricePerMillion: 4.40,
         maxRequestTokens: 128000,
         maxResponseTokens: 65536,
         tokenizationModel: "gpt-4",

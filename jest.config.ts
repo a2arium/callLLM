@@ -32,7 +32,12 @@ const config: Config.InitialOptions = {
             statements: 90
         }
     },
-    verbose: true
+    verbose: true,
+    globals: {
+        'ts-jest': {
+            isolatedModules: true,
+        },
+    },
 };
 
 export default config; 

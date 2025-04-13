@@ -690,4 +690,493 @@ describe('HistoryManager', () => {
             expect(historyManager.getHistoricalMessages()).toEqual([]);
         });
     });
+
+    // New test section for safeJsonParse method (invoked via getHistorySummary)
+    describe('safeJsonParse', () => {
+        it('should handle invalid JSON strings', () => {
+            // Setup a message with a tool call using OpenAI format
+            // with invalid JSON in the arguments
+            historyManager.addMessage('assistant', '', {
+                toolCalls: [{
+                    id: 'function_call_id',
+                    function: {
+                        name: 'testTool',
+                        arguments: '{invalid-json'
+                    }
+                }]
+            });
+
+            // When we get history summary with tool calls, it should handle the invalid JSON
+            const summary = historyManager.getHistorySummary({ includeToolCalls: true });
+
+            // The summary should contain our message
+            expect(summary).toHaveLength(1);
+
+            // Using type assertion to access toolCalls
+            type SummaryWithToolCalls = {
+                role: string;
+                contentPreview: string;
+                hasToolCalls: boolean;
+                toolCalls?: Array<{
+                    name: string;
+                    args: Record<string, unknown>;
+                }>;
+            };
+
+            const toolCallEntry = summary[0] as SummaryWithToolCalls;
+            expect(toolCallEntry.hasToolCalls).toBe(true);
+            expect(toolCallEntry.toolCalls).toBeDefined();
+            expect(toolCallEntry.toolCalls![0].name).toBe('testTool');
+            // Invalid JSON should result in an empty object
+            expect(toolCallEntry.toolCalls![0].args).toEqual({});
+        });
+
+        it('should handle unknown tool call formats', () => {
+            // Create a message with a tool call in an unknown format
+            // that doesn't match any of the expected patterns
+            historyManager.addMessage('assistant', '', {
+                toolCalls: [{
+                    id: 'unknown_format_call',
+                    // Missing both 'name'/'arguments' and 'function' properties
+                } as any]
+            });
+
+            // When we get history summary with tool calls, it should use the fallback
+            const summary = historyManager.getHistorySummary({ includeToolCalls: true });
+
+            // The summary should contain our message
+            expect(summary).toHaveLength(1);
+
+            // Using type assertion to access toolCalls
+            type SummaryWithToolCalls = {
+                role: string;
+                contentPreview: string;
+                hasToolCalls: boolean;
+                toolCalls?: Array<{
+                    name: string;
+                    args: Record<string, unknown>;
+                }>;
+            };
+
+            const toolCallEntry = summary[0] as SummaryWithToolCalls;
+            expect(toolCallEntry.hasToolCalls).toBe(true);
+            expect(toolCallEntry.toolCalls).toBeDefined();
+            // Should use the fallback values
+            expect(toolCallEntry.toolCalls![0].name).toBe('unknown');
+            expect(toolCallEntry.toolCalls![0].args).toEqual({});
+        });
+    });
+
+    describe('removeToolCallsWithoutResponses', () => {
+        it('should remove assistant messages with unmatched tool calls', () => {
+            // Clear any existing messages
+            historyManager.clearHistory();
+
+            // Add an assistant message with a tool call
+            historyManager.addMessage('assistant', '', {
+                toolCalls: [{
+                    id: 'unmatched_call_1',
+                    name: 'testTool',
+                    arguments: { param: 'value' }
+                }]
+            });
+
+            // Add another assistant message with a tool call that has a response
+            historyManager.addMessage('assistant', '', {
+                toolCalls: [{
+                    id: 'matched_call_1',
+                    name: 'testTool',
+                    arguments: { param: 'value' }
+                }]
+            });
+
+            // Add the tool response for the second call
+            historyManager.addMessage('tool', 'Tool result', {
+                toolCallId: 'matched_call_1'
+            });
+
+            // Before removing, we should have 3 messages
+            expect(historyManager.getHistoricalMessages()).toHaveLength(3);
+
+            // Remove unmatched tool calls
+            const removed = historyManager.removeToolCallsWithoutResponses();
+
+            // Should have removed 1 message
+            expect(removed).toBe(1);
+
+            // After removing, we should have 2 messages (the matched call and its response)
+            const messages = historyManager.getHistoricalMessages();
+            expect(messages).toHaveLength(2);
+
+            // The remaining messages should be the matched call and its response
+            expect(messages[0].toolCalls![0].id).toBe('matched_call_1');
+            expect(messages[1].toolCallId).toBe('matched_call_1');
+        });
+
+        it('should not remove any messages when all tool calls have responses', () => {
+            // Clear any existing messages
+            historyManager.clearHistory();
+
+            // Add an assistant message with a tool call that has a response
+            historyManager.addMessage('assistant', '', {
+                toolCalls: [{
+                    id: 'matched_call_2',
+                    name: 'testTool',
+                    arguments: { param: 'value' }
+                }]
+            });
+
+            // Add the tool response
+            historyManager.addMessage('tool', 'Tool result', {
+                toolCallId: 'matched_call_2'
+            });
+
+            // Before removing, we should have 2 messages
+            expect(historyManager.getHistoricalMessages()).toHaveLength(2);
+
+            // Remove unmatched tool calls
+            const removed = historyManager.removeToolCallsWithoutResponses();
+
+            // Should have removed 0 messages
+            expect(removed).toBe(0);
+
+            // After removing, we should still have 2 messages
+            expect(historyManager.getHistoricalMessages()).toHaveLength(2);
+        });
+
+        it('should handle multiple tool calls in a single message', () => {
+            // Clear any existing messages
+            historyManager.clearHistory();
+
+            // Add an assistant message with multiple tool calls, only one with a response
+            historyManager.addMessage('assistant', '', {
+                toolCalls: [
+                    {
+                        id: 'unmatched_call_3',
+                        name: 'testTool1',
+                        arguments: { param: 'value1' }
+                    },
+                    {
+                        id: 'matched_call_3',
+                        name: 'testTool2',
+                        arguments: { param: 'value2' }
+                    }
+                ]
+            });
+
+            // Add the tool response for only one call
+            historyManager.addMessage('tool', 'Tool result', {
+                toolCallId: 'matched_call_3'
+            });
+
+            // Before removing, we should have 2 messages
+            expect(historyManager.getHistoricalMessages()).toHaveLength(2);
+
+            // Remove unmatched tool calls
+            const removed = historyManager.removeToolCallsWithoutResponses();
+
+            // Should have removed 1 message (the entire message with both tool calls)
+            expect(removed).toBe(1);
+
+            // After removing, we should have 1 message (just the tool response)
+            const messages = historyManager.getHistoricalMessages();
+            expect(messages).toHaveLength(1);
+            expect(messages[0].role).toBe('tool');
+            expect(messages[0].toolCallId).toBe('matched_call_3');
+        });
+    });
+
+    describe('getMessages', () => {
+        it('should return the same result as getHistoricalMessages', () => {
+            // Clear and set up a history with various message types
+            historyManager.clearHistory();
+            historyManager.addMessage('system', 'System message');
+            historyManager.addMessage('user', 'User message');
+            historyManager.addMessage('assistant', 'Assistant message');
+
+            // Compare results from both methods
+            const historicalMessages = historyManager.getHistoricalMessages();
+            const allMessages = historyManager.getMessages();
+
+            // Both should return the same result
+            expect(allMessages).toEqual(historicalMessages);
+            expect(allMessages).toHaveLength(3);
+            expect(allMessages[0].role).toBe('system');
+        });
+    });
+
+    describe('constructor with environment variables', () => {
+        const originalEnv = process.env;
+
+        beforeEach(() => {
+            process.env = { ...originalEnv };
+        });
+
+        afterEach(() => {
+            process.env = originalEnv;
+        });
+
+        it('should use LOG_LEVEL environment variable if provided', () => {
+            // Set LOG_LEVEL environment variable
+            process.env.LOG_LEVEL = 'debug';
+
+            // Create a new instance to trigger the logger setup
+            const testHistoryManager = new HistoryManager();
+
+            // No direct way to test the internal logger config, but this ensures
+            // the code path is executed without errors
+            expect(testHistoryManager).toBeInstanceOf(HistoryManager);
+        });
+    });
+
+    describe('getHistorySummary with edge cases', () => {
+        beforeEach(() => {
+            historyManager.clearHistory();
+
+            // Add messages with complex metadata structures
+            historyManager.addMessage('user', 'Message with null timestamp', {
+                metadata: { timestamp: null }
+            });
+
+            // Add message with OpenAI format tool call that has proper structure
+            historyManager.addMessage('assistant', '', {
+                toolCalls: [{
+                    id: 'openai_format_call',
+                    type: 'function',
+                    function: {
+                        name: 'openaiTool',
+                        arguments: '{"param":"value"}'
+                    }
+                }]
+            });
+
+            // Add message with a tool call in our format
+            historyManager.addMessage('assistant', '', {
+                toolCalls: [{
+                    id: 'our_format_call',
+                    name: 'ourTool',
+                    arguments: { param: 'value' }
+                }]
+            });
+        });
+
+        it('should handle null metadata values', () => {
+            const summary = historyManager.getHistorySummary();
+
+            // Check that messages are included
+            expect(summary).toHaveLength(3);
+
+            // The message with null timestamp should be included without error
+            const messageWithNullTimestamp = summary[0];
+            expect(messageWithNullTimestamp.role).toBe('user');
+            expect(messageWithNullTimestamp.contentPreview).toBe('Message with null timestamp');
+            expect(messageWithNullTimestamp.timestamp).toBeUndefined();
+        });
+
+        it('should handle different tool call formats properly', () => {
+            const summary = historyManager.getHistorySummary({ includeToolCalls: true });
+
+            // We expect 3 messages in the summary
+            expect(summary).toHaveLength(3);
+
+            // Type assertion to access toolCalls
+            type SummaryWithToolCalls = {
+                role: string;
+                contentPreview: string;
+                hasToolCalls: boolean;
+                toolCalls?: Array<{
+                    name: string;
+                    args: Record<string, unknown>;
+                }>;
+            };
+
+            // Check OpenAI format handling
+            const openaiFormatEntry = summary[1] as SummaryWithToolCalls;
+            expect(openaiFormatEntry.hasToolCalls).toBe(true);
+            expect(openaiFormatEntry.toolCalls![0].name).toBe('openaiTool');
+            expect(openaiFormatEntry.toolCalls![0].args).toEqual({ param: 'value' });
+
+            // Check our format handling
+            const ourFormatEntry = summary[2] as SummaryWithToolCalls;
+            expect(ourFormatEntry.hasToolCalls).toBe(true);
+            expect(ourFormatEntry.toolCalls![0].name).toBe('ourTool');
+            expect(ourFormatEntry.toolCalls![0].args).toEqual({ param: 'value' });
+        });
+    });
+
+    describe('getLastMessages edge cases', () => {
+        it('should handle zero count', () => {
+            historyManager.clearHistory();
+            historyManager.addMessage('user', 'Test message');
+            const messages = historyManager.getLastMessages(0);
+            // In JavaScript, arr.slice(-0) is the same as arr.slice(0), which returns a copy of the array
+            expect(messages).toHaveLength(1);
+            expect(messages[0].content).toBe('Test message');
+        });
+
+        it('should return all messages when count exceeds number of messages', () => {
+            historyManager.clearHistory();
+            historyManager.addMessage('user', 'Message 1');
+            historyManager.addMessage('assistant', 'Message 2');
+
+            const messages = historyManager.getLastMessages(5);
+            expect(messages).toHaveLength(2);
+        });
+    });
+
+    describe('edge cases for branch coverage', () => {
+        it('should handle missing role in messages', () => {
+            // Test for line 69: msg.role || 'user'
+            historyManager.clearHistory();
+
+            // Create a message with undefined role
+            const messageWithoutRole = {
+                content: 'Message without role'
+            } as unknown as UniversalMessage;
+
+            // Add directly to history and then get validated messages
+            historyManager['historicalMessages'].push(messageWithoutRole);
+            const messages = historyManager.getHistoricalMessages();
+
+            // Should have applied the default 'user' role
+            expect(messages).toHaveLength(1);
+            expect(messages[0].role).toBe('user');
+        });
+
+        it('should handle empty content with content property', () => {
+            // Test for line 70: hasValidContent || hasToolCalls ? (msg.content || '') : ''
+            historyManager.clearHistory();
+
+            // Create a message with a tool call but with explicit empty content (not undefined)
+            historyManager.addMessage('assistant', '', {
+                toolCalls: [{
+                    id: 'test_call',
+                    name: 'testTool',
+                    arguments: { param: 'value' }
+                }]
+            });
+
+            const messages = historyManager.getHistoricalMessages();
+            expect(messages).toHaveLength(1);
+            expect(messages[0].content).toBe('');
+        });
+
+        it('should handle messages with undefined content', () => {
+            // Test for line 283: contentPreview = msg.content || '';
+            historyManager.clearHistory();
+
+            // Create a message with undefined content but with tool calls
+            const messageWithUndefinedContent = {
+                role: 'assistant',
+                content: '',  // Empty string instead of undefined
+                toolCalls: [{
+                    id: 'test_call',
+                    name: 'testTool',
+                    arguments: { param: 'value' }
+                }]
+            } as UniversalMessage;
+
+            // Manually set content to undefined after creating
+            // This bypasses TypeScript but simulates a scenario where content could be undefined at runtime
+            (messageWithUndefinedContent as any).content = undefined;
+
+            historyManager['historicalMessages'].push(messageWithUndefinedContent);
+
+            // Get history summary to trigger the content || '' branch
+            const summary = historyManager.getHistorySummary();
+
+            expect(summary).toHaveLength(1);
+            expect(summary[0].contentPreview).toBe('');
+        });
+
+        it('should handle tool calls with missing id property', () => {
+            // Test for line 395: const id = 'id' in toolCall ? toolCall.id : undefined;
+            historyManager.clearHistory();
+
+            // Create a message with a tool call that's missing the 'id' property
+            const messageWithIncompleteToolCall = {
+                role: 'assistant',
+                content: '',
+                toolCalls: [{
+                    // Missing id property
+                    name: 'testTool',
+                    arguments: { param: 'value' }
+                }]
+            } as unknown as UniversalMessage;
+
+            historyManager['historicalMessages'].push(messageWithIncompleteToolCall);
+
+            // Call removeToolCallsWithoutResponses to trigger the branch
+            const removed = historyManager.removeToolCallsWithoutResponses();
+
+            // Since id is undefined, it won't be considered an unmatched call
+            expect(removed).toBe(0);
+        });
+    });
+
+    describe('remaining branch coverage cases', () => {
+        it('should initialize with no system message and not call initializeWithSystemMessage', () => {
+            // Test for line 22: if (this.systemMessage) { ...
+            // Mock the initializeWithSystemMessage method to verify it's not called
+            const originalMethod = HistoryManager.prototype.initializeWithSystemMessage;
+            const mockMethod = jest.fn();
+            HistoryManager.prototype.initializeWithSystemMessage = mockMethod;
+
+            try {
+                // Create a new instance with empty string (falsy but not undefined)
+                const testManager = new HistoryManager('');
+
+                // Verify the method wasn't called
+                expect(mockMethod).not.toHaveBeenCalled();
+
+                // Verify systemMessage is set correctly
+                expect(testManager['systemMessage']).toBe('');
+            } finally {
+                // Restore the original method
+                HistoryManager.prototype.initializeWithSystemMessage = originalMethod;
+            }
+        });
+
+        it('should handle content with only whitespace with tool calls', () => {
+            // Test for line 70: hasValidContent || hasToolCalls ? (msg.content || '') : ''
+            historyManager.clearHistory();
+
+            // Create a message with whitespace content and tool calls
+            historyManager.addMessage('assistant', '   ', {
+                toolCalls: [{
+                    id: 'test_call',
+                    name: 'testTool',
+                    arguments: { param: 'value' }
+                }]
+            });
+
+            const messages = historyManager.getHistoricalMessages();
+            expect(messages).toHaveLength(1);
+            // The content should be preserved (not converted to empty string)
+            expect(messages[0].content).toBe('   ');
+        });
+
+        it('should handle content exceeding maxContentLength in history summary', () => {
+            // Test for line 283-284: contentPreview.length > maxContentLength
+            historyManager.clearHistory();
+
+            // Create a message with content exactly at the default max length (50 chars)
+            const exactLengthContent = 'x'.repeat(50);
+            historyManager.addMessage('user', exactLengthContent);
+
+            // Create a message with content one character over the default max length
+            const justOverLengthContent = 'y'.repeat(51);
+            historyManager.addMessage('user', justOverLengthContent);
+
+            const summary = historyManager.getHistorySummary();
+
+            // First message should not be truncated (exactly at limit)
+            expect(summary[0].contentPreview).toBe(exactLengthContent);
+            expect(summary[0].contentPreview.length).toBe(50);
+
+            // Second message should be truncated and have ellipsis added
+            expect(summary[1].contentPreview).toBe('y'.repeat(50) + '...');
+            expect(summary[1].contentPreview.length).toBe(53); // 50 chars + 3 for ellipsis
+        });
+    });
 }); 
