@@ -31,9 +31,14 @@ describe('DataSplitter', () => {
                 toolCalls: true,
                 parallelToolCalls: true,
                 batchProcessing: true,
-                systemMessages: true,
-                temperature: true,
-                jsonMode: true
+                input: {
+                    text: true
+                },
+                output: {
+                    text: {
+                        textOutputFormats: ['text', 'json']
+                    }
+                }
             }
         };
     });

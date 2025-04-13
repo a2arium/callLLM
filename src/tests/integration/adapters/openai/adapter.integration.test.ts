@@ -37,8 +37,12 @@ describe('OpenAIAdapter Integration Tests', () => {
             toolCalls: true,
             parallelToolCalls: true,
             streaming: true,
-            temperature: true,
-            systemMessages: true
+            input: {
+                text: true
+            },
+            output: {
+                text: true
+            }
         }
     };
 
@@ -65,8 +69,12 @@ describe('OpenAIAdapter Integration Tests', () => {
                 toolCalls: false,
                 parallelToolCalls: false,
                 streaming: true,
-                temperature: true,
-                systemMessages: true
+                input: {
+                    text: true
+                },
+                output: {
+                    text: true
+                }
             }
         });
         adapter.setModelForTesting(MODEL_WITHOUT_PARALLEL, {
@@ -84,8 +92,12 @@ describe('OpenAIAdapter Integration Tests', () => {
                 toolCalls: true,
                 parallelToolCalls: false,
                 streaming: true,
-                temperature: true,
-                systemMessages: true
+                input: {
+                    text: true
+                },
+                output: {
+                    text: true
+                }
             }
         });
     });

@@ -49,9 +49,14 @@ describe('UsageTrackingProcessor', () => {
             toolCalls: false,
             parallelToolCalls: false,
             batchProcessing: false,
-            systemMessages: true,
-            temperature: true,
-            jsonMode: false
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text']
+                }
+            }
         }
     };
 

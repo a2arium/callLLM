@@ -30,9 +30,14 @@ describe('LLMCaller Tool Management', () => {
                     toolCalls: true,
                     parallelToolCalls: true,
                     batchProcessing: true,
-                    systemMessages: true,
-                    temperature: true,
-                    jsonMode: true
+                    input: {
+                        text: true
+                    },
+                    output: {
+                        text: {
+                            textOutputFormats: ['text', 'json']
+                        }
+                    }
                 }
             }),
             getAvailableModels: jest.fn()
