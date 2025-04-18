@@ -10,7 +10,8 @@ export class TokenCalculator {
         inputPricePerMillion: number,
         outputPricePerMillion: number,
         inputCachedTokens: number = 0,
-        inputCachedPricePerMillion?: number
+        inputCachedPricePerMillion?: number,
+        outputReasoningTokens: number = 0
     ): Usage['costs'] {
         // Calculate non-cached input tokens
         const nonCachedInputTokens = (inputCachedTokens && inputCachedPricePerMillion)
@@ -26,6 +27,7 @@ export class TokenCalculator {
         // Calculate output cost
         const outputCost = (outputTokens * outputPricePerMillion) / 1_000_000;
 
+        const outputReasoningCost = (outputReasoningTokens * outputPricePerMillion) / 1_000_000;
         // Calculate total cost
         const totalCost = regularInputCost + cachedInputCost + outputCost;
 
@@ -33,6 +35,7 @@ export class TokenCalculator {
             input: regularInputCost,
             inputCached: cachedInputCost,
             output: outputCost,
+            outputReasoning: outputReasoningCost,
             total: totalCost
         };
     }

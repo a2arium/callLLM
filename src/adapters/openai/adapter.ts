@@ -1,7 +1,7 @@
 import { OpenAI } from 'openai';
 import type { Stream } from 'openai/streaming';
 import { BaseAdapter, AdapterConfig } from '../base/baseAdapter';
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason, ModelInfo } from '../../interfaces/UniversalInterfaces';
 import { OpenAIResponseAdapterError, OpenAIResponseValidationError, OpenAIResponseAuthError, OpenAIResponseRateLimitError, OpenAIResponseNetworkError } from './errors';
 import { Converter } from './converter';
 import { StreamHandler } from './stream';
@@ -18,6 +18,9 @@ import {
     Tool,
     ResponseContentPartAddedEvent
 } from './types';
+import { ModelManager } from '../../core/models/ModelManager';
+import { defaultModels } from './models';
+import { RegisteredProviders } from '../index';
 
 // Load environment variables
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
@@ -33,6 +36,8 @@ export class OpenAIResponseAdapter extends BaseAdapter {
     private converter: Converter;
     private streamHandler: StreamHandler;
     private validator: Validator;
+    private modelManager: ModelManager;
+    private models: ModelInfo[] = defaultModels;
 
     constructor(config: Partial<AdapterConfig> | string) {
         // Handle the case where config is just an API key string for backward compatibility
@@ -57,9 +62,17 @@ export class OpenAIResponseAdapter extends BaseAdapter {
             baseURL: this.config.baseUrl,
         });
 
-        this.converter = new Converter();
+        this.modelManager = new ModelManager('openai' as RegisteredProviders);
+
+        // Register models with model manager
+        for (const model of this.models) {
+            this.modelManager.addModel(model);
+        }
+
         this.streamHandler = new StreamHandler();
         this.validator = new Validator();
+        (this.validator as any).modelManager = this.modelManager;
+        this.converter = new Converter(this.modelManager);
         logger.setConfig({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'OpenAIResponseAdapter' });
     }
 

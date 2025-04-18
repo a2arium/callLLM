@@ -1,12 +1,19 @@
 import { OpenAI } from 'openai';
-import { UniversalChatParams } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, ReasoningEffort } from '../../interfaces/UniversalInterfaces';
 import { OpenAIResponseValidationError } from './errors';
 import type { ToolDefinition } from '../../types/tooling';
+import { ModelManager } from '../../core/models/ModelManager';
 
 // Import necessary native types from the Responses namespace
 type Tool = OpenAI.Responses.Tool;
 
 export class Validator {
+    private modelManager?: ModelManager;
+
+    constructor(modelManager?: ModelManager) {
+        this.modelManager = modelManager;
+    }
+
     /**
      * Validates the parameters passed to the adapter (Universal Format)
      * @param params Universal chat parameters to validate
@@ -23,13 +30,44 @@ export class Validator {
             throw new OpenAIResponseValidationError('Model name is required');
         }
 
-        // Settings validation remains the same
-        if (
-            params.settings?.temperature !== undefined &&
-            (params.settings.temperature < 0 || params.settings.temperature > 2)
-        ) {
-            throw new OpenAIResponseValidationError('Temperature must be between 0 and 2');
+        // Check if model has reasoning capability
+        const hasReasoningCapability = this.modelManager?.getModel(params.model)?.capabilities?.reasoning || false;
+
+        // Validate reasoning settings if present
+        if (params.settings?.reasoning) {
+            // Validate reasoning is only used with reasoning-capable models
+            if (!hasReasoningCapability) {
+                throw new OpenAIResponseValidationError('Reasoning settings can only be used with reasoning-capable models');
+            }
+
+            // Validate reasoning effort values
+            if (params.settings.reasoning.effort !== undefined) {
+                const validEfforts: ReasoningEffort[] = ['low', 'medium', 'high'];
+                if (!validEfforts.includes(params.settings.reasoning.effort)) {
+                    throw new OpenAIResponseValidationError(
+                        `Reasoning effort must be one of: ${validEfforts.join(', ')}`
+                    );
+                }
+            }
         }
+
+        // Validate temperature is not used with reasoning models
+        if (hasReasoningCapability && params.settings?.temperature !== undefined) {
+            throw new OpenAIResponseValidationError(
+                'Temperature cannot be set for reasoning-capable models'
+            );
+        }
+
+        // Settings validation for non-reasoning models
+        if (!hasReasoningCapability) {
+            if (
+                params.settings?.temperature !== undefined &&
+                (params.settings.temperature < 0 || params.settings.temperature > 2)
+            ) {
+                throw new OpenAIResponseValidationError('Temperature must be between 0 and 2');
+            }
+        }
+
         if (
             params.settings?.topP !== undefined &&
             (params.settings.topP < 0 || params.settings.topP > 1)

@@ -2,12 +2,20 @@ import { Validator } from '../../../../adapters/openai/validator';
 import { OpenAIResponseValidationError } from '../../../../adapters/openai/errors';
 import type { UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
 import type { ToolDefinition } from '../../../../types/tooling';
+import { ModelManager } from '../../../../core/models/ModelManager';
+import { ModelInfo, ReasoningEffort } from '../../../../interfaces/UniversalInterfaces';
+
+// Mock the ModelManager
+jest.mock('../../../../core/models/ModelManager');
 
 describe('OpenAI Response Validator', () => {
     let validator: Validator;
+    let mockModelManager: jest.Mocked<ModelManager>;
 
     beforeEach(() => {
+        mockModelManager = new ModelManager('openai') as jest.Mocked<ModelManager>;
         validator = new Validator();
+        (validator as any).modelManager = mockModelManager;
     });
 
     describe('validateParams', () => {
@@ -118,6 +126,143 @@ describe('OpenAI Response Validator', () => {
                     model: 'test-model'
                 };
                 expect(() => validator.validateParams(params)).not.toThrow();
+            });
+        });
+
+        describe('reasoning model validation', () => {
+            const reasoningModel: ModelInfo = {
+                name: 'o3-mini',
+                inputPricePerMillion: 1.10,
+                outputPricePerMillion: 4.40,
+                maxRequestTokens: 128000,
+                maxResponseTokens: 65536,
+                capabilities: {
+                    streaming: true,
+                    reasoning: true,
+                    input: { text: true },
+                    output: { text: true }
+                },
+                characteristics: {
+                    qualityIndex: 86,
+                    outputSpeed: 212.1,
+                    firstTokenLatency: 10890
+                }
+            };
+
+            const nonReasoningModel: ModelInfo = {
+                name: 'gpt-4',
+                inputPricePerMillion: 10,
+                outputPricePerMillion: 30,
+                maxRequestTokens: 8000,
+                maxResponseTokens: 2000,
+                capabilities: {
+                    input: { text: true },
+                    output: { text: true }
+                },
+                characteristics: {
+                    qualityIndex: 90,
+                    outputSpeed: 15,
+                    firstTokenLatency: 200
+                }
+            };
+
+            const validParams: UniversalChatParams = {
+                model: 'o3-mini',
+                messages: [{ role: 'user', content: 'Hello' }],
+            };
+
+            it('should validate reasoning settings with valid effort values', () => {
+                // Setup - model has reasoning capability
+                mockModelManager.getModel.mockReturnValue(reasoningModel);
+
+                // Add valid reasoning settings to params
+                const params = {
+                    ...validParams,
+                    settings: {
+                        reasoning: { effort: 'medium' as ReasoningEffort }
+                    }
+                };
+
+                // Verification
+                expect(() => validator.validateParams(params)).not.toThrow();
+            });
+
+            it('should reject reasoning settings for non-reasoning models', () => {
+                // Setup - model does NOT have reasoning capability
+                mockModelManager.getModel.mockReturnValue(nonReasoningModel);
+
+                // Add reasoning settings to params for a non-reasoning model
+                const params = {
+                    ...validParams,
+                    model: 'gpt-4',
+                    settings: {
+                        reasoning: { effort: 'high' as ReasoningEffort }
+                    }
+                };
+
+                // Verification
+                expect(() => validator.validateParams(params)).toThrow(OpenAIResponseValidationError);
+                expect(() => validator.validateParams(params)).toThrow(
+                    'Reasoning settings can only be used with reasoning-capable models'
+                );
+            });
+
+            it('should reject invalid reasoning effort values', () => {
+                // Setup - model has reasoning capability
+                mockModelManager.getModel.mockReturnValue(reasoningModel);
+
+                // Use invalid value for reasoning effort
+                const params = {
+                    ...validParams,
+                    settings: {
+                        reasoning: { effort: 'extreme' as any }
+                    }
+                };
+
+                // Verification
+                expect(() => validator.validateParams(params)).toThrow(OpenAIResponseValidationError);
+                expect(() => validator.validateParams(params)).toThrow(
+                    'Reasoning effort must be one of: low, medium, high'
+                );
+            });
+
+            it('should reject temperature for reasoning models', () => {
+                // Setup - model has reasoning capability
+                mockModelManager.getModel.mockReturnValue(reasoningModel);
+
+                // Use temperature with a reasoning model
+                const params = {
+                    ...validParams,
+                    settings: {
+                        temperature: 0.7
+                    }
+                };
+
+                // Verification
+                expect(() => validator.validateParams(params)).toThrow(OpenAIResponseValidationError);
+                expect(() => validator.validateParams(params)).toThrow(
+                    'Temperature cannot be set for reasoning-capable models'
+                );
+            });
+
+            it('should allow all effort values for reasoning models', () => {
+                // Setup - model has reasoning capability
+                mockModelManager.getModel.mockReturnValue(reasoningModel);
+
+                // Test all valid effort values
+                const effortValues: ReasoningEffort[] = ['low', 'medium', 'high'];
+
+                for (const effort of effortValues) {
+                    const params = {
+                        ...validParams,
+                        settings: {
+                            reasoning: { effort }
+                        }
+                    };
+
+                    // Verification - should not throw for any valid effort value
+                    expect(() => validator.validateParams(params)).not.toThrow();
+                }
             });
         });
     });

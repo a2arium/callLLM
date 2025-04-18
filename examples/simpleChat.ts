@@ -2,7 +2,7 @@ import { LLMCaller } from '../src/core/caller/LLMCaller';
 
 async function main() {
     // Initialize the caller with OpenAI
-    const caller = new LLMCaller('openai', 'o3-mini');
+    const caller = new LLMCaller('openai', 'gpt-3.5-turbo');
 
     try {
         // Test regular chat call
@@ -27,7 +27,7 @@ async function main() {
             {
                 settings: {
                     temperature: 0.9,
-                    maxTokens: 100
+                    maxTokens: 200
                 }
             }
         );
@@ -41,7 +41,6 @@ async function main() {
                 process.stdout.write(chunk.content);
             } else {
                 // For the final chunk, we can access the complete accumulated text
-                // via the contentText property (it should always be present when isComplete is true)
                 console.log('\n\nComplete response text:');
                 console.log(chunk.contentText);
             }

@@ -53,10 +53,18 @@ export class StreamHandler {
         let isCompleted = false;
         let finalResponse: types.Response | null = null;
         let currentToolCall: types.InternalToolCall | null = null; // Still useful for internal tracking
+        let reasoningTokens: number | undefined = undefined; // Track reasoning tokens
+        let latestReasoningTokens: number | undefined = undefined; // Track latest reasoning tokens from any event
 
         try {
             for await (const chunk of stream) {
                 this.log.debug(`Received stream event: ${chunk.type}`);
+
+                // Update latestReasoningTokens if present in any event
+                if ('response' in chunk && chunk.response?.usage?.output_tokens_details?.reasoning_tokens !== undefined) {
+                    latestReasoningTokens = chunk.response.usage.output_tokens_details.reasoning_tokens;
+                    this.log.debug(`Updated latestReasoningTokens: ${latestReasoningTokens}`);
+                }
 
                 const outputChunk: Partial<StreamChunk> = {}; // Build the output chunk incrementally
                 let yieldChunk = false; // Flag to yield at the end of the switch
@@ -133,8 +141,36 @@ export class StreamHandler {
                             finishReason = FinishReason.ERROR; // Default or handle other statuses
                         }
 
+
                         outputChunk.isComplete = true;
-                        outputChunk.metadata = { finishReason, model: finalResponse.model || '' };
+                        outputChunk.metadata = {
+                            finishReason,
+                            model: finalResponse.model || ''
+                        };
+
+                        // Add usage information if available
+                        if (finalResponse.usage) {
+                            outputChunk.metadata = outputChunk.metadata || {};
+                            // Extract reasoning tokens if available in the final response (we already track latestReasoningTokens)
+                            if (finalResponse.usage?.output_tokens_details?.reasoning_tokens !== undefined) {
+                                this.log.debug(`Reasoning tokens in final response: ${finalResponse.usage.output_tokens_details.reasoning_tokens}`);
+                            }
+                            const reasoningToUse = latestReasoningTokens !== undefined ? latestReasoningTokens : reasoningTokens;
+
+                            outputChunk.metadata.usage = {
+                                tokens: {
+                                    input: finalResponse.usage.input_tokens || 0,
+                                    inputCached: finalResponse.usage.input_tokens_details?.cached_tokens || 0,
+                                    output: finalResponse.usage.output_tokens || 0,
+                                    outputReasoning: reasoningToUse || 0,
+                                    total: finalResponse.usage.total_tokens || 0,
+                                },
+                                costs: { input: 0, inputCached: 0, output: 0, outputReasoning: 0, total: 0 } // Costs calculated later
+                            };
+
+
+                        }
+
                         yieldChunk = true;
                         this.log.debug(`Stream completed, final finish reason: ${finishReason}`);
                         break;
@@ -221,6 +257,11 @@ export class StreamHandler {
                         },
                         contentText: accumulatedContent // Always include the latest accumulated text
                     };
+                    if (responseChunk.isComplete) {
+                        // Print the final chunk for debugging
+                        // eslint-disable-next-line no-console
+                        console.log('DEBUG StreamHandler final responseChunk:', JSON.stringify(responseChunk, null, 2));
+                    }
                     this.log.debug('Yielding processed chunk:', JSON.stringify(responseChunk, null, 2));
                     yield responseChunk;
                 }

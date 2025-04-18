@@ -30,6 +30,7 @@ async function main() {
         console.log('Input Tokens:', response[0].metadata.usage.tokens.input);
         console.log('Input Cached Tokens:', response[0].metadata.usage.tokens.inputCached);
         console.log('Output Tokens:', response[0].metadata.usage.tokens.output);
+        console.log('Output Reasoning Tokens:', response[0].metadata.usage.tokens.outputReasoning);
         console.log('Total Tokens:', response[0].metadata.usage.tokens.total);
         console.log('Costs:', response[0].metadata.usage.costs);
     }

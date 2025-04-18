@@ -28,7 +28,8 @@ export class UsageTracker {
         input: string,
         output: string,
         modelInfo: ModelInfo,
-        inputCachedTokens: number = 0
+        inputCachedTokens: number = 0,
+        outputReasoningTokens: number = 0
     ): Promise<Usage> {
         const inputTokens = this.tokenCalculator.calculateTokens(input);
         const outputTokens = this.tokenCalculator.calculateTokens(output);
@@ -38,7 +39,8 @@ export class UsageTracker {
                 input: inputTokens,
                 inputCached: inputCachedTokens,
                 output: outputTokens,
-                total: inputTokens + outputTokens
+                outputReasoning: outputReasoningTokens,
+                total: inputTokens + outputTokens + outputReasoningTokens
             },
             costs: this.tokenCalculator.calculateUsage(
                 inputTokens,
@@ -46,7 +48,8 @@ export class UsageTracker {
                 modelInfo.inputPricePerMillion,
                 modelInfo.outputPricePerMillion,
                 inputCachedTokens,
-                modelInfo.inputCachedPricePerMillion
+                modelInfo.inputCachedPricePerMillion,
+                outputReasoningTokens
             )
         };
 

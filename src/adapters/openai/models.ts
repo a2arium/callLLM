@@ -61,6 +61,7 @@ export const defaultModels: ModelInfo[] = [
             streaming: true,
             toolCalls: true,
             parallelToolCalls: true,
+            reasoning: true,
             input: {
                 text: true
             },
@@ -86,6 +87,7 @@ export const defaultModels: ModelInfo[] = [
             streaming: true,
             toolCalls: true,
             parallelToolCalls: true,
+            reasoning: true,
             input: {
                 text: true
             },
@@ -117,6 +119,7 @@ export const defaultModels: ModelInfo[] = [
         capabilities: {
             streaming: true,
             toolCalls: false,
+            reasoning: true,
             input: {
                 text: true
             },

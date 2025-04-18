@@ -210,8 +210,11 @@ export class ChatController {
                 const usage = await this.usageTracker.trackUsage(
                     systemContentForUsage + '\n' + lastUserMessage,
                     resp.content ?? '',
-                    modelInfo
+                    modelInfo,
+                    resp.metadata?.usage?.tokens.inputCached,
+                    resp.metadata?.usage?.tokens.outputReasoning
                 );
+
                 resp.metadata.usage = usage;
 
                 // Pass the complete response object to consider tool calls in the retry decision

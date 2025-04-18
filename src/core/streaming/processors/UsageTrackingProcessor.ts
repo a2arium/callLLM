@@ -119,6 +119,7 @@ export class UsageTrackingProcessor implements IStreamProcessor {
                             input: this.inputTokens,
                             inputCached: this.inputCachedTokens || 0,
                             output: currentOutputTokens,
+                            outputReasoning: 0,
                             total: this.inputTokens + currentOutputTokens
                         },
                         costs,

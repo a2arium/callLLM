@@ -166,6 +166,17 @@ export type UniversalChatSettings = {
      * - 'stateless': Only send system message and current user message
      */
     historyMode?: HistoryMode;
+    /**
+     * Configuration for reasoning models.
+     * Only applies to models with reasoning capabilities.
+     */
+    reasoning?: {
+        /**
+         * Constrains effort on reasoning for reasoning models.
+         * @default 'medium'
+         */
+        effort?: ReasoningEffort;
+    };
 };
 
 // Define the new options structure for call/stream methods
@@ -229,12 +240,14 @@ export type Usage = {
         input: number;
         inputCached: number;
         output: number;
+        outputReasoning: number;
         total: number;
     };
     costs: {
         input: number;
         inputCached: number;
         output: number;
+        outputReasoning: number;
         total: number;
     };
 };
@@ -345,6 +358,12 @@ export type ModelCapabilities = {
      */
     batchProcessing?: boolean;
 
+    /**
+     * Whether the model supports reasoning capabilities.
+     * When true, the model can generate detailed reasoning before providing answers.
+     * @default false
+     */
+    reasoning?: boolean;
 
     /**
      * Capabilities related to model input.
@@ -450,4 +469,12 @@ export type ModelInfo = {
 };
 
 // Model alias type
-export type ModelAlias = 'fast' | 'premium' | 'balanced' | 'cheap'; 
+export type ModelAlias = 'fast' | 'premium' | 'balanced' | 'cheap';
+
+/**
+ * Defines the level of reasoning effort for reasoning-capable models.
+ * - 'low': Faster responses with fewer tokens used for reasoning
+ * - 'medium': Balanced approach to reasoning depth and token usage
+ * - 'high': More thorough reasoning at the cost of more tokens and potentially longer generation time
+ */
+export type ReasoningEffort = 'low' | 'medium' | 'high'; 

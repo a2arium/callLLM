@@ -4,6 +4,8 @@ import { logger } from '../../../../utils/logger';
 import type { ToolDefinition } from '../../../../types/tooling';
 import type { ResponseStreamEvent } from '../../../../adapters/openai/types';
 import type { Stream } from 'openai/streaming';
+import { OpenAI } from 'openai';
+import { UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces';
 
 // Mock the logger
 jest.mock('../../../../utils/logger', () => {
@@ -482,5 +484,357 @@ describe('StreamHandler', () => {
         // Second tool call should have index 1
         expect(toolCallChunks[2]?.id).toBe('call_2');
         expect(toolCallChunks[2]?.index).toBe(1);
+    });
+
+    test('should extract reasoning tokens from output tokens details', async () => {
+        const streamHandler = new StreamHandler();
+
+        const mockEvents = [
+            {
+                type: 'response.output_text.delta',
+                delta: 'Final answer after reasoning',
+            } as ResponseStreamEvent,
+            {
+                type: 'response.completed',
+                response: {
+                    id: 'resp_789',
+                    model: 'o3-mini',
+                    status: 'completed',
+                    usage: {
+                        output_tokens: 100,
+                        input_tokens: 50,
+                        total_tokens: 150,
+                        output_tokens_details: {
+                            reasoning_tokens: 75 // Reasoning tokens explicitly provided
+                        }
+                    }
+                }
+            } as ResponseStreamEvent
+        ];
+
+        const mockStream = createMockStream(mockEvents);
+        const results = [];
+
+        for await (const chunk of streamHandler.handleStream(mockStream)) {
+            results.push(chunk);
+        }
+
+        // We should get two results: the text delta and the completed event
+        expect(results.length).toBe(2);
+
+        // The last result should have reasoning tokens in the metadata
+        const finalChunk = results[results.length - 1];
+        expect(finalChunk.metadata?.usage?.outputTokensBreakdown?.reasoning).toBe(75);
+        expect(finalChunk.metadata?.usage?.tokens.output).toBe(100);
+        expect(finalChunk.content).toBe('Final answer after reasoning');
+        expect(finalChunk.isComplete).toBe(true);
+    });
+
+    test('should handle streaming with progressive reasoning token updates', async () => {
+        const streamHandler = new StreamHandler();
+
+        const mockEvents = [
+            {
+                type: 'response.output_text.delta',
+                delta: 'Let me think about this...',
+            } as ResponseStreamEvent,
+            {
+                type: 'response.in_progress',
+                response: {
+                    usage: {
+                        output_tokens: 20,
+                        output_tokens_details: {
+                            reasoning_tokens: 15 // First part mostly reasoning
+                        }
+                    }
+                }
+            } as ResponseStreamEvent,
+            {
+                type: 'response.output_text.delta',
+                delta: 'After considering the factors, ',
+            } as ResponseStreamEvent,
+            {
+                type: 'response.in_progress',
+                response: {
+                    usage: {
+                        output_tokens: 50,
+                        output_tokens_details: {
+                            reasoning_tokens: 35 // More reasoning tokens
+                        }
+                    }
+                }
+            } as ResponseStreamEvent,
+            {
+                type: 'response.output_text.delta',
+                delta: 'the answer is 42.',
+            } as ResponseStreamEvent,
+            {
+                type: 'response.completed',
+                response: {
+                    id: 'resp_456',
+                    model: 'o3-mini',
+                    status: 'completed',
+                    usage: {
+                        output_tokens: 70,
+                        input_tokens: 30,
+                        total_tokens: 100,
+                        output_tokens_details: {
+                            reasoning_tokens: 40 // Final count (only some of the new tokens are reasoning)
+                        }
+                    }
+                }
+            } as ResponseStreamEvent
+        ];
+
+        const mockStream = createMockStream(mockEvents);
+        const results = [];
+
+        for await (const chunk of streamHandler.handleStream(mockStream)) {
+            results.push(chunk);
+        }
+
+        // We should get 6 results (3 text deltas and 3 events with token info)
+        expect(results.length).toBeGreaterThanOrEqual(4); // At minimum, we need deltas and completion
+
+        // The last result should have the correct final reasoning tokens count
+        const finalChunk = results[results.length - 1];
+        expect(finalChunk.metadata?.usage?.outputTokensBreakdown?.reasoning).toBe(40);
+        expect(finalChunk.metadata?.usage?.tokens.output).toBe(70);
+        expect(finalChunk.metadata?.usage?.tokens.total).toBe(100);
+        expect(finalChunk.isComplete).toBe(true);
+
+        // Check that content from deltas was accumulated correctly
+        // Note: In the actual implementation, this might be handled by an Accumulator
+        // So our test only verifies that the deltas were emitted correctly
+        const textDeltas = results
+            .filter(r => r.content && r.content.length > 0)
+            .map(r => r.content)
+            .join('');
+
+        expect(textDeltas).toContain('Let me think about this');
+        expect(textDeltas).toContain('After considering the factors');
+        expect(textDeltas).toContain('the answer is 42');
+    });
+
+    test('should handle a stream without reasoning tokens', async () => {
+        const streamHandler = new StreamHandler();
+
+        const mockEvents = [
+            {
+                type: 'response.output_text.delta',
+                delta: 'This is a standard response without reasoning.',
+            } as ResponseStreamEvent,
+            {
+                type: 'response.completed',
+                response: {
+                    id: 'resp_123',
+                    model: 'gpt-4o',
+                    status: 'completed',
+                    usage: {
+                        output_tokens: 50,
+                        input_tokens: 20,
+                        total_tokens: 70
+                        // No output_tokens_details field
+                    }
+                }
+            } as ResponseStreamEvent
+        ];
+
+        const mockStream = createMockStream(mockEvents);
+        const results = [];
+
+        for await (const chunk of streamHandler.handleStream(mockStream)) {
+            results.push(chunk);
+        }
+
+        // We should get two results: the text delta and the completed event
+        expect(results.length).toBe(2);
+
+        // The last result should not have reasoning tokens
+        const finalChunk = results[results.length - 1];
+        expect(finalChunk.metadata?.usage?.outputTokensBreakdown?.reasoning).toBeUndefined();
+        expect(finalChunk.metadata?.usage?.tokens.output).toBe(50);
+        expect(finalChunk.content).toBe('This is a standard response without reasoning.');
+        expect(finalChunk.isComplete).toBe(true);
+    });
+});
+
+describe('OpenAI Response API Stream Handler', () => {
+    let handler: StreamHandler;
+
+    beforeEach(() => {
+        handler = new StreamHandler();
+    });
+
+    describe('reasoning token handling', () => {
+        it('should extract reasoning tokens from stream with usage details', () => {
+            // Create a mock chunk with reasoning tokens in output_tokens_details
+            const mockChunk = {
+                type: 'response',
+                status: 'completed',
+                stream_terminated: true,
+                output: [
+                    {
+                        type: 'message',
+                        role: 'assistant',
+                        content: [
+                            {
+                                type: 'output_text',
+                                text: 'Final answer after reasoning'
+                            }
+                        ]
+                    }
+                ],
+                usage: {
+                    output_tokens: 100,
+                    input_tokens: 50,
+                    total_tokens: 150,
+                    output_tokens_details: {
+                        reasoning_tokens: 75 // Reasoning tokens explicitly provided
+                    }
+                }
+            } as unknown as OpenAI.Responses.StreamBodyType;
+
+            // Process the chunk
+            const result = handler.processChunk(mockChunk);
+
+            // Extract universal stream response from the result
+            const response = result as UniversalStreamResponse;
+
+            // Verify reasoning tokens are captured correctly
+            expect(response.metadata?.usage?.outputTokensBreakdown?.reasoning).toBe(75);
+            expect(response.metadata?.usage?.tokens.output).toBe(100);
+            expect(response.content).toBe('Final answer after reasoning');
+        });
+
+        it('should handle streaming chunks with partial reasoning token counts', () => {
+            // Initialize the stream handler
+            handler.startStream();
+
+            // Create a series of mock chunks with updated reasoning tokens
+            const chunk1 = {
+                type: 'response',
+                status: 'in_progress',
+                output: [
+                    {
+                        type: 'message',
+                        role: 'assistant',
+                        content: [
+                            {
+                                type: 'output_text',
+                                text: 'Let me think about this...'
+                            }
+                        ]
+                    }
+                ],
+                usage: {
+                    output_tokens: 20,
+                    output_tokens_details: {
+                        reasoning_tokens: 15 // First part mostly reasoning
+                    }
+                }
+            } as unknown as OpenAI.Responses.StreamBodyType;
+
+            const chunk2 = {
+                type: 'response',
+                status: 'in_progress',
+                output: [
+                    {
+                        type: 'message',
+                        role: 'assistant',
+                        content: [
+                            {
+                                type: 'output_text',
+                                text: 'After considering the factors, '
+                            }
+                        ]
+                    }
+                ],
+                usage: {
+                    output_tokens: 50,
+                    output_tokens_details: {
+                        reasoning_tokens: 35 // More reasoning tokens
+                    }
+                }
+            } as unknown as OpenAI.Responses.StreamBodyType;
+
+            const chunk3 = {
+                type: 'response',
+                status: 'completed',
+                stream_terminated: true,
+                output: [
+                    {
+                        type: 'message',
+                        role: 'assistant',
+                        content: [
+                            {
+                                type: 'output_text',
+                                text: 'the answer is 42.'
+                            }
+                        ]
+                    }
+                ],
+                usage: {
+                    output_tokens: 70,
+                    input_tokens: 30,
+                    total_tokens: 100,
+                    output_tokens_details: {
+                        reasoning_tokens: 40 // Final count (only some of the new tokens are reasoning)
+                    }
+                }
+            } as unknown as OpenAI.Responses.StreamBodyType;
+
+            // Process chunks sequentially
+            const response1 = handler.processChunk(chunk1) as UniversalStreamResponse;
+            const response2 = handler.processChunk(chunk2) as UniversalStreamResponse;
+            const response3 = handler.processChunk(chunk3) as UniversalStreamResponse;
+
+            // Verify final response has correct reasoning tokens
+            expect(response3.metadata?.usage?.outputTokensBreakdown?.reasoning).toBe(40);
+            expect(response3.metadata?.usage?.tokens.output).toBe(70);
+            expect(response3.metadata?.usage?.tokens.total).toBe(100);
+
+            // Verify final content combines all chunks
+            expect(response3.content).toBe('Let me think about this...After considering the factors, the answer is 42.');
+            expect(response3.metadata?.finishReason).toBe(FinishReason.STOP);
+        });
+
+        it('should handle a stream without reasoning tokens', () => {
+            // Initialize the stream handler
+            handler.startStream();
+
+            // Create a mock chunk without reasoning_tokens
+            const mockChunk = {
+                type: 'response',
+                status: 'completed',
+                stream_terminated: true,
+                output: [
+                    {
+                        type: 'message',
+                        role: 'assistant',
+                        content: [
+                            {
+                                type: 'output_text',
+                                text: 'This is a standard response without reasoning.'
+                            }
+                        ]
+                    }
+                ],
+                usage: {
+                    output_tokens: 50,
+                    input_tokens: 20,
+                    total_tokens: 70
+                    // No output_tokens_details field
+                }
+            } as unknown as OpenAI.Responses.StreamBodyType;
+
+            // Process the chunk
+            const response = handler.processChunk(mockChunk) as UniversalStreamResponse;
+
+            // Verify no reasoning tokens are reported
+            expect(response.metadata?.usage?.outputTokensBreakdown?.reasoning).toBeUndefined();
+            expect(response.metadata?.usage?.tokens.output).toBe(50);
+            expect(response.content).toBe('This is a standard response without reasoning.');
+        });
     });
 }); 
