@@ -46,18 +46,18 @@ async function main() {
         // );
 
         // const lowEffortUsage = lowEffortResponses[0].metadata?.usage as Usage;
-        // const reasoningTokens = lowEffortUsage?.tokens.outputReasoning;
+        // const reasoningTokens = lowEffortUsage?.tokens.output.reasoning;
 
         // console.log('\nResponse:');
         // console.log(lowEffortResponses[0].content);
         // console.log('\nUsage Statistics:');
         // console.log('Total Tokens:', lowEffortUsage?.tokens.total);
-        // console.log('Output Tokens:', lowEffortUsage?.tokens.output);
+        // console.log('Output Tokens:', lowEffortUsage?.tokens.output.total);
         // console.log('Reasoning Tokens:', reasoningTokens);
         // console.log('Percentage used for reasoning:',
         //     getReasPercentage(
         //         reasoningTokens,
-        //         lowEffortUsage?.tokens.output
+        //         lowEffortUsage?.tokens.output.total
         //     )
         // );
 
@@ -76,18 +76,18 @@ async function main() {
         // );
 
         // const mediumEffortUsage = mediumResponses[0].metadata?.usage as Usage;
-        // const mediumReasoningTokens = mediumEffortUsage?.tokens.outputReasoning;
+        // const mediumReasoningTokens = mediumEffortUsage?.tokens.output.reasoning;
 
         // console.log('\nResponse:');
         // console.log(mediumResponses[0].content);
         // console.log('\nUsage Statistics:');
         // console.log('Total Tokens:', mediumEffortUsage?.tokens.total);
-        // console.log('Output Tokens:', mediumEffortUsage?.tokens.output);
+        // console.log('Output Tokens:', mediumEffortUsage?.tokens.output.total);
         // console.log('Reasoning Tokens:', mediumReasoningTokens);
         // console.log('Percentage used for reasoning:',
         //     getReasPercentage(
         //         mediumReasoningTokens,
-        //         mediumEffortUsage?.tokens.output
+        //         mediumEffortUsage?.tokens.output.total
         //     )
         // );
 
@@ -106,18 +106,18 @@ async function main() {
         // );
 
         // const highEffortUsage = highEffortResponses[0].metadata?.usage as Usage;
-        // const highReasoningTokens = highEffortUsage?.tokens.outputReasoning;
+        // const highReasoningTokens = highEffortUsage?.tokens.output.reasoning;
 
         // console.log('\nResponse:');
         // console.log(highEffortResponses[0].content || '(No visible output, but reasoning was performed)');
         // console.log('\nUsage Statistics:');
         // console.log('Total Tokens:', highEffortUsage?.tokens.total);
-        // console.log('Output Tokens:', highEffortUsage?.tokens.output);
+        // console.log('Output Tokens:', highEffortUsage?.tokens.output.total);
         // console.log('Reasoning Tokens:', highReasoningTokens);
         // console.log('Percentage used for reasoning:',
         //     getReasPercentage(
         //         highReasoningTokens,
-        //         highEffortUsage?.tokens.output
+        //         highEffortUsage?.tokens.output.total
         //     )
         // );
 
@@ -150,12 +150,12 @@ async function main() {
 
         console.log('\n\nStreaming Usage Statistics:');
         console.log('Total Tokens:', lastUsage?.tokens.total);
-        console.log('Output Tokens:', lastUsage?.tokens.output);
-        console.log('Reasoning Tokens:', lastUsage?.tokens.outputReasoning);
+        console.log('Output Tokens:', lastUsage?.tokens.output.total);
+        console.log('Reasoning Tokens:', lastUsage?.tokens.output.reasoning);
         console.log('Percentage used for reasoning:',
             getReasPercentage(
-                lastUsage?.tokens.outputReasoning,
-                lastUsage?.tokens.output
+                lastUsage?.tokens.output.reasoning,
+                lastUsage?.tokens.output.total
             )
         );
 

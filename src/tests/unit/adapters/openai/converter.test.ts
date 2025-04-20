@@ -382,10 +382,14 @@ describe('OpenAI Response API Converter', () => {
                     finishReason: 'stop',
                     usage: expect.objectContaining({
                         tokens: {
-                            input: 10,
-                            inputCached: 0,
-                            output: 20,
-                            outputReasoning: 0,
+                            input: {
+                                total: 10,
+                                cached: 0
+                            },
+                            output: {
+                                total: 20,
+                                reasoning: 0
+                            },
                             total: 30
                         }
                     })

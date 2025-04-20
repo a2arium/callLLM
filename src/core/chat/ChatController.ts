@@ -211,8 +211,8 @@ export class ChatController {
                     systemContentForUsage + '\n' + lastUserMessage,
                     resp.content ?? '',
                     modelInfo,
-                    resp.metadata?.usage?.tokens.inputCached,
-                    resp.metadata?.usage?.tokens.outputReasoning
+                    resp.metadata?.usage?.tokens.input?.cached,
+                    resp.metadata?.usage?.tokens.output?.reasoning
                 );
 
                 resp.metadata.usage = usage;

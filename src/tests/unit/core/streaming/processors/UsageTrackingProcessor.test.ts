@@ -7,16 +7,26 @@ import { UsageCallback } from '../../../../../interfaces/UsageInterfaces';
 type UsageMetadata = {
     usage: {
         tokens: {
-            input: number;
-            inputCached?: number;
-            output: number;
+            input: {
+                total: number;
+                cached?: number;
+            },
+            output: {
+                total: number;
+                reasoning?: number;
+            },
             total: number;
         };
         incremental: number;
         costs: {
-            input: number;
-            inputCached?: number;
-            output: number;
+            input: {
+                total: number;
+                cached?: number;
+            },
+            output: {
+                total: number;
+                reasoning?: number;
+            },
             total: number;
         };
     };
@@ -104,12 +114,12 @@ describe('UsageTrackingProcessor', () => {
 
         // Final chunk - should include usage metadata
         const finalChunkMetadata = results[2].metadata as UsageMetadata;
-        expect(finalChunkMetadata.usage.tokens.output).toBe(11);
-        expect(finalChunkMetadata.usage.tokens.input).toBe(inputTokens);
+        expect(finalChunkMetadata.usage.tokens.output.total).toBe(11);
+        expect(finalChunkMetadata.usage.tokens.input.total).toBe(inputTokens);
         expect(finalChunkMetadata.usage.tokens.total).toBe(inputTokens + 11);
         expect(finalChunkMetadata.usage.incremental).toBe(11);
-        expect(finalChunkMetadata.usage.costs.input).toBeDefined();
-        expect(finalChunkMetadata.usage.costs.output).toBeDefined();
+        expect(finalChunkMetadata.usage.costs.input.total).toBeDefined();
+        expect(finalChunkMetadata.usage.costs.output.total).toBeDefined();
         expect(finalChunkMetadata.usage.costs.total).toBeDefined();
 
         // Check the token calculator was called correctly
@@ -141,12 +151,12 @@ describe('UsageTrackingProcessor', () => {
 
         // Verify results
         const metadata = results[0].metadata as UsageMetadata;
-        expect(metadata.usage.tokens.inputCached).toBe(inputCachedTokens);
-        expect(metadata.usage.costs.inputCached).toBeDefined();
+        expect(metadata.usage.tokens.input.cached).toBe(inputCachedTokens);
+        expect(metadata.usage.costs.input.cached).toBeDefined();
 
         // Verify that costs are calculated correctly with cached tokens
-        expect(metadata.usage.costs.input).toBe(inputTokens * (mockModelInfo.inputPricePerMillion / 1000000));
-        expect(metadata.usage.costs.inputCached).toBe(inputCachedTokens * ((mockModelInfo.inputCachedPricePerMillion || 0) / 1000000));
+        expect(metadata.usage.costs.input.total).toBe(inputTokens * (mockModelInfo.inputPricePerMillion / 1000000));
+        expect(metadata.usage.costs.input.cached).toBe(inputCachedTokens * ((mockModelInfo.inputCachedPricePerMillion || 0) / 1000000));
     });
 
     it('should trigger usage callback after batch size is reached', async () => {
@@ -190,8 +200,12 @@ describe('UsageTrackingProcessor', () => {
             timestamp: expect.any(Number),
             usage: expect.objectContaining({
                 tokens: expect.objectContaining({
-                    input: 50,
-                    output: 5,
+                    input: expect.objectContaining({
+                        total: 50
+                    }),
+                    output: expect.objectContaining({
+                        total: 5
+                    }),
                     total: 55
                 })
             })
@@ -203,8 +217,12 @@ describe('UsageTrackingProcessor', () => {
             timestamp: expect.any(Number),
             usage: expect.objectContaining({
                 tokens: expect.objectContaining({
-                    input: 0, // No input on subsequent callbacks
-                    output: 5, // Just the delta (from 5 to 10)
+                    input: expect.objectContaining({
+                        total: 0
+                    }),
+                    output: expect.objectContaining({
+                        total: 5
+                    }),
                     total: 5  // Just the delta
                 })
             })
@@ -297,7 +315,7 @@ describe('UsageTrackingProcessor', () => {
 
         // Check token calculation was correct even with empty content
         const finalMetadata = results[1].metadata as any;
-        expect(finalMetadata.usage.tokens.output).toBe(0);
+        expect(finalMetadata.usage.tokens.output.total).toBe(0);
         expect(finalMetadata.usage.incremental).toBe(0);
     });
 
@@ -369,8 +387,8 @@ describe('UsageTrackingProcessor', () => {
 
         // Verify results - inputCached cost should be 0 when no cached price is defined
         const metadata = results[0].metadata as UsageMetadata;
-        expect(metadata.usage.tokens.inputCached).toBe(inputCachedTokens);
-        expect(metadata.usage.costs.inputCached).toBe(0);
+        expect(metadata.usage.tokens.input.cached).toBe(inputCachedTokens);
+        expect(metadata.usage.costs.input.cached).toBe(0);
     });
 
     it('should directly trigger the callback when token increase exactly matches batch size', async () => {

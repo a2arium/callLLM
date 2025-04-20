@@ -399,13 +399,27 @@ interface UniversalChatResponse {
 }
 
 interface Usage {
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
+    tokens: {
+        input: {
+            total: number;
+            cached: number;
+        },
+        output: {
+            total: number;
+            reasoning: number;
+        },
+        total: number;
+    };
     costs: {
-        inputCost: number;
-        outputCost: number;
-        totalCost: number;
+        input: {
+            total: number;
+            cached: number;
+        },
+        output: {
+            total: number;
+            reasoning: number;
+        },
+        total: number;
     };
 }
 ```

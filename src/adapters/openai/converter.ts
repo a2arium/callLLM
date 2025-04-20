@@ -289,15 +289,28 @@ export class Converter {
             universalResponse.metadata = universalResponse.metadata || {};
             universalResponse.metadata.usage = {
                 tokens: {
-                    input: response.usage.input_tokens || 0,
-                    inputCached: response.usage.input_tokens_details?.cached_tokens || 0,
-                    output: response.usage.output_tokens || 0,
-                    outputReasoning: response.usage.output_tokens_details?.reasoning_tokens || 0,
+                    input: {
+                        total: response.usage.input_tokens || 0,
+                        cached: response.usage.input_tokens_details?.cached_tokens || 0,
+                    },
+                    output: {
+                        total: response.usage.output_tokens || 0,
+                        reasoning: response.usage.output_tokens_details?.reasoning_tokens || 0,
+                    },
                     total: response.usage.total_tokens || 0
                 },
-                costs: { input: 0, inputCached: 0, output: 0, outputReasoning: 0, total: 0 } // Costs calculated later
+                costs: {
+                    input: {
+                        total: 0,
+                        cached: 0,
+                    },
+                    output: {
+                        total: 0,
+                        reasoning: 0,
+                    },
+                    total: 0
+                } // Costs calculated later
             };
-
         }
 
         // Process output items from native structure

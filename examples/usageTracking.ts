@@ -27,10 +27,11 @@ async function main() {
     console.log('\nChat Response:', response[0].content);
     console.log('\nUsage Information:');
     if (response[0].metadata?.usage) {
-        console.log('Input Tokens:', response[0].metadata.usage.tokens.input);
-        console.log('Input Cached Tokens:', response[0].metadata.usage.tokens.inputCached);
-        console.log('Output Tokens:', response[0].metadata.usage.tokens.output);
-        console.log('Output Reasoning Tokens:', response[0].metadata.usage.tokens.outputReasoning);
+        console.log('Usage Stats:');
+        console.log('Input Tokens:', response[0].metadata.usage.tokens.input.total);
+        console.log('Input Cached Tokens:', response[0].metadata.usage.tokens.input.cached);
+        console.log('Output Tokens:', response[0].metadata.usage.tokens.output.total);
+        console.log('Output Reasoning Tokens:', response[0].metadata.usage.tokens.output.reasoning);
         console.log('Total Tokens:', response[0].metadata.usage.tokens.total);
         console.log('Costs:', response[0].metadata.usage.costs);
     }
@@ -63,9 +64,10 @@ async function main() {
 
     if (finalUsage) {
         console.log('\n\nFinal Usage Information:');
-        console.log('Input Tokens:', finalUsage.tokens.input);
-        console.log('Input Cached Tokens:', finalUsage.tokens.inputCached);
-        console.log('Output Tokens:', finalUsage.tokens.output);
+        console.log('Usage Stats:');
+        console.log('Input Tokens:', finalUsage.tokens.input.total);
+        console.log('Input Cached Tokens:', finalUsage.tokens.input.cached);
+        console.log('Output Tokens:', finalUsage.tokens.output.total);
         console.log('Total Tokens:', finalUsage.tokens.total);
         console.log('Costs:', finalUsage.costs);
     }

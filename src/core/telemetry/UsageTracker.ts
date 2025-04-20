@@ -36,10 +36,14 @@ export class UsageTracker {
 
         const usage: Usage = {
             tokens: {
-                input: inputTokens,
-                inputCached: inputCachedTokens,
-                output: outputTokens,
-                outputReasoning: outputReasoningTokens,
+                input: {
+                    total: inputTokens,
+                    cached: inputCachedTokens,
+                },
+                output: {
+                    total: outputTokens,
+                    reasoning: outputReasoningTokens,
+                },
                 total: inputTokens + outputTokens + outputReasoningTokens
             },
             costs: this.tokenCalculator.calculateUsage(

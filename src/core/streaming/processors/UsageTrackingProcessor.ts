@@ -106,11 +106,15 @@ export class UsageTrackingProcessor implements IStreamProcessor {
             if (chunk.isComplete) {
                 const usageData = {
                     tokens: {
-                        input: this.inputTokens,
-                        inputCached: this.inputCachedTokens ?? 0,
-                        // Output should include reasoning tokens
-                        output: totalOutput + this.lastOutputReasoningTokens,
-                        outputReasoning: this.lastOutputReasoningTokens,
+                        input: {
+                            total: this.inputTokens,
+                            cached: this.inputCachedTokens ?? 0,
+                        },
+                        output: {
+                            // Output should include reasoning tokens
+                            total: totalOutput + this.lastOutputReasoningTokens,
+                            reasoning: this.lastOutputReasoningTokens,
+                        },
                         total: this.inputTokens + totalOutput + this.lastOutputReasoningTokens
                     },
                     costs: this.calculateCosts(totalOutput, this.lastOutputReasoningTokens, true),
@@ -135,11 +139,15 @@ export class UsageTrackingProcessor implements IStreamProcessor {
                     const usageForCallback = {
                         tokens: {
                             // Only include input tokens on first callback
-                            input: !this.hasReportedFirst ? this.inputTokens : 0,
-                            inputCached: !this.hasReportedFirst ? (this.inputCachedTokens ?? 0) : 0,
+                            input: {
+                                total: !this.hasReportedFirst ? this.inputTokens : 0,
+                                cached: !this.hasReportedFirst ? (this.inputCachedTokens ?? 0) : 0,
+                            },
                             // For output, only report the delta since last callback plus reasoning on final
-                            output: delta + chunkReasoningTokens,
-                            outputReasoning: chunkReasoningTokens,
+                            output: {
+                                total: delta + chunkReasoningTokens,
+                                reasoning: chunkReasoningTokens,
+                            },
                             // Total is meaningful based on what's included
                             total: !this.hasReportedFirst
                                 ? this.inputTokens + delta + chunkReasoningTokens
@@ -194,10 +202,14 @@ export class UsageTrackingProcessor implements IStreamProcessor {
         const totalCost = inputCost + inputCachedCost + outputCost + reasoningCost;
 
         return {
-            input: inputCost,
-            inputCached: inputCachedCost,
-            output: outputCost,
-            outputReasoning: reasoningCost,
+            input: {
+                total: inputCost,
+                cached: inputCachedCost,
+            },
+            output: {
+                total: outputCost,
+                reasoning: reasoningCost,
+            },
             total: totalCost
         };
     }

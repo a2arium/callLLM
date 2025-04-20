@@ -245,17 +245,25 @@ export type UniversalChatParams = {
 // Universal interface for chat response
 export type Usage = {
     tokens: {
-        input: number;
-        inputCached: number;
-        output: number;
-        outputReasoning: number;
+        input: {
+            total: number;
+            cached: number;
+        },
+        output: {
+            total: number;
+            reasoning: number;
+        },
         total: number;
     };
     costs: {
-        input: number;
-        inputCached: number;
-        output: number;
-        outputReasoning: number;
+        input: {
+            total: number;
+            cached: number;
+        },
+        output: {
+            total: number;
+            reasoning: number;
+        },
         total: number;
     };
 };

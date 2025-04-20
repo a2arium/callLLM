@@ -29,13 +29,17 @@ export class TokenCalculator {
 
         const outputReasoningCost = (outputReasoningTokens * outputPricePerMillion) / 1_000_000;
         // Calculate total cost
-        const totalCost = regularInputCost + cachedInputCost + outputCost;
+        const totalCost = regularInputCost + cachedInputCost + outputCost + outputReasoningCost;
 
         return {
-            input: regularInputCost,
-            inputCached: cachedInputCost,
-            output: outputCost,
-            outputReasoning: outputReasoningCost,
+            input: {
+                total: regularInputCost,
+                cached: cachedInputCost,
+            },
+            output: {
+                total: outputCost,
+                reasoning: outputReasoningCost,
+            },
             total: totalCost
         };
     }

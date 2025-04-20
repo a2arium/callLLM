@@ -14,10 +14,14 @@ type DummyTokenCalculator = {
         cachedPricePerMillion?: number,
         outputReasoningTokens?: number
     ) => {
-        input: number;
-        inputCached: number;
-        output: number;
-        outputReasoning: number;
+        input: {
+            total: number;
+            cached: number;
+        };
+        output: {
+            total: number;
+            reasoning: number;
+        };
         total: number;
     };
     calculateTotalTokens: (messages: { role: string; content: string }[]) => number;
@@ -50,10 +54,14 @@ describe('UsageTracker', () => {
                     const cachedCost = (cachedTokens * cachedPrice) / 1_000_000;
                     const reasoningCost = (outputReasoningTokens * outputPrice) / 1_000_000;
                     return {
-                        input: inputCost,
-                        inputCached: cachedCost,
-                        output: outputCost,
-                        outputReasoning: reasoningCost,
+                        input: {
+                            total: inputCost,
+                            cached: cachedCost
+                        },
+                        output: {
+                            total: outputCost,
+                            reasoning: reasoningCost
+                        },
                         total: inputCost + outputCost + cachedCost + reasoningCost
                     };
                 }
@@ -109,17 +117,25 @@ describe('UsageTracker', () => {
         // Verify the usage object returned.
         expect(usage).toEqual({
             tokens: {
-                input: 10,
-                inputCached: 0,
-                output: 20,
-                outputReasoning: 0,
+                input: {
+                    total: 10,
+                    cached: 0
+                },
+                output: {
+                    total: 20,
+                    reasoning: 0
+                },
                 total: 30
             },
             costs: {
-                input: 0.01,
-                inputCached: 0,
-                output: 0.04,
-                outputReasoning: 0,
+                input: {
+                    total: 0.01,
+                    cached: 0
+                },
+                output: {
+                    total: 0.04,
+                    reasoning: 0
+                },
                 total: 0.05
             }
         });
@@ -138,17 +154,25 @@ describe('UsageTracker', () => {
                 callerId: 'test-caller-id',
                 usage: {
                     tokens: {
-                        input: 10,
-                        inputCached: 0,
-                        output: 20,
-                        outputReasoning: 0,
+                        input: {
+                            total: 10,
+                            cached: 0
+                        },
+                        output: {
+                            total: 20,
+                            reasoning: 0
+                        },
                         total: 30
                     },
                     costs: {
-                        input: 0.01,
-                        inputCached: 0,
-                        output: 0.04,
-                        outputReasoning: 0,
+                        input: {
+                            total: 0.01,
+                            cached: 0
+                        },
+                        output: {
+                            total: 0.04,
+                            reasoning: 0
+                        },
                         total: 0.05
                     }
                 },
@@ -159,17 +183,25 @@ describe('UsageTracker', () => {
         // Also verify that the usage object returned by the trackUsage method is correct.
         expect(usage).toEqual({
             tokens: {
-                input: 10,
-                inputCached: 0,
-                output: 20,
-                outputReasoning: 0,
+                input: {
+                    total: 10,
+                    cached: 0
+                },
+                output: {
+                    total: 20,
+                    reasoning: 0
+                },
                 total: 30
             },
             costs: {
-                input: 0.01,
-                inputCached: 0,
-                output: 0.04,
-                outputReasoning: 0,
+                input: {
+                    total: 0.01,
+                    cached: 0
+                },
+                output: {
+                    total: 0.04,
+                    reasoning: 0
+                },
                 total: 0.05
             }
         });
@@ -187,17 +219,25 @@ describe('UsageTracker', () => {
         // Verify the usage object returned.
         expect(usage).toEqual({
             tokens: {
-                input: 10,
-                inputCached: 5,
-                output: 20,
-                outputReasoning: 0,
+                input: {
+                    total: 10,
+                    cached: 5
+                },
+                output: {
+                    total: 20,
+                    reasoning: 0
+                },
                 total: 30
             },
             costs: {
-                input: 0.01,
-                inputCached: 0.0025,
-                output: 0.04,
-                outputReasoning: 0,
+                input: {
+                    total: 0.01,
+                    cached: 0.0025
+                },
+                output: {
+                    total: 0.04,
+                    reasoning: 0
+                },
                 total: expect.any(Number)
             }
         });

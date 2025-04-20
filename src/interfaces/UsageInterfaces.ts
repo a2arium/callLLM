@@ -5,21 +5,31 @@ export type UsageData = {
     usage: {
         tokens: {
             /**
-             * Number of non-cached input tokens
+             * Input token details
              */
-            input: number;
+            input: {
+                /**
+                 * Number of non-cached input tokens
+                 */
+                total: number;
+                /**
+                 * Number of cached input tokens (if any)
+                 */
+                cached: number;
+            },
             /**
-             * Number of cached input tokens (if any)
+             * Output token details
              */
-            inputCached: number;
-            /**
-             * Number of output tokens generated
-             */
-            output: number;
-            /**
-             * Number of output tokens used for reasoning (if applicable)
-             */
-            outputReasoning: number;
+            output: {
+                /**
+                 * Number of output tokens generated
+                 */
+                total: number;
+                /**
+                 * Number of output tokens used for reasoning (if applicable)
+                 */
+                reasoning: number;
+            },
             /**
              * Total tokens (including both cached and non-cached input tokens and reasoning)
              */
@@ -27,21 +37,31 @@ export type UsageData = {
         };
         costs: {
             /**
-             * Cost for non-cached input tokens
+             * Input cost details
              */
-            input: number;
+            input: {
+                /**
+                 * Cost for non-cached input tokens
+                 */
+                total: number;
+                /**
+                 * Cost for cached input tokens
+                 */
+                cached: number;
+            },
             /**
-             * Cost for cached input tokens
+             * Output cost details
              */
-            inputCached: number;
-            /**
-             * Cost for output tokens
-             */
-            output: number;
-            /**
-             * Cost for output reasoning tokens (if applicable)
-             */
-            outputReasoning: number;
+            output: {
+                /**
+                 * Cost for output tokens
+                 */
+                total: number;
+                /**
+                 * Cost for output reasoning tokens (if applicable)
+                 */
+                reasoning: number;
+            },
             /**
              * Total cost of the operation
              */
