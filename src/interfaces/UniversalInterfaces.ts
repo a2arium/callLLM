@@ -177,6 +177,13 @@ export type UniversalChatSettings = {
          * @default 'medium'
          */
         effort?: ReasoningEffort;
+
+        /**
+         * Request a summary of the reasoning process.
+         * When set to 'auto', the most detailed summary available will be returned.
+         * This is only supported by certain models.
+         */
+        summary?: 'auto' | 'concise' | 'detailed' | null;
     };
 };
 
@@ -271,6 +278,13 @@ export type Usage = {
 export interface UniversalChatResponse<T = unknown> {
     content: string | null; // Content can be null if tool_calls are present
     contentObject?: T;
+
+    /**
+     * Summary of the model's reasoning process, if available.
+     * Only provided for models with reasoning capabilities when reasoning.summary is enabled.
+     */
+    reasoning?: string;
+
     role: string; // Typically 'assistant'
     messages?: UniversalMessage[];  // May include history or context messages
     // Use imported ToolCall type
@@ -297,11 +311,30 @@ export interface UniversalStreamResponse<T = unknown> {
      * The content of the current chunk being streamed.
      */
     content: string;
+
+    /**
+     * Summary of the model's reasoning process, if available.
+     */
+    reasoning?: string;
+
     /**
      * The complete accumulated text content, always present when isComplete is true.
-     * This property is intended for accessing the full accumulated text of the response.
      */
     contentText?: string;
+
+    /**
+     * The complete accumulated reasoning text, always present when isComplete is true.
+     */
+    reasoningText?: string;
+
+    /**
+     * True when this is the first streamed chunk that includes non-empty content.
+     */
+    isFirstContentChunk?: boolean;
+    /**
+     * True when this is the first streamed chunk that includes non-empty reasoning.
+     */
+    isFirstReasoningChunk?: boolean;
     /**
      * The parsed object from the response, only available for JSON responses when isComplete is true.
      */

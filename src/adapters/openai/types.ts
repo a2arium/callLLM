@@ -1,11 +1,22 @@
 import { OpenAI } from 'openai';
+import { ReasoningEffort } from '../../interfaces/UniversalInterfaces';
 
 // Type aliases for OpenAI Response API
 export type ResponseCreateParams = OpenAI.Responses.ResponseCreateParams;
 export type ResponseCreateParamsNonStreaming = OpenAI.Responses.ResponseCreateParamsNonStreaming;
 export type ResponseCreateParamsStreaming = OpenAI.Responses.ResponseCreateParamsStreaming;
 export type Response = OpenAI.Responses.Response;
-export type ResponseStreamEvent = OpenAI.Responses.ResponseStreamEvent;
+export type ResponseStreamEvent = OpenAI.Responses.ResponseStreamEvent
+    | ResponseCreatedEvent
+    | ResponseInProgressEvent
+    | ResponseContentPartAddedEvent
+    | ResponseContentPartDoneEvent
+    | ResponseOutputItemDoneEvent
+    | ResponseIncompleteEvent
+    | ResponseReasoningSummaryPartAddedEvent
+    | ResponseReasoningSummaryTextDeltaEvent
+    | ResponseReasoningSummaryTextDoneEvent
+    | ResponseReasoningSummaryPartDoneEvent;
 export type ResponseOutputTextDeltaEvent = OpenAI.Responses.ResponseTextDeltaEvent;
 export type ResponseOutputTextDoneEvent = OpenAI.Responses.ResponseTextDoneEvent;
 export type ResponseFunctionCallArgumentsDeltaEvent = OpenAI.Responses.ResponseFunctionCallArgumentsDeltaEvent;
@@ -36,10 +47,31 @@ export type ResponseContentPartDoneEvent = { type: 'response.content_part.done' 
 export type ResponseOutputItemDoneEvent = { type: 'response.output_item.done' };
 export type ResponseIncompleteEvent = { type: 'response.incomplete' };
 
+// Reasoning summary event types
+export type ResponseReasoningSummaryPartAddedEvent = {
+    type: 'response.reasoning_summary_part.added';
+};
+export type ResponseReasoningSummaryTextDeltaEvent = {
+    type: 'response.reasoning_summary_text.delta';
+    delta?: string;
+};
+export type ResponseReasoningSummaryTextDoneEvent = {
+    type: 'response.reasoning_summary_text.done';
+};
+export type ResponseReasoningSummaryPartDoneEvent = {
+    type: 'response.reasoning_summary_part.done';
+};
+
 // Custom internal types
 export type InternalToolCall = {
     id?: string;
     name: string;
     arguments: Record<string, unknown>;
     rawArguments?: string;
+};
+
+// Custom Reasoning type for the adapter
+export type Reasoning = {
+    effort: ReasoningEffort;
+    summary?: 'auto' | 'concise' | 'detailed' | null;
 };

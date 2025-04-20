@@ -387,9 +387,15 @@ If `tokenizationModel` is not specified, the library will:
 
 ### Chat Response
 ```typescript
-interface UniversalChatResponse {
+interface UniversalChatResponse<T = unknown> {
     content: string;
+    contentObject?: T;
+    /**
+     * Summary of the model's reasoning process, if available.
+     */
+    reasoning?: string;
     role: string;
+    messages?: UniversalMessage[];
     metadata?: {
         finishReason?: FinishReason;
         created?: number;
@@ -427,9 +433,25 @@ interface Usage {
 ### Stream Response
 ```typescript
 interface UniversalStreamResponse<T = unknown> {
-    content: string;      // Current chunk content
-    contentText?: string; // Complete accumulated text (available when isComplete is true)
-    contentObject?: T;    // Parsed object (available for JSON responses when isComplete is true)
+    content: string;         // Current chunk content
+    /**
+     * Chunk-level reasoning summary or delta.
+     */
+    reasoning?: string;
+    contentText?: string;    // Complete accumulated text (available when isComplete is true)
+    /**
+     * Complete accumulated reasoning text (available when isComplete is true).
+     */
+    reasoningText?: string;
+    /**
+     * True on the first streamed chunk with non-empty content.
+     */
+    isFirstContentChunk?: boolean;
+    /**
+     * True on the first streamed chunk with non-empty reasoning.
+     */
+    isFirstReasoningChunk?: boolean;
+    contentObject?: T;       // Parsed object (available for JSON responses when isComplete is true)
     role: string;
     isComplete: boolean;
     metadata?: {
@@ -1589,6 +1611,41 @@ if (response.toolCalls && response.toolCalls.length > 0) {
       JSON.stringify(result),
       toolCall.name
     );
+  }
+}
+```
+
+### Streaming Text with Reasoning Flags
+```typescript
+const stream = await caller.stream(
+  'Tell me a story with your thinking steps explained',
+  {
+    settings: {
+      temperature: 0.9,
+      maxTokens: 5000,
+      reasoning: { effort: 'medium', summary: 'auto' }
+    }
+  }
+);
+
+for await (const chunk of stream) {
+  if (chunk.isFirstContentChunk) {
+    console.log('=== CONTENT START ===');
+  }
+  if (chunk.content) {
+    process.stdout.write(chunk.content);
+  }
+
+  if (chunk.isFirstReasoningChunk) {
+    console.log('\n=== REASONING START ===');
+  }
+  if (chunk.reasoning) {
+    process.stdout.write(chunk.reasoning);
+  }
+
+  if (chunk.isComplete) {
+    console.log(`\nComplete story: ${chunk.contentText}`);
+    console.log(`Complete reasoning: ${chunk.reasoningText}`);
   }
 }
 ```

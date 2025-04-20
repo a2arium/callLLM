@@ -91,9 +91,14 @@ export class Converter {
         // Set reasoning configuration if model supports it
         if (hasReasoningCapability && params.settings?.reasoning) {
             openAIParams.reasoning = {
-                effort: params.settings.reasoning.effort || 'medium',
-
+                effort: params.settings.reasoning.effort || 'medium'
             };
+
+            // Add summary option if requested
+            if (params.settings.reasoning.summary) {
+                // Use type assertion to extend the reasoning object with summary property
+                (openAIParams.reasoning as any).summary = params.settings.reasoning.summary;
+            }
         } else if (hasReasoningCapability) {
             // Default to medium effort if reasoning capability but no explicit setting
             openAIParams.reasoning = { effort: 'medium' };
@@ -316,6 +321,26 @@ export class Converter {
         // Process output items from native structure
         const toolCalls: ToolCall[] = [];
         let textContent = '';
+
+        // Extract reasoning summary if available
+        if (response.output && Array.isArray(response.output)) {
+            // Look for reasoning items in the output
+            for (const item of response.output) {
+                if (item.type === 'reasoning' && Array.isArray(item.summary)) {
+                    // Extract the reasoning summary text
+                    const summary = item.summary
+                        .map((summaryItem: any) => summaryItem.text || '')
+                        .filter(Boolean)
+                        .join('\n\n');
+
+                    if (summary) {
+                        universalResponse.reasoning = summary;
+                        log.debug('Found reasoning summary:', summary.substring(0, 100) + '...');
+                    }
+                    break; // Found what we need
+                }
+            }
+        }
 
         // NEW: First check for output_text at the top level (reasoning models)
         if (response.output_text) {

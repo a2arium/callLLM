@@ -61,6 +61,9 @@ export class StreamHandler {
         let currentToolCall: types.InternalToolCall | null = null; // Still useful for internal tracking
         let reasoningTokens: number | undefined = undefined; // Track reasoning tokens
         let latestReasoningTokens: number | undefined = undefined; // Track latest reasoning tokens from any event
+        let accumulatedReasoning = '';
+        let reasoningDelta = '';  // Track incremental reasoning deltas
+        let hasReasoningEvents = false; // Track if we've seen any reasoning events
 
         try {
             for await (const chunk of stream) {
@@ -74,6 +77,8 @@ export class StreamHandler {
 
                 const outputChunk: Partial<StreamChunk> = {}; // Build the output chunk incrementally
                 let yieldChunk = false; // Flag to yield at the end of the switch
+                // Reset reasoning delta for each chunk
+                reasoningDelta = '';
 
                 switch (chunk.type) {
                     case 'response.output_text.delta': {
@@ -166,6 +171,35 @@ export class StreamHandler {
                         // Store input tokens for use in other events like in_progress
                         if (finalResponse.usage?.input_tokens) {
                             this.inputTokens = finalResponse.usage.input_tokens;
+                        }
+
+                        // Extract reasoning summary if available
+                        if (finalResponse.output && Array.isArray(finalResponse.output)) {
+                            // Look for reasoning items in the output
+                            for (const item of finalResponse.output) {
+                                if (item.type === 'reasoning' && Array.isArray(item.summary)) {
+                                    // Extract the reasoning summary text
+                                    const summary = item.summary
+                                        .map((summaryItem: any) => summaryItem.text || '')
+                                        .filter(Boolean)
+                                        .join('\n\n');
+
+                                    if (summary) {
+                                        outputChunk.reasoning = summary;
+                                        this.log.debug('Found reasoning summary in completed response:', summary.substring(0, 100) + '...');
+                                    }
+                                    break; // Found what we need
+                                }
+                            }
+                        }
+
+                        // Add accumulated reasoning to the response if available with better logging
+                        if (accumulatedReasoning) {
+                            outputChunk.reasoning = accumulatedReasoning;
+                            this.log.debug(`Added accumulated reasoning to final response. Length: ${accumulatedReasoning.length}`);
+                            this.log.debug(`Reasoning summary: "${accumulatedReasoning.substring(0, 100)}..."`);
+                        } else {
+                            this.log.debug('No accumulated reasoning available for final response');
                         }
 
                         // Determine final finish reason based on the API response
@@ -308,6 +342,39 @@ export class StreamHandler {
                         const outputItemDoneEvent = chunk as types.ResponseOutputItemDoneEvent;
                         this.log.debug('Output item completed event received');
                         break;
+                    case 'response.reasoning_summary_text.delta': {
+                        const textDeltaEvent = chunk as types.ResponseReasoningSummaryTextDeltaEvent;
+                        const delta = textDeltaEvent.delta || '';
+                        if (delta) {
+                            hasReasoningEvents = true;
+                            accumulatedReasoning += delta;
+                            reasoningDelta = delta;
+                            outputChunk.reasoning = delta;
+
+                            // More verbose logging to track reasoning events
+                            this.log.debug(`REASONING DELTA RECEIVED: "${delta}"`);
+                            this.log.debug(`Current accumulated reasoning length: ${accumulatedReasoning.length}`);
+
+                            // Force yield for reasoning chunks - this is critical
+                            yieldChunk = true;
+                        }
+                        break;
+                    }
+                    case 'response.reasoning_summary_part.added': {
+                        this.log.debug('Reasoning summary part added');
+                        hasReasoningEvents = true;
+                        break;
+                    }
+                    case 'response.reasoning_summary_text.done': {
+                        this.log.debug('Reasoning summary text done');
+                        hasReasoningEvents = true;
+                        break;
+                    }
+                    case 'response.reasoning_summary_part.done': {
+                        this.log.debug('Reasoning summary part done');
+                        hasReasoningEvents = true;
+                        break;
+                    }
                     default:
                         this.log.warn(`Unhandled stream event type: ${chunk.type}`);
                 }
@@ -317,10 +384,30 @@ export class StreamHandler {
                     // IMPORTANT: We yield UniversalStreamResponse, but structure it like a StreamChunk
                     // for the pipeline processors (e.g., ContentAccumulator) to handle.
                     const fullContent = outputChunk.isComplete ? accumulatedContent : (outputChunk.content || '');
+
+                    // For reasoning, include the delta during streaming or accumulated when complete
+                    // If we have a new reasoning delta specifically for this chunk, make sure it's included
+                    const reasoningContent = outputChunk.isComplete
+                        ? accumulatedReasoning
+                        : outputChunk.reasoning || reasoningDelta;
+
+                    // Debug if reasoning is present
+                    if (reasoningContent) {
+                        this.log.debug(`YIELDING REASONING CONTENT: ${reasoningContent.substring(0, 50)}...`);
+                    }
+
+                    // For better debugging, add a tracker for reasoning events
+                    if (chunk.type.includes('reasoning')) {
+                        this.log.debug(`PROCESSING REASONING EVENT: ${chunk.type}`);
+                        // Add additional debugging for reasoning-specific events
+                        this.log.debug('Reasoning event details:', JSON.stringify(chunk));
+                    }
+
                     const responseChunk: UniversalStreamResponse = {
                         content: fullContent,
                         role: 'assistant',
                         isComplete: !!outputChunk.isComplete,
+                        reasoning: reasoningContent, // Include reasoning delta or full reasoning
                         toolCalls: undefined, // Let the accumulator handle this
                         toolCallChunks: outputChunk.toolCallChunks, // Pass raw chunks
                         metadata: {
@@ -330,12 +417,22 @@ export class StreamHandler {
                         },
                         contentText: accumulatedContent // Always include the latest accumulated text
                     };
-                    this.log.debug('Yielding processed chunk:', JSON.stringify(responseChunk, null, 2));
+
+                    // Enhanced logging for troubleshooting
+                    this.log.debug(`Yielding response chunk with properties:
+                        - content length: ${fullContent.length}
+                        - has reasoning: ${reasoningContent ? true : false}
+                        - reasoning length: ${reasoningContent ? reasoningContent.length : 0}
+                        - is complete: ${!!outputChunk.isComplete}
+                    `);
+
                     yield responseChunk;
                 }
 
                 if (isCompleted) {
-                    this.log.debug('Exiting stream handling loop due to completion.');
+                    // Log reasoning stats before exiting
+                    this.log.debug(`Stream completed. Received reasoning events: ${hasReasoningEvents}`);
+                    this.log.debug(`Final accumulated reasoning length: ${accumulatedReasoning.length}`);
                     break; // End the loop after the final response
                 }
             }

@@ -6,6 +6,7 @@ import { UniversalChatParams, UniversalStreamResponse, UniversalChatResponse, Mo
 import { StreamPipeline } from './StreamPipeline';
 import { UsageTrackingProcessor } from './processors/UsageTrackingProcessor';
 import { ContentAccumulator } from './processors/ContentAccumulator';
+import { ReasoningProcessor } from './processors/ReasoningProcessor';
 import { UsageTracker } from '../telemetry/UsageTracker';
 import { z } from 'zod';
 import { SchemaValidator, SchemaValidationError } from '../schema/SchemaValidator';
@@ -106,8 +107,11 @@ export class StreamHandler {
         // Initialize content accumulator
         const contentAccumulator = new ContentAccumulator();
 
+        // Initialize reasoning processor
+        const reasoningProcessor = new ReasoningProcessor();
+
         // Build the pipeline with processors
-        const pipelineProcessors: IStreamProcessor[] = [contentAccumulator];
+        const pipelineProcessors: IStreamProcessor[] = [contentAccumulator, reasoningProcessor];
         // Determine batch size: if we have a usage callback, default to 100 if not provided, otherwise 0
         const effectiveBatchSize = this.usageCallback
             ? (params.usageBatchSize !== undefined ? params.usageBatchSize : 100)
@@ -139,11 +143,20 @@ export class StreamHandler {
 
         try {
             let chunkCount = 0;
+            // Track first-time flags
+            let firstContentEmitted = false;
+            let firstReasoningEmitted = false;
             let hasExecutedTools = false;
             let currentMessages: UniversalMessage[] = params.messages ? [...params.messages] : [];
 
             // Process the chunks after they've gone through the pipeline
             for await (const chunk of processedStream) {
+                // Determine first-content and first-reasoning flags
+                const isFirstContentChunk = !firstContentEmitted && Boolean(chunk.content);
+                if (isFirstContentChunk) firstContentEmitted = true;
+                const isFirstReasoningChunk = !firstReasoningEmitted && Boolean((chunk as any).reasoning);
+                if (isFirstReasoningChunk) firstReasoningEmitted = true;
+
                 log.debug('Chunk before processing:', JSON.stringify(chunk, null, 2));
                 chunkCount++;
 
@@ -165,8 +178,11 @@ export class StreamHandler {
                 // Create a universal response from the processed chunk
                 const response: UniversalStreamResponse<T extends z.ZodType ? z.infer<T> : unknown> = {
                     content: chunk.content || '',
+                    reasoning: (chunk as any).reasoning,
                     role: 'assistant',
                     isComplete: chunk.isComplete || false,
+                    isFirstContentChunk,
+                    isFirstReasoningChunk,
                     toolCalls,
                     metadata: {
                         ...chunk.metadata,
@@ -176,6 +192,9 @@ export class StreamHandler {
                         }
                     }
                 };
+
+                // Use dedicated processor's accumulated reasoning
+                response.reasoningText = reasoningProcessor.getAccumulatedReasoning();
 
                 // Process tool calls if they are complete and we have toolController
                 if (chunk.isComplete &&

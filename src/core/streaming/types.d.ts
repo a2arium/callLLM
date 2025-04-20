@@ -12,6 +12,7 @@ export type ToolCallChunk = {
 
 export type StreamChunk = {
     content?: string;
+    reasoning?: string;
     toolCalls?: ToolCall[];
     toolCallChunks?: ToolCallChunk[];
     isComplete?: boolean;
