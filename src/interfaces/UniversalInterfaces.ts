@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ToolCallChunk } from '../core/streaming/types';
 import type { ToolDefinition, ToolCall } from '../types/tooling';
+import type { UsageCallback } from './UsageInterfaces';
 
 // Finish reason enum based on OpenAI's finish reasons
 export enum FinishReason {
@@ -181,6 +182,10 @@ export type UniversalChatSettings = {
 
 // Define the new options structure for call/stream methods
 export type LLMCallOptions = {
+    /** Optional callback to receive incremental usage stats */
+    usageCallback?: UsageCallback;
+    /** Batch size of tokens between callbacks. Default=100 when callback provided. */
+    usageBatchSize?: number;
     /** Optional data to include, can be text or object */
     data?: string | object;
     /** Optional concluding message */
@@ -198,7 +203,6 @@ export type LLMCallOptions = {
     /**
      * Specify the response format ('json' or 'text').
      * Requires the model to support JSON mode if 'json' is selected.
-     * @default 'text'
      */
     responseFormat?: ResponseFormat;
     /**
@@ -232,6 +236,10 @@ export type UniversalChatParams = {
     systemMessage?: string;
     // Include historyMode as it needs to be passed down to controllers
     historyMode?: HistoryMode;
+    /**
+     * Batch size for incremental usage callbacks. Default applied by StreamHandler when callback provided.
+     */
+    usageBatchSize?: number;
 };
 
 // Universal interface for chat response

@@ -432,8 +432,11 @@ describe('OpenAIResponseAdapter', () => {
 
             await adapter.streamCall('test-model', paramsWithTools);
 
-            // Check that a new StreamHandler was created with the tools
-            expect(StreamHandler).toHaveBeenCalledWith(paramsWithTools.tools);
+            // Check that a new StreamHandler was created with the tools and token calculator
+            expect(StreamHandler).toHaveBeenCalledWith(
+                paramsWithTools.tools,
+                expect.anything() // Allow any token calculator
+            );
         });
     });
 

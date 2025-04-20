@@ -335,6 +335,8 @@ The library automatically tracks token usage and calculates costs for each reque
 - Provides real-time token counting for streaming responses
 - Includes both input and output token counts and costs
 
+For streaming calls, usage is reported in 100‑token batches (by default) via delta callbacks, and after the final chunk, the metadata carries the full cumulative usage. The first callback includes prompt-input, output, and reasoning tokens/costs; subsequent callbacks include only output and reasoning.
+
 ## Supported Providers
 
 Currently supported LLM providers:
@@ -1079,53 +1081,80 @@ MIT
 
 ### Usage Tracking
 
-The library provides built-in usage tracking capabilities through an optional callback system. This feature allows you to monitor and analyze the costs and token usage of your LLM calls in real-time. You can implement saving the usage data to a database or other storage.
+The library provides two ways to retrieve usage and cost information:
 
-For streaming calls, the usage is tracked in chunks of 100 tokens and at the end of the streaming response. The first chunk includes both input and output costs, while subsequent chunks only include output costs.
+1) Final usage (metadata):
+   - **Non-streaming calls**: After `caller.call()`, inspect `response.metadata?.usage` for the full cumulative token and cost breakdown.
+   - **Streaming calls**: The last chunk (`chunk.isComplete === true`) includes `chunk.metadata.usage` with full totals (input, cached input, output, reasoning, total, and costs).
 
-```typescript
-const usageCallback = (usageData: UsageData) => {
-    console.log(`Usage for caller ${usageData.callerId}:`, {
-        costs: {
-            input: usageData.usage.costs.inputCost,
-            inputCached: usageData.usage.costs.inputCachedCost, // Cost for cached input tokens
-            output: usageData.usage.costs.outputCost,
-            total: usageData.usage.costs.totalCost
-        },
-        tokens: {
-            input: usageData.usage.inputTokens,
-            inputCached: usageData.usage.inputCachedTokens, // Number of cached input tokens
-            output: usageData.usage.outputTokens,
-            total: usageData.usage.totalTokens
-        },
-        timestamp: new Date(usageData.timestamp).toISOString()
-    });
-};
+2) Real-time callbacks:
+   - Pass a `usageCallback` when creating your `LLMCaller` or in `stream()`/`call()` options (via `usageCallback` and optional `usageBatchSize`).
+   - For **streaming** calls, the callback fires in *delta* batches of tokens (default every 100 tokens). Each invocation reports only the incremental tokens and costs since the last callback.
+   - The **first** callback can include prompt-input and cached-input counts; subsequent callbacks report only output and reasoning deltas.
+   - You can override the batch size by specifying `usageBatchSize`:
+     ```typescript
+     const stream = await caller.stream('...', {
+       usageCallback,
+       usageBatchSize: 50  // fire callback every 50 tokens
+     });
+     ```
 
-const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
-    callerId: 'my-custom-id',
-    usageCallback
+Example metadata vs. callback:
+```ts
+// 1) Final usage metadata on non-streaming call
+const response = await caller.call('Hello');
+console.log(response.metadata.usage);  // full totals
+
+// 2) Streaming with callbacks
+const stream = await caller.stream('Tell me a story', {
+  usageCallback,
+  usageBatchSize: 100
 });
+for await (const chunk of stream) {
+  if (!chunk.isComplete) {
+    // delta callbacks have already been called behind the scenes
+    process.stdout.write(chunk.content);
+  } else {
+    // final metadata.usage has full totals
+    console.log('Full usage:', chunk.metadata.usage);
+  }
+}
 ```
 
-#### Why Usage Tracking?
-
-- **Cost Monitoring**: Track expenses in real-time for better budget management, including savings from cached inputs
-- **Usage Analytics**: Analyze token usage patterns across different conversations
-- **Billing Integration**: Easily integrate with billing systems by grouping costs by caller ID
-- **Debugging**: Monitor token usage to optimize prompts and prevent token limit issues
-- **Cache Performance**: Track cached input token usage to measure caching effectiveness
-
 The callback receives detailed usage data including:
-- Unique caller ID (automatically generated if not provided)
-- Input and output token counts
-- Cost breakdown (input cost, output cost, total cost)
+- Caller ID  (automatically generated if not provided)
+- Incremental token counts (input, cached input, output, reasoning) for that batch
+- Incremental costs for that batch
 - Timestamp of the usage
 
 You can change the caller ID during runtime:
 ```typescript
 caller.setCallerId('new-conversation-id');
 ```
+
+### Reasoning Effort Control
+
+Some models, like OpenAI's `o1` and `o3-mini`, and Anthropic's `claude-3.7-sonnet`, perform internal "reasoning" steps before generating the final output. These steps consume tokens and incur costs, which are tracked separately as `outputReasoning` tokens and costs in the usage data (both in metadata and callbacks).
+
+You can influence the amount of reasoning the model performs using the `reasoningEffort` setting. This allows you to balance response quality and complexity against cost and latency.
+
+```typescript
+const response = await caller.call(
+    'Solve this complex problem...',
+    {
+        settings: {
+            reasoningEffort: 'high' // Or 'low', 'medium'
+        }
+    }
+);
+```
+
+Available `reasoningEffort` levels:
+- **low**: Minimal reasoning. Fastest and cheapest, but may be less thorough for complex tasks.
+- **medium**: Balanced reasoning. Good default for moderate complexity.
+- **high**: Extensive reasoning. Most thorough, potentially higher quality responses for complex tasks, but slowest and most expensive due to increased reasoning token usage.
+
+**Note:** This setting is only effective for models that explicitly support reasoning effort control. For other models, it will be ignored. Check model capabilities or documentation.
 
 ### History Modes
 

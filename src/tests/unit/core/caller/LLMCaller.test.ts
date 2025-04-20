@@ -71,13 +71,15 @@ describe('LLMCaller', () => {
                 input: 10,
                 output: 20,
                 total: 30,
-                inputCached: 0
+                inputCached: 0,
+                outputReasoning: 0
             },
             costs: {
                 input: 0.0001,
                 output: 0.0002,
                 total: 0.0003,
-                inputCached: 0
+                inputCached: 0,
+                outputReasoning: 0
             }
         };
 
@@ -194,19 +196,22 @@ describe('LLMCaller', () => {
                 inputPricePerMillion: number,
                 outputPricePerMillion: number,
                 inputCachedTokens: number = 0,
-                inputCachedPricePerMillion?: number
+                inputCachedPricePerMillion?: number,
+                outputReasoningTokens: number = 0
             ) => {
                 const regularInputCost = (inputTokens * inputPricePerMillion) / 1_000_000;
                 const cachedInputCost = inputCachedTokens && inputCachedPricePerMillion
                     ? (inputCachedTokens * inputCachedPricePerMillion) / 1_000_000
                     : 0;
                 const outputCost = (outputTokens * outputPricePerMillion) / 1_000_000;
-                const totalCost = regularInputCost + cachedInputCost + outputCost;
+                const reasoningCost = (outputReasoningTokens * outputPricePerMillion) / 1_000_000;
+                const totalCost = regularInputCost + cachedInputCost + outputCost + reasoningCost;
 
                 return {
                     input: regularInputCost,
                     inputCached: cachedInputCost,
                     output: outputCost,
+                    outputReasoning: reasoningCost,
                     total: totalCost
                 };
             }

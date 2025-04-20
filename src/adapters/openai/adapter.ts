@@ -21,6 +21,7 @@ import {
 import { ModelManager } from '../../core/models/ModelManager';
 import { defaultModels } from './models';
 import { RegisteredProviders } from '../index';
+import { TokenCalculator } from '../../core/models/TokenCalculator';
 
 // Load environment variables
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
@@ -38,6 +39,7 @@ export class OpenAIResponseAdapter extends BaseAdapter {
     private validator: Validator;
     private modelManager: ModelManager;
     private models: ModelInfo[] = defaultModels;
+    private tokenCalculator: TokenCalculator;
 
     constructor(config: Partial<AdapterConfig> | string) {
         // Handle the case where config is just an API key string for backward compatibility
@@ -63,13 +65,16 @@ export class OpenAIResponseAdapter extends BaseAdapter {
         });
 
         this.modelManager = new ModelManager('openai' as RegisteredProviders);
+        this.tokenCalculator = new TokenCalculator();
 
-        // Register models with model manager
+        // Register models with model manager if supported
         for (const model of this.models) {
-            this.modelManager.addModel(model);
+            if (typeof this.modelManager.addModel === 'function') {
+                this.modelManager.addModel(model);
+            }
         }
 
-        this.streamHandler = new StreamHandler();
+        this.streamHandler = new StreamHandler(undefined, this.tokenCalculator);
         this.validator = new Validator();
         (this.validator as any).modelManager = this.modelManager;
         this.converter = new Converter(this.modelManager);
@@ -165,13 +170,13 @@ export class OpenAIResponseAdapter extends BaseAdapter {
             // Initialize a new StreamHandler with the tools if available
             if (params.tools && params.tools.length > 0) {
                 log.debug(`Initializing StreamHandler with ${params.tools.length} tools: ${params.tools.map(t => t.name).join(', ')}`);
-                this.streamHandler = new StreamHandler(params.tools);
+                this.streamHandler = new StreamHandler(params.tools, this.tokenCalculator);
 
                 // Register tools for execution with the enhanced properties
                 this.registerToolsForExecution(params.tools);
             } else {
                 log.debug('Initializing StreamHandler without tools');
-                this.streamHandler = new StreamHandler();
+                this.streamHandler = new StreamHandler(undefined, this.tokenCalculator);
             }
 
             // Process the stream with our handler, passing the native stream type

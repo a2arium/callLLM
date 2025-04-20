@@ -1,5 +1,5 @@
 import type { StreamChunk, IStreamProcessor } from "../types";
-import type { ModelInfo } from "../../../interfaces/UniversalInterfaces";
+import type { ModelInfo, Usage } from "../../../interfaces/UniversalInterfaces";
 import type { UsageCallback } from "../../../interfaces/UsageInterfaces";
 import type { TokenCalculator } from "../../models/TokenCalculator";
 
@@ -61,121 +61,145 @@ export class UsageTrackingProcessor implements IStreamProcessor {
     private modelInfo: ModelInfo;
     private lastOutputTokens = 0;
     private lastCallbackTokens = 0;
+    private lastOutputReasoningTokens = 0;
     private readonly TOKEN_BATCH_SIZE: number;
+    // Flag to ensure input tokens are reported only on the first callback
+    private hasReportedFirst = false;
 
     constructor(options: UsageTrackingOptions) {
         this.tokenCalculator = options.tokenCalculator;
         this.usageCallback = options.usageCallback;
-        this.callerId = options.callerId;
+        this.callerId = options.callerId ?? Date.now().toString();
         this.inputTokens = options.inputTokens;
         this.inputCachedTokens = options.inputCachedTokens;
         this.modelInfo = options.modelInfo;
-        this.TOKEN_BATCH_SIZE = options.tokenBatchSize || 100;
+        this.TOKEN_BATCH_SIZE = options.tokenBatchSize ?? 0;
     }
 
     /**
-     * Process stream chunks, tracking token usage and updating metadata
+     * Process stream chunks, optionally batching token usage callbacks.
+     * Always yields raw chunks unmodified; invokes usageCallback on increments or final chunk.
      */
     async *processStream(stream: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
         let accumulatedContent = '';
-        let isFirstChunk = true;
-
+        let lastReported = 0;
+        let totalIncrementalOutput = 0;
         for await (const chunk of stream) {
-            // Add current chunk content to accumulated content
+            // Accumulate content
             if (chunk.content) {
                 accumulatedContent += chunk.content;
             }
 
-            // Calculate current tokens and incremental tokens
-            const currentOutputTokens = this.tokenCalculator.calculateTokens(accumulatedContent);
-            const incrementalTokens = currentOutputTokens - this.lastOutputTokens;
-
-            // Calculate costs based on model pricing
-            const costs = this.calculateCosts(currentOutputTokens);
-
-            // Call the usage callback when appropriate - either when we've 
-            // accumulated enough tokens or when the stream is complete
-            if (this.usageCallback &&
-                this.callerId &&
-                (currentOutputTokens - this.lastCallbackTokens >= this.TOKEN_BATCH_SIZE ||
-                    chunk.isComplete)) {
-
-                // Create usage data for callback
-                this.triggerUsageCallback(currentOutputTokens, costs);
-                this.lastCallbackTokens = currentOutputTokens;
+            // Update reasoning tokens if they're in the metadata
+            if (chunk.metadata?.usage &&
+                typeof chunk.metadata.usage === 'object' &&
+                chunk.metadata.usage !== null &&
+                'tokens' in chunk.metadata.usage &&
+                typeof (chunk.metadata.usage as any).tokens.outputReasoning === 'number') {
+                this.lastOutputReasoningTokens = (chunk.metadata.usage as any).tokens.outputReasoning;
             }
 
-            // Update last output tokens for next iteration
-            this.lastOutputTokens = currentOutputTokens;
-            isFirstChunk = false;
+            // Calculate tokens
+            const totalOutput = this.tokenCalculator.calculateTokens(accumulatedContent);
+            const delta = totalOutput - lastReported;
+            // On final chunk, attach metadata.usage
+            if (chunk.isComplete) {
+                const usageData = {
+                    tokens: {
+                        input: this.inputTokens,
+                        inputCached: this.inputCachedTokens ?? 0,
+                        // Output should include reasoning tokens
+                        output: totalOutput + this.lastOutputReasoningTokens,
+                        outputReasoning: this.lastOutputReasoningTokens,
+                        total: this.inputTokens + totalOutput + this.lastOutputReasoningTokens
+                    },
+                    costs: this.calculateCosts(totalOutput, this.lastOutputReasoningTokens, true),
+                    incremental: delta
+                };
+                chunk.metadata = chunk.metadata || {};
+                (chunk.metadata as any).usage = usageData;
+            }
+            // Yield chunk
+            yield chunk;
+            // Invoke callback when batch reached or on final
+            if (this.TOKEN_BATCH_SIZE > 0 && this.usageCallback && this.callerId) {
+                if (delta >= this.TOKEN_BATCH_SIZE || chunk.isComplete) {
+                    // Get reasoning tokens for this chunk only if it's the final one
+                    const chunkReasoningTokens = chunk.isComplete ? this.lastOutputReasoningTokens : 0;
 
-            // Yield the chunk with updated metadata
-            yield {
-                ...chunk,
-                metadata: {
-                    ...(chunk.metadata || {}),
-                    usage: {
+                    // For callbacks, use incremental approach:
+                    // - First callback: include input tokens
+                    // - Subsequent callbacks: only include incremental delta
+                    totalIncrementalOutput += delta;
+
+                    const usageForCallback = {
                         tokens: {
-                            input: this.inputTokens,
-                            inputCached: this.inputCachedTokens || 0,
-                            output: currentOutputTokens,
-                            outputReasoning: 0,
-                            total: this.inputTokens + currentOutputTokens
+                            // Only include input tokens on first callback
+                            input: !this.hasReportedFirst ? this.inputTokens : 0,
+                            inputCached: !this.hasReportedFirst ? (this.inputCachedTokens ?? 0) : 0,
+                            // For output, only report the delta since last callback plus reasoning on final
+                            output: delta + chunkReasoningTokens,
+                            outputReasoning: chunkReasoningTokens,
+                            // Total is meaningful based on what's included
+                            total: !this.hasReportedFirst
+                                ? this.inputTokens + delta + chunkReasoningTokens
+                                : delta + chunkReasoningTokens
                         },
-                        costs,
-                        incremental: incrementalTokens
-                    }
+                        costs: this.calculateCosts(
+                            delta,
+                            chunkReasoningTokens,
+                            !this.hasReportedFirst // Include input costs only on first callback
+                        )
+                    };
+
+                    this.usageCallback({
+                        callerId: this.callerId,
+                        usage: usageForCallback as any,
+                        timestamp: Date.now(),
+                        incremental: delta
+                    });
+
+                    lastReported = totalOutput;
+                    this.hasReportedFirst = true;
                 }
-            };
+            }
         }
     }
 
     /**
      * Calculate costs based on model pricing and token counts
+     * 
+     * @param outputTokens - The number of output tokens to calculate cost for
+     * @param outputReasoningTokens - The number of reasoning tokens to calculate cost for
+     * @param includeInputCost - Whether to include input costs (false for delta callbacks after first)
      */
-    private calculateCosts(outputTokens: number) {
-        // Calculate input costs
-        const regularInputCost = (this.inputTokens * this.modelInfo.inputPricePerMillion) / 1_000_000;
+    private calculateCosts(
+        outputTokens: number,
+        outputReasoningTokens: number,
+        includeInputCost = true
+    ): Usage['costs'] {
+        // Compute costs manually to satisfy tests
+        const inputPrice = this.modelInfo.inputPricePerMillion;
+        const outputPrice = this.modelInfo.outputPricePerMillion;
+        const cachedPrice = this.modelInfo.inputCachedPricePerMillion ?? 0;
+        const cachedTokens = this.inputCachedTokens ?? 0;
 
-        // Calculate cached input costs if available
-        const inputCachedTokens = this.inputCachedTokens || 0;
-        const cachedInputCost = inputCachedTokens && this.modelInfo.inputCachedPricePerMillion
-            ? (inputCachedTokens * this.modelInfo.inputCachedPricePerMillion) / 1_000_000
-            : 0;
+        // Calculate costs based on what should be included
+        const inputCost = includeInputCost ? this.inputTokens * (inputPrice / 1_000_000) : 0;
+        const inputCachedCost = includeInputCost ? cachedTokens * (cachedPrice / 1_000_000) : 0;
+        const outputCost = outputTokens * (outputPrice / 1_000_000);
+        const reasoningCost = outputReasoningTokens * (outputPrice / 1_000_000);
 
-        // Calculate output cost
-        const outputCost = (outputTokens * this.modelInfo.outputPricePerMillion) / 1_000_000;
-
-        // Calculate total cost
-        const totalCost = regularInputCost + cachedInputCost + outputCost;
+        // Total cost depends on what's included
+        const totalCost = inputCost + inputCachedCost + outputCost + reasoningCost;
 
         return {
-            input: regularInputCost,
-            inputCached: cachedInputCost,
+            input: inputCost,
+            inputCached: inputCachedCost,
             output: outputCost,
+            outputReasoning: reasoningCost,
             total: totalCost
         };
-    }
-
-    /**
-     * Trigger the usage callback with current usage data
-     */
-    private triggerUsageCallback(outputTokens: number, costs: any) {
-        if (!this.usageCallback || !this.callerId) return;
-
-        this.usageCallback({
-            callerId: this.callerId,
-            usage: {
-                tokens: {
-                    input: this.inputTokens,
-                    inputCached: this.inputCachedTokens || 0,
-                    output: outputTokens,
-                    total: this.inputTokens + outputTokens
-                },
-                costs
-            },
-            timestamp: Date.now()
-        });
     }
 
     /**
@@ -184,5 +208,6 @@ export class UsageTrackingProcessor implements IStreamProcessor {
     reset(): void {
         this.lastOutputTokens = 0;
         this.lastCallbackTokens = 0;
+        this.lastOutputReasoningTokens = 0;
     }
 } 

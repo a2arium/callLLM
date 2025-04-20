@@ -42,12 +42,14 @@ const createMockProvider = (): ProviderManagerMock => {
                     input: 10,
                     inputCached: 0,
                     output: 10,
+                    outputReasoning: 0,
                     total: 20
                 },
                 costs: {
                     input: 0.0001,
                     inputCached: 0,
                     output: 0.0002,
+                    outputReasoning: 0,
                     total: 0.0003
                 }
             }
@@ -101,12 +103,14 @@ describe('ChatController', () => {
                     input: 10,
                     inputCached: 0,
                     output: 10,
+                    outputReasoning: 0,
                     total: 20
                 },
                 costs: {
                     input: 0.0001,
                     inputCached: 0,
                     output: 0.0002,
+                    outputReasoning: 0,
                     total: 0.0003
                 }
             }))
@@ -855,12 +859,14 @@ describe('ChatController', () => {
                 input: 50,
                 inputCached: 0,
                 output: 25,
+                outputReasoning: 0,
                 total: 75
             },
             costs: {
                 input: 0.001,
                 inputCached: 0,
                 output: 0.0005,
+                outputReasoning: 0,
                 total: 0.0015
             }
         };
@@ -880,7 +886,9 @@ describe('ChatController', () => {
         expect(mockUsageTracker.trackUsage).toHaveBeenCalledWith(
             expect.stringContaining('System message'),
             'This is a test response',
-            expect.any(Object) // ModelInfo is an object
+            expect.any(Object), // ModelInfo is an object
+            undefined,
+            undefined
         );
 
         // Verify usage was added to response metadata

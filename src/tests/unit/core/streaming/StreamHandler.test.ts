@@ -215,12 +215,14 @@ describe('StreamHandler', () => {
             input: 5,
             inputCached: 0,
             output: 5,
+            outputReasoning: 0,
             total: 10
         },
         costs: {
             input: 0.0001,
             inputCached: 0,
             output: 0.0002,
+            outputReasoning: 0,
             total: 0.0003
         }
     };

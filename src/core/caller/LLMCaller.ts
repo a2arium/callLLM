@@ -435,7 +435,12 @@ export class LLMCaller {
         input: string | UniversalMessage[],
         options: LLMCallOptions = {}
     ): AsyncGenerator<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>> {
-        const { data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode } = options;
+        const { usageCallback, data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode, usageBatchSize } = options;
+
+        // If a usage callback is provided in this call, update the caller to use it
+        if (usageCallback) {
+            this.setUsageCallback(usageCallback);
+        }
 
         // Reset tool call tracking at the beginning of each stream call
         if (this.toolOrchestrator) {

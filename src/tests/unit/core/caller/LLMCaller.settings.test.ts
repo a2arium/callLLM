@@ -56,13 +56,15 @@ describe('LLMCaller Settings & Configuration', () => {
                 input: 10,
                 output: 20,
                 total: 30,
-                inputCached: 0
+                inputCached: 0,
+                outputReasoning: 0
             },
             costs: {
                 input: 0.0001,
                 output: 0.0002,
                 total: 0.0003,
-                inputCached: 0
+                inputCached: 0,
+                outputReasoning: 0
             }
         };
 

@@ -44,7 +44,8 @@ async function main() {
             settings: {
                 temperature: 0.9,
                 maxTokens: 500
-            }
+            },
+            usageBatchSize: 50
         }
     );
 

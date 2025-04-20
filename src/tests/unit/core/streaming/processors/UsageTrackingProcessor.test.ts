@@ -68,12 +68,12 @@ describe('UsageTrackingProcessor', () => {
         jest.clearAllMocks();
     });
 
-    it('should track token usage and add it to metadata', async () => {
+    it('should only include usage metadata on the final chunk', async () => {
         // Set up mock implementations with exact return values for token calculation
         mockTokenCalculator.calculateTokens
-            .mockReturnValueOnce(5)   // First call: "Hello" -> 5 tokens
-            .mockReturnValueOnce(11)  // Second call: "Hello world" -> 11 tokens
-            .mockReturnValueOnce(11); // Third call: "Hello world!" -> 11 tokens
+            .mockReturnValueOnce(5)   // First chunk: 5 tokens
+            .mockReturnValueOnce(11)  // Second chunk: 11 tokens
+            .mockReturnValueOnce(11); // Third chunk: 11 tokens (final)
 
         // Create processor
         const processor = new UsageTrackingProcessor({
@@ -89,43 +89,30 @@ describe('UsageTrackingProcessor', () => {
             { content: '!', isComplete: true }
         ]);
 
-        // Process stream
+        // Process stream and collect results
         const results: StreamChunk[] = [];
         for await (const chunk of processor.processStream(mockStream)) {
             results.push(chunk);
         }
 
-        // Verify results
+        // There should be three chunks
         expect(results.length).toBe(3);
 
-        // First chunk - 5 tokens
-        const firstChunkMetadata = results[0].metadata as UsageMetadata;
-        expect(firstChunkMetadata.usage.tokens.output).toBe(5);
-        expect(firstChunkMetadata.usage.tokens.input).toBe(inputTokens);
-        expect(firstChunkMetadata.usage.tokens.total).toBe(inputTokens + 5);
-        expect(firstChunkMetadata.usage.incremental).toBe(5);
-        expect(firstChunkMetadata.usage.costs.input).toBeDefined();
-        expect(firstChunkMetadata.usage.costs.output).toBeDefined();
-        expect(firstChunkMetadata.usage.costs.total).toBeDefined();
+        // Intermediate chunks should not have usage metadata
+        expect(results[0].metadata?.usage).toBeUndefined();
+        expect(results[1].metadata?.usage).toBeUndefined();
 
-        // Second chunk - 11 tokens total (6 incremental)
-        const secondChunkMetadata = results[1].metadata as UsageMetadata;
-        expect(secondChunkMetadata.usage.tokens.output).toBe(11);
-        expect(secondChunkMetadata.usage.incremental).toBe(6);
-        expect(secondChunkMetadata.usage.costs.input).toBeDefined();
-        expect(secondChunkMetadata.usage.costs.output).toBeDefined();
-        expect(secondChunkMetadata.usage.costs.total).toBeDefined();
+        // Final chunk - should include usage metadata
+        const finalChunkMetadata = results[2].metadata as UsageMetadata;
+        expect(finalChunkMetadata.usage.tokens.output).toBe(11);
+        expect(finalChunkMetadata.usage.tokens.input).toBe(inputTokens);
+        expect(finalChunkMetadata.usage.tokens.total).toBe(inputTokens + 11);
+        expect(finalChunkMetadata.usage.incremental).toBe(11);
+        expect(finalChunkMetadata.usage.costs.input).toBeDefined();
+        expect(finalChunkMetadata.usage.costs.output).toBeDefined();
+        expect(finalChunkMetadata.usage.costs.total).toBeDefined();
 
-        // Last chunk - 11 tokens total (0 incremental since we're mocking the same token count)
-        const lastChunkMetadata = results[2].metadata as UsageMetadata;
-        expect(lastChunkMetadata.usage.tokens.output).toBe(11);
-        expect(lastChunkMetadata.usage.incremental).toBe(0);
-        expect(lastChunkMetadata.usage.tokens.total).toBe(inputTokens + 11);
-        expect(lastChunkMetadata.usage.costs.input).toBeDefined();
-        expect(lastChunkMetadata.usage.costs.output).toBeDefined();
-        expect(lastChunkMetadata.usage.costs.total).toBeDefined();
-
-        // Check the token calculator was called correctly with the accumulating content
+        // Check the token calculator was called correctly
         expect(mockTokenCalculator.calculateTokens).toHaveBeenCalledTimes(3);
     });
 
@@ -210,15 +197,15 @@ describe('UsageTrackingProcessor', () => {
             })
         }));
 
-        // Second callback should have final token values
+        // Second callback should have incremental token values (no input, just the delta)
         expect(mockCallback).toHaveBeenNthCalledWith(2, expect.objectContaining({
             callerId: 'test-caller',
             timestamp: expect.any(Number),
             usage: expect.objectContaining({
                 tokens: expect.objectContaining({
-                    input: 50,
-                    output: 10,
-                    total: 60
+                    input: 0, // No input on subsequent callbacks
+                    output: 5, // Just the delta (from 5 to 10)
+                    total: 5  // Just the delta
                 })
             })
         }));
@@ -250,8 +237,8 @@ describe('UsageTrackingProcessor', () => {
             // Just iterate through
         }
 
-        // Callback should not be called
-        expect(mockCallback).not.toHaveBeenCalled();
+        // Callback should be called once (callerId is auto-generated)
+        expect(mockCallback).toHaveBeenCalledTimes(1);
     });
 
     it('should reset tracking state when reset is called', () => {
@@ -300,11 +287,12 @@ describe('UsageTrackingProcessor', () => {
 
         // Verify results
         expect(results.length).toBe(2);
-        expect(results[0].content).toBe('');
+        // First chunk should preserve original metadata and not have usage injected
         expect(results[0].metadata).toHaveProperty('key', 'value');
-        expect(results[0].metadata).toHaveProperty('usage');
+        expect(results[0].metadata).not.toHaveProperty('usage');
         expect(results[1].content).toBe('');
         expect(results[1].metadata).toHaveProperty('another', 'data');
+        // Final chunk should have usage injected
         expect(results[1].metadata).toHaveProperty('usage');
 
         // Check token calculation was correct even with empty content

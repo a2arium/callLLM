@@ -1,10 +1,5 @@
 ---
 description: Streaming implementation guidelines and patterns that should be followed when working with streaming functionality
-globs: 
-alwaysApply: false
----
----
-description: Streaming implementation guidelines and patterns that should be followed when working with streaming functionality
 globs: ["src/**/stream*.ts", "src/**/*Stream*.ts"]
 alwaysApply: false
 ---
@@ -42,8 +37,8 @@ alwaysApply: false
 - Maintain JSON state
 
 ### Token Management
-- Track token usage
-- Calculate costs accurately
+- Track token usage (including reasoning tokens)
+- Calculate costs accurately (including reasoning costs)
 - Handle token limits
 - Monitor accumulation
 
@@ -156,6 +151,11 @@ alwaysApply: false
 - Standard error formats
 - Common state management
 - Unified events
+
+# References
+- See @src/core/streaming/StreamController.ts for controller implementation
+- See @src/core/streaming/StreamHandler.ts for handler patterns
+- See @src/adapters/openai/stream.ts for provider streaming
 
 # References
 - See @src/core/streaming/StreamController.ts for controller implementation

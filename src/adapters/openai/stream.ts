@@ -4,14 +4,17 @@ import type { ToolCall, ToolDefinition } from '../../types/tooling';
 import { logger } from '../../utils/logger';
 import * as types from './types';
 import type { StreamChunk, ToolCallChunk } from '../../core/streaming/types'; // Import core types
+import { TokenCalculator } from '../../core/models/TokenCalculator';
 
 export class StreamHandler {
     private tools?: ToolDefinition[];
     private log = logger.createLogger({ prefix: 'StreamHandler' });
     private toolCallIndex = 0; // Track index for tool calls
     private toolCallMap: Map<string, number> = new Map(); // Map OpenAI item_id to our index
+    private inputTokens = 0; // Track input tokens for progress events
+    private tokenCalculator?: TokenCalculator; // Optional token calculator for more accurate estimates
 
-    constructor(tools?: ToolDefinition[]) {
+    constructor(tools?: ToolDefinition[], tokenCalculator?: TokenCalculator) {
         if (tools && tools.length > 0) {
             this.tools = tools;
             this.log.debug(`Initialized with ${tools.length} tools: ${tools.map(t => t.name).join(', ')}`);
@@ -19,6 +22,8 @@ export class StreamHandler {
             this.tools = undefined;
             this.log.debug('Initialized without tools');
         }
+
+        this.tokenCalculator = tokenCalculator;
     }
 
     /**
@@ -45,6 +50,7 @@ export class StreamHandler {
         this.log.debug('Starting to handle native stream...');
         this.toolCallIndex = 0; // Reset index for each stream
         this.toolCallMap.clear(); // Clear map for each stream
+        this.inputTokens = 0; // Reset input tokens
 
         // State management
         let accumulatedContent = '';
@@ -77,6 +83,31 @@ export class StreamHandler {
                             if (!accumulatedContent.endsWith(delta)) {
                                 accumulatedContent += delta;
                                 outputChunk.content = delta; // Yield only the delta
+
+                                // Add incremental token count as an estimate
+                                const deltaTokenCount = this.tokenCalculator ?
+                                    this.tokenCalculator.calculateTokens(delta) :
+                                    Math.ceil(delta.length / 4); // Very rough estimate if no calculator
+
+                                // Get the latest known reasoning tokens
+                                const currentReasoningTokens = latestReasoningTokens ?? 0;
+
+                                // Only add usage if we have a delta token count
+                                if (deltaTokenCount > 0) {
+                                    outputChunk.metadata = outputChunk.metadata || {};
+                                    outputChunk.metadata.usage = {
+                                        tokens: {
+                                            input: this.inputTokens,
+                                            inputCached: 0,
+                                            output: deltaTokenCount,
+                                            outputReasoning: currentReasoningTokens,
+                                            total: this.inputTokens + deltaTokenCount + currentReasoningTokens
+                                        },
+                                        costs: { input: 0, inputCached: 0, output: 0, outputReasoning: 0, total: 0 },
+                                        incremental: deltaTokenCount // Signal this is an incremental update
+                                    };
+                                }
+
                                 yieldChunk = true;
                             }
                         }
@@ -129,6 +160,13 @@ export class StreamHandler {
                         const completedEvent = chunk as types.ResponseCompletedEvent;
                         finalResponse = completedEvent.response;
                         isCompleted = true;
+                        // Always emit full accumulated content for the completed event
+                        outputChunk.content = accumulatedContent;
+
+                        // Store input tokens for use in other events like in_progress
+                        if (finalResponse.usage?.input_tokens) {
+                            this.inputTokens = finalResponse.usage.input_tokens;
+                        }
 
                         // Determine final finish reason based on the API response
                         if (finalResponse.status === 'completed' && finalResponse.output && finalResponse.output.some(item => item.type === 'function_call')) {
@@ -141,7 +179,6 @@ export class StreamHandler {
                             finishReason = FinishReason.ERROR; // Default or handle other statuses
                         }
 
-
                         outputChunk.isComplete = true;
                         outputChunk.metadata = {
                             finishReason,
@@ -151,24 +188,35 @@ export class StreamHandler {
                         // Add usage information if available
                         if (finalResponse.usage) {
                             outputChunk.metadata = outputChunk.metadata || {};
-                            // Extract reasoning tokens if available in the final response (we already track latestReasoningTokens)
-                            if (finalResponse.usage?.output_tokens_details?.reasoning_tokens !== undefined) {
-                                this.log.debug(`Reasoning tokens in final response: ${finalResponse.usage.output_tokens_details.reasoning_tokens}`);
-                            }
-                            const reasoningToUse = latestReasoningTokens !== undefined ? latestReasoningTokens : reasoningTokens;
+                            const usageDetails = (finalResponse.usage as any).output_tokens_details ?? {};
+                            const reasoningTokens = usageDetails.reasoning_tokens || 0;
 
+                            // Calculate incremental tokens for the final chunk
+                            const outputTokensSoFar = Math.max(0, this.tokenCalculator ?
+                                this.tokenCalculator.calculateTokens(accumulatedContent) :
+                                Math.ceil(accumulatedContent.length / 4));
+
+                            // Calculate the delta (incremental tokens only)
+                            const finalOutputDelta = Math.max(0,
+                                (finalResponse.usage.output_tokens || outputTokensSoFar) - outputTokensSoFar);
+
+                            this.log.debug(`Final chunk tokens: total=${finalResponse.usage.output_tokens}, ` +
+                                `soFar=${outputTokensSoFar}, delta=${finalOutputDelta}, reasoning=${reasoningTokens}`);
+
+                            // For the final chunk, include only the incremental delta
                             outputChunk.metadata.usage = {
                                 tokens: {
                                     input: finalResponse.usage.input_tokens || 0,
-                                    inputCached: finalResponse.usage.input_tokens_details?.cached_tokens || 0,
-                                    output: finalResponse.usage.output_tokens || 0,
-                                    outputReasoning: reasoningToUse || 0,
-                                    total: finalResponse.usage.total_tokens || 0,
+                                    inputCached: (finalResponse.usage as any).input_tokens_details?.cached_tokens || 0,
+                                    // Only include the incremental delta of tokens
+                                    output: finalOutputDelta,
+                                    outputReasoning: reasoningTokens,
+                                    total: (finalResponse.usage.input_tokens || 0) + finalOutputDelta + reasoningTokens
                                 },
-                                costs: { input: 0, inputCached: 0, output: 0, outputReasoning: 0, total: 0 } // Costs calculated later
+                                costs: { input: 0, inputCached: 0, output: 0, outputReasoning: 0, total: 0 },
+                                // Signal this is an incremental update
+                                incremental: true
                             };
-
-
                         }
 
                         yieldChunk = true;
@@ -216,6 +264,30 @@ export class StreamHandler {
                     case 'response.in_progress':
                         const inProgressEvent = chunk as types.ResponseInProgressEvent;
                         this.log.debug('Stream in progress event received');
+
+                        // Handle incremental updates for reasoning tokens if available
+                        if ('response' in chunk && chunk.response?.usage?.output_tokens) {
+                            const outputTokens = chunk.response.usage.output_tokens;
+                            // Use the latest known reasoning tokens value
+                            const reasoningTokens = latestReasoningTokens ?? 0;
+                            this.log.debug(`In progress: output_tokens=${outputTokens}, reasoning_tokens=${reasoningTokens}`);
+
+                            // Add incremental usage update
+                            outputChunk.metadata = outputChunk.metadata || {};
+                            outputChunk.metadata.usage = {
+                                tokens: {
+                                    input: this.inputTokens || 0,
+                                    inputCached: 0,
+                                    output: outputTokens,
+                                    outputReasoning: reasoningTokens,
+                                    total: (this.inputTokens || 0) + outputTokens + reasoningTokens
+                                },
+                                costs: { input: 0, inputCached: 0, output: 0, outputReasoning: 0, total: 0 },
+                                incremental: true // Signal this is an incremental update
+                            };
+
+                            yieldChunk = true;
+                        }
                         break;
                     case 'response.content_part.added':
                         const contentPartEvent = chunk as types.ResponseContentPartAddedEvent;
@@ -244,8 +316,9 @@ export class StreamHandler {
                 if (yieldChunk) {
                     // IMPORTANT: We yield UniversalStreamResponse, but structure it like a StreamChunk
                     // for the pipeline processors (e.g., ContentAccumulator) to handle.
+                    const fullContent = outputChunk.isComplete ? accumulatedContent : (outputChunk.content || '');
                     const responseChunk: UniversalStreamResponse = {
-                        content: outputChunk.content || '',
+                        content: fullContent,
                         role: 'assistant',
                         isComplete: !!outputChunk.isComplete,
                         toolCalls: undefined, // Let the accumulator handle this
@@ -257,11 +330,6 @@ export class StreamHandler {
                         },
                         contentText: accumulatedContent // Always include the latest accumulated text
                     };
-                    if (responseChunk.isComplete) {
-                        // Print the final chunk for debugging
-                        // eslint-disable-next-line no-console
-                        console.log('DEBUG StreamHandler final responseChunk:', JSON.stringify(responseChunk, null, 2));
-                    }
                     this.log.debug('Yielding processed chunk:', JSON.stringify(responseChunk, null, 2));
                     yield responseChunk;
                 }

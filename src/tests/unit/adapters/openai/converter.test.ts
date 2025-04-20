@@ -385,6 +385,7 @@ describe('OpenAI Response API Converter', () => {
                             input: 10,
                             inputCached: 0,
                             output: 20,
+                            outputReasoning: 0,
                             total: 30
                         }
                     })

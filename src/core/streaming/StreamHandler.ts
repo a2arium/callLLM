@@ -23,6 +23,7 @@ export class StreamHandler {
     private readonly responseProcessor: ResponseProcessor;
     private readonly usageTracker: UsageTracker;
     private readonly callerId?: string;
+    private readonly usageCallback?: UsageCallback;
     private readonly toolController?: ToolController;
     private readonly toolOrchestrator?: ToolOrchestrator;
     private readonly historyManager: HistoryManager;
@@ -41,6 +42,7 @@ export class StreamHandler {
     ) {
         this.tokenCalculator = tokenCalculator;
         this.responseProcessor = responseProcessor;
+        this.usageCallback = usageCallback;
         this.usageTracker = new UsageTracker(tokenCalculator, usageCallback, callerId);
         this.callerId = callerId;
         this.toolController = toolController;
@@ -104,22 +106,24 @@ export class StreamHandler {
         // Initialize content accumulator
         const contentAccumulator = new ContentAccumulator();
 
-        // Create the usage processor
-        const usageProcessor = this.usageTracker.createStreamProcessor(
-            inputTokens,
-            modelInfo,
-            {
-                inputCachedTokens: params.inputCachedTokens,
-                callerId: params.callerId || this.callerId,
-                tokenBatchSize: 100 // Set the batch size for usage callbacks
-            }
-        );
-
         // Build the pipeline with processors
-        const pipelineProcessors: IStreamProcessor[] = [
-            contentAccumulator,
-            usageProcessor
-        ];
+        const pipelineProcessors: IStreamProcessor[] = [contentAccumulator];
+        // Determine batch size: if we have a usage callback, default to 100 if not provided, otherwise 0
+        const effectiveBatchSize = this.usageCallback
+            ? (params.usageBatchSize !== undefined ? params.usageBatchSize : 100)
+            : 0;
+        if (effectiveBatchSize > 0) {
+            const usageProcessor = this.usageTracker.createStreamProcessor(
+                inputTokens,
+                modelInfo,
+                {
+                    inputCachedTokens: params.inputCachedTokens,
+                    callerId: params.callerId || this.callerId,
+                    tokenBatchSize: effectiveBatchSize
+                }
+            );
+            pipelineProcessors.push(usageProcessor);
+        }
 
         // Add history processor to pipeline
         log.debug('Adding history processor to stream pipeline');

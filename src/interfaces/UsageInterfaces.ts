@@ -17,7 +17,11 @@ export type UsageData = {
              */
             output: number;
             /**
-             * Total tokens (including both cached and non-cached input tokens)
+             * Number of output tokens used for reasoning (if applicable)
+             */
+            outputReasoning: number;
+            /**
+             * Total tokens (including both cached and non-cached input tokens and reasoning)
              */
             total: number;
         };
@@ -35,10 +39,18 @@ export type UsageData = {
              */
             output: number;
             /**
+             * Cost for output reasoning tokens (if applicable)
+             */
+            outputReasoning: number;
+            /**
              * Total cost of the operation
              */
             total: number;
         };
     };
     timestamp: number;
+    /**
+     * Number of tokens since last callback (incremental)
+     */
+    incremental?: number;
 }; 

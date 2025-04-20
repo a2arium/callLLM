@@ -1,5 +1,6 @@
 import { LLMCaller } from '../src/core/caller/LLMCaller';
 import { Usage } from '../src/interfaces/UniversalInterfaces';
+import { UsageData } from '../src/interfaces/UsageInterfaces';
 
 /**
  * Demonstration of reasoning capability in OpenAI's o-series models
@@ -11,8 +12,23 @@ import { Usage } from '../src/interfaces/UniversalInterfaces';
  */
 async function main() {
     // Creates an LLMCaller with o3-mini, which supports the reasoning capability
+
+    const usageCallback = (usageData: UsageData) => {
+        console.log(`Usage for caller ${usageData.callerId}:`, {
+            costs: usageData.usage.costs,
+            tokens: usageData.usage.tokens,
+            timestamp: new Date(usageData.timestamp).toISOString()
+        });
+    };
+
     // Note: API key is automatically loaded from .env
-    const caller = new LLMCaller('openai', 'o3-mini');
+    const caller = new LLMCaller('openai', 'o3-mini', 'You are a helpful assistant.',
+        {
+            usageCallback
+        }
+    );
+
+
 
     try {
         // Example 1: Low Effort - Best for simple, factual questions
@@ -30,7 +46,7 @@ async function main() {
         // );
 
         // const lowEffortUsage = lowEffortResponses[0].metadata?.usage as Usage;
-        // const reasoningTokens = lowEffortUsage?.outputTokensBreakdown?.reasoning;
+        // const reasoningTokens = lowEffortUsage?.tokens.outputReasoning;
 
         // console.log('\nResponse:');
         // console.log(lowEffortResponses[0].content);
@@ -44,11 +60,6 @@ async function main() {
         //         lowEffortUsage?.tokens.output
         //     )
         // );
-
-        // console.log('\nDebug:');
-        // console.log('Direct metadata.usage check:', JSON.stringify(lowEffortResponses[0].metadata?.usage, null, 2));
-        // console.log('outputTokensBreakdown exists:', lowEffortResponses[0].metadata?.usage?.outputTokensBreakdown ? 'Yes' : 'No');
-        // console.log('Raw outputTokensBreakdown:', JSON.stringify(lowEffortResponses[0].metadata?.usage?.outputTokensBreakdown, null, 2));
 
         // // Example 2: Medium Effort - Good for explanations and moderate complexity
         // console.log('\n\n=== Example 2: Medium Reasoning Effort (Default) ===');
@@ -65,7 +76,7 @@ async function main() {
         // );
 
         // const mediumEffortUsage = mediumResponses[0].metadata?.usage as Usage;
-        // const mediumReasoningTokens = mediumEffortUsage?.outputTokensBreakdown?.reasoning;
+        // const mediumReasoningTokens = mediumEffortUsage?.tokens.outputReasoning;
 
         // console.log('\nResponse:');
         // console.log(mediumResponses[0].content);
@@ -95,7 +106,7 @@ async function main() {
         // );
 
         // const highEffortUsage = highEffortResponses[0].metadata?.usage as Usage;
-        // const highReasoningTokens = highEffortUsage?.outputTokensBreakdown?.reasoning;
+        // const highReasoningTokens = highEffortUsage?.tokens.outputReasoning;
 
         // console.log('\nResponse:');
         // console.log(highEffortResponses[0].content || '(No visible output, but reasoning was performed)');
@@ -112,16 +123,17 @@ async function main() {
 
         // Example 4: Streaming with reasoning
         console.log('\n\n=== Example 4: Streaming with High Reasoning Effort ===');
-        console.log('Question: What would be the capital of Japan if it was not Tokyo?');
+        console.log('Question: What would be the capital of Japan if it was not Tokyo? (with reasoning)');
 
         console.log('\nStreaming Response:');
         const stream = await caller.stream(
-            'Question: What would be the capital of Japan if it was not Tokyo?',
+            'Question: What would be the capital of Japan if it was not Tokyo? Provide detailed explanation, why you think so.',
             {
                 settings: {
                     reasoning: { effort: 'high' },
                     maxTokens: 5000
-                }
+                },
+                usageBatchSize: 50
             }
         );
 
