@@ -66,7 +66,6 @@ export class StreamController {
             model,
             inputTokens,
             maxRetries,
-            stream: params.settings?.stream,
             tools: params.tools ? params.tools.map((t: { name: string }) => t.name) : [],
             toolChoice: params.settings?.toolChoice,
             callerId: params.callerId,

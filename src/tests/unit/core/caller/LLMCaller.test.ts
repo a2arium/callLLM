@@ -68,19 +68,27 @@ describe('LLMCaller', () => {
 
         const mockUsage: Usage = {
             tokens: {
-                input: 10,
-                output: 20,
+                input: { total: 10, cached: 0 },
+                output: { total: 20, reasoning: 0 },
                 total: 30,
-                inputCached: 0,
-                outputReasoning: 0
             },
             costs: {
-                input: 0.0001,
-                output: 0.0002,
+                input: { total: 0.0001, cached: 0 },
+                output: { total: 0.0002, reasoning: 0 },
                 total: 0.0003,
-                inputCached: 0,
-                outputReasoning: 0
-            }
+            },
+        };
+        const mockUsageEmpty: Usage = {
+            tokens: {
+                input: { total: 0, cached: 0 },
+                output: { total: 0, reasoning: 0 },
+                total: 0,
+            },
+            costs: {
+                input: { total: 0, cached: 0 },
+                output: { total: 0, reasoning: 0 },
+                total: 0,
+            },
         };
 
         mockStreamingService = {
@@ -208,10 +216,8 @@ describe('LLMCaller', () => {
                 const totalCost = regularInputCost + cachedInputCost + outputCost + reasoningCost;
 
                 return {
-                    input: regularInputCost,
-                    inputCached: cachedInputCost,
-                    output: outputCost,
-                    outputReasoning: reasoningCost,
+                    input: { total: regularInputCost, cached: cachedInputCost },
+                    output: { total: outputCost, reasoning: reasoningCost },
                     total: totalCost
                 };
             }

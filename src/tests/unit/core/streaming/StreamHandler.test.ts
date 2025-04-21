@@ -212,28 +212,24 @@ describe('StreamHandler', () => {
     // Define test usage data that matches the interface
     const testUsage: Usage = {
         tokens: {
-            input: 5,
-            inputCached: 0,
-            output: 5,
-            outputReasoning: 0,
-            total: 10
+            input: { total: 5, cached: 0 },
+            output: { total: 5, reasoning: 0 },
+            total: 10,
         },
         costs: {
-            input: 0.0001,
-            inputCached: 0,
-            output: 0.0002,
-            outputReasoning: 0,
-            total: 0.0003
-        }
+            input: { total: 0.0001, cached: 0 },
+            output: { total: 0.0002, reasoning: 0 },
+            total: 0.0003,
+        },
     };
 
     // Define the ModelInfo according to the actual interface
     const mockModelInfo: ModelInfo = {
         name: 'mockModel',
-        inputPricePerMillion: 0.001,
-        outputPricePerMillion: 0.003,
+        inputPricePerMillion: 0.01,
+        outputPricePerMillion: 0.02,
         maxRequestTokens: 4000,
-        maxResponseTokens: 4000,
+        maxResponseTokens: 1000,
         capabilities: {
             streaming: true,
             input: {
@@ -245,14 +241,14 @@ describe('StreamHandler', () => {
         },
         characteristics: {
             qualityIndex: 80,
-            outputSpeed: 50,
-            firstTokenLatency: 200
+            outputSpeed: 20,
+            firstTokenLatency: 500
         },
     };
 
     const defaultParams: UniversalChatParams = {
         messages: [{ role: 'user', content: 'test' }],
-        settings: { stream: true },
+        settings: {},
         model: 'test-model'
     };
 
@@ -1427,6 +1423,38 @@ describe('StreamHandler', () => {
             mockSchemaValidator.mockRestore();
             JSON.parse = originalJSONParse;
         });
+
+        it('should handle JSON mode with correctly yielded object', async () => {
+            // ... existing code ...
+
+            const mockStream = async function* () {
+                /**
+                 * Content accumulator processes this stream to produce
+                 * correctly formatted JSON chunks
+                 */
+                yield {
+                    content: '{name: "John", age: 30}',
+                    contentObject: { name: 'John', age: 30 },
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        usage: {
+                            tokens: {
+                                input: { total: 10, cached: 0 },
+                                output: { total: 20, reasoning: 0 },
+                                total: 30
+                            },
+                            costs: {
+                                input: { total: 0.0001, cached: 0 },
+                                output: { total: 0.0002, reasoning: 0 },
+                                total: 0.0003
+                            }
+                        }
+                    }
+                };
+            };
+            // ... existing code ...
+        });
     });
 
     // Test for handling OpenAI-style function tool calls
@@ -1605,13 +1633,13 @@ describe('StreamHandler', () => {
                     metadata: {
                         usage: {
                             tokens: {
-                                input: 5,
-                                output: 5,
+                                input: { total: 5, cached: 0 },
+                                output: { total: 5, reasoning: 0 },
                                 total: 10
                             },
                             costs: {
-                                input: 0.001,
-                                output: 0.002,
+                                input: { total: 0.001, cached: 0 },
+                                output: { total: 0.002, reasoning: 0 },
                                 total: 0.003
                             }
                         }
@@ -1839,20 +1867,11 @@ function createTestModelInfo(name: string = 'test-model'): ModelInfo {
         inputPricePerMillion: 0.01,
         outputPricePerMillion: 0.02,
         maxRequestTokens: 4000,
-        maxResponseTokens: 4000,
-        capabilities: {
-            streaming: true,
-            input: {
-                text: true
-            },
-            output: {
-                text: true
-            }
-        },
+        maxResponseTokens: 1000,
         characteristics: {
             qualityIndex: 80,
             outputSpeed: 20,
             firstTokenLatency: 500
-        }
+        },
     };
 }

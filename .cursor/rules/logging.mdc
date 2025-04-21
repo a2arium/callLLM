@@ -3,7 +3,6 @@ description: Logging standards and requirements that should be followed when imp
 globs: ["**/*.ts"]
 alwaysApply: true
 ---
-
 # Logging Guidelines
 
 ## Core Principles
@@ -21,10 +20,9 @@ alwaysApply: true
 ```typescript
 import { logger } from '../../utils/logger';
 
-// Set logger config at component level
-logger.setConfig({ 
-    level: process.env.LOG_LEVEL as any || 'info',
-    prefix: 'ComponentName'  // e.g., 'ToolController', 'ChatController'
+// Create component-specific logger
+const log = logger.createLogger({ 
+    prefix: 'ComponentName'  // e.g., 'OpenAIResponseAdapter.chatCall', 'ToolController' 
 });
 ```
 
@@ -34,31 +32,32 @@ Use the appropriate level for each log:
 
 1. **debug**: Detailed information for debugging
    ```typescript
-   logger.debug('Processing tool call:', { name, arguments });
+   log.debug('Processing tool call:', { name, arguments });
    ```
 
 2. **info**: General operational information
    ```typescript
-   logger.info('Successfully completed operation');
+   log.info('Successfully completed operation');
    ```
 
 3. **warn**: Warning conditions
    ```typescript
-   logger.warn('Approaching rate limit:', rateLimitInfo);
+   log.warn('Approaching rate limit:', rateLimitInfo);
    ```
 
 4. **error**: Error conditions
    ```typescript
-   logger.error('Failed to execute tool:', error);
+   log.error('Failed to execute tool:', error);
    ```
 
 ### Best Practices
 
 1. **Component Prefixing**
-   - Set prefix when initializing component
+   - Set prefix when creating logger
    - Use meaningful component names
+   - Include method names for better traceability
    ```typescript
-   logger.setConfig({ prefix: 'ToolController' });
+   const log = logger.createLogger({ prefix: 'ToolController.executeMethod' });
    ```
 
 2. **Structured Logging**
@@ -66,24 +65,24 @@ Use the appropriate level for each log:
    - Don't concatenate objects into strings
    ```typescript
    // Good
-   logger.debug('Validating message:', messageInfo);
+   log.debug('Validating message:', messageInfo);
    
    // Bad
-   logger.debug(`Validating message: ${JSON.stringify(messageInfo)}`);
+   log.debug(`Validating message: ${JSON.stringify(messageInfo)}`);
    ```
 
 3. **Performance Logging**
    - Log start/end of long operations
    - Include timing information
    ```typescript
-   logger.debug(`Operation completed in ${elapsed}ms`);
+   log.debug(`Operation completed in ${elapsed}ms`);
    ```
 
 4. **Error Logging**
    - Include full error objects
    - Add context about the operation
    ```typescript
-   logger.error('Failed to process request:', error, { requestId, context });
+   log.error('Failed to process request:', error, { requestId, context });
    ```
 
 ### Configuration
@@ -95,10 +94,7 @@ Use the appropriate level for each log:
    ```
 
 2. **Runtime Configuration**
-   - Update log level dynamically
-   ```typescript
-   logger.setConfig({ level: 'debug' });
-   ```
+   - Global logger config can be set at app startup
 
 ### Testing Considerations
 
@@ -109,34 +105,39 @@ Use the appropriate level for each log:
 2. **Log Verification**
    - Use jest spies to verify logging
    ```typescript
-   const logSpy = jest.spyOn(logger, 'debug');
+   const logSpy = jest.spyOn(loggerInstance, 'debug');
    expect(logSpy).toHaveBeenCalledWith('Expected message');
    ```
 
 ## Examples
 
-### Component Initialization
+### Component Method Logging
 ```typescript
 export class ToolController {
-    constructor() {
-        logger.setConfig({ 
-            level: process.env.LOG_LEVEL as any || 'info',
-            prefix: 'ToolController'
-        });
-        logger.debug('Initialized');
+    async executeToolCall(toolCall) {
+        const log = logger.createLogger({ prefix: 'ToolController.executeToolCall' });
+        log.debug('Starting tool call execution');
+        try {
+            // Operation logic
+            log.info('Successfully executed tool call');
+        } catch (error) {
+            log.error('Failed to execute tool call:', error);
+            throw error;
+        }
     }
 }
 ```
 
-### Operation Logging
+### Function Logging
 ```typescript
-async processToolCalls() {
-    logger.debug('Starting tool call processing');
+async function processToolCalls() {
+    const log = logger.createLogger({ prefix: 'processToolCalls' });
+    log.debug('Starting tool call processing');
     try {
         // Operation logic
-        logger.info('Successfully processed tool calls');
+        log.info('Successfully processed tool calls');
     } catch (error) {
-        logger.error('Failed to process tool calls:', error);
+        log.error('Failed to process tool calls:', error);
         throw error;
     }
 }
@@ -144,8 +145,9 @@ async processToolCalls() {
 
 ### Validation Logging
 ```typescript
-validateMessage(msg: Message) {
-    logger.debug('Validating message:', {
+function validateMessage(msg: Message) {
+    const log = logger.createLogger({ prefix: 'validateMessage' });
+    log.debug('Validating message:', {
         hasContent: Boolean(msg.content),
         type: msg.type
     });
@@ -155,5 +157,5 @@ validateMessage(msg: Message) {
 
 ## References
 - See @src/utils/logger.ts for logger implementation
-- See @src/core/tools/ToolController.ts for usage examples
-- See @tests/unit/core/tools/ToolController.test.ts for testing examples 
+- See @src/adapters/openai/adapter.ts for usage examples
+- See @tests/unit/core/tools/ToolController.test.ts for testing examples

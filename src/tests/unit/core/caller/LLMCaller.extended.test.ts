@@ -182,7 +182,7 @@ describe('LLMCaller - Model Management', () => {
         });
 
         await expect(llmCaller.call('test message', {
-            settings: { stream: false }
+            settings: {}
         })).rejects.toThrow('Provider "test-provider" not found in registry');
     });
 

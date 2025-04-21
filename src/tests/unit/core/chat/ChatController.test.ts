@@ -39,17 +39,13 @@ const createMockProvider = (): ProviderManagerMock => {
             finishReason: FinishReason.STOP,
             usage: {
                 tokens: {
-                    input: 10,
-                    inputCached: 0,
-                    output: 10,
-                    outputReasoning: 0,
+                    input: { total: 10, cached: 0 },
+                    output: { total: 10, reasoning: 0 },
                     total: 20
                 },
                 costs: {
-                    input: 0.0001,
-                    inputCached: 0,
-                    output: 0.0002,
-                    outputReasoning: 0,
+                    input: { total: 0.0001, cached: 0 },
+                    output: { total: 0.0002, reasoning: 0 },
                     total: 0.0003
                 }
             }
@@ -100,17 +96,13 @@ describe('ChatController', () => {
         mockUsageTracker = {
             trackUsage: jest.fn().mockImplementation(() => Promise.resolve({
                 tokens: {
-                    input: 10,
-                    inputCached: 0,
-                    output: 10,
-                    outputReasoning: 0,
+                    input: { total: 10, cached: 0 },
+                    output: { total: 10, reasoning: 0 },
                     total: 20
                 },
                 costs: {
-                    input: 0.0001,
-                    inputCached: 0,
-                    output: 0.0002,
-                    outputReasoning: 0,
+                    input: { total: 0.0001, cached: 0 },
+                    output: { total: 0.0002, reasoning: 0 },
                     total: 0.0003
                 }
             }))
@@ -856,17 +848,13 @@ describe('ChatController', () => {
         // Setup expected usage metrics
         const expectedUsage = {
             tokens: {
-                input: 50,
-                inputCached: 0,
-                output: 25,
-                outputReasoning: 0,
+                input: { total: 50, cached: 0 },
+                output: { total: 25, reasoning: 0 },
                 total: 75
             },
             costs: {
-                input: 0.001,
-                inputCached: 0,
-                output: 0.0005,
-                outputReasoning: 0,
+                input: { total: 0.001, cached: 0 },
+                output: { total: 0.0005, reasoning: 0 },
                 total: 0.0015
             }
         };
