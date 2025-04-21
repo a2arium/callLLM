@@ -1,6 +1,6 @@
 {
   "name": "callllm",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A universal LLM caller library.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,6 +11,12 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "ADAPTERS.md"
+  ],
   "scripts": {
     "clean": "rm -rf dist",
     "build": "yarn clean && tsc",
@@ -25,6 +31,21 @@
   },
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-username/callllm.git"
+  },
+  "keywords": [
+    "llm",
+    "ai",
+    "language model",
+    "openai",
+    "anthropic",
+    "gemini",
+    "api",
+    "caller",
+    "universal"
+  ],
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.18",
     "@types/jest": "^29.5.14",
