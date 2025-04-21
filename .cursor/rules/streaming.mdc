@@ -33,6 +33,9 @@ alwaysApply: false
 - Check content type before parsing
 - Parse complete objects only when isComplete is true
 - Handle both string and object content types
+- Emit `isFirstContentChunk` on first non-empty content chunk
+- Emit `isFirstReasoningChunk` on first non-empty reasoning chunk
+- Populate `reasoning` for each chunk, and final `reasoningText` when complete
 
 ### JSON Handling
 - Validate JSON structure
@@ -42,10 +45,11 @@ alwaysApply: false
 - Maintain JSON state
 
 ### Token Management
-- Track token usage
-- Calculate costs accurately
+- Track token usage (including reasoning tokens)
+- Calculate costs accurately (including reasoning costs)
 - Handle token limits
 - Monitor accumulation
+- Include reasoning token counts in usage tracking
 
 ## State Management
 
@@ -54,12 +58,16 @@ alwaysApply: false
 - Maintain content buffer
 - Monitor completion status
 - Handle interruptions
+- Track reasoning buffer and summary delivery
+- Detect the first content and first reasoning chunks via `isFirstContentChunk` and `isFirstReasoningChunk`
 
 ### Content State
 - Track accumulated content
 - Manage partial content
 - Handle content boundaries
 - Preserve content integrity
+- Track accumulated reasoning (`reasoningText`)
+- Use `reasoning` for chunk-level deltas when reasoning summary is enabled
 
 ## Error Handling
 
@@ -156,6 +164,11 @@ alwaysApply: false
 - Standard error formats
 - Common state management
 - Unified events
+
+# References
+- See @src/core/streaming/StreamController.ts for controller implementation
+- See @src/core/streaming/StreamHandler.ts for handler patterns, including reasoning support
+- See @src/adapters/openai/stream.ts for provider streaming
 
 # References
 - See @src/core/streaming/StreamController.ts for controller implementation

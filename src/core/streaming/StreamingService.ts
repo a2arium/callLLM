@@ -107,9 +107,8 @@ export class StreamingService {
         }
 
         // Log the history mode if it's set
-        if (params.historyMode || (params.settings && params.settings.historyMode)) {
-            const effectiveHistoryMode = params.historyMode || params.settings?.historyMode;
-            logger.debug('Using history mode:', effectiveHistoryMode);
+        if (params.historyMode) {
+            logger.debug('Using history mode:', params.historyMode);
         }
 
         // Calculate input tokens
@@ -178,9 +177,8 @@ export class StreamingService {
 
         try {
             // Check for history mode
-            const effectiveHistoryMode = params.historyMode || params.settings?.historyMode;
-
-            if (effectiveHistoryMode?.toLowerCase() === 'dynamic') {
+            const effectiveHistoryMode: HistoryMode = params.historyMode ?? 'stateless';
+            if (effectiveHistoryMode === 'dynamic') {
                 logger.debug('Using dynamic history mode for streaming - intelligently truncating history');
 
                 // Get all historical messages

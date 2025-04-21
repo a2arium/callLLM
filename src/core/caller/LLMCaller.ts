@@ -476,11 +476,6 @@ export class LLMCaller {
         // Get the effective history mode
         const effectiveHistoryMode = this.mergeHistoryMode(historyMode);
 
-        // If mergedSettings exists, add the history mode to it
-        if (mergedSettings) {
-            mergedSettings.historyMode = effectiveHistoryMode;
-        }
-
         // Check if we're in stateless mode, where we only send the current message
         // In this case, we need to make sure the system message is included
         if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
@@ -629,11 +624,6 @@ export class LLMCaller {
         const mergedSettings = this.mergeSettings(settings);
         // Get the effective history mode
         const effectiveHistoryMode = this.mergeHistoryMode(historyMode);
-
-        // If mergedSettings exists, add the history mode to it
-        if (mergedSettings) {
-            mergedSettings.historyMode = effectiveHistoryMode;
-        }
 
         // If in stateless mode, get system message only
         if (effectiveHistoryMode?.toLowerCase() === 'stateless') {

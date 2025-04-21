@@ -74,11 +74,6 @@ export class ChatController {
 
         const mergedSettings = { ...settings }; // Work with a mutable copy
 
-        // Store the history mode setting in mergedSettings if it exists
-        if (historyMode) {
-            mergedSettings.historyMode = historyMode;
-        }
-
         // Determine effective response format based on jsonSchema or explicit format
         let effectiveResponseFormat = responseFormat || 'text';
         if (jsonSchema) {
@@ -94,7 +89,8 @@ export class ChatController {
 
         // Get message list according to history mode
         let messagesForProvider = messages;
-        const effectiveHistoryMode = historyMode || mergedSettings.historyMode;
+        // Determine effective history mode from top-level only (default to 'stateless')
+        const effectiveHistoryMode: HistoryMode = historyMode ?? 'stateless';
 
         if (effectiveHistoryMode?.toLowerCase() === 'dynamic' && this.historyManager) {
             log.debug('Using dynamic history mode for chat - intelligently truncating history');

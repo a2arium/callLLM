@@ -80,12 +80,6 @@ export type UniversalChatSettings = {
     /** Modify the likelihood of specified tokens appearing in the completion. */
     logitBias?: Record<string, number>; // Keys are usually token IDs as strings
     /**
-     * Whether to stream the response back as it's being generated.
-     * When true, the response will be sent as a stream of chunks.
-     * @default false
-     */
-    stream?: boolean;
-    /**
      * Whether to retry the request if the model returns content that seems incomplete or invalid.
      * This is separate from retries due to network errors.
      * @default true
@@ -100,73 +94,10 @@ export type UniversalChatSettings = {
      */
     jsonMode?: JsonModeType;
     /**
-     * Used for parallel tool calls, containing an array of tool call objects.
-     * Each tool call specifies a tool to call with specific arguments.
-     */
-    toolCalls?: Array<{ name: string; arguments: Record<string, unknown> }>;
-    /**
-     * The seed to use for deterministic sampling. If specified, the model will make a best effort 
-     * to sample deterministically, but determinism is not guaranteed.
-     */
-    seed?: number;
-    /**
      * Provider-specific parameters that don't fit into the standard parameters.
      * These are passed directly to the underlying provider without modification.
      */
     providerOptions?: Record<string, unknown>;
-    /**
-     * Specifies how to interpret certain parts of the input.
-     * For example, "markdown" would indicate that markdown should be rendered in the input.
-     */
-    inputFormat?: string;
-    /**
-     * Whether the model should include the reasoning process in its output.
-     * This is particularly useful for tasks requiring step-by-step solutions.
-     */
-    includeReasoning?: boolean;
-    /**
-     * Timeout in milliseconds for the entire request.
-     * @default 60000 (60 seconds)
-     */
-    timeout?: number;
-    /**
-     * Controls the level of detail in the model's response.
-     * Higher values lead to more detailed responses.
-     */
-    detailLevel?: 'low' | 'medium' | 'high';
-    /**
-     * Controls whether the model should filter out sensitive or harmful content.
-     * Used when content filtering is available but optional.
-     */
-    enableContentFiltering?: boolean;
-    /**
-     * Define a target audience for the model's response.
-     * Helps shape the style and complexity of the output.
-     */
-    audience?: string;
-    /**
-     * Sets the priority level for the request.
-     * Higher priority may result in faster processing but could incur premium charges.
-     */
-    priority?: 'low' | 'normal' | 'high';
-    /**
-     * Controls how the model handles topic boundaries.
-     * Stricter settings will make the model less likely to discuss sensitive topics.
-     */
-    safetySettings?: {
-        topics?: Array<{
-            name: string;
-            enabled: boolean;
-            strictness?: 'low' | 'medium' | 'high';
-        }>
-    };
-    /**
-     * Controls how historical messages are sent to the model.
-     * - 'full': Send all historical messages
-     * - 'dynamic': Intelligently truncate history if it exceeds the model's token limit
-     * - 'stateless': Only send system message and current user message
-     */
-    historyMode?: HistoryMode;
     /**
      * Configuration for reasoning models.
      * Only applies to models with reasoning capabilities.

@@ -18,7 +18,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "example": "ts-node examples/usageTracking.ts",
-    "example2": "ts-node examples/simpleChat.ts",
+    "example2": "ts-node examples/historyModes.ts",
     "example3": "ts-node examples/jsonOutput.ts",
     "example4": "ts-node examples/toolCalling.ts",
     "reasoning": "ts-node examples/reasoningModels.ts"

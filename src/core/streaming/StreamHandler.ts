@@ -77,7 +77,6 @@ export class StreamHandler {
             jsonMode: params.responseFormat === 'json',
             hasSchema: Boolean(params.jsonSchema),
             callerId: params.callerId || this.callerId,
-            isStreamModeEnabled: params.settings?.stream === true,
             toolsEnabled: Boolean(params.tools?.length),
             modelName: modelInfo.name
         });
