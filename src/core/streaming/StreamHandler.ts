@@ -71,6 +71,9 @@ export class StreamHandler {
     ): AsyncGenerator<UniversalStreamResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
         const log = logger.createLogger({ prefix: 'StreamHandler.processStream' });
 
+        // Extract call-specific tools for later use
+        const callSpecificTools = params.tools;
+
         const startTime = Date.now();
         log.debug('Starting stream processing', {
             inputTokens,
@@ -248,7 +251,7 @@ export class StreamHandler {
                             this.historyManager.addMessage(
                                 assistantMessage.role,
                                 assistantMessage.content,
-                                { toolCalls: assistantMessage.toolCalls }
+                                { toolCalls: mappedToolCalls }
                             );
                         }
 
@@ -266,7 +269,8 @@ export class StreamHandler {
                         };
 
                         const toolCallsResult = await this.toolOrchestrator.processToolCalls(
-                            toolCallsResponse
+                            toolCallsResponse,
+                            callSpecificTools
                         );
 
                         // If we have StreamingService, continue the stream with tool results

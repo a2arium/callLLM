@@ -244,7 +244,12 @@ export class ChatController {
 
             this.historyManager.addMessage('assistant', response.content ?? '', { toolCalls: response.toolCalls });
 
-            const { requiresResubmission } = await this.toolOrchestrator.processToolCalls(response);
+            // Delegate processing and potential resubmission to ToolOrchestrator
+            // Pass the resolved tools (params.tools) from the original call
+            const { requiresResubmission } = await this.toolOrchestrator.processToolCalls(
+                response,
+                params.tools // Pass the resolved ToolDefinitions here
+            );
 
             if (requiresResubmission) {
                 log.debug('Tool results require resubmission to model.');

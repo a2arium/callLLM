@@ -27,6 +27,7 @@
     "example2": "ts-node examples/historyModes.ts",
     "example3": "ts-node examples/jsonOutput.ts",
     "example4": "ts-node examples/toolCalling.ts",
+    "example5": "ts-node examples/toolFunctionFolder.ts",
     "reasoning": "ts-node examples/reasoningModels.ts"
   },
   "author": "",
@@ -54,6 +55,7 @@
     "jsonrepair": "^3.12.0",
     "openai": "^4.90.0",
     "ts-jest": "^29.2.5",
+    "ts-morph": "^22.1.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

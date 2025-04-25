@@ -36,6 +36,7 @@ import { StreamController } from '../streaming/StreamController';
 import { HistoryManager } from '../history/HistoryManager';
 import { logger } from '../../utils/logger';
 import { PromptEnhancer } from '../prompt/PromptEnhancer';
+import { ToolsFolderLoader, StringOrDefinition } from '../tools/toolLoader';
 
 /**
  * Interface that matches the StreamController's required methods
@@ -60,6 +61,8 @@ export type LLMCallerOptions = {
     settings?: UniversalChatSettings;
     // Default history mode for all calls
     historyMode?: HistoryMode;
+    // Directory containing tool function files
+    toolsDir?: string;
     // Dependency injection options for testing
     providerManager?: ProviderManager;
     modelManager?: ModelManager;
@@ -98,6 +101,7 @@ export class LLMCaller {
     private chunkController!: ChunkController;
     private historyManager: HistoryManager; // HistoryManager now manages system message internally
     private historyMode: HistoryMode; // Store the default history mode
+    private folderLoader?: ToolsFolderLoader;
 
     constructor(
         providerName: RegisteredProviders,
@@ -130,6 +134,11 @@ export class LLMCaller {
         this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
         this.requestProcessor = new RequestProcessor();
         this.toolController = new ToolController(this.toolsManager);
+
+        // Initialize the folder loader if toolsDir is provided
+        if (options?.toolsDir) {
+            this.folderLoader = new ToolsFolderLoader(options.toolsDir);
+        }
 
         const resolvedModel = this.modelManager.getModel(modelOrAlias);
         if (!resolvedModel) throw new Error(`Model ${modelOrAlias} not found for provider ${providerName}`);
@@ -424,6 +433,49 @@ export class LLMCaller {
         }
     }
 
+    /**
+     * Resolves string tool names to ToolDefinition objects
+     * @param tools - Array of tool names or ToolDefinition objects
+     * @param toolsDir - Optional directory to load tool functions from
+     * @returns Promise resolving to an array of ToolDefinition objects
+     */
+    private async resolveToolDefinitions(
+        tools?: StringOrDefinition[],
+        toolsDir?: string
+    ): Promise<ToolDefinition[]> {
+        if (!tools || tools.length === 0) {
+            return this.toolsManager.listTools();
+        }
+
+        // Determine which folder loader to use
+        let folderLoader = this.folderLoader;
+        if (toolsDir) {
+            // Create a new folder loader for this call
+            folderLoader = new ToolsFolderLoader(toolsDir);
+        }
+
+        const resolvedTools: ToolDefinition[] = [];
+
+        for (const tool of tools) {
+            if (typeof tool === 'string') {
+                // It's a string tool name, resolve it from a folder
+                if (!folderLoader) {
+                    throw new Error(
+                        `Tool '${tool}' is specified as a string, but no toolsDir is provided. ` +
+                        `Either provide a toolsDir or use a ToolDefinition object.`
+                    );
+                }
+
+                const resolvedTool = await folderLoader.getTool(tool);
+                resolvedTools.push(resolvedTool);
+            } else {
+                // It's already a ToolDefinition
+                resolvedTools.push(tool);
+            }
+        }
+
+        return resolvedTools;
+    }
 
     /**
      * Processes a message and streams the response.
@@ -435,7 +487,7 @@ export class LLMCaller {
         input: string | UniversalMessage[],
         options: LLMCallOptions = {}
     ): AsyncGenerator<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>> {
-        const { usageCallback, data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode, usageBatchSize } = options;
+        const { usageCallback, data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode, usageBatchSize, toolsDir } = options;
 
         // If a usage callback is provided in this call, update the caller to use it
         if (usageCallback) {
@@ -471,7 +523,8 @@ export class LLMCaller {
             maxResponseTokens: settings?.maxTokens
         });
 
-        const effectiveTools = tools ?? this.toolsManager.listTools();
+        // Resolve string tool names to ToolDefinition objects
+        const effectiveTools = await this.resolveToolDefinitions(tools, toolsDir);
         const mergedSettings = this.mergeSettings(settings);
         // Get the effective history mode
         const effectiveHistoryMode = this.mergeHistoryMode(historyMode);
@@ -600,7 +653,7 @@ export class LLMCaller {
         // Use the new LLMCallOptions type
         options: LLMCallOptions = {}
     ): Promise<UniversalChatResponse[]> {
-        const { data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode } = options;
+        const { data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode, toolsDir } = options;
 
         // Reset tool call tracking at the beginning of each call
         if (this.toolOrchestrator) {
@@ -620,7 +673,8 @@ export class LLMCaller {
             maxResponseTokens: settings?.maxTokens
         });
 
-        const effectiveTools = tools ?? this.toolsManager.listTools();
+        // Resolve string tool names to ToolDefinition objects
+        const effectiveTools = await this.resolveToolDefinitions(tools, toolsDir);
         const mergedSettings = this.mergeSettings(settings);
         // Get the effective history mode
         const effectiveHistoryMode = this.mergeHistoryMode(historyMode);

@@ -47,14 +47,32 @@ export class Converter {
                 throw new OpenAIResponseValidationError(`Invalid tool definition: ${toolDef.name || 'Unnamed tool'}`);
             }
 
-            // Add additionalProperties: false to the parameters and any nested object schemas
-            const parameters = this.prepareParametersForOpenAIResponse(toolDef.parameters);
+            // Start with the parameters prepared by the core logic (includes correct required array)
+            const baseParameters = this.prepareParametersForOpenAIResponse(toolDef.parameters);
+
+            // --- OpenAI Workaround: Add ALL properties to the required array --- 
+            const allPropertyKeys = baseParameters.properties ? Object.keys(baseParameters.properties) : [];
+
+            // Conditionally create finalParameters with or without the required field
+            let finalParameters: Record<string, unknown>;
+            if (allPropertyKeys.length > 0) {
+                finalParameters = {
+                    ...baseParameters,
+                    required: allPropertyKeys // Override required with all keys
+                };
+                log.debug(`[OpenAI WORKAROUND] Overriding required array for tool ${toolDef.name}. Original: ${JSON.stringify(baseParameters.required || [])}, Final: ${JSON.stringify(finalParameters.required)}`);
+            } else {
+                // If no properties, omit the required field entirely
+                finalParameters = { ...baseParameters };
+                delete finalParameters.required; // Still need to remove it if baseParameters had it
+            }
+            // --- End OpenAI Workaround ---
 
             // Map to the native FunctionTool structure
             const openAITool: FunctionTool = {
                 type: 'function',
                 name: toolDef.name,
-                parameters,
+                parameters: finalParameters, // Use the modified parameters
                 description: toolDef.description || undefined,
                 strict: true
             };

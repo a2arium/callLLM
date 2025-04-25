@@ -145,8 +145,15 @@ export type LLMCallOptions = {
     responseFormat?: ResponseFormat;
     /**
      * Optional list of tools the model may call.
+     * Can be a ToolDefinition object or a string matching a function filename.
      */
-    tools?: ToolDefinition[];
+    tools?: (ToolDefinition | string)[];
+    /**
+     * Directory containing tool files.
+     * When provided, tool names that are strings will be resolved from this directory.
+     * Overrides the toolsDir provided in the LLMCaller constructor.
+     */
+    toolsDir?: string;
     /**
      * Controls how historical messages are sent to the model.
      * - 'full': Send all historical messages (default)

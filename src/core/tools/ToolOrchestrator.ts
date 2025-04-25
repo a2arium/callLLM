@@ -69,10 +69,12 @@ export class ToolOrchestrator {
     /**
      * Processes tool calls found in a response and adds their results to history
      * @param response - The response that may contain tool calls
+     * @param callSpecificTools - Optional list of tools passed specifically for this call.
      * @returns Object containing whether resubmission is required and the tool calls found
      */
     public async processToolCalls(
-        response: UniversalChatResponse
+        response: UniversalChatResponse,
+        callSpecificTools?: ToolDefinition[]
     ): Promise<{ requiresResubmission: boolean; newToolCalls: number }> {
         // Reset iteration count at the beginning of each tool processing session
         this.toolController.resetIterationCount();
@@ -115,8 +117,8 @@ export class ToolOrchestrator {
 
         // Process tools in the response
         const toolResult = await this.toolController.processToolCalls(
-            response.content || '',
-            response
+            response,
+            callSpecificTools
         );
 
         // If no tool calls were found or processed, return early

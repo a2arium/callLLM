@@ -151,8 +151,7 @@ async function main() {
             {
                 tools: [timeTool],
                 settings: {
-                    toolChoice: 'auto',
-                    stream: true
+                    toolChoice: 'auto'
                 }
             }
         );
@@ -205,8 +204,7 @@ async function main() {
         {
             tools: [timeTool, weatherTool],
             settings: {
-                toolChoice: 'auto',
-                stream: true
+                toolChoice: 'auto'
             }
         }
     );

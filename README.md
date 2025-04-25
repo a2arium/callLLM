@@ -26,6 +26,7 @@ const response = await caller.call({
 *   **Large Data Handling**: Automatic chunking and processing of large text or JSON data that exceeds model context limits.
 *   **JSON Mode & Schema Validation**: Support for enforcing JSON output with native JSON mode or prompt enhancement fallback for models that don't support structured output. Validation against Zod or JSON schemas.
 *   **Tool Calling**: Unified interface for defining and using tools (function calling) with LLMs.
+*   **Function Folders**: Organize tools in separate files and load them dynamically using a directory, with automatic type and documentation extraction.
 *   **Cost Tracking**: Automatic calculation and reporting of token usage and costs per API call.
 *   **Model Management**: Flexible model selection using aliases (`fast`, `cheap`, `balanced`, `premium`) or specific names, with built-in defaults and support for custom models.
 *   **Retry Mechanisms**: Built-in resilience against transient API errors using exponential backoff.
@@ -51,6 +52,11 @@ Or provide the API key directly when initializing:
 ```typescript
 const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', 'your-api-key-here');
 ```
+
+## Documentation
+
+- [Function Folders](docs/function-folders.md) - Learn how to organize tools in separate files
+- More documentation coming soon
 
 ## Usage
 

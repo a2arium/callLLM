@@ -346,7 +346,25 @@ describe('ChatController', () => {
 
         // Verify the second call (resubmission) happened with updated messages
         expect(mockProviderManager.getProvider().chatCall).toHaveBeenCalledTimes(2);
-        expect(mockToolOrchestrator.processToolCalls).toHaveBeenCalledWith(toolCallResponse);
+        expect(mockToolOrchestrator.processToolCalls).toHaveBeenCalledWith(
+            expect.objectContaining({ // Match the response object loosely
+                content: 'I need to use a tool',
+                role: 'assistant',
+                toolCalls: [expect.objectContaining({ name: 'test_tool' })],
+                metadata: expect.objectContaining({ finishReason: FinishReason.TOOL_CALLS })
+            }),
+            [{
+                name: 'test_tool',
+                description: 'A test tool',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        param1: { type: 'string' }
+                    },
+                    required: ['param1']
+                }
+            }] // Expect the tools array as the second argument
+        );
 
         // Verify final result is from the second call
         expect(result.content).toBe('Final response after tool execution');
