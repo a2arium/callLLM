@@ -266,6 +266,28 @@ export class FunctionFileParser {
                 }
             }
 
+            // Fallback: Check for regular leading comments if no description found yet
+            if (!description) {
+                try {
+                    const leadingComments = param.getLeadingCommentRanges();
+                    if (leadingComments.length > 0) {
+                        // Use the last comment range before the declaration
+                        const lastComment = leadingComments[leadingComments.length - 1];
+                        const commentText = lastComment.getText();
+                        // Clean comment markers
+                        description = commentText
+                            .replace(/^\/\*\*/, '') // Remove opening /**
+                            .replace(/\*\/$/, '')   // Remove closing */
+                            .replace(/^\/\/\s*/, '') // Remove // and any spaces after it
+                            .replace(/^\/\*/, '')    // Remove opening /*
+                            .replace(/^\s*\*\s*/gm, '') // Remove * at the beginning of lines in block comments
+                            .trim();
+                    }
+                } catch (error) {
+                    // Ignore errors when trying to get regular leading comments
+                }
+            }
+
             return {
                 name: paramName,
                 type: typeText,
@@ -448,7 +470,89 @@ export class FunctionFileParser {
                         }
                     }
                 } catch (error) {
-                    // Ignore errors when trying to get leading comments
+                    // Ignore errors when trying to get regular leading comments
+                }
+            }
+
+            // Second fallback: Check property node in type alias declarations
+            if (!description) {
+                try {
+                    // Find type declarations that might contain this property
+                    const typeAliasDeclarations = sourceFile.getDescendantsOfKind(SyntaxKind.TypeAliasDeclaration);
+
+                    for (const typeAlias of typeAliasDeclarations) {
+                        const typeNode = typeAlias.getTypeNode();
+                        if (!typeNode || !typeNode.isKind(SyntaxKind.TypeLiteral)) continue;
+
+                        const typeLiteral = typeNode as import('ts-morph').TypeLiteralNode;
+                        const propertySignatures = typeLiteral.getProperties();
+
+                        for (const propertySignature of propertySignatures) {
+                            if (propertySignature.getName() === propName) {
+                                const leadingComments = propertySignature.getLeadingCommentRanges();
+                                if (leadingComments.length > 0) {
+                                    // Use the last comment range before the declaration
+                                    const lastComment = leadingComments[leadingComments.length - 1];
+                                    const commentText = lastComment.getText();
+                                    // Clean comment markers
+                                    description = commentText
+                                        .replace(/^\/\*\*/, '') // Remove opening /**
+                                        .replace(/\*\/$/, '')   // Remove closing */
+                                        .replace(/^\/\/\s*/, '') // Remove // and any spaces after it
+                                        .replace(/^\/\*/, '')    // Remove opening /*
+                                        .replace(/^\s*\*\s*/gm, '') // Remove * at the beginning of lines in block comments
+                                        .trim();
+
+                                    // If we found a description, we can break out of the loops
+                                    if (description) break;
+                                }
+                            }
+                        }
+
+                        // If we found a description, we can break out of the outer loop
+                        if (description) break;
+                    }
+                } catch (error) {
+                    // Ignore errors when trying to find property in type declarations
+                }
+            }
+
+            // Third fallback: Check interface declarations
+            if (!description) {
+                try {
+                    // Find interface declarations that might contain this property
+                    const interfaceDeclarations = sourceFile.getDescendantsOfKind(SyntaxKind.InterfaceDeclaration);
+
+                    for (const interfaceDecl of interfaceDeclarations) {
+                        const propertySignatures = interfaceDecl.getProperties();
+
+                        for (const propertySignature of propertySignatures) {
+                            if (propertySignature.getName() === propName) {
+                                const leadingComments = propertySignature.getLeadingCommentRanges();
+                                if (leadingComments.length > 0) {
+                                    // Use the last comment range before the declaration
+                                    const lastComment = leadingComments[leadingComments.length - 1];
+                                    const commentText = lastComment.getText();
+                                    // Clean comment markers
+                                    description = commentText
+                                        .replace(/^\/\*\*/, '') // Remove opening /**
+                                        .replace(/\*\/$/, '')   // Remove closing */
+                                        .replace(/^\/\/\s*/, '') // Remove // and any spaces after it
+                                        .replace(/^\/\*/, '')    // Remove opening /*
+                                        .replace(/^\s*\*\s*/gm, '') // Remove * at the beginning of lines in block comments
+                                        .trim();
+
+                                    // If we found a description, we can break out of the loops
+                                    if (description) break;
+                                }
+                            }
+                        }
+
+                        // If we found a description, we can break out of the outer loop
+                        if (description) break;
+                    }
+                } catch (error) {
+                    // Ignore errors when trying to find property in interface declarations
                 }
             }
 
