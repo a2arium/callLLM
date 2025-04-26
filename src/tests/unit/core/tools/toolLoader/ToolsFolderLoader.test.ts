@@ -112,6 +112,39 @@ describe('ToolsFolderLoader', () => {
 
             expect(tools).toEqual([]);
         });
+
+        it('should handle empty results from readdir', () => {
+            // Mock readdirSync to return an empty array
+            mockFs.readdirSync.mockReturnValue([]);
+
+            // Create the loader
+            const loader = new ToolsFolderLoader('/mock/tools/dir');
+
+            // Verify no files were processed
+            expect(MockFunctionFileParser.prototype.parseFile).not.toHaveBeenCalled();
+            expect(loader.getAvailableTools()).toEqual([]);
+            expect(loader.getAvailableTools().length).toBe(0);
+        });
+
+        it('should handle null or undefined from readdir', () => {
+            // Mock readdirSync to return null
+            mockFs.readdirSync.mockReturnValue(null as any);
+
+            // Create the loader - this should not throw
+            const loader = new ToolsFolderLoader('/mock/tools/dir');
+
+            // Verify no files were processed
+            expect(MockFunctionFileParser.prototype.parseFile).not.toHaveBeenCalled();
+            expect(loader.getAvailableTools()).toEqual([]);
+
+            // Test with undefined as well
+            jest.clearAllMocks();
+            mockFs.readdirSync.mockReturnValue(undefined as any);
+
+            const loader2 = new ToolsFolderLoader('/mock/tools/dir');
+            expect(MockFunctionFileParser.prototype.parseFile).not.toHaveBeenCalled();
+            expect(loader2.getAvailableTools()).toEqual([]);
+        });
     });
 
     describe('hasToolFunction', () => {
@@ -242,6 +275,48 @@ describe('ToolsFolderLoader', () => {
             const tools = await loader.getAllTools();
 
             expect(tools).toEqual([]);
+        });
+    });
+
+    describe('filterTypeScriptFiles', () => {
+        it('should filter TypeScript files correctly during directory scanning', () => {
+            // Create a mix of files with different extensions
+            const mockFiles = [
+                'tool1.ts',      // TypeScript file - should be processed
+                'tool2.js',      // JavaScript file - should be ignored
+                'tool3.tsx',     // TypeScript JSX file - should be ignored
+                'README.md',     // Markdown file - should be ignored
+                '.tool5.ts',     // Hidden TypeScript file - should be processed
+                'tool7.d.ts'     // TypeScript declaration file - should be processed
+            ];
+
+            mockFs.readdirSync.mockReturnValue(mockFiles as any);
+
+            const mockTool: ParsedFunctionMeta = {
+                name: 'tool',
+                description: 'Tool description',
+                schema: { type: 'object', properties: {} },
+                runtimePath: '/mock/tools/dir/tool.ts'
+            };
+
+            MockFunctionFileParser.prototype.parseFile.mockReturnValue(mockTool);
+
+            const loader = new ToolsFolderLoader('/mock/tools/dir');
+
+            // Should only process files ending with .ts
+            // In this case, tool1.ts, .tool5.ts, and tool7.d.ts
+            expect(MockFunctionFileParser.prototype.parseFile).toHaveBeenCalledTimes(3);
+
+            // Verify the correct files were processed
+            const parsedFilePaths = MockFunctionFileParser.prototype.parseFile.mock.calls.map(call => call[0]);
+            expect(parsedFilePaths).toContain('/mock/tools/dir/tool1.ts');
+            expect(parsedFilePaths).toContain('/mock/tools/dir/.tool5.ts');
+            expect(parsedFilePaths).toContain('/mock/tools/dir/tool7.d.ts');
+
+            // Verify the other files were not processed
+            expect(parsedFilePaths).not.toContain('/mock/tools/dir/tool2.js');
+            expect(parsedFilePaths).not.toContain('/mock/tools/dir/tool3.tsx');
+            expect(parsedFilePaths).not.toContain('/mock/tools/dir/README.md');
         });
     });
 }); 
