@@ -47,6 +47,37 @@ export class Converter {
                 throw new OpenAIResponseValidationError(`Invalid tool definition: ${toolDef.name || 'Unnamed tool'}`);
             }
 
+            log.debug(`Processing tool definition for OpenAI`, {
+                name: toolDef.name,
+                originalName: toolDef.metadata?.originalName,
+                hasParameters: Boolean(toolDef.parameters),
+                parametersType: toolDef.parameters?.type,
+                requiredParams: toolDef.parameters?.required || [],
+                propertiesCount: Object.keys(toolDef.parameters?.properties || {}).length
+            });
+
+            // Check for potential issues before conversion
+            if (Object.keys(toolDef.parameters?.properties || {}).length === 0) {
+                log.info(`Tool has empty properties object: ${toolDef.name}`, {
+                    toolName: toolDef.name,
+                    originalName: toolDef.metadata?.originalName
+                });
+            }
+
+            if (toolDef.parameters?.required?.length) {
+                const missingProps = toolDef.parameters.required.filter(
+                    param => !(param in (toolDef.parameters?.properties || {}))
+                );
+
+                if (missingProps.length > 0) {
+                    log.info(`Tool has required params not in properties: ${toolDef.name}`, {
+                        toolName: toolDef.name,
+                        originalName: toolDef.metadata?.originalName,
+                        missingProperties: missingProps
+                    });
+                }
+            }
+
             // Start with the parameters prepared by the core logic (includes correct required array)
             const baseParameters = this.prepareParametersForOpenAIResponse(toolDef.parameters);
 
@@ -65,6 +96,7 @@ export class Converter {
                 // If no properties, omit the required field entirely
                 finalParameters = { ...baseParameters };
                 delete finalParameters.required; // Still need to remove it if baseParameters had it
+                log.info(`Tool has no properties, removing required field: ${toolDef.name}`);
             }
             // --- End OpenAI Workaround ---
 
@@ -76,7 +108,12 @@ export class Converter {
                 description: toolDef.description || undefined,
                 strict: true
             };
-            log.debug(`Formatted tool ${toolDef.name} for OpenAI native:`, openAITool);
+            log.debug(`Formatted tool ${toolDef.name} for OpenAI native:`, {
+                name: openAITool.name,
+                parametersType: openAITool.parameters.type as string,
+                propertiesCount: Object.keys((openAITool.parameters.properties as Record<string, unknown>) || {}).length,
+                requiredParams: (openAITool.parameters.required as string[]) || 'none'
+            });
             return openAITool;
         });
 
@@ -158,7 +195,7 @@ export class Converter {
                         const parsedSchema = JSON.parse(params.jsonSchema.schema);
                         formatConfig.schema = SchemaFormatter.addAdditionalPropertiesFalse(parsedSchema);
                     } catch (error) {
-                        log.warn('Failed to parse JSON schema string');
+                        log.info('Failed to parse JSON schema string');
                         // Fallback to simple JSON object format
                         formatConfig.type = 'json_object';
                         delete formatConfig.schema;
@@ -424,6 +461,47 @@ export class Converter {
      * to the root schema and any nested object schemas
      */
     private prepareParametersForOpenAIResponse(parameters: Record<string, unknown>): Record<string, unknown> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.prepareParametersForOpenAIResponse' });
+
+        // Log incoming parameters
+        log.debug('Preparing parameters for OpenAI Response', {
+            hasType: Boolean(parameters.type),
+            type: parameters.type,
+            hasProperties: Boolean(parameters.properties),
+            propertiesCount: parameters.properties ? Object.keys(parameters.properties as Record<string, unknown>).length : 0,
+            hasRequired: Boolean(parameters.required),
+            requiredCount: parameters.required ? (parameters.required as string[]).length : 0
+        });
+
+        // Check for potential issues
+        if (!parameters.properties || Object.keys(parameters.properties as Record<string, unknown>).length === 0) {
+            log.info('Empty properties object in parameters', {
+                type: parameters.type,
+                hasRequired: Boolean(parameters.required)
+            });
+        }
+
+        if (parameters.required && (parameters.required as string[]).length > 0) {
+            // Check if any required properties are missing from the properties object
+            if (parameters.properties) {
+                const properties = parameters.properties as Record<string, unknown>;
+                const missingProps = (parameters.required as string[]).filter(
+                    prop => !(prop in properties)
+                );
+                if (missingProps.length > 0) {
+                    log.info('Required properties not found in properties object', {
+                        missingProps,
+                        requiredProps: parameters.required,
+                        availableProps: Object.keys(properties)
+                    });
+                }
+            } else {
+                log.info('Required properties specified but no properties object exists', {
+                    requiredProps: parameters.required
+                });
+            }
+        }
+
         // Clone the parameters to avoid modifying the original
         const preparedParams: Record<string, unknown> = {
             ...parameters,
@@ -437,6 +515,11 @@ export class Converter {
         ) {
             const properties = preparedParams.properties as Record<string, unknown>;
 
+            log.debug('Processing nested properties', {
+                propertyCount: Object.keys(properties).length,
+                propertyNames: Object.keys(properties)
+            });
+
             // Process each property that might be an object schema
             for (const key in properties) {
                 const prop = properties[key];
@@ -445,11 +528,24 @@ export class Converter {
                     prop !== null &&
                     (prop as any).type === 'object'
                 ) {
+                    log.debug(`Processing nested object property '${key}'`, {
+                        propertyType: (prop as any).type,
+                        hasNestedProperties: Boolean((prop as any).properties),
+                        nestedPropertiesCount: (prop as any).properties ? Object.keys((prop as any).properties).length : 0
+                    });
+
                     // Recursively process nested object schemas
                     properties[key] = this.prepareParametersForOpenAIResponse(prop as Record<string, unknown>);
                 }
             }
         }
+
+        log.debug('Prepared parameters result', {
+            type: preparedParams.type,
+            propertiesCount: preparedParams.properties ? Object.keys(preparedParams.properties as Record<string, unknown>).length : 0,
+            requiredCount: preparedParams.required ? (preparedParams.required as string[]).length : 0,
+            hasAdditionalProperties: preparedParams.additionalProperties
+        });
 
         return preparedParams;
     }

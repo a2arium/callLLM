@@ -28,15 +28,81 @@ export class ToolController {
      * @returns The tool definition or undefined.
      */
     private findToolDefinition(name: string, callSpecificTools?: ToolDefinition[]): ToolDefinition | undefined {
+        const log = logger.createLogger({ prefix: 'ToolController.findToolDefinition' });
+        log.debug('Looking for tool by name:', {
+            toolName: name,
+            hasCallSpecificTools: Boolean(callSpecificTools),
+            callSpecificToolsCount: callSpecificTools?.length || 0
+        });
+
         // 1. Check call-specific tools first
         if (callSpecificTools) {
-            const foundTool = callSpecificTools.find(t => t.name === name);
+            // First try exact match on name
+            let foundTool = callSpecificTools.find(t => t.name === name);
             if (foundTool) {
+                log.debug('Found exact match in call-specific tools', {
+                    toolName: name,
+                    matchedName: foundTool.name,
+                    hasOriginalName: Boolean(foundTool.metadata?.originalName)
+                });
                 return foundTool;
             }
+
+            // If not found, check for tools with matching originalName in metadata
+            foundTool = callSpecificTools.find(t =>
+                t.metadata &&
+                typeof t.metadata.originalName === 'string' &&
+                t.metadata.originalName === name
+            );
+
+            if (foundTool) {
+                log.debug('Found match by originalName in call-specific tools', {
+                    requestedName: name,
+                    matchedName: foundTool.name,
+                    originalName: foundTool.metadata?.originalName as string
+                });
+                return foundTool;
+            } else {
+                log.debug('No match found in call-specific tools', { requestedName: name });
+            }
         }
-        // 2. Fallback to the general ToolsManager
-        return this.toolsManager.getTool(name);
+
+        // 2. Try the general ToolsManager with exact name
+        const exactTool = this.toolsManager.getTool(name);
+        if (exactTool) {
+            log.debug('Found exact match in ToolsManager', {
+                toolName: name,
+                hasOriginalName: Boolean(exactTool.metadata?.originalName)
+            });
+            return exactTool;
+        }
+
+        // 3. Check all tools for matching originalName in metadata
+        // This is less efficient but ensures we find the correct tool
+        // when the name has been transformed for API compatibility
+        const allTools = this.toolsManager.listTools() || [];
+        log.debug('Searching all tools for originalName match', {
+            requestedName: name,
+            totalToolCount: allTools.length
+        });
+
+        const foundByOriginalName = allTools.find(t =>
+            t.metadata &&
+            typeof t.metadata.originalName === 'string' &&
+            t.metadata.originalName === name
+        );
+
+        if (foundByOriginalName) {
+            log.debug('Found match by originalName in all tools', {
+                requestedName: name,
+                matchedName: foundByOriginalName.name,
+                originalName: foundByOriginalName.metadata?.originalName as string
+            });
+        } else {
+            log.debug('No tool found matching requested name', { requestedName: name });
+        }
+
+        return foundByOriginalName;
     }
 
     /**
@@ -75,11 +141,19 @@ export class ToolController {
 
         if (response?.toolCalls?.length) {
             log.debug(`Found ${response.toolCalls.length} direct tool calls`);
-            response.toolCalls.forEach(tc => parsedToolCalls.push({
-                id: tc.id,
-                name: tc.name,
-                arguments: tc.arguments
-            }));
+            response.toolCalls.forEach(tc => {
+                log.debug('Processing tool call from response', {
+                    id: tc.id,
+                    name: tc.name,
+                    argumentsKeys: Object.keys(tc.arguments || {}),
+                    argumentsJson: JSON.stringify(tc.arguments).substring(0, 500) // Limit log size
+                });
+                parsedToolCalls.push({
+                    id: tc.id,
+                    name: tc.name,
+                    arguments: tc.arguments
+                });
+            });
             requiresResubmission = true;
         } else {
             log.debug('No direct tool calls found in response.');
@@ -96,7 +170,11 @@ export class ToolController {
         }[] = [];
 
         for (const { id, name, arguments: args } of parsedToolCalls) {
-            log.debug(`Processing tool call: ${name}`);
+            log.debug(`Processing tool call: ${name}`, {
+                hasArguments: Boolean(args),
+                argumentsCount: Object.keys(args || {}).length,
+                arguments: args || {}
+            });
             const toolCallId = id || `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
             const toolCallInfo = {
@@ -109,7 +187,10 @@ export class ToolController {
             const tool = this.findToolDefinition(name, callSpecificTools);
 
             if (!tool) {
-                log.warn(`Tool not found: ${name}`);
+                log.warn(`Tool not found: ${name}`, {
+                    availableToolNames: callSpecificTools?.map(t => t.name) || [],
+                    argumentsProvided: args
+                });
                 const error = new ToolNotFoundError(name);
                 // Create a system message indicating the tool wasn't found
                 // Consistent with how executeToolCall might handle it, though we might prefer
@@ -126,14 +207,39 @@ export class ToolController {
             }
 
             try {
-                log.debug(`Executing tool: ${name}`);
+                log.debug(`Executing tool: ${name}`, {
+                    actualToolName: tool.name,
+                    originalName: tool.metadata?.originalName,
+                    hasCallFunction: Boolean(tool.callFunction),
+                    requiredParams: tool.parameters?.required || [],
+                    providedParams: Object.keys(args || {})
+                });
+
                 if (!tool.callFunction) {
                     throw new ToolExecutionError(name, 'Tool does not have a callFunction implementation');
+                }
+
+                // Check if required parameters are present
+                if (tool.parameters?.required?.length) {
+                    const missingParams = tool.parameters.required.filter(param => !(param in (args || {})));
+                    if (missingParams.length > 0) {
+                        log.warn('Missing required parameters', {
+                            toolName: name,
+                            missingParams,
+                            providedParams: Object.keys(args || {})
+                        });
+                    }
                 }
 
                 // Execute using the found tool definition
                 const result = await tool.callFunction(args);
                 const resultString = typeof result === 'string' ? result : JSON.stringify(result);
+
+                log.debug(`Tool execution result`, {
+                    toolName: name,
+                    resultLength: resultString.length,
+                    resultPreview: resultString.substring(0, 200) // Limit log size
+                });
 
                 // Add result message for the LLM
                 messages.push({
@@ -147,7 +253,11 @@ export class ToolController {
                 executedToolCalls.push({ ...toolCallInfo, result: resultString });
                 log.debug(`Successfully executed tool: ${name}`);
             } catch (error) {
-                log.error(`Error executing tool ${name}:`, error);
+                log.error(`Error executing tool ${name}:`, error, {
+                    toolName: name,
+                    originalName: tool.metadata?.originalName,
+                    args: args || {}
+                });
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 const toolError = new ToolExecutionError(name, errorMessage);
 

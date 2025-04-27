@@ -1,4 +1,5 @@
 import type { ToolDefinition } from '../../../types/tooling';
+import type { MCPServersMap } from '../../mcp/MCPConfigTypes';
 
 export type ExtractedJsonSchema = {
     type: 'object';
@@ -17,7 +18,13 @@ export type ParsedFunctionMeta = {
     runtimePath: string;     // absolute path used for dynamic import
 };
 
-export type StringOrDefinition = string | ToolDefinition;
+/**
+ * Definition of what can be provided in the tools array:
+ * - string: Name of a function in the toolsDir
+ * - ToolDefinition: Full tool definition object
+ * - MCPServersMap: Configuration for MCP servers
+ */
+export type StringOrDefinition = string | ToolDefinition | MCPServersMap;
 
 export class ToolParsingError extends Error {
     constructor(message: string) {

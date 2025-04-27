@@ -17,6 +17,8 @@ alwaysApply: false
   2. Integration tests (`/src/tests/integration/`)
   3. End-to-end tests (`/src/tests/e2e/`)
 
+IMPORTANT: `tests` folder is in `src` directory, not in the root directory
+
 ## Directory Organization
 - Mirror the source code directory structure in test directories
 - Keep mocks in `__mocks__` directory at each test level

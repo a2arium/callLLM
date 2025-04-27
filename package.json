@@ -23,12 +23,13 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "example": "ts-node examples/usageTracking.ts",
-    "example2": "ts-node examples/historyModes.ts",
-    "example3": "ts-node examples/jsonOutput.ts",
-    "example4": "ts-node examples/toolCalling.ts",
-    "example5": "ts-node examples/toolFunctionFolder.ts",
-    "reasoning": "ts-node examples/reasoningModels.ts"
+    "example:usage": "ts-node examples/usageTracking.ts",
+    "example:history": "ts-node examples/historyModes.ts",
+    "example:json": "ts-node examples/jsonOutput.ts",
+    "example:tool": "ts-node examples/toolCalling.ts",
+    "example:toolFolder": "ts-node examples/toolFunctionFolder.ts",
+    "example:reasoning": "ts-node examples/reasoningModels.ts",
+    "example:mcp": "ts-node examples/mcpClient.ts"
   },
   "author": "",
   "license": "MIT",
@@ -61,6 +62,9 @@
   "devDependencies": {
     "@types/node": "^22.10.5",
     "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.31.0",
+    "@typescript-eslint/parser": "^8.31.0",
+    "eslint": "^9.25.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.2"
   }

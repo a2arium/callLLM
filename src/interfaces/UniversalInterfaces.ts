@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ToolCallChunk } from '../core/streaming/types';
 import type { ToolDefinition, ToolCall } from '../types/tooling';
 import type { UsageCallback } from './UsageInterfaces';
+import type { MCPServersMap } from '../core/mcp/MCPConfigTypes';
 
 // Finish reason enum based on OpenAI's finish reasons
 export enum FinishReason {
@@ -145,9 +146,9 @@ export type LLMCallOptions = {
     responseFormat?: ResponseFormat;
     /**
      * Optional list of tools the model may call.
-     * Can be a ToolDefinition object or a string matching a function filename.
+     * Can be a ToolDefinition, a function name (string), or an MCP servers map.
      */
-    tools?: (ToolDefinition | string)[];
+    tools?: (ToolDefinition | string | MCPServersMap)[];
     /**
      * Directory containing tool files.
      * When provided, tool names that are strings will be resolved from this directory.

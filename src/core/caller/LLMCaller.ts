@@ -37,6 +37,7 @@ import { HistoryManager } from '../history/HistoryManager';
 import { logger } from '../../utils/logger';
 import { PromptEnhancer } from '../prompt/PromptEnhancer';
 import { ToolsFolderLoader, StringOrDefinition } from '../tools/toolLoader';
+import type { MCPServersMap } from '../mcp/MCPConfigTypes';
 
 /**
  * Interface that matches the StreamController's required methods
@@ -456,6 +457,9 @@ export class LLMCaller {
 
         const resolvedTools: ToolDefinition[] = [];
 
+        // Lazy-load the MCPToolLoader when needed
+        let mcpToolLoader: any = null;
+
         for (const tool of tools) {
             if (typeof tool === 'string') {
                 // It's a string tool name, resolve it from a folder
@@ -468,9 +472,19 @@ export class LLMCaller {
 
                 const resolvedTool = await folderLoader.getTool(tool);
                 resolvedTools.push(resolvedTool);
+            } else if (tool && typeof tool === 'object' && 'mcpServers' in tool) {
+                // It's a wrapper object containing an MCPServersMap
+                if (!mcpToolLoader) {
+                    const { MCPToolLoader } = await import('../mcp/MCPToolLoader');
+                    mcpToolLoader = new MCPToolLoader();
+                }
+                // Extract the actual map
+                const serversMap = (tool as any).mcpServers as MCPServersMap;
+                const mcpTools = await mcpToolLoader.loadTools(serversMap);
+                resolvedTools.push(...mcpTools);
             } else {
                 // It's already a ToolDefinition
-                resolvedTools.push(tool);
+                resolvedTools.push(tool as ToolDefinition);
             }
         }
 

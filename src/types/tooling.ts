@@ -30,6 +30,11 @@ export type ToolParameters = {
     additionalProperties?: boolean;  // Whether to allow additional properties not defined in the schema
 };
 
+/**
+ * Origin of a tool definition
+ */
+export type ToolOrigin = 'local' | 'mcp';
+
 // Updated ToolDefinition using ToolParameters
 export type ToolDefinition = {
     name: string;
@@ -40,6 +45,18 @@ export type ToolDefinition = {
     ) => Promise<TResponse>; // Keep generic default
     handler?: (args: any) => Promise<any>; // Added for backward compatibility with older code
     postCallLogic?: (rawResult: unknown) => Promise<string[]>; // Use unknown for flexibility
+    /**
+     * Origin of this tool definition:
+     * - 'local': Created locally (static or function folder)
+     * - 'mcp': Created from an MCP server
+     */
+    origin?: ToolOrigin;
+    /**
+     * Additional metadata for the tool.
+     * Can be used to store information needed for special handling or mapping.
+     * For MCP tools, this includes original names and server information.
+     */
+    metadata?: Record<string, unknown>;
 };
 
 export type ToolCall = {

@@ -194,7 +194,7 @@ export class ChatController {
         const localRetryManager = new RetryManager({ baseDelay: 1000, maxRetries: effectiveMaxRetries });
 
         // Execute the provider chat call with retry logic
-        const response = await localRetryManager.executeWithRetry(
+        let response = await localRetryManager.executeWithRetry(
             async () => {
                 const resp = await this.providerManager.getProvider().chatCall(model, chatParamsForProvider);
                 if (!resp) {
@@ -239,56 +239,56 @@ export class ChatController {
             response.metadata?.finishReason === FinishReason.TOOL_CALLS
         );
 
+        let finalResponse = response; // Assume original response is final unless resubmission happens
+
         if (hasToolCalls && this.toolController && this.toolOrchestrator && this.historyManager) {
             log.debug('Tool calls detected, processing...');
 
             this.historyManager.addMessage('assistant', response.content ?? '', { toolCalls: response.toolCalls });
 
-            // Delegate processing and potential resubmission to ToolOrchestrator
-            // Pass the resolved tools (params.tools) from the original call
             const { requiresResubmission } = await this.toolOrchestrator.processToolCalls(
                 response,
-                params.tools // Pass the resolved ToolDefinitions here
+                params.tools || [] // Pass original tools
             );
 
             if (requiresResubmission) {
                 log.debug('Tool results require resubmission to model.');
-
-                // Get the updated messages including the tool results that were just added
-                const updatedMessages = this.historyManager.getMessages();
-
-                // No longer filtering out format instruction messages
-                // We want to keep them in the history for clarity
-
-                // Create a new params object with the updated messages that include tool results
-                const recursiveParams: UniversalChatParams = {
-                    ...params,
-                    messages: updatedMessages,
-                    settings: {
-                        ...mergedSettings,
-                        toolChoice: undefined,
-                    },
-                    tools: undefined,
-                    jsonSchema: undefined,
-                    responseFormat: 'text',
-                };
-
                 log.debug('Resubmitting with updated messages including tool results');
-                return this.execute<T>(recursiveParams);
+
+                // Call execute recursively, explicitly passing necessary context
+                finalResponse = await this.execute<T>({
+                    ...params, // Spread original params
+                    messages: this.historyManager.getMessages(), // Use updated history
+                    tools: undefined, // No tools needed for resubmission
+                    settings: {
+                        ...params.settings,
+                        toolChoice: undefined // No tool choice needed
+                    },
+                    jsonSchema: jsonSchema, // Explicitly pass original schema
+                    responseFormat: effectiveResponseFormat // Explicitly pass original format
+                });
+            } else {
+                log.debug('Tool calls processed, no resubmission required.');
+                // If no resubmission, the original `response` might be the final one
+                // (e.g., if toolChoice was 'none' or model decided not to call tools)
+                // Or it might just contain the tool call request without final content.
+                // The validation below should handle this.
             }
+        } else if (hasToolCalls) {
+            log.warn('Tool calls detected but ToolController, ToolOrchestrator, or HistoryManager is missing. Cannot process tools.');
         }
 
         // Validate the FINAL response (original or from recursion)
         const validationParams: UniversalChatParams = {
-            messages: [],  // Required by UniversalChatParams but not used in validation
-            model: model,  // Pass actual model name
+            messages: [],  // Not used in validation
+            model: model,
             settings: mergedSettings,
-            jsonSchema: params.jsonSchema,
-            responseFormat: params.responseFormat
+            jsonSchema: jsonSchema, // Use the original schema for validation
+            responseFormat: effectiveResponseFormat // Use the original format for validation
         };
 
         const validatedResponse = await this.responseProcessor.validateResponse<T>(
-            response,
+            finalResponse,
             validationParams,
             modelInfo,
             { usePromptInjection }
@@ -296,15 +296,24 @@ export class ChatController {
 
         // Ensure we have a valid response after validation
         if (!validatedResponse) {
-            throw new Error('Response validation failed');
+            throw new Error('Response validation failed or returned null/undefined');
         }
 
-        // Ensure the final assistant message (if not already added during tool call flow) is in history
-        if (!hasToolCalls) {
-            // If there were no tool calls, add the final assistant response now
-            this.historyManager?.addMessage('assistant', validatedResponse.content || '');
+        // Ensure the final assistant message is in history if not already added during tool call flow
+        // Check if the *final* response was the one that initiated tool calls
+        const finalResponseInitiatedTools = Boolean(
+            (validatedResponse.toolCalls?.length ?? 0) > 0 ||
+            validatedResponse.metadata?.finishReason === FinishReason.TOOL_CALLS
+        );
+
+        if (!finalResponseInitiatedTools && this.historyManager && effectiveHistoryMode !== 'stateless') {
+            // If the *final* response doesn't have tool calls, add it to history.
+            // This handles cases where the initial response had tool calls, but the *final* one after resubmission doesn't.
+            // Also handles cases where there were no tool calls at all.
+            this.historyManager.addMessage('assistant', validatedResponse.content ?? '', { toolCalls: validatedResponse.toolCalls });
         }
 
+        log.debug('Final validated response being returned:', validatedResponse);
         return validatedResponse;
     }
 }

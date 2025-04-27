@@ -37,10 +37,13 @@ export class ContentAccumulator implements IStreamProcessor {
         for await (const chunk of stream) {
             logger.debug('Processing chunk to accumulate:', { chunk });
 
-            // Accumulate content
-            if (chunk.content) {
+            // Accumulate content ONLY if it's not the final chunk
+            // The final chunk often duplicates content, which we don't want.
+            if (chunk.content && !chunk.isComplete) {
                 this.accumulatedContent += chunk.content;
                 logger.debug(`Accumulated content, length: ${this.accumulatedContent.length}`);
+            } else if (chunk.content && chunk.isComplete) {
+                logger.debug('Ignoring content from final (isComplete) chunk to prevent duplication.');
             }
 
             // Process any raw tool call chunks

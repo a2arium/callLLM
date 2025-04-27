@@ -333,8 +333,10 @@ export class StreamHandler {
 
                 // Add the accumulated content when complete
                 if (chunk.isComplete) {
-                    const accumulatedContent = contentAccumulator.getAccumulatedContent();
-                    response.contentText = accumulatedContent;
+                    // Get the accumulated content *before* potential pollution by the final chunk's content
+                    // We rely on the accumulator instance passed to the pipeline having the final state.
+                    const cleanAccumulatedContent = contentAccumulator.getAccumulatedContent();
+                    response.contentText = cleanAccumulatedContent; // Use the clean version here too
 
                     // Handle JSON validation and parsing
                     if (isJsonRequested && schema) {
@@ -343,7 +345,7 @@ export class StreamHandler {
                             if (usePromptInjection) {
                                 log.info('Using prompt enhancement for JSON handling');
                                 const validatedResponse = await this.responseProcessor.validateResponse({
-                                    content: accumulatedContent,
+                                    content: cleanAccumulatedContent, // Use clean content
                                     role: 'assistant'
                                 }, {
                                     model: params.model,
@@ -365,12 +367,12 @@ export class StreamHandler {
                                 // For native JSON mode, use direct schema validation
                                 try {
                                     log.debug('Validating accumulated JSON content:', {
-                                        contentLength: accumulatedContent.length,
-                                        contentPreview: accumulatedContent.slice(0, 100) + (accumulatedContent.length > 100 ? '...' : '')
+                                        contentLength: cleanAccumulatedContent.length, // Log clean length
+                                        contentPreview: cleanAccumulatedContent.slice(0, 100) + (cleanAccumulatedContent.length > 100 ? '...' : '')
                                     });
 
-                                    // Try to parse the JSON content first
-                                    const parsedContent = JSON.parse(accumulatedContent);
+                                    // Parse the clean accumulated content directly from the accumulator
+                                    const parsedContent = JSON.parse(cleanAccumulatedContent); // <--- Use clean content
 
                                     log.debug('Successfully parsed JSON, now validating against schema');
                                     // Then validate against the schema

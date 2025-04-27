@@ -27,6 +27,7 @@ const response = await caller.call({
 *   **JSON Mode & Schema Validation**: Support for enforcing JSON output with native JSON mode or prompt enhancement fallback for models that don't support structured output. Validation against Zod or JSON schemas.
 *   **Tool Calling**: Unified interface for defining and using tools (function calling) with LLMs.
 *   **Function Folders**: Organize tools in separate files and load them dynamically using a directory, with automatic type and documentation extraction.
+*   **MCP Client Support**: Connect to Model Context Protocol (MCP) servers to access external tools and resources. Seamlessly integrate with LLM tools.
 *   **Cost Tracking**: Automatic calculation and reporting of token usage and costs per API call.
 *   **Model Management**: Flexible model selection using aliases (`fast`, `cheap`, `balanced`, `premium`) or specific names, with built-in defaults and support for custom models.
 *   **Retry Mechanisms**: Built-in resilience against transient API errors using exponential backoff.
@@ -1655,3 +1656,109 @@ for await (const chunk of stream) {
   }
 }
 ```
+
+### Using MCP Servers
+
+Model Context Protocol (MCP) is a standard protocol for providing AI models access to external tools and resources. callLLM now supports connecting to MCP servers, allowing you to use tools provided by these servers directly in your LLM calls.
+
+```typescript
+import { LLMCaller } from 'callllm';
+
+// Initialize the caller as usual
+const caller = new LLMCaller('openai', 'gpt-4o', 'You are a helpful assistant.');
+
+// Create an MCP config object
+const mcpConfig = {
+  mcpServers: {
+    // A filesystem server with access to the current directory
+    filesystem: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
+    },
+    // A GitHub server with auth via environment variable
+    github: {
+      url: 'https://api.mcp-example.com/github',
+      headers: {
+        'Authorization': 'Bearer ${GITHUB_TOKEN}'
+      }
+    }
+  }
+};
+
+// Use the MCP servers alongside other tools
+const response = await caller.call(
+  'List files in the current directory and create a README.md',
+  {
+    tools: [mcpConfig], // Pass the MCP config as a tool
+    settings: { toolChoice: 'auto' }
+  }
+);
+
+console.log(response.content);
+```
+
+#### MCP Server Configuration
+
+You can configure MCP servers using the following options:
+
+```typescript
+type MCPServerConfig = {
+  // Transport type: 'stdio', 'http', or 'custom'
+  // Automatically inferred if not specified
+  type?: 'stdio' | 'http' | 'custom';
+  
+  // For stdio transport
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>; // Environment variables
+  
+  // For HTTP transport
+  url?: string;
+  mode?: 'sse' | 'streamable';
+  headers?: Record<string, string>;
+  
+  // Generic options
+  description?: string;
+  disabled?: boolean;
+  autoApprove?: string[];
+};
+```
+
+#### Environment Variable Substitution
+
+You can reference environment variables in the `env` and `headers` fields using the `${ENV_VAR}` syntax:
+
+```typescript
+{
+  mcpServers: {
+    github: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-github'],
+      env: {
+        GITHUB_TOKEN: '${GITHUB_PAT}' // Will be replaced with process.env.GITHUB_PAT
+      }
+    }
+  }
+}
+```
+
+#### Mixing Tool Types
+
+You can mix MCP servers with function folders and static tool definitions:
+
+```typescript
+const response = await caller.call(
+  'Check the weather and list repository files',
+  {
+    tools: [
+      weatherTool,           // Static ToolDefinition
+      'getStock',            // Function folder tool
+      mcpConfig              // MCP servers
+    ],
+    toolsDir: './my-tools',  // For resolving function folder tools
+    settings: { toolChoice: 'auto' }
+  }
+);
+```
+
+Tools from MCP servers are exposed with names in the format `${serverKey}.${toolName}` to avoid name collisions.
