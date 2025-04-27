@@ -9,9 +9,20 @@ jest.mock('child_process', () => ({
             writable: true,
             write: jest.fn()
         },
-        stdout: {},
+        stdout: {
+            on: jest.fn(),  // Add this to support readline.createInterface
+        },
         stderr: {},
-        kill: jest.fn()
+        kill: jest.fn(),
+        on: jest.fn()  // Add this to handle process events
+    })
+}));
+
+// Mock readline module
+jest.mock('readline', () => ({
+    createInterface: jest.fn().mockReturnValue({
+        on: jest.fn(),
+        close: jest.fn()
     })
 }));
 

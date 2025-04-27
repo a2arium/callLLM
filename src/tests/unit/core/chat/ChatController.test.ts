@@ -637,16 +637,18 @@ describe('ChatController', () => {
 
         (mockProviderManager.getProvider().chatCall as any).mockResolvedValue(response);
 
-        // Execute with basic message
+        // Execute with basic message, explicitly setting historyMode to enable history updates
         await chatController.execute({
             model: 'test-model',
-            messages: [{ role: 'user', content: 'Hello' }]
+            messages: [{ role: 'user', content: 'Hello' }],
+            historyMode: 'full' // Use 'full' instead of 'session'
         });
 
         // Verify history was updated with assistant message
         expect(mockHistoryManager.addMessage).toHaveBeenCalledWith(
             'assistant',
-            'Simple assistant response'
+            'Simple assistant response',
+            expect.any(Object)
         );
     });
 
@@ -902,8 +904,8 @@ describe('ChatController', () => {
     });
 
     it('should add assistant message to history when response has no tool calls', async () => {
-        // Create response object explicitly with proper types
-        const testResponse: Partial<UniversalChatResponse> = {
+        // Set up a response without tool calls
+        const response = {
             content: 'Assistant response without tools',
             role: 'assistant',
             metadata: {
@@ -911,21 +913,20 @@ describe('ChatController', () => {
             }
         };
 
-        // Use type casting for mock implementation to avoid type errors
-        jest.spyOn(mockProviderManager.getProvider(), 'chatCall').mockImplementation(
-            () => Promise.resolve(testResponse as UniversalChatResponse)
-        );
+        (mockProviderManager.getProvider().chatCall as any).mockResolvedValue(response);
 
-        // Execute the controller
+        // Execute with historyMode set to enable history updates
         await chatController.execute({
             model: 'test-model',
-            messages: [{ role: 'user', content: 'Test message' }]
+            messages: [{ role: 'user', content: 'Hello without tools' }],
+            historyMode: 'full'  // Use 'full' instead of 'session'
         });
 
         // Verify history was updated correctly
         expect(mockHistoryManager.addMessage).toHaveBeenCalledWith(
             'assistant',
-            'Assistant response without tools'
+            'Assistant response without tools',
+            expect.any(Object)
         );
     });
 

@@ -3,8 +3,13 @@ import { z } from 'zod';
 /**
  * Example: Using an MCP filesystem server with LLMCaller
  *
+ * This example demonstrates how to use MCP tools with an LLM.
+ * The LLM interprets your natural language request and calls the appropriate MCP tool.
+ *
  * Run with:
  *   yarn ts-node examples/mcpClient.ts
+ * 
+ * For direct tool calls without LLM involvement, see examples/mcpDirectTools.ts
  */
 import { LLMCaller } from '../src';
 import type { MCPServersMap } from '../src/core/mcp/MCPConfigTypes';
@@ -24,7 +29,7 @@ async function main() {
         }
     };
 
-    // Use the MCP server as a tool in a call
+    // Use the MCP server as a tool in a LLM call
     console.log('Listing current directory via MCP filesystem server...');
     const response = await caller.call(
         'List the files and folders in the current directory.',
@@ -42,6 +47,18 @@ async function main() {
 
     console.log('\nLLM Response:');
     console.log(response[0].contentObject);
+
+    // Additional LLM + MCP examples
+    console.log('\nReading a specific file via MCP filesystem server...');
+    const fileResponse = await caller.call(
+        'Read the package.json file and tell me its version number.',
+        {
+            tools: [mcpConfig]
+        }
+    );
+
+    console.log('\nLLM Response (with extracted version):');
+    console.log(fileResponse[0].content);
 }
 
 main().catch((err) => {

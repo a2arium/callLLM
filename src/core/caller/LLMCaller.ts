@@ -37,7 +37,10 @@ import { HistoryManager } from '../history/HistoryManager';
 import { logger } from '../../utils/logger';
 import { PromptEnhancer } from '../prompt/PromptEnhancer';
 import { ToolsFolderLoader, StringOrDefinition } from '../tools/toolLoader';
-import type { MCPServersMap } from '../mcp/MCPConfigTypes';
+import type { MCPServersMap, McpToolSchema } from '../mcp/MCPConfigTypes';
+import { isMCPToolConfig } from '../mcp/MCPConfigTypes';
+import { MCPClientManager } from '../mcp/MCPClientManager';
+import { MCPDirectAccess } from '../mcp/MCPDirectAccess';
 
 /**
  * Interface that matches the StreamController's required methods
@@ -79,7 +82,7 @@ export type LLMCallerOptions = {
 /**
  * Main LLM Caller class
  */
-export class LLMCaller {
+export class LLMCaller implements MCPDirectAccess {
     private providerManager: ProviderManager;
     private modelManager: ModelManager;
     private tokenCalculator: TokenCalculator;
@@ -103,6 +106,8 @@ export class LLMCaller {
     private historyManager: HistoryManager; // HistoryManager now manages system message internally
     private historyMode: HistoryMode; // Store the default history mode
     private folderLoader?: ToolsFolderLoader;
+    // Lazy-initialized MCP client manager
+    private _mcpClientManager: MCPClientManager | null = null;
 
     constructor(
         providerName: RegisteredProviders,
@@ -964,6 +969,68 @@ export class LLMCaller {
      */
     public getHistoryManager(): HistoryManager {
         return this.historyManager;
+    }
+
+    // Lazy-initialized MCP client manager
+    private getMcpClientManager(): MCPClientManager {
+        if (!this._mcpClientManager) {
+            this._mcpClientManager = new MCPClientManager();
+            // Optionally link it to the toolController if needed for LLM calls
+            // This assumes ToolController might need awareness or access later
+            // Removed: if (this.toolController) {
+            // Removed:      this.toolController.setMcpClientManager(this._mcpClientManager);
+            // Removed: }
+        }
+        return this._mcpClientManager;
+    }
+
+    public async getMcpServerToolSchemas(serverKey: string): Promise<McpToolSchema[]> {
+        // Ensure MCP is configured (at least one MCP server defined)
+        // We might need a more robust way to check if MCP is generally enabled/configured
+        // For now, just get the manager, which will handle initialization on first use
+        const mcpManager = this.getMcpClientManager();
+
+        // MCPClientManager.getMcpServerToolSchemas handles connection checks and manifest fetching
+        try {
+            return await mcpManager.getMcpServerToolSchemas(serverKey);
+        } catch (error) {
+            logger.error(`Failed to get tool schemas for MCP server ${serverKey}:`, error);
+            // Re-throw or return empty array based on desired API behavior
+            throw error;
+        }
+    }
+
+    /**
+     * Executes a specific tool on a connected MCP server directly, bypassing the LLM.
+     * Useful for deterministic tool calls or when LLM interaction is not required.
+     * 
+     * Requires MCP servers to be configured when initializing LLMCaller or through 
+     * providing an MCPToolConfig in the `tools` option of a `.call()` or `.stream()`.
+     * The specified serverKey must correspond to a configured and running MCP server.
+     * 
+     * @param serverKey The unique identifier for the MCP server (e.g., 'filesystem').
+     * @param toolName The original name of the tool as defined on the MCP server (e.g., 'list_directory').
+     * @param args An object containing the arguments required by the tool.
+     * @returns A promise that resolves with the raw result payload from the MCP tool.
+     * @throws Error if MCP is not configured or the specified server/tool cannot be reached or executed.
+     */
+    public async callMcpTool(serverKey: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
+        const log = logger.createLogger({ prefix: 'LLMCaller.callMcpTool' });
+        log.debug(`Initiating direct MCP tool call: ${serverKey}.${toolName}`, { args });
+
+        // Get the MCP manager (initializes if needed, assumes config is handled)
+        const mcpManager = this.getMcpClientManager();
+
+        // Delegate the execution to the MCP manager
+        try {
+            const result = await mcpManager.executeMcpTool(serverKey, toolName, args);
+            log.info(`Direct MCP tool call successful: ${serverKey}.${toolName}`);
+            return result;
+        } catch (error) {
+            log.error(`Direct MCP tool call failed: ${serverKey}.${toolName}`, { error });
+            // Re-throw the error to the caller
+            throw error;
+        }
     }
 
 } 

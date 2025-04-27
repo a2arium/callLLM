@@ -2,8 +2,9 @@
  * Manager for MCP client connections and tool calls.
  */
 
+import { z } from 'zod';
 import type { IMCPClientManager } from './IMCPClientManager';
-import type { MCPServerConfig, MCPToolDescriptor } from './MCPConfigTypes';
+import type { MCPServerConfig, MCPToolDescriptor, McpToolSchema } from './MCPConfigTypes';
 import { MCPConnectionError, MCPToolCallError } from './MCPConfigTypes';
 import type { ToolDefinition, ToolParameters } from '../../types/tooling';
 import { Transport, MCPTransportFactory } from './MCPTransportFactory';
@@ -341,9 +342,13 @@ export class MCPClientManager implements IMCPClientManager {
         // Enhance the parameters for known tools if they're incomplete
         parametersObj = this.enhanceToolParameters(serverKey, tool.name, parametersObj);
 
+        // Create Zod schema from the potentially enhanced parameters (for internal use/validation if needed later)
+        // const zodSchema = this.createZodSchemaFromParameters(parametersObj as ToolParameters);
+
         const toolDefinition = {
             name: apiSafeName,
             description: tool.description,
+            // Use the original JSON Schema-like parameters object for the LLM
             parameters: parametersObj as ToolParameters,
             // Store the original name and serverKey/toolName separately for easier reference
             callFunction: async (params: Record<string, unknown>) => {
@@ -511,6 +516,48 @@ export class MCPClientManager implements IMCPClientManager {
     }
 
     /**
+     * Retrieves the detailed schemas for tools available on a specific MCP server.
+     * This method is intended for developers to understand tool capabilities.
+     * @param serverKey The unique identifier for the MCP server.
+     * @returns A promise that resolves to an array of McpToolSchema objects.
+     * @throws MCPConnectionError if the server cannot be reached or the manifest cannot be fetched.
+     */
+    async getMcpServerToolSchemas(serverKey: string): Promise<McpToolSchema[]> {
+        const log = logger.createLogger({ prefix: 'MCPClientManager.getMcpServerToolSchemas' });
+        log.debug(`Fetching tool schemas for server: ${serverKey}`);
+
+        // Ensure connection and manifest are available
+        if (!this.transports.has(serverKey)) {
+            // Attempt to connect if not already connected (assuming config is available elsewhere or handled upstream)
+            // For now, we'll assume connection happens before this call, or throw
+            log.error(`Attempted to get schemas for unconnected server: ${serverKey}`);
+            throw new MCPConnectionError(serverKey, 'Server not connected. Cannot fetch schemas.');
+        }
+
+        // Fetch the latest manifest (this handles caching internally)
+        const manifest = await this.fetchToolManifest(serverKey);
+
+        // Convert MCPToolDescriptor to the public McpToolSchema
+        const schemas: McpToolSchema[] = manifest.map(toolDesc => {
+            const llmToolName = `${serverKey}_${toolDesc.name}`.replace(/[^a-zA-Z0-9_]/g, '_');
+            // Enhance parameters for known tools to provide better schemas
+            const enhancedParams = this.enhanceToolParameters(serverKey, toolDesc.name, toolDesc.parameters || {});
+            const zodSchema = this.createZodSchemaFromParameters(enhancedParams as ToolParameters);
+
+            return {
+                name: toolDesc.name, // Original name
+                description: toolDesc.description || 'No description provided',
+                parameters: zodSchema,
+                serverKey: serverKey,
+                llmToolName: llmToolName
+            };
+        });
+
+        log.debug(`Successfully retrieved ${schemas.length} tool schemas for server: ${serverKey}`);
+        return schemas;
+    }
+
+    /**
      * Send a JSON-RPC request over the transport and await the response.
      */
     private sendRequest(serverKey: string, request: any): Promise<any> {
@@ -522,5 +569,103 @@ export class MCPClientManager implements IMCPClientManager {
             this.pendingRequests.set(request.id, { resolve, reject });
             transport.send(request);
         });
+    }
+
+    /**
+     * Creates a Zod schema object from a JSON Schema-like parameter definition.
+     * @param parameters The JSON Schema-like parameter definition.
+     * @returns A Zod object schema.
+     */
+    private createZodSchemaFromParameters(parameters: ToolParameters): z.ZodObject<any> {
+        const log = logger.createLogger({ prefix: 'MCPClientManager.createZodSchemaFromParameters' });
+        const zodProperties: Record<string, z.ZodTypeAny> = {};
+        const requiredParams = new Set(parameters.required || []);
+
+        for (const [key, value] of Object.entries(parameters.properties || {})) {
+            let zodType: z.ZodTypeAny;
+            const propSchema = value as any; // Cast to any for easier property access
+
+            switch (propSchema.type) {
+                case 'string':
+                    zodType = z.string();
+                    if (propSchema.description) zodType = zodType.describe(propSchema.description);
+                    break;
+                case 'number':
+                case 'integer':
+                    zodType = z.number();
+                    if (propSchema.description) zodType = zodType.describe(propSchema.description);
+                    break;
+                case 'boolean':
+                    zodType = z.boolean();
+                    if (propSchema.description) zodType = zodType.describe(propSchema.description);
+                    break;
+                case 'array':
+                    // Basic array validation, could be enhanced for specific item types if provided
+                    zodType = z.array(z.any());
+                    if (propSchema.description) zodType = zodType.describe(propSchema.description);
+                    break;
+                case 'object':
+                    // Basic object validation, could be recursively enhanced
+                    zodType = z.record(z.any());
+                    if (propSchema.description) zodType = zodType.describe(propSchema.description);
+                    break;
+                default:
+                    log.warn(`Unsupported parameter type: ${propSchema.type} for key: ${key}. Defaulting to z.any().`);
+                    zodType = z.any();
+                    if (propSchema.description) zodType = zodType.describe(propSchema.description);
+            }
+
+            // Make optional if not in required array
+            if (!requiredParams.has(key)) {
+                zodType = zodType.optional();
+            }
+
+            zodProperties[key] = zodType;
+        }
+
+        return z.object(zodProperties);
+    }
+
+    /**
+     * Executes a specific tool on a connected MCP server directly.
+     * Does not involve LLM interaction.
+     * @param serverKey The unique identifier for the MCP server.
+     * @param toolName The *original* name of the tool (e.g., 'list_directory').
+     * @param args The arguments object to pass to the tool.
+     * @returns A promise that resolves with the tool's result payload.
+     * @throws MCPToolCallError if the server is not connected or the tool call fails.
+     * @throws MCPConnectionError if sending the request fails.
+     */
+    async executeMcpTool(serverKey: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
+        const log = logger.createLogger({ prefix: 'MCPClientManager.executeMcpTool' });
+        log.debug(`Executing direct MCP tool call: ${serverKey}.${toolName}`, { args });
+
+        // Ensure we're connected
+        if (!this.isConnected(serverKey)) {
+            log.error(`Attempted to execute tool on unconnected server: ${serverKey}`);
+            throw new MCPToolCallError(serverKey, toolName, 'Not connected to server');
+        }
+
+        // Prepare JSON-RPC call request using the original toolName
+        const callToolRequest = {
+            jsonrpc: '2.0',
+            id: `execute-tool-${Date.now()}`,
+            method: 'tools/call',
+            params: { name: toolName, arguments: args } // Use original toolName
+        };
+
+        // Send the request and await the result
+        try {
+            const response = await this.sendRequest(serverKey, callToolRequest);
+            log.debug(`Direct MCP tool call successful: ${serverKey}.${toolName}`);
+            return response; // Assumes the response is the result payload
+        } catch (error) {
+            log.error(`Direct MCP tool call failed: ${serverKey}.${toolName}`, { error });
+            // Re-throw as a specific error type
+            if (error instanceof MCPConnectionError) {
+                throw error; // Preserve connection error type
+            }
+            throw new MCPToolCallError(serverKey, toolName, (error as Error).message);
+        }
     }
 } 

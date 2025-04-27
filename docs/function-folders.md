@@ -283,38 +283,6 @@ const response = await caller.call(
 );
 ```
 
-### MCP Server Tools
-
-In addition to function folders and explicit `ToolDefinition` objects, you can also pass MCP server configurations:
-
-```typescript
-// MCP server configuration
-const mcpConfig = {
-  mcpServers: {
-    filesystem: {
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
-    }
-  }
-};
-
-// Use all three types of tools
-const response = await caller.call(
-  'Calculate 15% of $85, check weather in Paris, and list files in the current directory',
-  {
-    tools: [
-      calculateTool,        // Explicit ToolDefinition
-      'getWeather',         // Function folder tool
-      mcpConfig             // MCP server configuration
-    ],
-    toolsDir: './my-tools',
-    settings: { toolChoice: 'auto' }
-  }
-);
-```
-
-Tools from MCP servers are automatically converted to callLLM `ToolDefinition` objects with names in the format `${serverKey}.${toolName}`. For more details on MCP integration, see the [Using MCP Servers](../README.md#using-mcp-servers) section in the main README.
-
 ## Best Practices
 
 1. **Organize by functionality**: Group related tools in the same directory.

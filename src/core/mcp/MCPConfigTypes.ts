@@ -127,7 +127,55 @@ export class MCPConnectionError extends Error {
 
 export class MCPToolCallError extends Error {
     constructor(serverKey: string, toolName: string, message: string) {
-        super(`Error calling tool "${toolName}" on MCP server "${serverKey}": ${message}`);
+        super(`Error calling tool \"${toolName}\" on MCP server \"${serverKey}\": ${message}`);
         this.name = 'MCPToolCallError';
     }
-} 
+}
+
+export type MCPToolError = {
+    error: string;
+    details?: unknown;
+};
+
+// Re-add McpToolSchema definition
+import type { z } from 'zod';
+
+/**
+ * Structure representing an MCP server tool configuration within an LLM call.
+ */
+export type MCPToolConfig = {
+    mcpServers: MCPServersMap;
+};
+
+/**
+ * Type guard to check if a tool configuration is an MCPToolConfig.
+ * @param config The tool configuration to check.
+ * @returns True if the config is an MCPToolConfig, false otherwise.
+ */
+export function isMCPToolConfig(config: unknown): config is MCPToolConfig {
+    return (
+        typeof config === 'object' &&
+        config !== null &&
+        'mcpServers' in config &&
+        typeof config.mcpServers === 'object' &&
+        config.mcpServers !== null
+    );
+}
+
+/**
+ * Represents the schema information for a single MCP tool, intended for developers.
+ */
+export type McpToolSchema = {
+    /** The original name of the tool as defined by the MCP server (e.g., list_directory). */
+    name: string;
+    /** The description of the tool provided by the MCP server. */
+    description: string;
+    /** Zod schema defining the parameters the tool accepts. */
+    parameters: z.ZodObject<any>;
+    /** The unique key identifying the MCP server hosting this tool. */
+    serverKey: string;
+    /** The combined name used internally for LLM interaction (e.g., filesystem_list_directory). */
+    llmToolName: string;
+};
+
+// Removed redundant export type { McpToolSchema }; as it's now exported directly above 

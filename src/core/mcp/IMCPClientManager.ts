@@ -3,7 +3,7 @@
  * Defines methods for interacting with MCP servers.
  */
 
-import type { MCPServerConfig } from './MCPConfigTypes';
+import type { MCPServerConfig, McpToolSchema } from './MCPConfigTypes';
 import type { ToolDefinition } from '../../types/tooling';
 
 /**
@@ -83,4 +83,25 @@ export interface IMCPClientManager {
      * @returns Array of server keys that are currently connected
      */
     getConnectedServers(): string[];
+
+    /**
+     * Retrieves the detailed schemas for tools available on a specific MCP server.
+     * This method is intended for developers to understand tool capabilities.
+     * @param serverKey The unique identifier for the MCP server.
+     * @returns A promise that resolves to an array of McpToolSchema objects.
+     * @throws MCPConnectionError if the server cannot be reached or the manifest cannot be fetched.
+     */
+    getMcpServerToolSchemas(serverKey: string): Promise<McpToolSchema[]>;
+
+    /**
+     * Executes a specific tool on a connected MCP server directly.
+     * Does not involve LLM interaction.
+     * @param serverKey The unique identifier for the MCP server.
+     * @param toolName The *original* name of the tool (e.g., 'list_directory').
+     * @param args The arguments object to pass to the tool.
+     * @returns A promise that resolves with the tool's result payload.
+     * @throws MCPToolCallError if the server is not connected or the tool call fails.
+     * @throws MCPConnectionError if sending the request fails.
+     */
+    executeMcpTool(serverKey: string, toolName: string, args: Record<string, unknown>): Promise<unknown>;
 } 

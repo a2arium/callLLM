@@ -29,7 +29,8 @@
     "example:tool": "ts-node examples/toolCalling.ts",
     "example:toolFolder": "ts-node examples/toolFunctionFolder.ts",
     "example:reasoning": "ts-node examples/reasoningModels.ts",
-    "example:mcp": "ts-node examples/mcpClient.ts"
+    "example:mcp": "ts-node examples/mcpClient.ts",
+    "example:mcpDirect": "ts-node examples/mcpDirectTools.ts"
   },
   "author": "",
   "license": "MIT",
