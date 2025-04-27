@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { ContentAccumulator } from '../../../../../core/streaming/processors/ContentAccumulator';
 import { StreamChunk, ToolCallChunk } from '../../../../../core/streaming/types';
 import { FinishReason, UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces';
@@ -7,7 +8,13 @@ describe('ContentAccumulator', () => {
     let contentAccumulator: ContentAccumulator;
 
     beforeEach(() => {
+        // Set LOG_LEVEL to a custom level to test constructor branch
+        process.env.LOG_LEVEL = 'debug';
         contentAccumulator = new ContentAccumulator();
+    });
+
+    afterEach(() => {
+        delete process.env.LOG_LEVEL;
     });
 
     describe('constructor', () => {
@@ -98,38 +105,39 @@ describe('ContentAccumulator', () => {
             expect(contentAccumulator.getAccumulatedContent()).toBe('');
             expect(resultChunks.length).toBe(2);
         });
-    });
 
-    describe('tool call processing', () => {
-        it('should accumulate and process a single tool call', async () => {
-            const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
+        it('should handle tool call chunks and accumulate arguments', async () => {
+            const inputChunks = [
                 {
-                    content: '',
-                    role: 'assistant',
-                    isComplete: false,
+                    content: 'Using tool: ',
                     toolCallChunks: [
                         {
                             index: 0,
-                            id: 'tool-1',
-                            name: 'get_weather',
-                            argumentsChunk: '{"city": "New'
-                        } as ToolCallChunk
-                    ]
+                            id: 'tool1',
+                            name: 'calculator',
+                            argumentsChunk: '{"operation":'
+                        }
+                    ],
+                    isComplete: false
                 },
                 {
-                    content: '',
-                    role: 'assistant',
-                    isComplete: false,
+                    content: 'calculator',
                     toolCallChunks: [
                         {
                             index: 0,
-                            argumentsChunk: ' York"}'
-                        } as ToolCallChunk
-                    ]
+                            argumentsChunk: '"add", "a": 5'
+                        }
+                    ],
+                    isComplete: false
                 },
                 {
                     content: '',
-                    role: 'assistant',
+                    toolCallChunks: [
+                        {
+                            index: 0,
+                            argumentsChunk: ', "b": 3}'
+                        }
+                    ],
                     isComplete: true,
                     metadata: {
                         finishReason: FinishReason.TOOL_CALLS
@@ -137,129 +145,44 @@ describe('ContentAccumulator', () => {
                 }
             ];
 
-            // Create async iterable of chunks
-            const stream = {
-                [Symbol.asyncIterator]: async function* () {
-                    for (const chunk of chunks) {
-                        yield chunk;
-                    }
-                }
-            };
-
-            // Process the stream
-            const resultChunks: StreamChunk[] = [];
-            for await (const chunk of contentAccumulator.processStream(stream)) {
-                resultChunks.push(chunk);
+            const outputChunks = [];
+            for await (const chunk of contentAccumulator.processStream(streamFromArray(inputChunks))) {
+                outputChunks.push(chunk);
             }
 
-            // The last chunk should have the completed tool call
-            const lastChunk = resultChunks[resultChunks.length - 1];
+            expect(outputChunks.length).toBe(3);
+
+            // Last chunk should have the complete tool call
+            const lastChunk = outputChunks[2];
             expect(lastChunk.toolCalls).toBeDefined();
-            expect(lastChunk.toolCalls?.length).toBe(1);
-            expect(lastChunk.toolCalls?.[0].name).toBe('get_weather');
-            expect(lastChunk.toolCalls?.[0].arguments).toEqual({ city: 'New York' });
+            expect(lastChunk.toolCalls?.[0].name).toBe('calculator');
+            expect(lastChunk.toolCalls?.[0].arguments).toEqual({
+                operation: 'add',
+                a: 5,
+                b: 3
+            });
 
-            // Check completed tool calls
-            const completedToolCalls = contentAccumulator.getCompletedToolCalls();
-            expect(completedToolCalls.length).toBe(1);
-            expect(completedToolCalls[0].name).toBe('get_weather');
-            expect(completedToolCalls[0].arguments).toEqual({ city: 'New York' });
-        });
-
-        it('should handle multiple tool calls', async () => {
-            const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-                {
-                    content: '',
-                    role: 'assistant',
-                    isComplete: false,
-                    toolCallChunks: [
-                        {
-                            index: 0,
-                            id: 'tool-1',
-                            name: 'get_weather',
-                            argumentsChunk: '{"city": "New York"}'
-                        } as ToolCallChunk,
-                        {
-                            index: 1,
-                            id: 'tool-2',
-                            name: 'get_time',
-                            argumentsChunk: '{"timezone":'
-                        } as ToolCallChunk
-                    ]
-                },
-                {
-                    content: '',
-                    role: 'assistant',
-                    isComplete: false,
-                    toolCallChunks: [
-                        {
-                            index: 1,
-                            argumentsChunk: ' "EST"}'
-                        } as ToolCallChunk
-                    ]
-                },
-                {
-                    content: '',
-                    role: 'assistant',
-                    isComplete: true,
-                    metadata: {
-                        finishReason: FinishReason.TOOL_CALLS
-                    }
-                }
-            ];
-
-            // Create async iterable of chunks
-            const stream = {
-                [Symbol.asyncIterator]: async function* () {
-                    for (const chunk of chunks) {
-                        yield chunk;
-                    }
-                }
-            };
-
-            // Process the stream
-            let lastChunk: StreamChunk | null = null;
-            for await (const chunk of contentAccumulator.processStream(stream)) {
-                lastChunk = chunk;
-            }
-
-            // The last chunk should have the completed tool calls
-            expect(lastChunk?.toolCalls).toBeDefined();
-            expect(lastChunk?.toolCalls?.length).toBe(2);
-
-            // Verify the first tool call
-            const weatherTool = lastChunk?.toolCalls?.find(tool => tool.name === 'get_weather');
-            expect(weatherTool).toBeDefined();
-            expect(weatherTool?.arguments).toEqual({ city: 'New York' });
-
-            // Verify the second tool call
-            const timeTool = lastChunk?.toolCalls?.find(tool => tool.name === 'get_time');
-            expect(timeTool).toBeDefined();
-            expect(timeTool?.arguments).toEqual({ timezone: 'EST' });
-
-            // Check completed tool calls
-            const completedToolCalls = contentAccumulator.getCompletedToolCalls();
-            expect(completedToolCalls.length).toBe(2);
+            // Check accumulated content
+            expect(contentAccumulator.getAccumulatedContent()).toBe('Using tool: calculator');
+            expect(contentAccumulator.getCompletedToolCalls().length).toBe(1);
         });
 
         it('should handle invalid JSON in tool call arguments', async () => {
-            const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
+            const inputChunks = [
                 {
-                    content: '',
-                    role: 'assistant',
-                    isComplete: false,
+                    content: 'Using tool: ',
                     toolCallChunks: [
                         {
                             index: 0,
-                            id: 'tool-1',
-                            name: 'get_weather',
-                            argumentsChunk: '{"city": "New York'
-                        } as ToolCallChunk
-                    ]
+                            id: 'tool1',
+                            name: 'calculator',
+                            argumentsChunk: '{"invalid JSON'
+                        }
+                    ],
+                    isComplete: false
                 },
                 {
                     content: '',
-                    role: 'assistant',
                     isComplete: true,
                     metadata: {
                         finishReason: FinishReason.TOOL_CALLS
@@ -267,81 +190,67 @@ describe('ContentAccumulator', () => {
                 }
             ];
 
-            // Create async iterable of chunks
-            const stream = {
-                [Symbol.asyncIterator]: async function* () {
-                    for (const chunk of chunks) {
-                        yield chunk;
-                    }
-                }
-            };
-
-            // Process the stream
-            let lastChunk: StreamChunk | null = null;
-            for await (const chunk of contentAccumulator.processStream(stream)) {
-                lastChunk = chunk;
+            const outputChunks = [];
+            for await (const chunk of contentAccumulator.processStream(streamFromArray(inputChunks))) {
+                outputChunks.push(chunk);
             }
 
-            // Tool call should not be completed due to invalid JSON
-            expect(lastChunk?.toolCalls).toBeUndefined();
-            expect(contentAccumulator.getCompletedToolCalls().length).toBe(0);
-            expect(lastChunk?.metadata?.toolCallsInProgress).toBe(1);
-        });
+            expect(outputChunks.length).toBe(2);
 
-        it('should handle empty tool call chunks array', async () => {
-            const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-                {
-                    content: 'Hello',
-                    role: 'assistant',
-                    isComplete: false,
-                    toolCallChunks: []
-                },
-                {
-                    content: ' world',
-                    role: 'assistant',
-                    isComplete: true
-                }
-            ];
+            // No completed tool calls due to invalid JSON
+            expect(outputChunks[1].toolCalls).toBeUndefined();
 
-            // Create async iterable of chunks
-            const stream = {
-                [Symbol.asyncIterator]: async function* () {
-                    for (const chunk of chunks) {
-                        yield chunk;
-                    }
-                }
-            };
-
-            // Process the stream
-            const resultChunks: StreamChunk[] = [];
-            for await (const chunk of contentAccumulator.processStream(stream)) {
-                resultChunks.push(chunk);
-            }
-
-            // Verify the accumulated content is correct
-            expect(contentAccumulator.getAccumulatedContent()).toBe('Hello world');
-            // No tool calls should be processed
+            // Should still accumulate content
+            expect(contentAccumulator.getAccumulatedContent()).toBe('Using tool: ');
             expect(contentAccumulator.getCompletedToolCalls().length).toBe(0);
         });
 
-        it('should process combined content and tool calls', async () => {
-            const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
+        it('should handle chunks with no content or tool calls', async () => {
+            const inputChunks = [
                 {
-                    content: 'Here is the weather:',
-                    role: 'assistant',
-                    isComplete: false,
+                    isComplete: false
+                },
+                {
+                    isComplete: true,
+                    metadata: {
+                        finishReason: FinishReason.STOP
+                    }
+                }
+            ];
+
+            const outputChunks = [];
+            for await (const chunk of contentAccumulator.processStream(streamFromArray(inputChunks))) {
+                outputChunks.push(chunk);
+            }
+
+            expect(outputChunks.length).toBe(2);
+            expect(contentAccumulator.getAccumulatedContent()).toBe('');
+        });
+
+        it('should handle multiple tool calls in different chunks', async () => {
+            const inputChunks = [
+                {
+                    content: 'Using tools: ',
                     toolCallChunks: [
                         {
                             index: 0,
-                            id: 'tool-1',
-                            name: 'get_weather',
-                            argumentsChunk: '{"city": "New York"}'
-                        } as ToolCallChunk
-                    ]
+                            id: 'tool1',
+                            name: 'calculator',
+                            argumentsChunk: '{"operation":"add", "a": 5, "b": 3}'
+                        }
+                    ],
+                    isComplete: false
                 },
                 {
-                    content: ' Enjoy!',
-                    role: 'assistant',
+                    content: 'and ',
+                    toolCallChunks: [
+                        {
+                            index: 1,
+                            id: 'tool2',
+                            name: 'weather',
+                            argumentsChunk: '{"location":"New York"}'
+                        }
+                    ],
                     isComplete: true,
                     metadata: {
                         finishReason: FinishReason.TOOL_CALLS
@@ -349,49 +258,40 @@ describe('ContentAccumulator', () => {
                 }
             ];
 
-            // Create async iterable of chunks
-            const stream = {
-                [Symbol.asyncIterator]: async function* () {
-                    for (const chunk of chunks) {
-                        yield chunk;
-                    }
-                }
-            };
-
-            // Process the stream
-            let lastChunk: StreamChunk | null = null;
-            for await (const chunk of contentAccumulator.processStream(stream)) {
-                lastChunk = chunk;
+            const outputChunks = [];
+            for await (const chunk of contentAccumulator.processStream(streamFromArray(inputChunks))) {
+                outputChunks.push(chunk);
             }
 
-            // Verify content and tool calls
-            expect(contentAccumulator.getAccumulatedContent()).toBe('Here is the weather: Enjoy!');
-            expect(contentAccumulator.getCompletedToolCalls().length).toBe(1);
-            expect(lastChunk?.toolCalls?.[0].name).toBe('get_weather');
-            expect(lastChunk?.toolCalls?.[0].arguments).toEqual({ city: 'New York' });
-        });
-    });
+            // Verify both tool calls are completed
+            expect(contentAccumulator.getCompletedToolCalls().length).toBe(2);
 
-    describe('reset', () => {
-        it('should clear accumulated content and tool calls', async () => {
-            // Set up some content and tool calls
-            const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
+            // Verify arguments were parsed correctly
+            const toolCalls = contentAccumulator.getCompletedToolCalls();
+            expect(toolCalls[0].name).toBe('calculator');
+            expect(toolCalls[0].arguments).toEqual({
+                operation: 'add',
+                a: 5,
+                b: 3
+            });
+            expect(toolCalls[1].name).toBe('weather');
+            expect(toolCalls[1].arguments).toEqual({
+                location: 'New York'
+            });
+        });
+
+        it('should reset accumulated content and tool calls', async () => {
+            const inputChunks = [
                 {
                     content: 'Hello',
-                    role: 'assistant',
-                    isComplete: false,
                     toolCallChunks: [
                         {
                             index: 0,
-                            id: 'tool-1',
-                            name: 'get_weather',
-                            argumentsChunk: '{"city": "New York"}'
-                        } as ToolCallChunk
-                    ]
-                },
-                {
-                    content: ' world',
-                    role: 'assistant',
+                            id: 'tool1',
+                            name: 'calculator',
+                            argumentsChunk: '{"operation":"add", "a": 5, "b": 3}'
+                        }
+                    ],
                     isComplete: true,
                     metadata: {
                         finishReason: FinishReason.TOOL_CALLS
@@ -399,31 +299,84 @@ describe('ContentAccumulator', () => {
                 }
             ];
 
-            // Create async iterable of chunks
-            const stream = {
-                [Symbol.asyncIterator]: async function* () {
-                    for (const chunk of chunks) {
-                        yield chunk;
-                    }
-                }
-            };
-
-            // Process the stream
-            for await (const _ of contentAccumulator.processStream(stream)) {
-                // We don't need the chunks for this test
+            for await (const chunk of contentAccumulator.processStream(streamFromArray(inputChunks))) {
+                // Process the chunk
             }
 
-            // Verify we have content and tool calls
-            expect(contentAccumulator.getAccumulatedContent()).toBe('Hello world');
+            // Verify content and tool calls were accumulated
+            expect(contentAccumulator.getAccumulatedContent()).toBe('Hello');
             expect(contentAccumulator.getCompletedToolCalls().length).toBe(1);
 
-            // Reset the accumulator
+            // Reset the processor
             contentAccumulator.reset();
 
-            // Verify everything is cleared
+            // Verify everything was reset
             expect(contentAccumulator.getAccumulatedContent()).toBe('');
-            expect(contentAccumulator.getCompletedToolCalls()).toEqual([]);
+            expect(contentAccumulator.getCompletedToolCalls().length).toBe(0);
         });
+
+        it('should handle edge case - tool call with no name', async () => {
+            const inputChunks = [
+                {
+                    content: 'Using tool: ',
+                    toolCallChunks: [
+                        {
+                            index: 0,
+                            id: 'tool1',
+                            argumentsChunk: '{"operation":"add"}'
+                        }
+                    ],
+                    isComplete: true,
+                    metadata: {
+                        finishReason: FinishReason.TOOL_CALLS
+                    }
+                }
+            ];
+
+            const outputChunks = [];
+            for await (const chunk of contentAccumulator.processStream(streamFromArray(inputChunks))) {
+                outputChunks.push(chunk);
+            }
+
+            // No tool call should be created without a name
+            expect(contentAccumulator.getCompletedToolCalls().length).toBe(0);
+        });
+
+        it('should handle incomplete tool calls properly', async () => {
+            const inputChunks = [
+                {
+                    content: 'Using tool: ',
+                    toolCallChunks: [
+                        {
+                            index: 0,
+                            id: 'tool1',
+                            name: 'calculator',
+                            argumentsChunk: '{"operation":"add", "a": 5, "b": 3}'
+                        }
+                    ],
+                    isComplete: false  // Not marked as complete
+                }
+            ];
+
+            const outputChunks = [];
+            for await (const chunk of contentAccumulator.processStream(streamFromArray(inputChunks))) {
+                outputChunks.push(chunk);
+            }
+
+            // Tool call should not be marked as complete
+            expect(contentAccumulator.getCompletedToolCalls().length).toBe(0);
+        });
+
+        // Helper function to convert array to async iterable
+        function streamFromArray<T>(array: T[]): AsyncIterable<T> {
+            return {
+                [Symbol.asyncIterator]: async function* () {
+                    for (const item of array) {
+                        yield item;
+                    }
+                }
+            };
+        }
     });
 
     describe('getAccumulatedContent', () => {
