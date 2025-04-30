@@ -6,16 +6,13 @@
  */
 
 import type { McpToolSchema } from './MCPConfigTypes';
-import type { IMCPClientManager } from './IMCPClientManager';
 
 /**
  * Interface for direct MCP tool access provided by LLMCaller
- * Subset of IMCPClientManager methods focused on direct tool access
  */
 export interface MCPDirectAccess {
     /**
      * Gets all available tool schemas from an MCP server
-     * @see IMCPClientManager.getMcpServerToolSchemas
      * 
      * @param serverName - The name of the MCP server as configured in the mcpServers map
      * @returns An array of tool schemas available on the server
@@ -24,7 +21,6 @@ export interface MCPDirectAccess {
 
     /**
      * Calls a specific tool on an MCP server directly
-     * @see IMCPClientManager.executeMcpTool
      * 
      * @param serverName - The name of the MCP server as configured in the mcpServers map
      * @param toolName - The name of the tool to call

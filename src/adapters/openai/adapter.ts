@@ -78,7 +78,8 @@ export class OpenAIResponseAdapter extends BaseAdapter {
         this.validator = new Validator();
         (this.validator as any).modelManager = this.modelManager;
         this.converter = new Converter(this.modelManager);
-        logger.setConfig({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'OpenAIResponseAdapter' });
+        // Create reusable logger instead of using setConfig
+        const log = logger.createLogger({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'OpenAIResponseAdapter' });
     }
 
     async chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse> {

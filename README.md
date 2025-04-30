@@ -1762,3 +1762,15 @@ const response = await caller.call(
 ```
 
 Tools from MCP servers are exposed with names in the format `${serverKey}.${toolName}` to avoid name collisions.
+
+### More Examples
+
+Find more examples in the [examples/](examples/) directory:
+
+- [simpleChat.ts](examples/simpleChat.ts) - Basic chat with an LLM
+- [toolCalling.ts](examples/toolCalling.ts) - Using tools with an LLM
+- [historyModes.ts](examples/historyModes.ts) - Different ways to manage conversation history
+- [jsonOutput.ts](examples/jsonOutput.ts) - Getting structured JSON responses from LLMs
+- [mcpClient.ts](examples/mcpClient.ts) - Using Model Context Protocol (MCP) servers
+- [mcpDirectTools.ts](examples/mcpDirectTools.ts) - Direct access to MCP tools
+- [aliasChat.ts](examples/aliasChat.ts) - Using model aliases

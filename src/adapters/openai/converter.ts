@@ -523,6 +523,12 @@ export class Converter {
             // Process each property that might be an object schema
             for (const key in properties) {
                 const prop = properties[key];
+                // Remove 'default' property from each field (OpenAI doesn't support it)
+                if (typeof prop === 'object' && prop !== null && 'default' in prop) {
+                    log.debug(`Removing 'default' property from field '${key}'`);
+                    delete (prop as any).default;
+                }
+
                 if (
                     typeof prop === 'object' &&
                     prop !== null &&

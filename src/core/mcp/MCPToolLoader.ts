@@ -3,9 +3,10 @@
  */
 
 import type { MCPServersMap } from './MCPConfigTypes';
-import { MCPConnectionError, MCPToolCallError } from './MCPConfigTypes';
+import { MCPConnectionError } from './MCPConfigTypes';
 import type { ToolDefinition } from '../../types/tooling';
-import { MCPClientManager } from './MCPClientManager';
+import { MCPServiceAdapter } from './MCPServiceAdapter';
+import { logger } from '../../utils/logger';
 
 /**
  * Interface for MCP Tool Loader.
@@ -25,16 +26,28 @@ export interface IMCPToolLoader {
  */
 export class MCPToolLoader implements IMCPToolLoader {
     /**
-     * Client manager for interacting with MCP servers.
+     * Service adapter for interacting with MCP servers.
      */
-    private clientManager: MCPClientManager;
+    private serviceAdapter: MCPServiceAdapter;
+
+    /**
+     * Flag indicating if the adapter was created within this loader
+     */
+    private ownedAdapter: boolean;
 
     /**
      * Creates a new MCP Tool Loader.
-     * @param clientManager Optional client manager to use (creates a new one if not provided)
+     * @param serviceAdapter Optional service adapter to use (creates a new one if not provided)
      */
-    constructor(clientManager?: MCPClientManager) {
-        this.clientManager = clientManager || new MCPClientManager();
+    constructor(serviceAdapter?: MCPServiceAdapter) {
+        // Use provided adapter or create a new one with empty config (will be set in loadTools)
+        if (serviceAdapter) {
+            this.serviceAdapter = serviceAdapter;
+            this.ownedAdapter = false;
+        } else {
+            this.serviceAdapter = new MCPServiceAdapter({});
+            this.ownedAdapter = true;
+        }
     }
 
     /**
@@ -43,12 +56,22 @@ export class MCPToolLoader implements IMCPToolLoader {
      * @returns Promise resolving to an array of tool definitions
      */
     async loadTools(mcpServers: MCPServersMap): Promise<ToolDefinition[]> {
+        const log = logger.createLogger({ prefix: 'MCPToolLoader.loadTools' });
+
         if (!mcpServers) {
             return [];
         }
 
+        // If we're using our own adapter that was created with empty config,
+        // create a new one with the provided config
+        if (this.ownedAdapter) {
+            this.serviceAdapter = new MCPServiceAdapter(mcpServers);
+        }
+
         const allTools: ToolDefinition[] = [];
         const serverKeys = Object.keys(mcpServers);
+
+        log.debug(`Loading tools from ${serverKeys.length} MCP servers`);
 
         // Process each server in parallel
         const toolPromises = serverKeys.map(async (serverKey) => {
@@ -56,18 +79,19 @@ export class MCPToolLoader implements IMCPToolLoader {
 
             // Skip disabled servers
             if (config.disabled) {
+                log.debug(`Skipping disabled server: ${serverKey}`);
                 return [];
             }
 
             try {
                 // Connect to the server
-                await this.clientManager.connect(serverKey, config);
+                await this.serviceAdapter.connectToServer(serverKey);
 
                 // List available tools
-                return await this.clientManager.listTools(serverKey);
+                return await this.serviceAdapter.getServerTools(serverKey);
             } catch (error) {
                 // Log the error but continue with other servers
-                console.error(`Failed to load tools from MCP server "${serverKey}": ${(error as Error).message}`);
+                log.error(`Failed to load tools from MCP server "${serverKey}": ${(error as Error).message}`);
                 return [];
             }
         });
@@ -89,9 +113,12 @@ export class MCPToolLoader implements IMCPToolLoader {
             if (!toolNames.has(tool.name)) {
                 toolNames.add(tool.name);
                 uniqueTools.push(tool);
+            } else {
+                log.warn(`Duplicate tool name detected: ${tool.name}. Keeping first instance.`);
             }
         }
 
+        log.info(`Loaded ${uniqueTools.length} unique tools from ${serverKeys.length} MCP servers`);
         return uniqueTools;
     }
 
@@ -99,6 +126,6 @@ export class MCPToolLoader implements IMCPToolLoader {
      * Clean up resources and disconnect from all servers.
      */
     async dispose(): Promise<void> {
-        await this.clientManager.disconnectAll();
+        await this.serviceAdapter.disconnectAll();
     }
 } 

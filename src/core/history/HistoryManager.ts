@@ -18,11 +18,6 @@ export class HistoryManager {
 
         this.systemMessage = systemMessage || '';
 
-        logger.setConfig({
-            level: process.env.LOG_LEVEL as any || 'info',
-            prefix: 'HistoryManager'
-        });
-
         // Initialize with system message if provided
         if (this.systemMessage) {
             this.initializeWithSystemMessage();

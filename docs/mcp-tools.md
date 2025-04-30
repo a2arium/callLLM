@@ -2,7 +2,7 @@
 
 The Model Context Protocol (MCP) allows callllm to use tools provided by external servers. This enables powerful capabilities like file system access, web browsing, API calls, and more.
 
-## Basic Usage with LLM
+## Basic Usage
 
 The primary way to use MCP servers is through LLM interaction. In addition to function folders and explicit `ToolDefinition` objects, you can pass MCP server configurations:
 
@@ -17,28 +17,21 @@ const mcpConfig = {
   }
 };
 
-// Use in a call with LLM
-const response = await caller.call(
-  'List files in the current directory',
-  {
-    tools: [mcpConfig]  // Pass the MCP config
-  }
-);
+// Use MCP servers as tools in a call
+const response = await caller.call("List the files in the current directory", {
+  tools: [mcpConfig]  // Pass the MCP config
+});
 ```
 
 The LLM will automatically discover the available tools from the MCP server and use them appropriately based on the user's request.
 
-## Direct Tool Access (Supplementary Feature)
+## Direct Access Methods
 
 While LLM interaction is the primary method for using MCP tools, `LLMCaller` also implements the `MCPDirectAccess` interface which provides supplementary methods for special cases where you need to:
 
-- Examine available tool schemas programmatically
-- Execute specific tools directly without LLM interpretation
-- Process tool results in a deterministic way
-
-These direct access methods can be helpful for debugging, building custom workflows, or when you need precise control over tool execution.
-
-### Direct Access Methods
+1. Get information about available tools programmatically
+2. Call a specific tool directly without LLM involvement
+3. Handle tool responses in a specific way
 
 The `MCPDirectAccess` interface provides two supplementary methods:
 
@@ -71,22 +64,22 @@ const result = await caller.callMcpTool('filesystem', 'read_file', { path: 'pack
 For more advanced cases where you need explicit connection management:
 
 ```typescript
-// Create and initialize the MCP manager
-const mcpManager = new MCPClientManager();
+// Create and initialize the MCP service adapter with the SDK
+const adapter = new MCPServiceAdapter(mcpConfig.mcpServers);
 
-// Connect to the filesystem server
-await mcpManager.connect('filesystem', mcpConfig.mcpServers.filesystem);
+// Explicitly connect to a server
+await adapter.connectToServer('filesystem');
 
-// Initialize an LLMCaller and set its MCP manager
+// Initialize an LLMCaller and set its MCP adapter
 const caller = new LLMCaller('openai', 'fast');
-(caller as any)._mcpClientManager = mcpManager;
+(caller as any)._mcpAdapter = adapter;
 
 // Now you can make direct tool calls
 const schemas = await caller.getMcpServerToolSchemas('filesystem');
 const result = await caller.callMcpTool('filesystem', 'read_file', { path: 'package.json' });
 
 // Clean up when done
-await mcpManager.disconnectAll();
+await adapter.disconnectAll();
 ```
 
 ### Working with Tool Schemas
@@ -148,14 +141,83 @@ try {
   console.log('Success:', result);
 } catch (error) {
   // Check for specific error types
-  if (error.name === 'MCPConnectionError') {
+  if (error instanceof MCPConnectionError) {
     console.error('Connection to MCP server failed:', error.message);
-  } else if (error.name === 'MCPToolCallError') {
+  } else if (error instanceof MCPToolCallError) {
     console.error('Tool call failed:', error.message);
+  } else if (error instanceof MCPAuthenticationError) {
+    console.error('Authentication failed:', error.message);
   } else {
     console.error('Unknown error:', error);
   }
 }
+```
+
+## MCP SDK Integration
+
+CallLLM uses the official MCP SDK to connect to MCP servers. The implementation supports:
+
+1. Multiple transport types:
+   - **stdio** - For local server processes
+   - **http** - With both Streamable HTTP and SSE (Server-Sent Events) modes
+   - Future support for custom transports
+
+2. Authentication methods:
+   - **Basic auth** - Username/password authentication
+   - **Bearer token** - Simple token-based auth
+   - **OAuth** - For more secure integrations
+
+3. Automatic fallback strategies:
+   - Streamable HTTP to SSE fallback if the server doesn't support Streamable HTTP
+   - Automatic retry mechanisms for transient failures
+
+4. Error categorization:
+   - `MCPConnectionError` - For connection issues
+   - `MCPToolCallError` - For tool execution failures
+   - `MCPAuthenticationError` - For auth-related issues
+   - `MCPTimeoutError` - For timeout issues
+
+### Transport Configuration Examples
+
+```typescript
+// Stdio transport (local process)
+const mcpConfig = {
+  mcpServers: {
+    filesystem: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem', '.'],
+      env: { 'DEBUG': 'true' }  // Optional environment variables
+    }
+  }
+};
+
+// HTTP transport with Streamable HTTP mode
+const mcpHttpConfig = {
+  mcpServers: {
+    remoteServer: {
+      url: 'https://api.example.com/mcp',
+      type: 'http',  // Explicitly specify transport type
+      mode: 'streamable',  // Use streamable HTTP mode
+      headers: {  // Optional headers
+        'Authorization': 'Bearer your-token'
+      }
+    }
+  }
+};
+
+// HTTP transport with SSE mode and OAuth
+const mcpOAuthConfig = {
+  mcpServers: {
+    oauthServer: {
+      url: 'https://api.secure.example.com/mcp',
+      type: 'http',
+      mode: 'sse',  // Use SSE mode
+      auth: {  // Authentication configuration
+        provider: oauthProvider  // OAuthProvider instance
+      }
+    }
+  }
+};
 ```
 
 ## Complete Examples
@@ -178,6 +240,7 @@ yarn ts-node examples/mcpClient.ts
 
 # Run the direct tool call example
 yarn ts-node examples/mcpDirectTools.ts
+
 ```
 
 ## Available MCP Servers
@@ -213,9 +276,26 @@ type MCPServerConfig = {
   // URL for HTTP transport (alternative to command+args)
   url?: string;
   
+  // Transport type (inferred if not specified)
+  type?: 'stdio' | 'http' | 'custom';
+  
+  // HTTP mode (for HTTP transport)
+  mode?: 'streamable' | 'sse';
+  
+  // Headers for HTTP transport
+  headers?: Record<string, string>;
+  
+  // Authentication configuration
+  auth?: MCPAuthConfig;
+  
+  // Environment variables (for stdio transport)
+  env?: Record<string, string>;
+  
+  // Disable this server
+  disabled?: boolean;
+  
   // Additional configuration options
   // See MCPConfigTypes.ts for full details
-  // ...
 };
 ```
 

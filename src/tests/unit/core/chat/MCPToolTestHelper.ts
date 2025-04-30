@@ -1,6 +1,16 @@
 import type { ToolDefinition } from '../../../../types/tooling';
-import type { MCPTransportType, MCPServerConfig } from '../../../../core/mcp/MCPConfigTypes';
-import { MCPTransportFactory } from '../../../../core/mcp/MCPTransportFactory';
+import type { MCPServerConfig } from '../../../../core/mcp/MCPConfigTypes';
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+
+// Define minimal transport interface for testing
+interface MockTransport {
+    start: () => Promise<void>;
+    send: (message: any) => Promise<void>;
+    close: () => Promise<void>;
+    onmessage: ((data: Record<string, unknown>) => void) | null;
+    onclose: (() => void) | null;
+    onerror: ((error: Error) => void) | null;
+}
 
 /**
  * Creates a mock MCP tool definition for testing purposes
@@ -31,44 +41,45 @@ export function createMockMCPTool(name = 'testMCPTool'): ToolDefinition {
  * Creates a mock MCP transport for testing purposes
  */
 export function createMockMCPTransport(): {
-    transport: MCPTransportType;
+    transport: Transport;
     mockSend: jest.Mock;
     triggerMessage: (message: Record<string, unknown>) => void;
     triggerClose: () => void;
     triggerError: (error: Error) => void;
 } {
-    let onMessageCallback: ((data: Record<string, unknown>) => void) | null = null;
-    let onCloseCallback: (() => void) | null = null;
-    let onErrorCallback: ((error: Error) => void) | null = null;
+    // Use undefined instead of null for callback compatibility
+    let onMessageCallback: any = undefined;
+    let onCloseCallback: (() => void) | undefined = undefined;
+    let onErrorCallback: ((error: Error) => void) | undefined = undefined;
 
     const mockSend = jest.fn().mockImplementation(() => Promise.resolve());
 
-    const transport: MCPTransportType = {
+    const transport: any = {
         start: jest.fn().mockResolvedValue(undefined),
         send: mockSend,
         close: jest.fn().mockResolvedValue(undefined),
         get onmessage() {
             return onMessageCallback;
         },
-        set onmessage(callback: ((data: Record<string, unknown>) => void) | null) {
+        set onmessage(callback: any) {
             onMessageCallback = callback;
         },
         get onclose() {
             return onCloseCallback;
         },
-        set onclose(callback: (() => void) | null) {
+        set onclose(callback: (() => void) | undefined) {
             onCloseCallback = callback;
         },
         get onerror() {
             return onErrorCallback;
         },
-        set onerror(callback: ((error: Error) => void) | null) {
+        set onerror(callback: ((error: Error) => void) | undefined) {
             onErrorCallback = callback;
         }
     };
 
     return {
-        transport,
+        transport: transport as Transport,
         mockSend,
         triggerMessage: (message: Record<string, unknown>) => {
             if (onMessageCallback) onMessageCallback(message);
@@ -79,29 +90,5 @@ export function createMockMCPTransport(): {
         triggerError: (error: Error) => {
             if (onErrorCallback) onErrorCallback(error);
         }
-    };
-}
-
-/**
- * Patches the MCPTransportFactory to return a mock transport
- */
-export function patchMCPTransportFactory(): {
-    restore: () => void;
-    mockTransport: ReturnType<typeof createMockMCPTransport>;
-} {
-    const mockTransport = createMockMCPTransport();
-
-    const original = MCPTransportFactory.createTransport;
-    MCPTransportFactory.createTransport = jest.fn().mockImplementation(
-        (serverKey: string, config: MCPServerConfig) => {
-            return Promise.resolve(mockTransport.transport);
-        }
-    );
-
-    return {
-        restore: () => {
-            MCPTransportFactory.createTransport = original;
-        },
-        mockTransport
     };
 } 

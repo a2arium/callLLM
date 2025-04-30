@@ -14,6 +14,36 @@ export type MCPTransportType = 'stdio' | 'http' | 'custom';
 export type MCPHttpMode = 'sse' | 'streamable';
 
 /**
+ * Authentication configuration for MCP servers.
+ */
+export type MCPAuthConfig = {
+    /**
+     * OAuth settings for the server
+     */
+    oauth?: {
+        /**
+         * URL to redirect to after authorization
+         */
+        redirectUrl: string;
+
+        /**
+         * Client ID if pre-registered with the server
+         */
+        clientId?: string;
+
+        /**
+         * Client secret if pre-registered with the server
+         */
+        clientSecret?: string;
+
+        /**
+         * Whether to skip automatic registration and use the provided clientId/secret
+         */
+        skipRegistration?: boolean;
+    };
+};
+
+/**
  * Configuration for a single MCP server.
  */
 export type MCPServerConfig = {
@@ -85,6 +115,11 @@ export type MCPServerConfig = {
      * List of tool names that should be auto-approved without user confirmation.
      */
     autoApprove?: string[];
+
+    /**
+     * Authentication configuration.
+     */
+    auth?: MCPAuthConfig;
 };
 
 /**
@@ -126,9 +161,29 @@ export class MCPConnectionError extends Error {
 }
 
 export class MCPToolCallError extends Error {
-    constructor(serverKey: string, toolName: string, message: string) {
+    cause?: Error;
+
+    constructor(serverKey: string, toolName: string, message: string, cause?: Error) {
         super(`Error calling tool \"${toolName}\" on MCP server \"${serverKey}\": ${message}`);
         this.name = 'MCPToolCallError';
+        if (cause) this.cause = cause;
+    }
+}
+
+export class MCPAuthenticationError extends Error {
+    cause?: Error;
+
+    constructor(serverKey: string, message: string, cause?: Error) {
+        super(`Authentication error with MCP server "${serverKey}": ${message}`);
+        this.name = 'MCPAuthenticationError';
+        if (cause) this.cause = cause;
+    }
+}
+
+export class MCPTimeoutError extends Error {
+    constructor(serverKey: string, operation: string) {
+        super(`Operation "${operation}" timed out for MCP server "${serverKey}"`);
+        this.name = 'MCPTimeoutError';
     }
 }
 
@@ -176,6 +231,7 @@ export type McpToolSchema = {
     serverKey: string;
     /** The combined name used internally for LLM interaction (e.g., filesystem_list_directory). */
     llmToolName: string;
+    /** The Zod schema defining the parameters the tool accepts. */
+    inputSchema?: z.ZodObject<any>;
 };
 
-// Removed redundant export type { McpToolSchema }; as it's now exported directly above 

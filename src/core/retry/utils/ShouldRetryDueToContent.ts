@@ -1,7 +1,7 @@
 import { logger } from '../../../utils/logger';
 
 // Initialize logger for this module
-logger.setConfig({ prefix: 'ShouldRetryDueToContent', level: process.env.LOG_LEVEL as any || 'info' });
+const log = logger.createLogger({ prefix: 'ShouldRetryDueToContent', level: process.env.LOG_LEVEL as any || 'info' });
 
 export const FORBIDDEN_PHRASES: string[] = [
     "I cannot assist with that",
@@ -40,11 +40,11 @@ function isLikelyJSON(content: string): boolean {
  * @returns true if a retry is needed, false otherwise
  */
 export function shouldRetryDueToContent(response: string | ResponseWithToolCalls | null | undefined, threshold: number = 200): boolean {
-    logger.debug('[ShouldRetryDueToContent] Checking response:', JSON.stringify(response, null, 2));
+    log.debug('Checking response:', JSON.stringify(response, null, 2));
 
     // Handle null/undefined
     if (response === null || response === undefined) {
-        logger.debug('Response is null/undefined, triggering retry');
+        log.debug('Response is null/undefined, triggering retry');
         return true;
     }
 
@@ -55,25 +55,25 @@ export function shouldRetryDueToContent(response: string | ResponseWithToolCalls
         // Empty strings need special handling - they might be valid in some contexts (like tool calls)
         // but we can't determine that from just the string
         if (trimmedContent === '') {
-            logger.debug('String content is empty, triggering retry');
+            log.debug('String content is empty, triggering retry');
             return true;
         }
 
         // If it looks like JSON, don't apply the length threshold
         if (isLikelyJSON(trimmedContent)) {
-            logger.debug('Response looks like JSON, not triggering retry');
+            log.debug('Response looks like JSON, not triggering retry');
             return false;
         }
 
         if (trimmedContent.length < threshold) {
-            logger.debug('String content is too short, triggering retry');
+            log.debug('String content is too short, triggering retry');
             return true;
         }
 
         const lowerCaseResponse = response.toLowerCase();
         const hasBlockingPhrase = FORBIDDEN_PHRASES.some(phrase => lowerCaseResponse.includes(phrase.toLowerCase()));
         if (hasBlockingPhrase) {
-            logger.debug('Found blocking phrase in string content:', response);
+            log.debug('Found blocking phrase in string content:', response);
             return true;
         }
         return false;
@@ -81,13 +81,13 @@ export function shouldRetryDueToContent(response: string | ResponseWithToolCalls
 
     // Handle response object - must have content property at minimum
     if (!('content' in response)) {
-        logger.debug('Response object missing content property, triggering retry');
+        log.debug('Response object missing content property, triggering retry');
         return true;
     }
 
     // If we have tool calls, the response is valid regardless of content
     if (response.toolCalls && response.toolCalls.length > 0) {
-        logger.debug('Response has tool calls, not triggering retry');
+        log.debug('Response has tool calls, not triggering retry');
         return false;
     }
 
@@ -96,29 +96,29 @@ export function shouldRetryDueToContent(response: string | ResponseWithToolCalls
 
     // If it looks like JSON, don't apply the length threshold
     if (isLikelyJSON(trimmedContent)) {
-        logger.debug('Response looks like JSON, not triggering retry');
+        log.debug('Response looks like JSON, not triggering retry');
         return false;
     }
 
     // If we have a valid response after tool execution, don't retry
     if (trimmedContent && !FORBIDDEN_PHRASES.some(phrase => trimmedContent.toLowerCase().includes(phrase.toLowerCase()))) {
-        logger.debug('Response after tool execution is valid');
+        log.debug('Response after tool execution is valid');
         return false;
     }
 
     // For other cases, check content length
     if (!trimmedContent || trimmedContent.length < threshold) {
-        logger.debug('Response content is empty or too short, triggering retry');
+        log.debug('Response content is empty or too short, triggering retry');
         return true;
     }
 
     const lowerCaseContent = trimmedContent.toLowerCase();
     const hasBlockingPhrase = FORBIDDEN_PHRASES.some(phrase => lowerCaseContent.includes(phrase.toLowerCase()));
     if (hasBlockingPhrase) {
-        logger.debug('Found blocking phrase in response content:', trimmedContent);
+        log.debug('Found blocking phrase in response content:', trimmedContent);
         return true;
     }
 
-    logger.debug('Response is valid');
+    log.debug('Response is valid');
     return false;
 } 

@@ -19,13 +19,11 @@ async function main() {
     const caller = new LLMCaller('openai', 'fast', 'You are a helpful assistant that can use MCP servers.');
 
     // Define MCP servers map
-    const mcpConfig: { mcpServers: MCPServersMap } = {
-        mcpServers: {
-            // A local filesystem server (requires @modelcontextprotocol/server-filesystem)
-            filesystem: {
-                command: 'npx',
-                args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
-            }
+    const mcpConfig: MCPServersMap = {
+        // A local filesystem server (requires @modelcontextprotocol/server-filesystem)
+        filesystem: {
+            command: 'npx',
+            args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
         }
     };
 
@@ -51,7 +49,7 @@ async function main() {
     // Additional LLM + MCP examples
     console.log('\nReading a specific file via MCP filesystem server...');
     const fileResponse = await caller.call(
-        'Read the package.json file and tell me its version number.',
+        'Read the package.json file from the current directory and tell me its version number.',
         {
             tools: [mcpConfig]
         }
@@ -59,6 +57,11 @@ async function main() {
 
     console.log('\nLLM Response (with extracted version):');
     console.log(fileResponse[0].content);
+
+    // Clean up and disconnect from MCP server
+    console.log('\nDisconnecting from MCP server...');
+    await caller.disconnect();
+    console.log('Disconnected successfully');
 }
 
 main().catch((err) => {

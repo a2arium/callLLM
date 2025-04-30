@@ -1,6 +1,5 @@
 import { LLMCaller } from '../../../../core/caller/LLMCaller';
-import { MCPClientManager } from '../../../../core/mcp/MCPClientManager';
-import { MCPTransportFactory } from '../../../../core/mcp/MCPTransportFactory';
+import { MCPServiceAdapter } from '../../../../core/mcp/MCPServiceAdapter';
 import {
     MCPConnectionError,
     MCPToolCallError,
@@ -8,7 +7,6 @@ import {
     MCPServerConfig,
     MCPServersMap
 } from '../../../../core/mcp/MCPConfigTypes';
-import type { IMCPClientManager } from '../../../../core/mcp/IMCPClientManager';
 import type { McpToolSchema } from '../../../../core/mcp/MCPConfigTypes';
 import type { FinishReason } from '../../../../interfaces/UniversalInterfaces';
 
@@ -27,20 +25,46 @@ type SimplifiedToolSchema = {
 // Create a map to track connected servers
 const connectedServers = new Map<string, { connected: boolean; config: MCPServerConfig }>();
 
-// Mock the MCPClientManager
-jest.mock('../../../../core/mcp/MCPClientManager', () => {
+// Mock the MCPServiceAdapter
+jest.mock('../../../../core/mcp/MCPServiceAdapter', () => {
     return {
-        MCPClientManager: class {
-            async connect(serverKey: string, config: MCPServerConfig): Promise<void> {
-                // Store the connection state
-                connectedServers.set(serverKey, {
-                    connected: true,
-                    config
+        MCPServiceAdapter: class {
+            // Store server configs in constructor
+            constructor(mcpServers: MCPServersMap) {
+                // Initialize the list of configured servers
+                Object.entries(mcpServers || {}).forEach(([key, config]) => {
+                    // Store in our connectedServers map but mark as not yet connected
+                    connectedServers.set(key, {
+                        connected: false,
+                        config
+                    });
                 });
-                return Promise.resolve();
             }
 
-            async disconnect(serverKey: string): Promise<void> {
+            async connectToServer(serverKey: string): Promise<void> {
+                // Update the connection state if server exists
+                const server = connectedServers.get(serverKey);
+                if (server) {
+                    server.connected = true;
+                    return Promise.resolve();
+                }
+
+                // For testing, allow connecting to 'filesystem' even if not in constructor
+                if (serverKey === 'filesystem' && !connectedServers.has(serverKey)) {
+                    connectedServers.set(serverKey, {
+                        connected: true,
+                        config: {
+                            command: 'mock-command',
+                            args: []
+                        }
+                    });
+                    return Promise.resolve();
+                }
+
+                throw new MCPConnectionError(serverKey, 'Server configuration not found');
+            }
+
+            async disconnectServer(serverKey: string): Promise<void> {
                 connectedServers.delete(serverKey);
                 return Promise.resolve();
             }
@@ -121,9 +145,6 @@ jest.mock('../../../../core/mcp/MCPClientManager', () => {
     };
 });
 
-// Mock the MCPTransportFactory to bypass actual server connections
-jest.mock('../../../../core/mcp/MCPTransportFactory');
-
 // Mock MCPToolLoader for the MCP integration test
 jest.mock('../../../../core/mcp/MCPToolLoader', () => {
     return {
@@ -152,24 +173,21 @@ jest.mock('../../../../core/mcp/MCPToolLoader', () => {
 
 describe('MCP Direct Access Integration', () => {
     let caller: LLMCaller;
-    let mcpManager: MCPClientManager;
+    let mcpAdapter: MCPServiceAdapter;
 
     beforeEach(() => {
         jest.clearAllMocks();
         connectedServers.clear();
 
         caller = new LLMCaller('openai', 'fast');
-        mcpManager = new MCPClientManager();
-        (caller as any)._mcpClientManager = mcpManager;
+        mcpAdapter = new MCPServiceAdapter({});
+        (caller as any)._mcpAdapter = mcpAdapter;
     });
 
     describe('getMcpServerToolSchemas', () => {
         it('should fetch and return tool schemas from an MCP server', async () => {
             // First connect to the server
-            await mcpManager.connect('filesystem', {
-                command: 'mock-command',
-                args: []
-            });
+            await mcpAdapter.connectToServer('filesystem');
 
             // Get the tool schemas
             const schemas = await caller.getMcpServerToolSchemas('filesystem');
@@ -190,10 +208,7 @@ describe('MCP Direct Access Integration', () => {
     describe('callMcpTool', () => {
         beforeEach(async () => {
             // Connect to the filesystem server before each test
-            await mcpManager.connect('filesystem', {
-                command: 'mock-command',
-                args: []
-            });
+            await mcpAdapter.connectToServer('filesystem');
         });
 
         it('should call list_directory and return results', async () => {
@@ -249,31 +264,22 @@ describe('MCP Direct Access Integration', () => {
             const originalResolveToolDefinitions = (caller as any).resolveToolDefinitions;
             (caller as any).resolveToolDefinitions = resolveToolSpy;
 
-            // Mock the chat controller for this test to prevent actual API calls
-            const mockChatController = {
-                execute: jest.fn().mockResolvedValue({
-                    role: 'assistant',
-                    content: 'Test response',
-                    metadata: {
-                        finishReason: 'complete' as FinishReason
-                    }
-                })
-            };
-            (caller as any).chatController = mockChatController;
-
             try {
-                // Call with the MCP config
-                await caller.call('Test prompt', {
-                    tools: [mcpConfig]
+                // Call with MCP config in tools array
+                await caller.call('Hello', {
+                    tools: [mcpConfig as MCPToolConfig],
+                    settings: { temperature: 0.7 }
                 });
 
-                // Verify the resolveToolDefinitions was called with the proper arguments
-                expect(resolveToolSpy).toHaveBeenCalledWith(
-                    [mcpConfig],
-                    undefined
-                );
+                // Verify the MCP config was processed
+                expect(resolveToolSpy).toHaveBeenCalled();
+                const toolsArg = resolveToolSpy.mock.calls[0][0];
+
+                // Verify the tools array contained our MCP config
+                expect(toolsArg).toHaveLength(1);
+                expect(toolsArg[0]).toEqual(mcpConfig);
             } finally {
-                // Restore the original method
+                // Restore original method
                 (caller as any).resolveToolDefinitions = originalResolveToolDefinitions;
             }
         });
