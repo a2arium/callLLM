@@ -2,16 +2,37 @@ import { LLMCaller } from '../../../../core/caller/LLMCaller';
 import { MCPServiceAdapter } from '../../../../core/mcp/MCPServiceAdapter';
 import { MCPConnectionError, MCPToolCallError } from '../../../../core/mcp/MCPConfigTypes';
 import type { McpToolSchema } from '../../../../core/mcp/MCPConfigTypes';
+import { ModelManager } from '../../../../core/models/ModelManager';
 
 // Mock the MCPServiceAdapter
 jest.mock('../../../../core/mcp/MCPServiceAdapter', () => {
     return {
-        MCPServiceAdapter: jest.fn().mockImplementation(() => ({
-            getMcpServerToolSchemas: jest.fn(),
-            executeMcpTool: jest.fn(),
-            connectToServer: jest.fn(),
-            disconnectAll: jest.fn(),
-            isConnected: jest.fn().mockReturnValue(true)
+        MCPServiceAdapter: jest.fn()
+    };
+});
+
+// Mock the ModelManager
+jest.mock('../../../../core/models/ModelManager', () => {
+    return {
+        ModelManager: jest.fn().mockImplementation(() => ({
+            getModel: jest.fn().mockReturnValue({
+                name: 'test-model',
+                inputPrice: 0.001,
+                outputPrice: 0.002,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 2000,
+                characteristics: {
+                    quality: 0.8,
+                    speed: 0.7,
+                    latency: 0.3
+                }
+            }),
+            getAvailableModels: jest.fn().mockReturnValue([]),
+            addModel: jest.fn(),
+            updateModel: jest.fn(),
+            resolveModel: jest.fn(),
+            clearModels: jest.fn(),
+            hasModel: jest.fn().mockReturnValue(true)
         }))
     };
 });
@@ -19,7 +40,11 @@ jest.mock('../../../../core/mcp/MCPServiceAdapter', () => {
 // Mock the logger
 jest.mock('../../../../utils/logger', () => ({
     logger: {
-        createLogger: () => ({
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        createLogger: jest.fn().mockReturnValue({
             debug: jest.fn(),
             info: jest.fn(),
             warn: jest.fn(),
@@ -30,14 +55,29 @@ jest.mock('../../../../utils/logger', () => ({
 
 describe('LLMCaller - MCP Direct Access', () => {
     let caller: LLMCaller;
-    let mockAdapter: jest.Mocked<MCPServiceAdapter>;
+    let mockMcpAdapter: any;
 
     beforeEach(() => {
+        // Reset mocks
+        jest.clearAllMocks();
+
+        // Create a mock implementation for MCPServiceAdapter
+        const mockAdapter = {
+            getMcpServerToolSchemas: jest.fn(),
+            executeMcpTool: jest.fn(),
+            connectToServer: jest.fn(),
+            disconnectAll: jest.fn(),
+            isConnected: jest.fn().mockReturnValue(true)
+        };
+
+        // Set up the mock implementation
+        (MCPServiceAdapter as jest.Mock).mockImplementation(() => mockAdapter);
+
         // Create a new instance for each test
         caller = new LLMCaller('openai', 'test-model');
 
-        // Get the adapter instance created by LLMCaller
-        mockAdapter = (MCPServiceAdapter as jest.Mock).mock.instances[0] as jest.Mocked<MCPServiceAdapter>;
+        // Store the mock adapter
+        mockMcpAdapter = mockAdapter;
     });
 
     describe('getMcpServerToolSchemas', () => {
@@ -52,17 +92,17 @@ describe('LLMCaller - MCP Direct Access', () => {
                 }
             ];
 
-            mockAdapter.getMcpServerToolSchemas.mockResolvedValue(mockSchemas);
+            mockMcpAdapter.getMcpServerToolSchemas.mockResolvedValue(mockSchemas);
 
             const result = await caller.getMcpServerToolSchemas('filesystem');
 
-            expect(mockAdapter.getMcpServerToolSchemas).toHaveBeenCalledWith('filesystem');
+            expect(mockMcpAdapter.getMcpServerToolSchemas).toHaveBeenCalledWith('filesystem');
             expect(result).toEqual(mockSchemas);
         });
 
         it('should throw error if MCPServiceAdapter throws', async () => {
             const mockError = new MCPConnectionError('filesystem', 'Not connected');
-            mockAdapter.getMcpServerToolSchemas.mockRejectedValue(mockError);
+            mockMcpAdapter.getMcpServerToolSchemas.mockRejectedValue(mockError);
 
             await expect(caller.getMcpServerToolSchemas('filesystem'))
                 .rejects
@@ -104,18 +144,18 @@ describe('LLMCaller - MCP Direct Access', () => {
     describe('callMcpTool', () => {
         it('should call executeMcpTool on MCPServiceAdapter', async () => {
             const mockResult = { content: 'file contents' };
-            mockAdapter.executeMcpTool.mockResolvedValue(mockResult);
+            mockMcpAdapter.executeMcpTool.mockResolvedValue(mockResult);
 
             const args = { path: 'file.txt' };
             const result = await caller.callMcpTool('filesystem', 'read_file', args);
 
-            expect(mockAdapter.executeMcpTool).toHaveBeenCalledWith('filesystem', 'read_file', args);
+            expect(mockMcpAdapter.executeMcpTool).toHaveBeenCalledWith('filesystem', 'read_file', args);
             expect(result).toEqual(mockResult);
         });
 
         it('should throw error if MCPServiceAdapter throws', async () => {
             const mockError = new MCPToolCallError('filesystem', 'read_file', 'File not found');
-            mockAdapter.executeMcpTool.mockRejectedValue(mockError);
+            mockMcpAdapter.executeMcpTool.mockRejectedValue(mockError);
 
             const args = { path: 'non-existent.txt' };
             await expect(caller.callMcpTool('filesystem', 'read_file', args))

@@ -15,10 +15,11 @@ export class StreamHistoryProcessor implements IStreamProcessor {
      */
     constructor(historyManager: HistoryManager) {
         this.historyManager = historyManager;
-        logger.setConfig({
+        const log = logger.createLogger({
             level: process.env.LOG_LEVEL as any || 'debug',
-            prefix: 'StreamHistoryProcessor'
+            prefix: 'StreamHistoryProcessor.constructor'
         });
+        log.debug('Initialized StreamHistoryProcessor');
     }
 
     /**

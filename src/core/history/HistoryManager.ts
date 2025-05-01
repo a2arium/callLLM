@@ -91,8 +91,9 @@ export class HistoryManager {
             ...additionalFields
         };
 
+        const log = logger.createLogger({ prefix: 'HistoryManager.addMessage' });
         const validatedMessage = this.validateMessage(message);
-        logger.debug('Adding message to history: ', validatedMessage);
+        log.debug('Adding message to history: ', validatedMessage);
         if (validatedMessage) this.historicalMessages.push(validatedMessage);
     }
 

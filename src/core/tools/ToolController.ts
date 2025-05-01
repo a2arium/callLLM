@@ -17,8 +17,8 @@ export class ToolController {
     constructor(toolsManager: ToolsManager, maxIterations: number = 5) {
         this.toolsManager = toolsManager;
         this.maxIterations = maxIterations;
-        logger.setConfig({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'ToolController' });
-        logger.debug(`Initialized with maxIterations: ${maxIterations}`);
+        const log = logger.createLogger({ prefix: 'ToolController.constructor', level: process.env.LOG_LEVEL as any || 'info' });
+        log.debug(`Initialized with maxIterations: ${maxIterations}`);
     }
 
     /**

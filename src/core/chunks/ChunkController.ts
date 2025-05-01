@@ -53,8 +53,11 @@ export class ChunkController {
         maxIterations: number = 20
     ) {
         this.maxIterations = maxIterations;
-        logger.setConfig({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'ChunkController' });
-        logger.debug(`Initialized with maxIterations: ${maxIterations}`);
+        const log = logger.createLogger({
+            level: process.env.LOG_LEVEL as any || 'info',
+            prefix: 'ChunkController.constructor'
+        });
+        log.debug(`Initialized with maxIterations: ${maxIterations}`);
     }
 
     /**

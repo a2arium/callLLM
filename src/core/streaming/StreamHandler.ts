@@ -52,11 +52,11 @@ export class StreamHandler {
         this.historyProcessor = new StreamHistoryProcessor(this.historyManager);
         this.streamingService = streamingService;
 
-        logger.setConfig({
+        const log = logger.createLogger({
             level: process.env.LOG_LEVEL as any || 'info',
-            prefix: 'StreamHandler'
+            prefix: 'StreamHandler.constructor'
         });
-        logger.debug('Initialized StreamHandler', { callerId });
+        log.debug('Initialized StreamHandler', { callerId });
     }
 
     /**

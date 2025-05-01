@@ -19,9 +19,11 @@ jest.mock('../../../../../core/history/HistoryManager', () => {
 jest.mock('../../../../../utils/logger', () => {
     return {
         logger: {
-            setConfig: jest.fn(),
             createLogger: jest.fn().mockReturnValue({
-                debug: jest.fn()
+                debug: jest.fn(),
+                info: jest.fn(),
+                warn: jest.fn(),
+                error: jest.fn()
             })
         }
     };
@@ -62,11 +64,11 @@ describe('StreamHistoryProcessor', () => {
             // Create a new instance with the environment variable set
             const processor = new StreamHistoryProcessor(mockHistoryManager);
 
-            // Verify the logger was configured with the correct level
-            expect(logger.setConfig).toHaveBeenCalledWith(
+            // Verify the logger was created with the correct options
+            expect(logger.createLogger).toHaveBeenCalledWith(
                 expect.objectContaining({
                     level: 'info',
-                    prefix: 'StreamHistoryProcessor'
+                    prefix: 'StreamHistoryProcessor.constructor'
                 })
             );
         });
@@ -78,11 +80,11 @@ describe('StreamHistoryProcessor', () => {
             // Create a new instance without the environment variable
             const processor = new StreamHistoryProcessor(mockHistoryManager);
 
-            // Verify the logger was configured with the default level
-            expect(logger.setConfig).toHaveBeenCalledWith(
+            // Verify the logger was created with the correct options
+            expect(logger.createLogger).toHaveBeenCalledWith(
                 expect.objectContaining({
                     level: 'debug',
-                    prefix: 'StreamHistoryProcessor'
+                    prefix: 'StreamHistoryProcessor.constructor'
                 })
             );
         });

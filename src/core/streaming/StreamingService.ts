@@ -72,12 +72,12 @@ export class StreamingService {
         });
         this.historyTruncator = new HistoryTruncator(this.tokenCalculator);
 
-        logger.setConfig({
+        const log = logger.createLogger({
             level: process.env.LOG_LEVEL as any || 'info',
-            prefix: 'StreamingService'
+            prefix: 'StreamingService.constructor'
         });
 
-        logger.debug('Initialized StreamingService', {
+        log.debug('Initialized StreamingService', {
             callerId,
             tokenBatchSize: options?.tokenBatchSize || 100,
             hasToolController: Boolean(this.toolController),
@@ -93,7 +93,7 @@ export class StreamingService {
         model: string,
         systemMessage?: string
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
-        logger.setConfig({
+        const log = logger.createLogger({
             level: process.env.LOG_LEVEL as any || 'info',
             prefix: 'StreamingService.createStream'
         });
@@ -108,7 +108,7 @@ export class StreamingService {
 
         // Log the history mode if it's set
         if (params.historyMode) {
-            logger.debug('Using history mode:', params.historyMode);
+            log.debug('Using history mode:', params.historyMode);
         }
 
         // Calculate input tokens
@@ -119,7 +119,7 @@ export class StreamingService {
             throw new Error(`Model ${model} not found for provider ${this.providerManager.getProvider().constructor.name}`);
         }
 
-        logger.debug('Creating stream', {
+        log.debug('Creating stream', {
             model,
             inputTokens,
             callerId: params.callerId,
@@ -138,10 +138,14 @@ export class StreamingService {
         inputTokens: number,
         modelInfo: ModelInfo
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
+        const log = logger.createLogger({
+            prefix: 'StreamingService.executeWithRetry'
+        });
+
         try {
             const maxRetries = params.settings?.maxRetries ?? 3; // Default to 3 retries
 
-            logger.debug('Executing stream with retry', {
+            log.debug('Executing stream with retry', {
                 model,
                 maxRetries,
                 callerId: params.callerId
@@ -155,7 +159,7 @@ export class StreamingService {
                 () => false
             );
         } catch (error) {
-            logger.error('Stream execution failed after retries', {
+            log.error('Stream execution failed after retries', {
                 error: error instanceof Error ? error.message : String(error),
                 model
             });
@@ -172,6 +176,10 @@ export class StreamingService {
         inputTokens: number,
         modelInfo: ModelInfo
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
+        const log = logger.createLogger({
+            prefix: 'StreamingService.executeStreamRequest'
+        });
+
         const provider = this.providerManager.getProvider();
         const startTime = Date.now();
 
@@ -179,7 +187,7 @@ export class StreamingService {
             // Check for history mode
             const effectiveHistoryMode: HistoryMode = params.historyMode ?? 'stateless';
             if (effectiveHistoryMode === 'dynamic') {
-                logger.debug('Using dynamic history mode for streaming - intelligently truncating history');
+                log.debug('Using dynamic history mode for streaming - intelligently truncating history');
 
                 // Get all historical messages
                 const allMessages = this.historyManager.getMessages();
@@ -202,14 +210,14 @@ export class StreamingService {
                         messages: [...truncatedMessages, ...currentUserMessages]
                     };
 
-                    logger.debug(`Dynamic mode: streaming with ${params.messages.length} messages to provider (from original ${allMessages.length})`);
+                    log.debug(`Dynamic mode: streaming with ${params.messages.length} messages to provider (from original ${allMessages.length})`);
 
                     // Recalculate input tokens based on the truncated messages
                     inputTokens = this.tokenCalculator.calculateTotalTokens(params.messages);
                 }
             }
 
-            logger.debug('Requesting provider stream', {
+            log.debug('Requesting provider stream', {
                 provider: provider.constructor.name,
                 model,
                 callerId: params.callerId
@@ -218,7 +226,7 @@ export class StreamingService {
             // Request stream from provider
             const providerStream = await provider.streamCall(model, params);
 
-            logger.debug('Provider stream created', {
+            log.debug('Provider stream created', {
                 timeToCreateMs: Date.now() - startTime,
                 model
             });
@@ -231,7 +239,7 @@ export class StreamingService {
                 modelInfo
             );
         } catch (error) {
-            logger.error('Stream request failed', {
+            log.error('Stream request failed', {
                 error: error instanceof Error ? error.message : String(error),
                 model,
                 timeToFailMs: Date.now() - startTime
@@ -287,24 +295,30 @@ export class StreamingService {
     }
 
     /**
-     * Set the tool orchestrator
+     * Set the tool orchestrator for the streaming service
      */
     public setToolOrchestrator(toolOrchestrator: ToolOrchestrator): void {
+        const log = logger.createLogger({
+            prefix: 'StreamingService.setToolOrchestrator'
+        });
+
         this.toolOrchestrator = toolOrchestrator;
 
-        // Update the StreamHandler with the new toolOrchestrator
-        this.streamHandler = new StreamHandler(
-            this.tokenCalculator,
-            this.historyManager,
-            this.responseProcessor,
-            this.usageTracker['callback'], // Access the callback from usageTracker
-            this.usageTracker['callerId'], // Access the callerId from usageTracker
-            this.toolController,
-            toolOrchestrator,
-            this
-        );
+        // If we have a stream handler, update it with the new orchestrator
+        if (this.streamHandler) {
+            this.streamHandler = new StreamHandler(
+                this.tokenCalculator,
+                this.historyManager,
+                this.responseProcessor,
+                this.usageTracker['callback'],
+                undefined, // Keep existing callerId
+                this.toolController,
+                toolOrchestrator,
+                this
+            );
+        }
 
-        logger.debug('ToolOrchestrator set on StreamingService', {
+        log.debug('ToolOrchestrator set on StreamingService', {
             hasToolOrchestrator: Boolean(this.toolOrchestrator)
         });
     }

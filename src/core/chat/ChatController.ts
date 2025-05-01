@@ -35,10 +35,11 @@ export class ChatController {
         this.toolOrchestrator = toolOrchestrator; // Store the orchestrator
         this.historyTruncator = new HistoryTruncator(new TokenCalculator());
 
-        logger.setConfig({
-            prefix: 'ChatController',
+        const log = logger.createLogger({
+            prefix: 'ChatController.constructor',
             level: process.env.LOG_LEVEL as any || 'info'
         });
+        log.debug('Initialized ChatController');
     }
 
     // Method for LLMCaller to set the orchestrator after initialization

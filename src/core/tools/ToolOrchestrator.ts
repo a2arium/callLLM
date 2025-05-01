@@ -53,8 +53,11 @@ export class ToolOrchestrator {
         streamController: StreamController,
         private historyManager: HistoryManager
     ) {
-        logger.setConfig({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'ToolOrchestrator' });
-        logger.debug('Initialized');
+        const log = logger.createLogger({
+            level: process.env.LOG_LEVEL as any || 'info',
+            prefix: 'ToolOrchestrator.constructor'
+        });
+        log.debug('Initialized');
     }
 
     /**
