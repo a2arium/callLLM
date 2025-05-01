@@ -36,7 +36,8 @@ import { StreamController } from '../streaming/StreamController';
 import { HistoryManager } from '../history/HistoryManager';
 import { logger } from '../../utils/logger';
 import { PromptEnhancer } from '../prompt/PromptEnhancer';
-import { ToolsFolderLoader, StringOrDefinition } from '../tools/toolLoader';
+import { ToolsFolderLoader } from '../tools/toolLoader/ToolsFolderLoader';
+import type { StringOrDefinition } from '../tools/toolLoader/types';
 import type { MCPDirectAccess } from '../mcp/MCPDirectAccess';
 import type { McpToolSchema, MCPServersMap } from '../mcp/MCPConfigTypes';
 import { isMCPToolConfig } from '../mcp/MCPConfigTypes';
@@ -450,6 +451,7 @@ export class LLMCaller implements MCPDirectAccess {
         tools?: StringOrDefinition[],
         toolsDir?: string
     ): Promise<ToolDefinition[]> {
+        const log = logger.createLogger({ prefix: 'LLMCaller.resolveToolDefinitions' });
         const resolvedTools: ToolDefinition[] = [];
 
         // If no tools passed, return empty array
@@ -481,16 +483,6 @@ export class LLMCaller implements MCPDirectAccess {
 
                 const resolvedTool = await folderLoader.getTool(tool);
                 resolvedTools.push(resolvedTool);
-            } else if (tool && typeof tool === 'object' && 'mcpServers' in tool) {
-                // Legacy format: It's a wrapper object containing an MCPServersMap
-                if (!mcpToolLoader) {
-                    const { MCPToolLoader } = await import('../mcp/MCPToolLoader');
-                    mcpToolLoader = new MCPToolLoader();
-                }
-                // Extract the actual map
-                const serversMap = (tool as any).mcpServers as MCPServersMap;
-                const mcpTools = await mcpToolLoader.loadTools(serversMap);
-                resolvedTools.push(...mcpTools);
             } else if (tool && typeof tool === 'object' && Object.values(tool).some(value =>
                 typeof value === 'object' && value !== null &&
                 'command' in value && 'args' in value)) {
@@ -499,6 +491,14 @@ export class LLMCaller implements MCPDirectAccess {
                     const { MCPToolLoader } = await import('../mcp/MCPToolLoader');
                     mcpToolLoader = new MCPToolLoader();
                 }
+
+                // Store the MCP adapter reference in _mcpAdapter for proper tracking
+                // This ensures we can disconnect from it later
+                if (!this._mcpAdapter) {
+                    log.debug('Initializing MCP adapter from direct configuration');
+                    this._mcpAdapter = mcpToolLoader.getMCPAdapter();
+                }
+
                 const mcpTools = await mcpToolLoader.loadTools(tool as unknown as MCPServersMap);
                 resolvedTools.push(...mcpTools);
             } else {
@@ -1044,27 +1044,23 @@ export class LLMCaller implements MCPDirectAccess {
 
     /**
      * Disconnects from all MCP servers and cleans up resources.
-     * Call this method when you're done using the LLMCaller instance or 
-     * when you no longer need the MCP server connections.
      * 
-     * @returns A promise that resolves when all MCP connections have been closed.
+     * @returns Promise that resolves when all disconnections are complete
      */
-    public async disconnect(): Promise<void> {
+    async disconnect(): Promise<void> {
         const log = logger.createLogger({ prefix: 'LLMCaller.disconnect' });
-        log.debug('Disconnecting from all MCP servers');
 
+        // Disconnect all MCP servers if the adapter exists
         if (this._mcpAdapter) {
-            try {
-                await this._mcpAdapter.disconnectAll();
-                log.info('Successfully disconnected from all MCP servers');
-                // Clear the adapter reference
-                this._mcpAdapter = null;
-            } catch (error) {
-                log.error('Failed to disconnect from MCP servers:', error);
-                throw error;
-            }
+            log.debug('Disconnecting from all MCP servers');
+            await this._mcpAdapter.disconnectAll();
+
+            // Clear the adapter reference
+            this._mcpAdapter = null;
         } else {
             log.debug('No MCP connections to disconnect');
         }
+
+        log.debug('Disconnection complete');
     }
 } 

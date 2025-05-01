@@ -128,4 +128,15 @@ export class MCPToolLoader implements IMCPToolLoader {
     async dispose(): Promise<void> {
         await this.serviceAdapter.disconnectAll();
     }
+
+    /**
+     * Gets the internal MCPServiceAdapter instance.
+     * This allows callers to access and manage the adapter directly,
+     * particularly for connection management and cleanup.
+     * 
+     * @returns The MCPServiceAdapter instance used by this loader
+     */
+    getMCPAdapter(): MCPServiceAdapter {
+        return this.serviceAdapter;
+    }
 } 

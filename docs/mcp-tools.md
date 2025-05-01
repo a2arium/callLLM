@@ -220,6 +220,104 @@ const mcpOAuthConfig = {
 };
 ```
 
+### HTTP Transport Modes
+
+When connecting to MCP servers over HTTP, two transport modes are available:
+
+- **streamable** - Uses HTTP streaming with chunked transfer encoding. This is the default mode when not specified.
+- **sse** - Uses Server-Sent Events (SSE) for event streaming.
+
+#### Mode Selection and Fallback Behavior
+
+By default, the adapter will:
+
+1. Use 'streamable' mode if no mode is specified
+2. Try connecting with Streamable HTTP first
+3. If Streamable HTTP fails (due to protocol mismatch, HTTP errors, or timeouts), fall back to SSE transport
+
+Setting `mode: 'sse'` explicitly:
+- Bypasses the Streamable HTTP attempt completely
+- Connects directly with SSE transport
+- Avoids waiting for timeouts when the server only supports SSE
+
+#### When to use each mode:
+
+- **streamable** - Use for newer MCP servers that support HTTP streaming. This is generally more efficient for large data transfers.
+- **sse** - Use for:
+  - MCP servers that only support SSE protocol
+  - When experiencing timeouts with Streamable HTTP (like with the skeet.build server)
+  - When you've verified SSE works more reliably in your environment
+
+For example, if you know a server requires SSE mode:
+
+```typescript
+const config = {
+  mcpServers: {
+    knownSseServer: {
+      url: 'https://api.example.com/mcp',
+      mode: 'sse'  // Skip StreamableHTTP and use SSE directly
+    }
+  }
+};
+```
+
+This configuration will connect directly via SSE without trying StreamableHTTP first, avoiding the timeout delay.
+
+### HTTP Transport Troubleshooting
+
+#### Common Connection Issues
+
+1. **Timeouts**
+
+   If you encounter timeout errors when connecting to an MCP server:
+   
+   ```
+   MCPConnectionError: Failed to connect to MCP server: Request timed out
+   ```
+   
+   Solution options:
+   - Set `mode: 'sse'` to bypass the StreamableHTTP attempt
+   - Check if the server is available and responding
+   - Verify network connectivity between your client and the server
+   - If behind corporate proxies or firewalls, check if streaming protocols are allowed
+
+2. **Protocol Compatibility**
+
+   Different MCP servers implement different transport protocols:
+   
+   - Some only support StreamableHTTP
+   - Some only support SSE
+   - Some support both but prefer one
+   
+   When first connecting to a new server, you may need to experiment with the mode setting to find the most reliable option.
+
+3. **Authentication Failures**
+
+   If authentication is failing:
+   
+   ```
+   MCPAuthenticationError: Authentication required for server
+   ```
+   
+   Ensure you've configured the appropriate auth method in your server config:
+   
+   ```typescript
+   {
+     // Bearer token auth
+     headers: {
+       "Authorization": "Bearer ${MY_TOKEN}" // Will be replaced with env var
+     }
+     
+     // Or OAuth
+     auth: {
+       oauth: {
+         redirectUrl: "http://localhost:3000/callback",
+         clientId: "my-client-id"
+       }
+     }
+   }
+   ```
+
 ## Complete Examples
 
 See the following example files for complete working implementations:

@@ -19,6 +19,22 @@ import { OAuthProvider, type OAuthProviderOptions } from './OAuthProvider';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { RetryManager } from '../retry/RetryManager';
 import type { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
+import treeKill from 'tree-kill';
+import { promisify } from 'util';
+import { ChildProcess } from 'child_process';
+
+// Promisify tree-kill to make it easier to use with async/await
+const treeKillAsync = (pid: number, signal?: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        treeKill(pid, signal, (err?: Error) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve();
+            }
+        });
+    });
+};
 
 /**
  * Import interfaces for resources and prompts
@@ -99,6 +115,11 @@ export class MCPServiceAdapter {
     private toolCache: Map<string, ToolDefinition[]> = new Map();
 
     /**
+     * Track child processes by server key for better cleanup
+     */
+    private childProcesses: Map<string, ChildProcess> = new Map();
+
+    /**
      * Retry manager for handling transient failures
      */
     private retryManager: RetryManager;
@@ -174,6 +195,8 @@ export class MCPServiceAdapter {
      * @returns StdioClientTransport instance
      */
     private createStdioTransport(serverKey: string, config: MCPServerConfig): StdioClientTransport {
+        const log = logger.createLogger({ prefix: 'MCPServiceAdapter.createStdioTransport' });
+
         if (!config.command) {
             throw new MCPConnectionError(serverKey, 'Command is required for stdio transport');
         }
@@ -196,11 +219,19 @@ export class MCPServiceAdapter {
             }
         }
 
-        return new StdioClientTransport({
+        const transport = new StdioClientTransport({
             command: config.command,
             args: config.args || [],
             env
         });
+
+        // Track the child process for better cleanup
+        if (transport && (transport as any).process) {
+            this.childProcesses.set(serverKey, (transport as any).process);
+            log.debug(`Tracking child process for server ${serverKey} with PID ${(transport as any).process.pid}`);
+        }
+
+        return transport;
     }
 
     /**
@@ -210,10 +241,14 @@ export class MCPServiceAdapter {
      * @returns HTTP transport instance
      */
     private createHttpTransport(serverKey: string, config: MCPServerConfig): Transport {
+        const log = logger.createLogger({ prefix: 'MCPServiceAdapter.createHttpTransport' });
+
         // Validate required configuration
         if (!config.url) {
             throw new MCPConnectionError(serverKey, 'URL is required for HTTP transport');
         }
+
+        log.debug(`Creating HTTP transport for server ${serverKey} with URL ${config.url}`);
 
         // Enforce HTTPS for security
         if (config.url.startsWith('http://') && !config.url.includes('localhost') && !config.url.includes('127.0.0.1')) {
@@ -223,10 +258,12 @@ export class MCPServiceAdapter {
         // Process headers
         const headers: Record<string, string> = {};
         if (config.headers) {
+            log.debug(`Processing ${Object.keys(config.headers).length} headers`);
             for (const [key, value] of Object.entries(config.headers)) {
                 // Process template strings like ${TOKEN}
                 const processedValue = value.replace(/\${([^}]+)}/g, (match, envVar) => {
-                    return process.env[envVar] || '';
+                    const envValue = process.env[envVar] || '';
+                    return envValue;
                 });
                 headers[key] = processedValue;
             }
@@ -240,17 +277,28 @@ export class MCPServiceAdapter {
         // Check if OAuth authentication is needed
         const oauthProvider = this.createOAuthProviderIfNeeded(serverKey, config);
         if (oauthProvider) {
+            log.debug(`OAuth provider created for server ${serverKey}`);
             transportOptions.authProvider = oauthProvider;
         }
 
         // Create HTTP transport based on specified mode
         const mode = config.mode || 'sse';
-        const url = new URL(config.url);
+        log.debug(`Using HTTP transport mode: ${mode}`);
 
-        if (mode === 'streamable') {
-            return new StreamableHTTPClientTransport(url, transportOptions);
-        } else {
-            return new SSEClientTransport(url, transportOptions);
+        const url = new URL(config.url);
+        log.debug(`Parsed URL: ${url.toString()}`);
+
+        try {
+            if (mode === 'streamable') {
+                log.debug(`Creating StreamableHTTPClientTransport for ${url}`);
+                return new StreamableHTTPClientTransport(url, transportOptions);
+            } else {
+                log.debug(`Creating SSEClientTransport for ${url}`);
+                return new SSEClientTransport(url, transportOptions);
+            }
+        } catch (error) {
+            log.error(`Error creating HTTP transport: ${(error as Error).message}`);
+            throw error;
         }
     }
 
@@ -407,23 +455,61 @@ export class MCPServiceAdapter {
             throw new MCPConnectionError(serverKey, 'URL is required for HTTP transport');
         }
 
-        // First try with StreamableHTTPClientTransport
+        log.debug(`Attempting to connect to ${config.url} for server ${serverKey}`);
+
+        // Log headers (without sensitive values)
+        if (config.headers) {
+            log.debug(`Using headers: ${Object.keys(config.headers).join(', ')}`);
+        }
+
+        // Check if a specific mode is configured
+        const configuredMode = config.mode || 'streamable';  // Default to streamable if not specified
+        log.debug(`Configured transport mode: ${configuredMode}`);
+
+        // If mode is explicitly set to 'sse', skip the StreamableHTTP attempt
+        if (configuredMode === 'sse') {
+            log.debug(`Using SSE transport directly as configured for server ${serverKey}`);
+            await this.connectWithSSE(serverKey, config);
+            return;
+        }
+
+        // First try with StreamableHTTPClientTransport if mode is not explicitly 'sse'
         try {
             log.debug(`Trying Streamable HTTP transport for server ${serverKey}`);
 
+            const url = new URL(config.url);
+            log.debug(`Connection URL: ${url.toString()}`);
+
+            // Create transport options with detailed logging
+            const headers: Record<string, string> = {};
+            if (config.headers) {
+                for (const [key, value] of Object.entries(config.headers)) {
+                    // Process template strings like ${TOKEN}
+                    const processedValue = value.replace(/\${([^}]+)}/g, (match, envVar) => {
+                        return process.env[envVar] || '';
+                    });
+                    headers[key] = processedValue;
+                    // Don't log actual header values for security
+                }
+            }
+
+            log.debug(`Creating StreamableHTTPClientTransport for ${url.toString()}`);
+
             const transport = new StreamableHTTPClientTransport(
-                new URL(config.url),
+                url,
                 {
                     requestInit: {
-                        headers: config.headers
+                        headers
                     }
                 }
             );
 
             const client = this.createClient();
+            log.debug(`Client created, attempting to connect...`);
 
             // await transport.start();
             await client.connect(transport);
+            log.debug(`Client successfully connected via Streamable HTTP`);
 
             // Store references
             this.sdkTransports.set(serverKey, transport);
@@ -432,23 +518,42 @@ export class MCPServiceAdapter {
             log.info(`Connected to server ${serverKey} using Streamable HTTP transport`);
             return;
         } catch (error) {
-            log.warn(`Streamable HTTP connection failed for server ${serverKey}: ${(error as Error).message}`);
+            const errorObj = error as Error;
+            log.warn(`Streamable HTTP connection failed for server ${serverKey}: ${errorObj.message}`);
+
+            // Log error details
+            if (errorObj.stack) {
+                log.debug(`Error stack: ${errorObj.stack}`);
+            }
+
+            if ('code' in errorObj) {
+                log.debug(`Error code: ${(errorObj as any).code}`);
+            }
+
+            if ('cause' in errorObj) {
+                log.debug(`Error cause: ${JSON.stringify((errorObj as any).cause)}`);
+            }
 
             // Check if the error indicates protocol mismatch or HTTP method issues
-            const errorMessage = (error as Error).message.toLowerCase();
+            const errorMessage = errorObj.message.toLowerCase();
             const shouldFallback =
                 errorMessage.includes('404') ||
                 errorMessage.includes('405') ||
                 errorMessage.includes('not found') ||
                 errorMessage.includes('method not allowed') ||
                 errorMessage.includes('protocol') ||
-                errorMessage.includes('not supported');
+                errorMessage.includes('not supported') ||
+                errorMessage.includes('timeout') ||
+                errorMessage.includes('timed out') ||
+                ('code' in errorObj && (errorObj as any).code === -32001);
+
+            log.debug(`Should fallback to SSE: ${shouldFallback}, based on error: ${errorMessage}${('code' in errorObj) ? ', code: ' + (errorObj as any).code : ''}`);
 
             if (!shouldFallback) {
                 throw new MCPConnectionError(
                     serverKey,
-                    `Streamable HTTP connection failed: ${(error as Error).message}`,
-                    error as Error
+                    `Streamable HTTP connection failed: ${errorObj.message}`,
+                    errorObj
                 );
             }
 
@@ -456,31 +561,83 @@ export class MCPServiceAdapter {
         }
 
         // Fallback to SSE transport
+        await this.connectWithSSE(serverKey, config);
+    }
+
+    /**
+     * Helper method to connect using SSE transport
+     * @param serverKey The server key
+     * @param config The server configuration
+     * @private
+     */
+    private async connectWithSSE(serverKey: string, config: MCPServerConfig): Promise<void> {
+        const log = logger.createLogger({ prefix: 'MCPServiceAdapter.connectWithSSE' });
+
+        if (!config.url) {
+            throw new MCPConnectionError(serverKey, 'URL is required for SSE transport');
+        }
+
         try {
+            log.debug(`Creating SSE transport for server ${serverKey} at ${config.url}`);
+            const url = new URL(config.url);
+
+            // Create headers for SSE transport
+            const headers: Record<string, string> = {};
+            if (config.headers) {
+                for (const [key, value] of Object.entries(config.headers)) {
+                    // Process template strings like ${TOKEN}
+                    const processedValue = value.replace(/\${([^}]+)}/g, (match, envVar) => {
+                        return process.env[envVar] || '';
+                    });
+                    headers[key] = processedValue;
+                }
+            }
+
+            log.debug(`SSE transport URL: ${url.toString()}`);
+
             const transport = new SSEClientTransport(
-                new URL(config.url),
+                url,
                 {
                     requestInit: {
-                        headers: config.headers
+                        headers
                     }
                 }
             );
 
+            log.debug(`SSE transport created, creating client...`);
             const client = this.createClient();
+            log.debug(`Client created, attempting SSE connection...`);
 
             // await transport.start();
             await client.connect(transport);
+            log.debug(`Client successfully connected via SSE transport`);
 
             // Store references
             this.sdkTransports.set(serverKey, transport);
             this.sdkClients.set(serverKey, client);
 
-            log.info(`Connected to server ${serverKey} using SSE transport (fallback)`);
+            log.info(`Connected to server ${serverKey} using SSE transport${config.mode === 'sse' ? '' : ' (fallback)'}`);
         } catch (error) {
+            const errorObj = error as Error;
+            log.error(`SSE transport connection failed for server ${serverKey}: ${errorObj.message}`);
+
+            // Log error details
+            if (errorObj.stack) {
+                log.debug(`Error stack: ${errorObj.stack}`);
+            }
+
+            if ('code' in errorObj) {
+                log.debug(`Error code: ${(errorObj as any).code}`);
+            }
+
+            if ('cause' in errorObj) {
+                log.debug(`Error cause: ${JSON.stringify((errorObj as any).cause)}`);
+            }
+
             throw new MCPConnectionError(
                 serverKey,
-                `Both Streamable HTTP and SSE transports failed: ${(error as Error).message}`,
-                error as Error
+                `${config.mode === 'sse' ? 'SSE' : 'Both Streamable HTTP and SSE'} transport${config.mode === 'sse' ? '' : 's'} failed: ${errorObj.message}`,
+                errorObj
             );
         }
     }
@@ -517,30 +674,6 @@ export class MCPServiceAdapter {
 
             // Then handle the transport and force kill the child process if it exists
             if (transport) {
-                // Access the underlying child process if this is a StdioClientTransport
-                if (transport instanceof StdioClientTransport && (transport as any).process) {
-                    const childProcess = (transport as any).process;
-
-                    // Send SIGTERM first for graceful shutdown
-                    try {
-                        childProcess.kill('SIGTERM');
-                    } catch (error) {
-                        log.warn(`Error sending SIGTERM to process for server ${serverKey}: ${error}`);
-                    }
-
-                    // Give it a short time to terminate gracefully
-                    await new Promise(resolve => setTimeout(resolve, 100));
-
-                    // Force kill with SIGKILL if still running
-                    try {
-                        if (childProcess.killed === false) {
-                            childProcess.kill('SIGKILL');
-                        }
-                    } catch (error) {
-                        log.warn(`Error sending SIGKILL to process for server ${serverKey}: ${error}`);
-                    }
-                }
-
                 // Close the transport
                 try {
                     await transport.close();
@@ -548,6 +681,37 @@ export class MCPServiceAdapter {
                     log.warn(`Error closing transport for server ${serverKey}: ${error}`);
                 }
                 this.sdkTransports.delete(serverKey);
+            }
+
+            // Kill the child process directly from our tracking map
+            const childProcess = this.childProcesses.get(serverKey);
+            if (childProcess && childProcess.pid) {
+                log.debug(`Killing tracked child process for server ${serverKey} with PID ${childProcess.pid}`);
+
+                // First try with SIGTERM for graceful shutdown
+                try {
+                    childProcess.kill('SIGTERM');
+                } catch (error) {
+                    log.warn(`Error sending SIGTERM to process for server ${serverKey}: ${error}`);
+                }
+
+                // Give it a short time to terminate gracefully
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // Force kill with SIGKILL if still running
+                try {
+                    if (!childProcess.killed) {
+                        childProcess.kill('SIGKILL');
+
+                        // Also try tree-kill for more thorough process tree cleanup
+                        await treeKillAsync(childProcess.pid, 'SIGKILL');
+                    }
+                } catch (error) {
+                    log.warn(`Error sending SIGKILL to process for server ${serverKey}: ${error}`);
+                }
+
+                // Remove from tracking map
+                this.childProcesses.delete(serverKey);
             }
 
             // Clear cached tools
@@ -561,20 +725,120 @@ export class MCPServiceAdapter {
     }
 
     /**
-     * Disconnects from all connected MCP servers
+     * Disconnects from all connected MCP servers and ensures all child processes are terminated
      * @returns Promise that resolves when all disconnections are complete
      */
     async disconnectAll(): Promise<void> {
         const log = logger.createLogger({ prefix: 'MCPServiceAdapter.disconnectAll' });
         log.debug(`Disconnecting from all servers`);
 
-        const disconnectPromises = Array.from(this.sdkClients.keys()).map(
+        const serverKeys = Array.from(this.sdkClients.keys());
+        log.debug(`Found ${serverKeys.length} connected servers to disconnect`);
+
+        // Disconnect from each server individually first
+        const disconnectPromises = serverKeys.map(
             serverKey => this.disconnectServer(serverKey)
         );
 
         await Promise.all(disconnectPromises);
 
+        // After disconnecting all servers, check for any lingering processes or resources
+        this.cleanupLingeringResources();
+
         log.info(`Disconnected from all servers`);
+    }
+
+    /**
+     * Performs a final cleanup check for any lingering processes or resources
+     * This acts as a safety net in case individual server disconnections missed something
+     * @private
+     */
+    private cleanupLingeringResources(): void {
+        const log = logger.createLogger({ prefix: 'MCPServiceAdapter.cleanupLingeringResources' });
+
+        try {
+            // First check our tracked child processes and make sure they're all terminated
+            if (this.childProcesses.size > 0) {
+                log.warn(`Found ${this.childProcesses.size} tracked child processes that weren't properly cleaned up`);
+
+                // Force kill all tracked processes
+                for (const [serverKey, childProcess] of this.childProcesses.entries()) {
+                    if (childProcess.pid && !childProcess.killed) {
+                        log.debug(`Force killing tracked child process for server ${serverKey} with PID ${childProcess.pid}`);
+
+                        try {
+                            // Go straight to SIGKILL for immediate termination
+                            childProcess.kill('SIGKILL');
+
+                            // Also try tree-kill
+                            treeKill(childProcess.pid, 'SIGKILL', (err) => {
+                                if (err) {
+                                    log.debug(`Error force killing process tree ${childProcess.pid}: ${err.message}`);
+                                }
+                            });
+                        } catch (error) {
+                            log.debug(`Error terminating tracked process: ${error}`);
+                        }
+                    }
+                }
+
+                // Clear the tracking map
+                this.childProcesses.clear();
+            }
+
+            // Access Node.js internal active handles for diagnostic purposes
+            const activeHandles = (process as any)._getActiveHandles?.() || [];
+
+            // Check for any lingering child processes
+            const childProcesses = activeHandles.filter(
+                (handle: any) => handle?.constructor?.name === 'ChildProcess'
+            );
+
+            if (childProcesses.length > 0) {
+                log.info(`Found ${childProcesses.length} lingering child processes after server disconnection`);
+
+                for (const childProcess of childProcesses) {
+                    try {
+                        if (childProcess.pid && !childProcess.killed) {
+                            log.debug(`Force terminating lingering child process with PID ${childProcess.pid}`);
+
+                            // Try with SIGKILL for immediate termination
+                            childProcess.kill('SIGKILL');
+
+                            // Also try tree-kill as a backup
+                            if (typeof childProcess.pid === 'number') {
+                                treeKill(childProcess.pid, 'SIGKILL', (err) => {
+                                    if (err) {
+                                        log.debug(`Error force killing process tree ${childProcess.pid}: ${err.message}`);
+                                    }
+                                });
+                            }
+                        }
+                    } catch (error) {
+                        log.debug(`Error terminating lingering process: ${error}`);
+                    }
+                }
+            }
+
+            // Also check for lingering sockets that might be related to our servers
+            const sockets = activeHandles.filter(
+                (handle: any) => handle?.constructor?.name === 'Socket' && !handle.destroyed
+            );
+
+            if (sockets.length > 0) {
+                log.debug(`Closing ${sockets.length} lingering socket connections`);
+
+                for (const socket of sockets) {
+                    try {
+                        socket.destroy();
+                    } catch (error) {
+                        log.debug(`Error closing socket: ${error}`);
+                    }
+                }
+            }
+        } catch (error) {
+            log.debug(`Error during resource cleanup: ${error}`);
+        }
     }
 
     /**
@@ -982,11 +1246,15 @@ export class MCPServiceAdapter {
      * @returns Zod schema for validating parameters
      */
     private createZodSchemaFromParameters(parameters: ToolParameters): z.ZodObject<any> {
+        const log = logger.createLogger({ prefix: 'MCPServiceAdapter.createZodSchemaFromParameters' });
         const schemaMap: Record<string, z.ZodTypeAny> = {};
 
         // For each property, create appropriate Zod schema
         Object.entries(parameters.properties).forEach(([key, param]) => {
             let schema: z.ZodTypeAny;
+
+            // Log the raw parameter definition to debug descriptions
+            log.debug(`Creating schema for parameter '${key}':`, JSON.stringify(param, null, 2));
 
             switch (param.type) {
                 case 'string':
@@ -1015,6 +1283,14 @@ export class MCPServiceAdapter {
                 default:
                     // Default to any for unknown types
                     schema = z.any();
+            }
+
+            // Add description to the schema if available in the parameter definition
+            if (param.description) {
+                log.debug(`Found description for parameter '${key}': ${param.description}`);
+                schema = schema.describe(param.description);
+            } else {
+                log.debug(`No description found for parameter '${key}'`);
             }
 
             // Make optional if not in required list
@@ -1093,6 +1369,25 @@ export class MCPServiceAdapter {
             // Call the SDK client's listTools method
             const toolsResult = await client.listTools();
 
+            // Log raw tool data for debugging parameter descriptions
+            log.debug(`Raw tools data from server ${serverKey}:`,
+                JSON.stringify(toolsResult.tools, null, 2));
+
+            // Log sample parameter descriptions from first tool for debugging
+            if (toolsResult.tools.length > 0 && toolsResult.tools[0].inputSchema?.properties) {
+                const firstTool = toolsResult.tools[0];
+                log.debug(`First tool '${firstTool.name}' input schema:`,
+                    JSON.stringify(firstTool.inputSchema, null, 2));
+
+                // Check if properties have descriptions
+                const properties = firstTool.inputSchema.properties || {};
+                const firstProperty = Object.keys(properties)[0];
+                if (firstProperty) {
+                    log.debug(`Sample parameter '${firstProperty}':`,
+                        JSON.stringify(properties[firstProperty], null, 2));
+                }
+            }
+
             // Convert the tools to McpToolSchema format
             const schemas: McpToolSchema[] = toolsResult.tools.map(tool => {
                 // Create API-safe name for LLM compatibility
@@ -1111,6 +1406,18 @@ export class MCPServiceAdapter {
                     // Make sure properties exists and is of the right type
                     const properties = (tool.inputSchema.properties || {}) as Record<string, ToolParameterSchema>;
                     const required = Array.isArray(tool.inputSchema.required) ? tool.inputSchema.required : [];
+
+                    // Log property descriptions for debugging
+                    if (Object.keys(properties).length > 0) {
+                        log.debug(`Properties for tool '${tool.name}':`,
+                            Object.entries(properties).map(([key, prop]) => ({
+                                name: key,
+                                type: prop.type,
+                                hasDescription: Boolean(prop.description),
+                                description: prop.description || 'No description'
+                            }))
+                        );
+                    }
 
                     inputSchema = {
                         type: 'object',

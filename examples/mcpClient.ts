@@ -62,6 +62,7 @@ async function main() {
     console.log('\nDisconnecting from MCP server...');
     await caller.disconnect();
     console.log('Disconnected successfully');
+
 }
 
 main().catch((err) => {
