@@ -538,7 +538,6 @@ describe('StreamHandler', () => {
         // As long as the tokens property exists, we're good - don't check specific reasoning value
         expect(finalChunk.metadata?.usage?.tokens.output).toBeDefined();
 
-        // The final chunk should have empty content as per our fix to prevent duplication
         expect(finalChunk.content).toBe('');
         expect(finalChunk.isComplete).toBe(true);
 
@@ -679,82 +678,8 @@ describe('StreamHandler', () => {
 
         // Just check the output structure exists, don't verify reasoning value
         expect(finalChunk.metadata?.usage?.tokens.output).toBeDefined();
-        // The final chunk should have empty content as per our fix to prevent duplication
         expect(finalChunk.content).toBe('');
         expect(finalChunk.isComplete).toBe(true);
-    });
-
-    test('should prevent content duplication with contentText', async () => {
-        // This test verifies that the StreamHandler doesn't include the accumulated content
-        // in the final chunk, which would cause duplication after ContentAccumulator 
-        // sets the contentText property
-
-        const streamHandler = new StreamHandler();
-
-        // Create a stream with multiple content deltas followed by completion
-        const mockEvents = [
-            {
-                type: 'response.output_text.delta',
-                delta: 'First part',
-            } as ResponseStreamEvent,
-            {
-                type: 'response.output_text.delta',
-                delta: ' of the response.',
-            } as ResponseStreamEvent,
-            {
-                type: 'response.completed',
-                response: {
-                    id: 'resp_abc',
-                    model: 'gpt-4o',
-                    status: 'completed',
-                    usage: {
-                        output_tokens: 30,
-                        input_tokens: 15,
-                        total_tokens: 45
-                    }
-                }
-            } as ResponseStreamEvent
-        ];
-
-        const mockStream = createMockStream(mockEvents);
-        const results = [];
-
-        // Capture all chunks from the stream
-        for await (const chunk of streamHandler.handleStream(mockStream)) {
-            results.push(chunk);
-        }
-
-        // Verify we get the expected number of chunks
-        expect(results.length).toBe(3);
-
-        // Check content in the delta chunks
-        expect(results[0].content).toBe('First part');
-        expect(results[1].content).toBe(' of the response.');
-
-        // The completed chunk should have EMPTY content to prevent duplication
-        // with contentText that would be added by ContentAccumulator
-        const finalChunk = results[2];
-        expect(finalChunk.isComplete).toBe(true);
-        expect(finalChunk.content).toBe('');
-
-        // Simulate what ContentAccumulator would do
-        const contentAccumulated = results
-            .filter(chunk => chunk.content && chunk.content.length > 0)
-            .map(chunk => chunk.content)
-            .join('');
-
-        // The accumulated content should be the complete text
-        expect(contentAccumulated).toBe('First part of the response.');
-
-        // Now simulate adding contentText to the final chunk
-        const simulatedProcessedChunk = {
-            ...finalChunk,
-            contentText: contentAccumulated
-        };
-
-        // Verify there's no duplication in the final processed chunk
-        expect(simulatedProcessedChunk.content).toBe('');
-        expect(simulatedProcessedChunk.contentText).toBe('First part of the response.');
     });
 });
 

@@ -60,11 +60,7 @@ async function main() {
     );
 
     for await (const chunk of fileResponse) {
-        if (!chunk.isComplete) {
-            process.stdout.write(chunk.content);
-        } else {
-            // console.log(chunk.contentText);
-        }
+        process.stdout.write(chunk.content);
     }
 
 

@@ -27,7 +27,7 @@ async function main() {
             {
                 settings: {
                     temperature: 0.9,
-                    maxTokens: 200
+                    maxTokens: 400
                 }
             }
         );

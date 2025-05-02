@@ -3,13 +3,6 @@ import type { ToolCall } from "../../../types/tooling";
 import { logger } from "../../../utils/logger";
 import { FinishReason } from "../../../interfaces/UniversalInterfaces";
 
-// Define the expected tool call format in chunks, which differs from ToolCall
-type StreamToolCall = {
-    id?: string;
-    name: string;
-    arguments?: Record<string, unknown>;
-};
-
 // Track the accumulation state of a tool call
 type ToolCallAccumulator = {
     id?: string;

@@ -165,9 +165,6 @@ export class StreamHandler {
                         const completedEvent = chunk as types.ResponseCompletedEvent;
                         finalResponse = completedEvent.response;
                         isCompleted = true;
-                        // Don't emit full accumulated content for the completed event
-                        // Just set an empty content or omit it entirely
-                        outputChunk.content = '';
 
                         // Store input tokens for use in other events like in_progress
                         if (finalResponse.usage?.input_tokens) {
@@ -384,7 +381,6 @@ export class StreamHandler {
                 if (yieldChunk) {
                     // IMPORTANT: We yield UniversalStreamResponse, but structure it like a StreamChunk
                     // for the pipeline processors (e.g., ContentAccumulator) to handle.
-                    const fullContent = outputChunk.isComplete ? '' : (outputChunk.content || '');
 
                     // For reasoning, include the delta during streaming or accumulated when complete
                     // If we have a new reasoning delta specifically for this chunk, make sure it's included
@@ -405,7 +401,7 @@ export class StreamHandler {
                     }
 
                     const responseChunk: UniversalStreamResponse = {
-                        content: fullContent,
+                        content: outputChunk.content || '',
                         role: 'assistant',
                         isComplete: !!outputChunk.isComplete,
                         reasoning: reasoningContent, // Include reasoning delta or full reasoning
@@ -415,12 +411,13 @@ export class StreamHandler {
                             finishReason: finishReason,
                             model: (outputChunk.metadata?.model as string) || '',
                             ...(outputChunk.metadata || {}) // Include other metadata
-                        }
+                        },
+                        contentText: accumulatedContent // Always include the latest accumulated text
                     };
 
                     // Enhanced logging for troubleshooting
                     this.log.debug(`Yielding response chunk with properties:
-                        - content length: ${fullContent.length}
+                        - content length: ${(outputChunk.content || '').length}
                         - has reasoning: ${reasoningContent ? true : false}
                         - reasoning length: ${reasoningContent ? reasoningContent.length : 0}
                         - is complete: ${!!outputChunk.isComplete}
@@ -441,6 +438,7 @@ export class StreamHandler {
             // Yield an error response
             yield {
                 content: '',
+                contentText: accumulatedContent,
                 role: 'assistant',
                 isComplete: true,
                 toolCalls: undefined,

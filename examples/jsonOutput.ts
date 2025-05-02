@@ -24,65 +24,65 @@ async function main() {
     );
 
     try {
-        // Example 1: Using Zod schema (recommended approach with properties at root level)
-        // console.log('\nExample 1: Using Zod schema for structured output');
-        // const response1 = await caller.call(
-        //     'Generate a profile for a fictional user named Alice who loves technology',
-        //     {
-        //         jsonSchema: {
-        //             name: 'UserProfile',
-        //             schema: UserSchema
-        //         },
-        //         settings: {
-        //             temperature: 0.7
-        //         }
-        //     }
-        // );
-        // console.log('\nStructured Response:');
-        // console.log(JSON.stringify(response1[0].contentObject, null, 2));
+        // Example 1: Using Zod schema(recommended approach with properties at root level)
+        console.log('\nExample 1: Using Zod schema for structured output');
+        const response1 = await caller.call(
+            'Generate a profile for a fictional user named Alice who loves technology',
+            {
+                jsonSchema: {
+                    name: 'UserProfile',
+                    schema: UserSchema
+                },
+                settings: {
+                    temperature: 0.7
+                }
+            }
+        );
+        console.log('\nStructured Response:');
+        console.log(JSON.stringify(response1[0].contentObject, null, 2));
 
-        // Example 2: Using raw JSON Schema (recommended approach with properties at root level)
-        // console.log('\nExample 2: Using raw JSON Schema + force prompt enhancement mode');
-        // const recipeSchema = {
-        //     type: 'object',
-        //     properties: {
-        //         name: { type: 'string' },
-        //         preparationTime: { type: 'number' },
-        //         difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'] },
-        //         ingredients: {
-        //             type: 'array',
-        //             items: {
-        //                 type: 'object',
-        //                 properties: {
-        //                     item: { type: 'string' },
-        //                     amount: { type: 'string' }
-        //                 },
-        //                 required: ['item', 'amount']
-        //             }
-        //         },
-        //         steps: {
-        //             type: 'array',
-        //             items: { type: 'string' }
-        //         }
-        //     },
-        //     required: ['name', 'preparationTime', 'difficulty', 'ingredients', 'steps']
-        // };
-        // const response2 = await caller.call(
-        //     'Generate a recipe for a vegetarian pasta dish',
-        //     {
-        //         jsonSchema: {
-        //             name: 'Recipe',
-        //             schema: JSON.stringify(recipeSchema)
-        //         },
-        //         responseFormat: 'json',
-        //         settings: {
-        //             jsonMode: 'force-prompt',
-        //             temperature: 0.7
-        //         }
-        //     }
-        // );
-        // console.log('\nJSON Schema Response:');
-        // console.log(JSON.stringify(response2[0].contentObject, null, 2));
+        // Example 2: Using raw JSON Schema(recommended approach with properties at root level)
+        console.log('\nExample 2: Using raw JSON Schema + force prompt enhancement mode');
+        const recipeSchema = {
+            type: 'object',
+            properties: {
+                name: { type: 'string' },
+                preparationTime: { type: 'number' },
+                difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'] },
+                ingredients: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            item: { type: 'string' },
+                            amount: { type: 'string' }
+                        },
+                        required: ['item', 'amount']
+                    }
+                },
+                steps: {
+                    type: 'array',
+                    items: { type: 'string' }
+                }
+            },
+            required: ['name', 'preparationTime', 'difficulty', 'ingredients', 'steps']
+        };
+        const response2 = await caller.call(
+            'Generate a recipe for a vegetarian pasta dish',
+            {
+                jsonSchema: {
+                    name: 'Recipe',
+                    schema: JSON.stringify(recipeSchema)
+                },
+                responseFormat: 'json',
+                settings: {
+                    jsonMode: 'force-prompt',
+                    temperature: 0.7
+                }
+            }
+        );
+        console.log('\nJSON Schema Response:');
+        console.log(JSON.stringify(response2[0].contentObject, null, 2));
 
         // Example 3: Simple JSON mode without schema (recommended approach with properties at root level)
         console.log('\nExample 3: Simple JSON mode without schema');

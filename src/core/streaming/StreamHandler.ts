@@ -114,22 +114,23 @@ export class StreamHandler {
 
         // Build the pipeline with processors
         const pipelineProcessors: IStreamProcessor[] = [contentAccumulator, reasoningProcessor];
-        // Determine batch size: if we have a usage callback, default to 100 if not provided, otherwise 0
+
+        // Always create a usage processor, but with batch size 0 if no callback needed
         const effectiveBatchSize = this.usageCallback
             ? (params.usageBatchSize !== undefined ? params.usageBatchSize : 100)
             : 0;
-        if (effectiveBatchSize > 0) {
-            const usageProcessor = this.usageTracker.createStreamProcessor(
-                inputTokens,
-                modelInfo,
-                {
-                    inputCachedTokens: params.inputCachedTokens,
-                    callerId: params.callerId || this.callerId,
-                    tokenBatchSize: effectiveBatchSize
-                }
-            );
-            pipelineProcessors.push(usageProcessor);
-        }
+
+        // Always add usage processor regardless of batch size
+        const usageProcessor = this.usageTracker.createStreamProcessor(
+            inputTokens,
+            modelInfo,
+            {
+                inputCachedTokens: params.inputCachedTokens,
+                callerId: params.callerId || this.callerId,
+                tokenBatchSize: effectiveBatchSize
+            }
+        );
+        pipelineProcessors.push(usageProcessor);
 
         // Add history processor to pipeline
         log.debug('Adding history processor to stream pipeline');
