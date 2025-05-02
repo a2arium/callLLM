@@ -12,6 +12,7 @@ import { ToolController } from '../tools/ToolController';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator';
 import { HistoryManager } from '../history/HistoryManager';
 import { HistoryTruncator } from '../history/HistoryTruncator';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter';
 
 /**
  * StreamingService
@@ -33,6 +34,7 @@ export class StreamingService {
     private usageTracker: UsageTracker;
     private retryManager: RetryManager;
     private historyTruncator: HistoryTruncator;
+    private mcpAdapterProvider: () => MCPServiceAdapter | null = () => null;
 
     constructor(
         private providerManager: ProviderManager,
@@ -45,7 +47,8 @@ export class StreamingService {
             tokenBatchSize?: number;
         },
         private toolController?: ToolController,
-        private toolOrchestrator?: ToolOrchestrator
+        private toolOrchestrator?: ToolOrchestrator,
+        mcpAdapterProvider?: () => MCPServiceAdapter | null
     ) {
         this.tokenCalculator = new TokenCalculator();
         this.responseProcessor = new ResponseProcessor();
@@ -54,6 +57,9 @@ export class StreamingService {
             usageCallback,
             callerId
         );
+        if (mcpAdapterProvider) {
+            this.mcpAdapterProvider = mcpAdapterProvider;
+        }
         this.streamHandler = new StreamHandler(
             this.tokenCalculator,
             this.historyManager,
@@ -62,7 +68,8 @@ export class StreamingService {
             callerId,
             this.toolController,
             this.toolOrchestrator,
-            this
+            this,
+            this.mcpAdapterProvider
         );
         this.retryManager = retryManager || new RetryManager({
             maxRetries: 3,
@@ -333,5 +340,16 @@ export class StreamingService {
      */
     public getResponseProcessor(): ResponseProcessor {
         return this.responseProcessor;
+    }
+
+    /**
+     * Add a setter for the adapter provider
+     */
+    public setMCPAdapterProvider(provider: () => MCPServiceAdapter | null): void {
+        this.mcpAdapterProvider = provider;
+        // Also update the StreamHandler if it exists
+        if (this.streamHandler) {
+            this.streamHandler.setMCPAdapterProvider(provider);
+        }
     }
 } 

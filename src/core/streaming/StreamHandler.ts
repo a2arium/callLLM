@@ -18,6 +18,7 @@ import { HistoryManager } from '../history/HistoryManager';
 import { IStreamProcessor } from './types';
 import { StreamHistoryProcessor } from './processors/StreamHistoryProcessor';
 import { StreamingService } from './StreamingService';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter';
 
 export class StreamHandler {
     private readonly tokenCalculator: TokenCalculator;
@@ -30,6 +31,7 @@ export class StreamHandler {
     private readonly historyManager: HistoryManager;
     private readonly historyProcessor: StreamHistoryProcessor;
     private readonly streamingService?: StreamingService;
+    private mcpAdapterProvider: () => MCPServiceAdapter | null = () => null;
 
     constructor(
         tokenCalculator: TokenCalculator,
@@ -39,7 +41,8 @@ export class StreamHandler {
         callerId?: string,
         toolController?: ToolController,
         toolOrchestrator?: ToolOrchestrator,
-        streamingService?: StreamingService
+        streamingService?: StreamingService,
+        mcpAdapterProvider?: () => MCPServiceAdapter | null
     ) {
         this.tokenCalculator = tokenCalculator;
         this.responseProcessor = responseProcessor;
@@ -51,12 +54,19 @@ export class StreamHandler {
         this.historyManager = historyManager;
         this.historyProcessor = new StreamHistoryProcessor(this.historyManager);
         this.streamingService = streamingService;
+        if (mcpAdapterProvider) {
+            this.mcpAdapterProvider = mcpAdapterProvider;
+        }
 
         const log = logger.createLogger({
             level: process.env.LOG_LEVEL as any || 'info',
             prefix: 'StreamHandler.constructor'
         });
         log.debug('Initialized StreamHandler', { callerId });
+    }
+
+    public setMCPAdapterProvider(provider: () => MCPServiceAdapter | null): void {
+        this.mcpAdapterProvider = provider;
     }
 
     /**
@@ -277,13 +287,21 @@ export class StreamHandler {
                             toolCalls: completedToolCalls
                         };
 
-                        const toolCallsResult = await this.toolOrchestrator.processToolCalls(
+                        // Reset iteration count before processing tools for this chunk
+                        this.toolController?.resetIterationCount();
+
+                        // Ensure the call on line ~293 has exactly three arguments
+                        const toolProcessingResult = await this.toolOrchestrator.processToolCalls(
                             toolCallsResponse,
-                            callSpecificTools
+                            callSpecificTools,
+                            this.mcpAdapterProvider
                         );
 
+                        // Update message history state based on results added by orchestrator
+                        currentMessages = this.historyManager.getMessages();
+
                         // If we have StreamingService, continue the stream with tool results
-                        if (toolCallsResult.requiresResubmission && this.streamingService) {
+                        if (toolProcessingResult.requiresResubmission && this.streamingService) {
                             // Create continuation messages
                             const toolMessages = this.historyManager.getLastMessages(5) || []; // Using existing method instead of getToolResultMessages, ensuring it's always an array
 
@@ -320,7 +338,7 @@ export class StreamHandler {
                                 }
 
                             }
-                        } else if (toolCallsResult.requiresResubmission && !this.streamingService) {
+                        } else if (toolProcessingResult.requiresResubmission && !this.streamingService) {
                             // Handle case where StreamingService is not available
                             const errorMsg = 'StreamingService not available for tool call continuation';
                             log.error(errorMsg);

@@ -26,8 +26,14 @@ async function main() {
     };
 
     // Initialize the caller with OpenAI
-    const caller = new LLMCaller('openai', 'fast', 'You are a helpful assistant that can use MCP servers.');
-    await caller.addTools([mcpConfig]);
+    const caller = new LLMCaller(
+        'openai',
+        'fast',
+        'You are a helpful assistant that can use MCP servers.',
+        {
+            tools: [mcpConfig]
+        }
+    );
 
     // Use the MCP server as a tool in a LLM call
     console.log('Listing current directory via MCP filesystem server...');
@@ -40,8 +46,7 @@ async function main() {
                     folders: z.array(z.string()),
                     files: z.array(z.string())
                 })
-            },
-            tools: [mcpConfig]
+            }
         }
     );
 
@@ -53,10 +58,11 @@ async function main() {
     const result = await caller.callMcpTool('filesystem', 'read_file', { path: 'package.json' });
     console.log('Direct MCP call result:', result);
 
-    // Additional LLM + MCP examples - removing the redundant tools parameter since we already added tools
-    console.log('\nReading a specific file via MCP filesystem server using stream...');
+    // // Additional LLM + MCP examples - removing the redundant tools parameter since we already added tools
+    // console.log('\nReading a specific file via MCP filesystem server using stream...');
     const fileResponse = await caller.stream(
-        'Read the package.json file from the current directory and tell me its version number.'
+        'Read the package.json file from the current directory and tell me its version number.',
+        { tools: [mcpConfig] }
     );
 
     for await (const chunk of fileResponse) {
@@ -64,11 +70,8 @@ async function main() {
     }
 
 
-    // console.log('\nLLM Response (with extracted version):');
-    // console.log(fileResponse[0].content);
-
-    // Clean up and disconnect from MCP server
-    console.log('\nDisconnecting from MCP server...');
+    // Clean up and disconnect from MCP servers
+    console.log('\nDisconnecting from MCP servers...');
     await caller.disconnectMcpServers();
     console.log('Disconnected successfully');
 }

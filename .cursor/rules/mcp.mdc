@@ -1,0 +1,153 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# MCP Server Integration
+
+This document outlines how Model Context Protocol (MCP) servers are integrated and utilized within the `callllm` library to enable interaction with external tools and services.
+
+## Overview
+
+MCP allows `callllm` to connect to external servers that expose tools conforming to the Model Context Protocol. This provides a powerful mechanism for extending LLM capabilities with functionalities like file system access, process execution, web browsing, API calls, etc., without modifying the core library.
+
+## Core Components
+
+### `MCPServiceAdapter`
+- **Location:** `@src/core/mcp/MCPServiceAdapter.ts`
+- **Responsibility:** Manages the lifecycle of connections to MCP servers using the official MCP SDK (`@modelcontext/client`). It handles:
+  - Establishing and terminating connections based on configuration (stdio, http).
+  - Managing different transport types ('stdio', 'http') and modes ('streamable', 'sse') with fallback mechanisms.
+  - Handling authentication (Bearer, Basic, OAuth).
+  - Spawning and managing local server processes for 'stdio' transport.
+  - Providing methods for direct interaction: fetching schemas (`getServerSchemas`) and executing tools (`callTool`).
+
+### `MCPToolLoader`
+- **Location:** `@src/core/mcp/MCPToolLoader.ts`
+- **Responsibility:** Loads MCP server configurations provided by the user. It interacts with `MCPServiceAdapter` to:
+  - Fetch tool schemas from connected MCP servers.
+  - Transform these schemas into `ToolDefinition` objects compatible with the `callllm` tool orchestration layer.
+  - Makes MCP server tools discoverable and usable by the LLM during standard calls.
+
+### `MCPDirectAccess` Interface
+- **Location:** `@src/core/mcp/MCPDirectAccess.ts`
+- **Responsibility:** Defines the interface for bypassing the LLM and interacting directly with MCP server tools. Implemented by `LLMCaller`. Methods:
+  - `getMcpServerToolSchemas(serverName: string)`: Retrieve tool schemas for a specific server.
+  - `callMcpTool(serverName: string, toolName: string, parameters: Record<string, any>)`: Execute a specific tool on a server directly.
+
+### Configuration Types
+- **Location:** `@src/core/mcp/MCPConfigTypes.ts`
+- **Responsibility:** Defines the TypeScript types (`MCPServersMap`, `MCPServerConfig`, `MCPAuthConfig`, etc.) for configuring MCP servers.
+
+### `OAuthProvider`
+- **Location:** `@src/core/mcp/OAuthProvider.ts`
+- **Responsibility:** Handles the OAuth authentication flow for MCP servers configured to use OAuth.
+
+## Usage Patterns
+
+### 1. LLM Interaction (Primary Method)
+- Pass MCP server configurations within the `tools` array during a call or via `caller.addTools()`.
+- `MCPToolLoader` automatically discovers tools and makes them available to the LLM.
+- The LLM decides which MCP tool to call based on the prompt.
+- Connection management is handled internally.
+
+```typescript
+const mcpConfig = {
+  mcpServers: {
+    filesystem: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '.'] }
+  }
+};
+
+// Option 1: Pass config directly in the call
+const response = await caller.call("List files here", { tools: [mcpConfig] });
+
+// Option 2: Add tools beforehand
+await caller.addTools([mcpConfig]);
+const response2 = await caller.call("Read the package.json file");
+```
+
+### 2. Direct Access (Supplementary Method)
+- Use when you need programmatic control over specific tool calls without LLM interpretation.
+- Access methods via the `LLMCaller` instance (which implements `MCPDirectAccess`).
+- Requires more explicit connection management if not combined with LLM calls.
+
+```typescript
+// Assume caller and mcpConfig are initialized as above
+await caller.addTools([mcpConfig]);
+
+// Explicitly connect for direct access (optional but good practice for clarity)
+// Ensures the connection is ready before direct calls.
+// Also allows pre-connecting before any LLM or direct calls.
+await caller.connectToMcpServer('filesystem'); 
+
+// Get tool schemas
+const schemas = await caller.getMcpServerToolSchemas('filesystem');
+console.log(schemas);
+
+// Call a specific tool directly
+const content = await caller.callMcpTool(
+  'filesystem',             // Server name
+  'read_file',              // *Original* tool name from the MCP server
+  { path: 'package.json' }  // Parameters
+);
+console.log(content);
+
+// Connections are reused efficiently between LLM calls and direct calls.
+const response3 = await caller.call("Summarize the package.json content"); 
+
+// Disconnect when finished (cleans up connections and processes)
+await caller.disconnectMcpServers(); 
+// Or disconnect all servers managed by an adapter instance:
+// await adapter.disconnectAll(); 
+```
+
+## Configuration (`MCPServerConfig`)
+
+Refer to `@src/core/mcp/MCPConfigTypes.ts` for detailed type definitions.
+
+- **Key:** The name used to refer to the server (e.g., `filesystem`).
+- **Transport:**
+  - **`stdio` (Default if `command` is present):**
+    - `command`: Command to execute (e.g., 'npx').
+    - `args`: Arguments for the command.
+    - `env`: Environment variables for the process.
+  - **`http` (Default if `url` is present):**
+    - `url`: The HTTP(S) endpoint of the MCP server.
+    - `type: 'http'` (Optional, inferred from `url`).
+    - `mode: 'streamable' | 'sse'`:
+      - `streamable` (Default): Uses chunked transfer encoding. Preferred for newer servers.
+      - `sse`: Uses Server-Sent Events. Use if `streamable` times out or fails, or if the server only supports SSE (e.g., skeet.build). The adapter automatically falls back from `streamable` to `sse` on failure, but specifying `sse` avoids the initial `streamable` attempt and potential timeout.
+    - `headers`: Static headers (e.g., for API keys).
+    - `auth`: Authentication configuration (see below).
+- **Authentication (`auth`):**
+  - **Bearer Token:** Provide via `headers: { "Authorization": "Bearer <token>" }`.
+  - **Basic Auth:** Provide via `headers: { "Authorization": "Basic <encoded>" }`.
+  - **OAuth:** Configure using `auth: { oauth: { ... } }` referencing an `OAuthProvider` instance or config. See `MCPAuthConfig` and `OAuthProvider`.
+- **Environment Variable Substitution:** Values like `${VAR_NAME}` within configuration strings (e.g., in `args`, `url`, `headers`) will be automatically replaced with the corresponding environment variable's value.
+- **`disabled?: boolean`**: Set to `true` to disable a server configuration.
+
+## Error Handling
+
+MCP interactions can throw specific errors:
+- `MCPConnectionError`: Issues connecting to the server (network, process spawn).
+- `MCPToolCallError`: Errors during the execution of a tool on the server.
+- `MCPAuthenticationError`: Authentication failures.
+- `MCPTimeoutError`: Operations timing out.
+
+Wrap calls in `try...catch` blocks to handle these potential issues gracefully.
+
+## Best Practices
+
+- Prefer LLM interaction for general use; use direct access only when necessary.
+- Use environment variable substitution (`${VAR_NAME}`) for sensitive information like API keys or tokens in configurations.
+- If experiencing timeouts with HTTP transport, explicitly set `mode: 'sse'` in the server configuration.
+- Call `disconnectMcpServers()` or `adapter.disconnectAll()` when finished to clean up connections and potentially terminate server processes.
+- Consult `@docs/mcp-tools.md` for more detailed explanations and troubleshooting.
+
+## References
+
+- Implementation: `@src/core/mcp/MCPServiceAdapter.ts`, `@src/core/mcp/MCPToolLoader.ts`
+- Configuration Types: `@src/core/mcp/MCPConfigTypes.ts`
+- Interface: `@src/core/mcp/MCPDirectAccess.ts`
+- Documentation: `@docs/mcp-tools.md`
+- Examples: `@examples/mcpClient.ts`, `@examples/mcpDirectTools.ts`

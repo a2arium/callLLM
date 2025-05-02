@@ -15,11 +15,15 @@ import { HistoryManager } from '../history/HistoryManager';
 import { HistoryTruncator } from '../history/HistoryTruncator';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { PromptEnhancer } from '../prompt/PromptEnhancer';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter';
 
 export class ChatController {
     // Keep track of the orchestrator - needed for recursive calls
     private toolOrchestrator?: ToolOrchestrator;
     private historyTruncator: HistoryTruncator;
+    private toolController: ToolController;
+    private historyManager: HistoryManager;
+    private mcpAdapterProvider: () => MCPServiceAdapter | null = () => null;
 
     constructor(
         private providerManager: ProviderManager,
@@ -27,12 +31,17 @@ export class ChatController {
         private responseProcessor: ResponseProcessor,
         private retryManager: RetryManager,
         private usageTracker: UsageTracker,
-        private toolController?: ToolController,
-        // ToolOrchestrator is injected after construction in LLMCaller
-        toolOrchestrator?: ToolOrchestrator,
-        private historyManager?: HistoryManager // Keep optional for flexibility
+        toolController: ToolController,
+        toolOrchestrator: ToolOrchestrator | undefined,
+        historyManager: HistoryManager,
+        mcpAdapterProvider?: () => MCPServiceAdapter | null
     ) {
-        this.toolOrchestrator = toolOrchestrator; // Store the orchestrator
+        this.toolController = toolController;
+        this.toolOrchestrator = toolOrchestrator;
+        this.historyManager = historyManager;
+        if (mcpAdapterProvider) {
+            this.mcpAdapterProvider = mcpAdapterProvider;
+        }
         this.historyTruncator = new HistoryTruncator(new TokenCalculator());
 
         const log = logger.createLogger({
@@ -45,6 +54,11 @@ export class ChatController {
     // Method for LLMCaller to set the orchestrator after initialization
     public setToolOrchestrator(orchestrator: ToolOrchestrator): void {
         this.toolOrchestrator = orchestrator;
+    }
+
+    // Add a setter for the adapter provider
+    public setMCPAdapterProvider(provider: () => MCPServiceAdapter | null): void {
+        this.mcpAdapterProvider = provider;
     }
 
     /**
@@ -249,7 +263,8 @@ export class ChatController {
 
             const { requiresResubmission } = await this.toolOrchestrator.processToolCalls(
                 response,
-                params.tools || [] // Pass original tools
+                params.tools || [], // Pass original tools
+                this.mcpAdapterProvider // Pass the provider function
             );
 
             if (requiresResubmission) {

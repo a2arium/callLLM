@@ -81,6 +81,7 @@ export type LLMCallerOptions = {
     responseProcessor?: ResponseProcessor;
     retryManager?: RetryManager;
     historyManager?: HistoryManager;
+    maxIterations?: number;
 };
 
 /**
@@ -112,6 +113,8 @@ export class LLMCaller implements MCPDirectAccess {
     private folderLoader?: ToolsFolderLoader;
     // Lazy-initialized MCP client manager
     private _mcpAdapter: MCPServiceAdapter | null = null;
+    private maxIterations: number; // Store maxIterations for tool controller
+    private mcpSchemaCache: Map<string, ToolDefinition[]> = new Map();
 
     constructor(
         providerName: RegisteredProviders,
@@ -139,11 +142,16 @@ export class LLMCaller implements MCPDirectAccess {
         this.usageCallback = options?.usageCallback;
         this.historyMode = options?.historyMode || 'stateless';
         this.systemMessage = systemMessage;
+        this.maxIterations = options?.maxIterations ?? 5; // Initialize maxIterations
         this.historyManager = options?.historyManager || new HistoryManager(systemMessage);
         this.toolsManager = options?.toolsManager || new ToolsManager();
         this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
         this.requestProcessor = new RequestProcessor();
-        this.toolController = new ToolController(this.toolsManager);
+        // Initialize ToolController with only ToolsManager and maxIterations
+        this.toolController = new ToolController(
+            this.toolsManager,
+            this.maxIterations
+        );
 
         // Initialize the folder loader if toolsDir is provided
         if (options?.toolsDir) {
@@ -154,20 +162,22 @@ export class LLMCaller implements MCPDirectAccess {
         if (!resolvedModel) throw new Error(`Model ${modelOrAlias} not found for provider ${providerName}`);
         this.model = resolvedModel.name;
 
-        // **Initialize StreamingService early**
+        // **Initialize StreamingService early, passing adapter provider**
         this.streamingService = options?.streamingService ||
             new StreamingService(
                 this.providerManager, this.modelManager, this.historyManager, this.retryManager,
                 this.usageCallback, this.callerId, { tokenBatchSize: 100 }, this.toolController,
-                undefined // toolOrchestrator is set later
+                undefined, // toolOrchestrator is set later
+                () => this.getMcpAdapter() // Pass adapter provider
             );
 
-        // **Initialize ChatController (without orchestrator initially)**
+        // **Initialize ChatController, passing adapter provider**
         this.chatController = options?.chatController || new ChatController(
             this.providerManager, this.modelManager, this.responseProcessor, this.retryManager,
             this.usageTracker, this.toolController,
             undefined, // Pass undefined for toolOrchestrator for now
-            this.historyManager
+            this.historyManager,
+            () => this.getMcpAdapter() // Pass adapter provider
         );
 
         // **Create the adapter using initialized streamingService**
@@ -187,20 +197,18 @@ export class LLMCaller implements MCPDirectAccess {
             }
         };
 
-        // **Initialize ToolOrchestrator, passing the ChatController**
+        // **Initialize ToolOrchestrator**
         this.toolOrchestrator = new ToolOrchestrator(
             this.toolController,
-            this.chatController, // Pass the initialized chatController
+            this.chatController,
             streamControllerAdapter as StreamController,
             this.historyManager
         );
 
-        // **Link ToolOrchestrator back to ChatController**
-        (this.chatController as any).toolOrchestrator = this.toolOrchestrator;
-
-        // **Link ToolOrchestrator back to StreamingService using the setter method**
-        // This ensures the internal StreamHandler within StreamingService is updated.
+        // **Link ToolOrchestrator back to ChatController & StreamingService**
+        this.chatController.setToolOrchestrator(this.toolOrchestrator);
         this.streamingService.setToolOrchestrator(this.toolOrchestrator);
+        // No need to set adapter provider here again, passed in constructor
 
         // Initialize ChunkController (now all dependencies should be ready)
         this.chunkController = new ChunkController(
@@ -269,7 +277,13 @@ export class LLMCaller implements MCPDirectAccess {
 
     // Helper to re-initialize controllers after major changes (e.g., provider switch)
     private reinitializeControllers(): void {
-        // Re-initialize ChatController
+        // Re-initialize ToolController
+        this.toolController = new ToolController(
+            this.toolsManager,
+            this.maxIterations
+        );
+
+        // Re-initialize ChatController, passing adapter provider
         this.chatController = new ChatController(
             this.providerManager,
             this.modelManager,
@@ -278,10 +292,11 @@ export class LLMCaller implements MCPDirectAccess {
             this.usageTracker,
             this.toolController,
             undefined, // Orchestrator needs to be re-linked
-            this.historyManager
+            this.historyManager,
+            () => this.getMcpAdapter() // Pass adapter provider
         );
 
-        // Re-initialize StreamingService
+        // Re-initialize StreamingService, passing adapter provider
         this.streamingService = new StreamingService(
             this.providerManager,
             this.modelManager,
@@ -291,11 +306,11 @@ export class LLMCaller implements MCPDirectAccess {
             this.callerId,
             { tokenBatchSize: 100 },
             this.toolController,
-            undefined // Don't pass toolOrchestrator here, use the setter method instead
+            undefined, // Don't pass toolOrchestrator here, use the setter method instead
+            () => this.getMcpAdapter() // Pass adapter provider
         );
 
-        // Re-link ToolOrchestrator to the new ChatController instance
-        // The adapter used by ToolOrchestrator also needs to point to the new StreamingService
+        // *** Define streamControllerAdapter needed for ToolOrchestrator and ChunkController ***
         const streamControllerAdapter: StreamControllerInterface = {
             createStream: async (
                 model: string,
@@ -303,33 +318,33 @@ export class LLMCaller implements MCPDirectAccess {
                 inputTokens: number
             ): Promise<AsyncIterable<UniversalStreamResponse>> => {
                 params.callerId = params.callerId || this.callerId;
-
-                // Check if streamingService exists before trying to access it
                 if (!this.streamingService) {
                     throw new Error('StreamingService is not initialized');
                 }
-
                 return this.streamingService.createStream(params, model, undefined);
             }
         };
+
+        // Re-initialize ToolOrchestrator
         this.toolOrchestrator = new ToolOrchestrator(
             this.toolController,
             this.chatController,
-            streamControllerAdapter as StreamController,
+            streamControllerAdapter as StreamController, // Use the defined adapter
             this.historyManager
         );
 
-        // Link the new orchestrator back to the new chat controller
-        (this.chatController as any).toolOrchestrator = this.toolOrchestrator; // Use workaround if no setter
-
-        // Link orchestrator to StreamingService using the proper setter
+        // Link the new orchestrator back to the new controllers
+        this.chatController.setToolOrchestrator(this.toolOrchestrator);
         this.streamingService.setToolOrchestrator(this.toolOrchestrator);
+        // Set adapter provider again via setter after reinitialization if needed (optional, constructor should handle)
+        // this.chatController.setMCPAdapterProvider(() => this.getMcpAdapter());
+        // this.streamingService.setMCPAdapterProvider(() => this.getMcpAdapter());
 
         // Re-initialize ChunkController with the new ChatController and adapter
         this.chunkController = new ChunkController(
             this.tokenCalculator,
             this.chatController,
-            streamControllerAdapter as StreamController,
+            streamControllerAdapter as StreamController, // Use the defined adapter
             this.historyManager,
             20 // Keep batch size or make configurable
         );
@@ -454,76 +469,61 @@ export class LLMCaller implements MCPDirectAccess {
 
     /**
      * Resolves string tool names to ToolDefinition objects
+     * Does NOT handle MCP configurations anymore.
      * @param tools - Array of tool names or ToolDefinition objects
      * @param toolsDir - Optional directory to load tool functions from
      * @returns Promise resolving to an array of ToolDefinition objects
      */
     private async resolveToolDefinitions(
-        tools?: StringOrDefinition[],
+        tools?: (ToolDefinition | string)[], // Removed MCPServersMap from type
         toolsDir?: string
     ): Promise<ToolDefinition[]> {
         const log = logger.createLogger({ prefix: 'LLMCaller.resolveToolDefinitions' });
         const resolvedTools: ToolDefinition[] = [];
 
-        // If no tools passed, return empty array
         if (!tools || tools.length === 0) {
             return resolvedTools;
         }
 
-        // Initialize loaders if needed
+        // Initialize folderLoader ONLY if needed
         let folderLoader: ToolsFolderLoader | undefined = undefined;
+        const needsFolderLoader = tools.some(t => typeof t === 'string');
 
-        // If toolsDir is provided at call level, use it (may override constructor setting)
-        if (toolsDir) {
-            if (!this.folderLoader) {
-                this.folderLoader = new ToolsFolderLoader(toolsDir);
-            } else if (toolsDir !== this.folderLoader.getToolsDir()) {
-                // A different toolsDir was provided, create a new loader
-                this.folderLoader = new ToolsFolderLoader(toolsDir);
+        if (needsFolderLoader) {
+            // If toolsDir is provided at call level, use it (may override constructor setting)
+            if (toolsDir) {
+                if (!this.folderLoader || toolsDir !== this.folderLoader.getToolsDir()) {
+                    this.folderLoader = new ToolsFolderLoader(toolsDir);
+                }
+                folderLoader = this.folderLoader;
             }
-            folderLoader = this.folderLoader;
-        }
-        // If no toolsDir provided at call level but we have a class-level folderLoader, use that
-        else if (this.folderLoader) {
-            folderLoader = this.folderLoader;
+            // If no toolsDir provided at call level but we have a class-level folderLoader, use that
+            else if (this.folderLoader) {
+                folderLoader = this.folderLoader;
+            }
+
+            if (!folderLoader) {
+                throw new Error(
+                    `Tools specified as strings require a toolsDir to be provided ` +
+                    `either during LLMCaller initialization or in the call options.`
+                );
+            }
         }
 
-        let mcpToolLoader: MCPToolLoader | undefined = undefined;
+        // REMOVED: mcpToolLoader initialization
 
         // Resolve each tool
         for (const tool of tools) {
             if (typeof tool === 'string') {
-                // It's a string tool name, resolve it from a folder
-                if (!folderLoader) {
-                    throw new Error(
-                        `Tool '${tool}' is specified as a string, but no toolsDir is provided. ` +
-                        `Either provide a toolsDir or use a ToolDefinition object.`
-                    );
-                }
-
-                const resolvedTool = await folderLoader.getTool(tool);
+                // It's a string tool name, resolve it from the folder loader
+                const resolvedTool = await folderLoader!.getTool(tool); // folderLoader is guaranteed defined here if needed
                 resolvedTools.push(resolvedTool);
-            } else if (tool && typeof tool === 'object' && Object.values(tool).some(value =>
-                typeof value === 'object' && value !== null &&
-                'command' in value && 'args' in value)) {
-                // New format: Direct MCPServersMap object
-                if (!mcpToolLoader) {
-                    const { MCPToolLoader } = await import('../mcp/MCPToolLoader');
-                    mcpToolLoader = new MCPToolLoader(this.getMcpAdapter());
-                }
-
-                // Store the MCP adapter reference in _mcpAdapter for proper tracking
-                // This ensures we can disconnect from it later
-                if (!this._mcpAdapter) {
-                    log.debug('Initializing MCP adapter from direct configuration');
-                    this._mcpAdapter = mcpToolLoader.getMCPAdapter();
-                }
-
-                const mcpTools = await mcpToolLoader.loadTools(tool as unknown as MCPServersMap);
-                resolvedTools.push(...mcpTools);
-            } else {
-                // It's already a ToolDefinition
+            } else if (tool && typeof tool === 'object' && tool.name && tool.description && tool.parameters) {
+                // It's already a ToolDefinition (basic check)
                 resolvedTools.push(tool as ToolDefinition);
+            } else {
+                // Ignore other types (like MCPServersMap)
+                log.warn('Skipping item in tools array that is not a string or valid ToolDefinition:', tool);
             }
         }
 
@@ -576,21 +576,60 @@ export class LLMCaller implements MCPDirectAccess {
             maxResponseTokens: settings?.maxTokens
         });
 
-        // Resolve string tool names to ToolDefinition objects
-        const newlyResolvedTools = await this.resolveToolDefinitions(tools, toolsDir);
-        let effectiveTools: ToolDefinition[];
-        if (!tools || tools.length === 0) {
-            // If no tools provided in this call, use the previously added tools
-            effectiveTools = this.toolsManager.listTools();
-        } else {
-            // Merge previously added tools with newly resolved ones, ensuring uniqueness by name
-            const existingTools = this.toolsManager.listTools();
-            const merged: Map<string, ToolDefinition> = new Map();
-            for (const t of [...existingTools, ...newlyResolvedTools]) {
-                merged.set(t.name, t);
+        // Filter out MCP configs before resolving standard tools
+        const standardToolsToResolve = tools?.filter(t =>
+            typeof t === 'string' ||
+            (typeof t === 'object' && t && 'name' in t && 'description' in t && 'parameters' in t)
+        ) as (string | ToolDefinition)[] | undefined;
+
+        // Resolve ONLY standard tool definitions (strings or actual definitions)
+        const newlyResolvedTools = await this.resolveToolDefinitions(standardToolsToResolve, toolsDir);
+
+        // --- Start: MCP Schema Fetching & Merging --- 
+        let finalEffectiveTools: ToolDefinition[] = [];
+        const baseTools = this.toolsManager.listTools(); // Tools added via addTools()
+        const callSpecificStandardTools = newlyResolvedTools; // Tools from options.tools (excluding MCP)
+
+        // Merge base and call-specific standard tools
+        const mergedStandardToolsMap: Map<string, ToolDefinition> = new Map();
+        [...baseTools, ...callSpecificStandardTools].forEach(t => mergedStandardToolsMap.set(t.name, t));
+        finalEffectiveTools = Array.from(mergedStandardToolsMap.values());
+
+        // Now fetch and merge MCP tools
+        const mcpAdapter = this.getMcpAdapter();
+        const configuredServers = mcpAdapter.listConfiguredServers();
+        const mcpToolsForCall: ToolDefinition[] = [];
+
+        for (const serverKey of configuredServers) {
+            let serverTools = this.mcpSchemaCache.get(serverKey);
+            if (!serverTools) {
+                try {
+                    logger.debug(`Cache miss for MCP schemas: ${serverKey}. Fetching...`);
+                    // Fetch tools (connects implicitly if needed)
+                    serverTools = await mcpAdapter.getServerTools(serverKey);
+                    this.mcpSchemaCache.set(serverKey, serverTools);
+                    logger.debug(`Fetched and cached ${serverTools.length} tools for ${serverKey}`);
+                } catch (error) {
+                    logger.error(`Failed to fetch tools for configured MCP server ${serverKey} during stream()`, { error });
+                    // Decide whether to throw or continue without this server's tools
+                    // Let's continue for now
+                    serverTools = [];
+                }
+            } else {
+                logger.debug(`Cache hit for MCP schemas: ${serverKey}`);
             }
-            effectiveTools = Array.from(merged.values());
+            mcpToolsForCall.push(...serverTools);
         }
+
+        // Merge MCP tools into the final list, avoiding duplicates by name
+        const finalToolsMap: Map<string, ToolDefinition> = new Map();
+        [...finalEffectiveTools, ...mcpToolsForCall].forEach(t => finalToolsMap.set(t.name, t));
+        finalEffectiveTools = Array.from(finalToolsMap.values());
+        // --- End: MCP Schema Fetching & Merging --- 
+
+        // Use finalEffectiveTools from now on
+        const effectiveTools = finalEffectiveTools;
+
         const mergedSettings = this.mergeSettings(settings);
         // Get the effective history mode
         const effectiveHistoryMode = this.mergeHistoryMode(historyMode);
@@ -724,52 +763,12 @@ export class LLMCaller implements MCPDirectAccess {
         try {
             log.debug(`Call: ${message.substring(0, 30)}...`);
 
-            // Process MCP tool config from options.tools if present
-            if (options.tools) {
-                const mcpConfigs = options.tools.filter(tool =>
-                    tool && typeof tool === 'object' && !Array.isArray(tool) &&
-                    Object.values(tool).some(value =>
-                        typeof value === 'object' && value !== null &&
-                        'command' in value && 'args' in value
-                    )
-                ) as MCPServersMap[];
-
-                // If we found any MCP configurations, handle them
-                if (mcpConfigs.length > 0) {
-                    log.debug('Found MCP server configurations in tools parameter');
-
-                    // Initialize the MCP adapter with each server configuration
-                    // This doesn't connect yet, just registers the configs
-                    for (const mcpConfig of mcpConfigs) {
-                        for (const [serverKey, serverConfig] of Object.entries(mcpConfig)) {
-                            log.debug(`Registering MCP server configuration for ${serverKey}`);
-
-                            // Get or create the MCP adapter
-                            if (!this._mcpAdapter) {
-                                this._mcpAdapter = new MCPServiceAdapter({});
-                            }
-
-                            // Only update configs if not already connected
-                            if (!this._mcpAdapter.isConnected(serverKey)) {
-                                log.debug(`Server ${serverKey} not already connected, registering configuration`);
-                                // Store config on the adapter for later connections
-                                await this._mcpAdapter.connectToServer(serverKey, serverConfig).catch(err => {
-                                    log.warn(`Failed to initialize MCP server ${serverKey}:`, err);
-                                });
-                            } else {
-                                log.debug(`Server ${serverKey} already connected, skipping initialization`);
-                            }
-                        }
-                    }
-                }
-            }
-
             // Reset tool call tracking at the beginning of each call
             if (this.toolOrchestrator) {
                 this.toolOrchestrator.resetCalledTools();
             }
 
-            // Use the RequestProcessor to process the request
+            // *** Get model info and process message BEFORE handling tools ***
             const modelInfo = this.modelManager.getModel(this.model);
             if (!modelInfo) {
                 throw new Error(`Model ${this.model} not found`);
@@ -782,26 +781,60 @@ export class LLMCaller implements MCPDirectAccess {
                 maxResponseTokens: options.settings?.maxTokens
             });
 
-            // Resolve string tool names to ToolDefinition objects
-            const newlyResolvedTools = await this.resolveToolDefinitions(options.tools, options.toolsDir);
-            let effectiveTools: ToolDefinition[];
-            if (!options.tools || options.tools.length === 0) {
-                // If no tools provided in this call, use the previously added tools
-                effectiveTools = this.toolsManager.listTools();
-            } else {
-                // Merge previously added tools with newly resolved ones, ensuring uniqueness by name
-                const existingTools = this.toolsManager.listTools();
-                const merged: Map<string, ToolDefinition> = new Map();
-                for (const t of [...existingTools, ...newlyResolvedTools]) {
-                    merged.set(t.name, t);
+            // --- Tool Resolution and MCP Schema Fetching --- 
+            // Filter out MCP configs before resolving standard tools
+            const standardToolsToResolve = options.tools?.filter(t =>
+                typeof t === 'string' ||
+                (typeof t === 'object' && t && 'name' in t && 'description' in t && 'parameters' in t)
+            ) as (string | ToolDefinition)[] | undefined;
+
+            // Resolve ONLY standard tool definitions
+            const newlyResolvedTools = await this.resolveToolDefinitions(standardToolsToResolve, options.toolsDir);
+
+            // Start merging: base tools + call-specific standard tools
+            let finalEffectiveTools: ToolDefinition[] = [];
+            const baseTools = this.toolsManager.listTools();
+            const callSpecificStandardTools = newlyResolvedTools;
+            const mergedStandardToolsMap: Map<string, ToolDefinition> = new Map();
+            [...baseTools, ...callSpecificStandardTools].forEach(t => mergedStandardToolsMap.set(t.name, t));
+            finalEffectiveTools = Array.from(mergedStandardToolsMap.values());
+
+            // Now fetch and merge MCP tools
+            const mcpAdapter = this.getMcpAdapter();
+            const configuredServers = mcpAdapter.listConfiguredServers();
+            const mcpToolsForCall: ToolDefinition[] = [];
+
+            for (const serverKey of configuredServers) {
+                let serverTools = this.mcpSchemaCache.get(serverKey);
+                if (!serverTools) {
+                    try {
+                        logger.debug(`Cache miss for MCP schemas: ${serverKey}. Fetching...`);
+                        serverTools = await mcpAdapter.getServerTools(serverKey);
+                        this.mcpSchemaCache.set(serverKey, serverTools);
+                        logger.debug(`Fetched and cached ${serverTools.length} tools for ${serverKey}`);
+                    } catch (error) {
+                        logger.error(`Failed to fetch tools for configured MCP server ${serverKey} during call()`, { error });
+                        serverTools = [];
+                    }
+                } else {
+                    logger.debug(`Cache hit for MCP schemas: ${serverKey}`);
                 }
-                effectiveTools = Array.from(merged.values());
+                mcpToolsForCall.push(...serverTools);
             }
+
+            // Merge MCP tools into the final list
+            const finalToolsMap: Map<string, ToolDefinition> = new Map();
+            [...finalEffectiveTools, ...mcpToolsForCall].forEach(t => finalToolsMap.set(t.name, t));
+            finalEffectiveTools = Array.from(finalToolsMap.values());
+
+            // This is the final list of tools for the call
+            const effectiveTools = finalEffectiveTools;
+            // --- End Tool Resolution --- 
+
             const mergedSettings = this.mergeSettings(options.settings);
-            // Get the effective history mode
             const effectiveHistoryMode = this.mergeHistoryMode(options.historyMode);
 
-            // If in stateless mode, get system message only
+            // If in stateless mode, handle history
             if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
                 this.historyManager.initializeWithSystemMessage();
             }
@@ -809,7 +842,7 @@ export class LLMCaller implements MCPDirectAccess {
             // Add the original user message to history *before* the call
             this.historyManager.addMessage('user', message, { metadata: { timestamp: Date.now() } });
 
-            // Get the messages from history
+            // Get the messages from history for the call
             const messages = this.historyManager.getHistoricalMessages();
 
             // Check if JSON is requested and whether to use native mode
@@ -827,25 +860,22 @@ export class LLMCaller implements MCPDirectAccess {
                     settings: mergedSettings,
                     jsonSchema: options.jsonSchema,
                     responseFormat: useNativeJsonMode ? 'json' : (options.jsonSchema ? 'text' : options.responseFormat),
-                    tools: effectiveTools,
+                    tools: effectiveTools, // Use the final tool list
                     callerId: this.callerId,
                     historyMode: effectiveHistoryMode
                 };
-                // History update for assistant happens inside internalChatCall
                 const response = await this.internalChatCall<T>(params);
                 return [response]; // Convert single response to array
             }
 
             // If chunking occurred, use ChunkController
             const historyForChunks = this.historyManager.getHistoricalMessages(); // Get history *before* the latest user msg
-
-            // ChunkController processes chunks and returns responses
             const responses = await this.chunkController.processChunks(processedMessages, {
                 model: this.model,
                 settings: mergedSettings,
                 jsonSchema: options.jsonSchema,
                 responseFormat: options.responseFormat,
-                tools: effectiveTools,
+                tools: effectiveTools, // Use the final tool list
                 historicalMessages: historyForChunks
             });
 
@@ -881,41 +911,45 @@ export class LLMCaller implements MCPDirectAccess {
 
     /**
      * Adds tools configuration including MCP server configurations to the LLMCaller
+     * MCP configs are only registered; standard tools are added to ToolsManager.
      * @param tools Array of tool definitions, string identifiers, or MCP configurations
      */
     public async addTools(tools: (ToolDefinition | string | MCPServersMap)[]): Promise<void> {
         const log = logger.createLogger({ prefix: 'LLMCaller.addTools' });
+        const standardTools: (ToolDefinition | string)[] = [];
 
-        // Handle MCP configurations
+        // Separate MCP configs and standard tools
         for (const tool of tools) {
             if (tool && typeof tool === 'object' && !Array.isArray(tool) &&
+                !('name' in tool && 'description' in tool && 'parameters' in tool) && // Check if NOT ToolDefinition like
                 Object.values(tool).some(value =>
                     typeof value === 'object' && value !== null &&
-                    'command' in value && 'args' in value)) {
+                    ('command' in value || 'url' in value))) {
 
-                // This is an MCP configuration
-                log.debug('Found MCP server configuration');
-
-                // Store the configuration in the MCP adapter but don't connect
+                // --- This is likely an MCP configuration --- 
+                log.debug('Found MCP server configuration to register');
                 const mcpConfig = tool as MCPServersMap;
-                const mcpAdapter = this.getMcpAdapter();
+                const mcpAdapter = this.getMcpAdapter(); // Get/initialize adapter
 
-                // Just register the configurations without connecting
+                // Register the configurations with the adapter
                 for (const [serverKey, serverConfig] of Object.entries(mcpConfig)) {
-                    log.debug(`Registering MCP server configuration for ${serverKey} (not connecting)`);
-
-                    // Just store the configuration in the adapter
-                    if (this._mcpAdapter) {
-                        // Add config to the adapter's serverConfigs but don't connect
-                        this._mcpAdapter.registerServerConfig(serverKey, serverConfig);
-                    }
+                    log.debug(`Registering MCP server configuration for ${serverKey}`);
+                    mcpAdapter.registerServerConfig(serverKey, serverConfig);
                 }
+            } else if (typeof tool === 'string' || (tool && typeof tool === 'object' && 'name' in tool)) {
+                // It's a string or looks like a ToolDefinition
+                standardTools.push(tool as ToolDefinition | string);
+            } else {
+                log.warn('Skipping item in addTools array:', tool);
             }
         }
 
-        // Resolve and add tool definitions as usual
-        const resolvedTools = await this.resolveToolDefinitions(tools as StringOrDefinition[]);
-        this.toolsManager.addTools(resolvedTools);
+        // Resolve and add standard tool definitions to ToolsManager
+        // Use the constructor's toolsDir if none provided here (resolveToolDefinitions handles this)
+        if (standardTools.length > 0) {
+            const resolvedStandardTools = await this.resolveToolDefinitions(standardTools /*, uses this.folderLoader internally */);
+            this.toolsManager.addTools(resolvedStandardTools);
+        }
     }
 
     public removeTool(name: string): void {
@@ -1116,6 +1150,7 @@ export class LLMCaller implements MCPDirectAccess {
     private getMcpAdapter(): MCPServiceAdapter {
         if (!this._mcpAdapter) {
             this._mcpAdapter = new MCPServiceAdapter({});
+            logger.debug('Lazily initialized MCPServiceAdapter in getMcpAdapter');
         }
         return this._mcpAdapter;
     }

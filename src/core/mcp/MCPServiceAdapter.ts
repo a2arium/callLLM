@@ -895,11 +895,26 @@ export class MCPServiceAdapter {
             return this.toolCache.get(serverKey)!;
         }
 
-        if (!this.isConnected(serverKey)) {
-            throw new MCPConnectionError(serverKey, 'Server not connected. Cannot fetch tools.');
+        // --- Implicit Connection Logic --- 
+        // Ensure connection exists BEFORE trying to get the client
+        try {
+            log.debug(`Ensuring connection to ${serverKey} before fetching tools...`);
+            await this.connectToServer(serverKey); // Attempt connection
+            log.debug(`Connection to ${serverKey} established or already active.`);
+        } catch (connectionError) {
+            log.error(`Failed to connect to server ${serverKey} while trying to get tools:`, connectionError);
+            // Re-throw connection error specifically
+            throw new MCPConnectionError(serverKey, `Failed to connect while fetching tools: ${(connectionError as Error).message}`, connectionError as Error);
         }
+        // --- End Implicit Connection Logic --- 
 
-        const client = this.sdkClients.get(serverKey)!;
+        // Now we should be connected, get the client
+        const client = this.sdkClients.get(serverKey);
+        if (!client) {
+            // This case should ideally not happen if connectToServer succeeded
+            log.error(`Client not found for ${serverKey} after successful connection attempt.`);
+            throw new MCPConnectionError(serverKey, 'Client instance unexpectedly missing after connection.');
+        }
 
         // Define the operation function for retry
         const fetchTools = async (): Promise<ToolDefinition[]> => {
@@ -1827,5 +1842,13 @@ export class MCPServiceAdapter {
         } else {
             log.debug(`Server ${serverKey} already has a registered configuration`);
         }
+    }
+
+    /**
+     * Returns a list of keys for all registered server configurations.
+     * @returns An array of server keys.
+     */
+    public listConfiguredServers(): string[] {
+        return Array.from(this.serverConfigs.keys());
     }
 } 

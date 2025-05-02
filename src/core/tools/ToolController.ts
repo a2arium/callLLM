@@ -3,6 +3,7 @@ import type { UniversalMessage, UniversalChatResponse } from '../../interfaces/U
 import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../types/tooling';
 import { logger } from '../../utils/logger';
 import type { ToolCall } from '../../types/tooling';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter';
 
 export class ToolController {
     private toolsManager: ToolsManager;
@@ -14,7 +15,10 @@ export class ToolController {
      * @param toolsManager - The ToolsManager instance to use for tool management
      * @param maxIterations - Maximum number of tool call iterations allowed (default: 5)
      */
-    constructor(toolsManager: ToolsManager, maxIterations: number = 5) {
+    constructor(
+        toolsManager: ToolsManager,
+        maxIterations: number = 5
+    ) {
         this.toolsManager = toolsManager;
         this.maxIterations = maxIterations;
         const log = logger.createLogger({ prefix: 'ToolController.constructor', level: process.env.LOG_LEVEL as any || 'info' });
@@ -110,6 +114,7 @@ export class ToolController {
      * Executes the tools using either call-specific definitions or the main tools manager.
      * @param response - The response object containing tool calls.
      * @param callSpecificTools - Optional list of tools passed specifically for this call.
+     * @param mcpAdapter - The MCPServiceAdapter instance to use for executing MCP tools.
      * @returns Object containing messages, tool calls, and resubmission flag.
      * @throws {ToolIterationLimitError} When iteration limit is exceeded.
      * @throws {ToolNotFoundError} When a requested tool is not found.
@@ -117,7 +122,8 @@ export class ToolController {
      */
     async processToolCalls(
         response: UniversalChatResponse,
-        callSpecificTools?: ToolDefinition[]
+        callSpecificTools?: ToolDefinition[],
+        mcpAdapter?: MCPServiceAdapter | null
     ): Promise<{
         messages: UniversalMessage[];
         toolCalls: {
@@ -186,92 +192,90 @@ export class ToolController {
             // Use the new findToolDefinition method
             const tool = this.findToolDefinition(name, callSpecificTools);
 
+            let result: string | Record<string, unknown> | undefined;
+            let error: string | undefined;
+
             if (!tool) {
                 log.warn(`Tool not found: ${name}`, {
                     availableToolNames: callSpecificTools?.map(t => t.name) || [],
                     argumentsProvided: args
                 });
-                const error = new ToolNotFoundError(name);
-                // Create a system message indicating the tool wasn't found
-                // Consistent with how executeToolCall might handle it, though we might prefer
-                // to return the error directly in the tool result structure.
-                messages.push({
+                const notFoundError = new ToolNotFoundError(name);
+                // Add error message to history via Tool result structure
+                error = `Error: ${notFoundError.message}`;
+                messages.push({ // Keep the original message push for context if desired
                     role: 'tool',
-                    content: `Error: ${error.message}`,
-                    toolCallId: toolCallId,
-                    // Optional: add name if needed by downstream processing
-                    // name: name
+                    content: error,
+                    metadata: { tool_call_id: toolCallId }
                 });
-                executedToolCalls.push({ ...toolCallInfo, error: error.message });
-                continue; // Move to the next tool call
-            }
+            } else {
+                // --- Execute the tool (Standard or MCP) --- 
+                try {
+                    log.debug(`Executing tool definition found: ${tool.name}`, { isMCP: tool.metadata?.isMCP });
 
-            try {
-                log.debug(`Executing tool: ${name}`, {
-                    actualToolName: tool.name,
-                    originalName: tool.metadata?.originalName,
-                    hasCallFunction: Boolean(tool.callFunction),
-                    requiredParams: tool.parameters?.required || [],
-                    providedParams: Object.keys(args || {})
-                });
+                    // --- MCP Tool Execution Logic ---
+                    if (tool.metadata?.isMCP) {
+                        if (!mcpAdapter) {
+                            log.error('MCP Adapter not provided for executing MCP tool:', { toolName: name });
+                            throw new ToolExecutionError(name, 'MCP Adapter not provided to processToolCalls.');
+                        }
+                        const serverKey = tool.metadata.serverKey as string;
+                        const originalToolName = tool.metadata.originalName as string; // Use original name for MCP call
 
-                if (!tool.callFunction) {
-                    throw new ToolExecutionError(name, 'Tool does not have a callFunction implementation');
-                }
+                        if (!serverKey || !originalToolName) {
+                            log.error('MCP tool metadata missing serverKey or originalName:', { toolName: name, metadata: tool.metadata });
+                            throw new ToolExecutionError(name, 'Invalid MCP tool metadata.');
+                        }
+                        log.debug(`Executing MCP tool via adapter: ${serverKey}.${originalToolName}`);
+                        const mcpResultRaw = await mcpAdapter.executeMcpTool(serverKey, originalToolName, args || {});
+                        log.debug(`MCP tool execution successful: ${serverKey}.${originalToolName}`);
+                        // Type check the raw result
+                        if (typeof mcpResultRaw === 'string' || (typeof mcpResultRaw === 'object' && mcpResultRaw !== null)) {
+                            result = mcpResultRaw as string | Record<string, unknown>;
+                        } else if (mcpResultRaw !== undefined) {
+                            // Stringify other types if necessary
+                            result = JSON.stringify(mcpResultRaw);
+                        }
+                        // If mcpResultRaw is undefined, result remains undefined
 
-                // Check if required parameters are present
-                if (tool.parameters?.required?.length) {
-                    const missingParams = tool.parameters.required.filter(param => !(param in (args || {})));
-                    if (missingParams.length > 0) {
-                        log.warn('Missing required parameters', {
-                            toolName: name,
-                            missingParams,
-                            providedParams: Object.keys(args || {})
-                        });
+                        // --- Standard Tool Execution Logic (using callFunction) ---
+                    } else if (tool.callFunction) { // Use callFunction
+                        log.debug(`Executing standard function tool: ${tool.name}`);
+                        // Standard function execution expects arguments directly
+                        const standardResultRaw = await tool.callFunction(args || {}); // Use callFunction
+                        log.debug(`Standard function tool execution successful: ${tool.name}`);
+                        // Type check the raw result
+                        if (typeof standardResultRaw === 'string' || (typeof standardResultRaw === 'object' && standardResultRaw !== null)) {
+                            result = standardResultRaw as string | Record<string, unknown>;
+                        } else if (standardResultRaw !== undefined) {
+                            // Stringify other types if necessary
+                            result = JSON.stringify(standardResultRaw);
+                        }
+                        // If standardResultRaw is undefined, result remains undefined
+                    } else {
+                        log.error(`Tool definition is invalid or missing execution logic: ${tool.name}`);
+                        throw new ToolExecutionError(tool.name, 'Tool function not defined.');
                     }
+
+                } catch (execError) {
+                    log.error(`Tool execution failed: ${name}`, { error: execError });
+                    const execErrorMsg = execError instanceof Error ? execError.message : String(execError);
+                    error = `Error executing tool ${name}: ${execErrorMsg}`;
+                    messages.push({ // Keep the original message push for context if desired
+                        role: 'tool',
+                        content: error,
+                        metadata: { tool_call_id: toolCallId }
+                    });
                 }
-
-                // Execute using the found tool definition
-                const result = await tool.callFunction(args);
-                const resultString = typeof result === 'string' ? result : JSON.stringify(result);
-
-                log.debug(`Tool execution result`, {
-                    toolName: name,
-                    resultLength: resultString.length,
-                    resultPreview: resultString.substring(0, 200) // Limit log size
-                });
-
-                // Add result message for the LLM
-                messages.push({
-                    role: 'tool',
-                    content: resultString,
-                    toolCallId: toolCallId,
-                    // Optional: add name if needed by downstream processing
-                    // name: name
-                });
-
-                executedToolCalls.push({ ...toolCallInfo, result: resultString });
-                log.debug(`Successfully executed tool: ${name}`);
-            } catch (error) {
-                log.error(`Error executing tool ${name}:`, error, {
-                    toolName: name,
-                    originalName: tool.metadata?.originalName,
-                    args: args || {}
-                });
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                const toolError = new ToolExecutionError(name, errorMessage);
-
-                // Add error message for the LLM
-                messages.push({
-                    role: 'tool',
-                    content: `Error executing tool ${name}: ${toolError.message}`,
-                    toolCallId: toolCallId,
-                    // Optional: add name if needed by downstream processing
-                    // name: name
-                });
-                executedToolCalls.push({ ...toolCallInfo, error: toolError.message });
             }
-        }
+
+            // Store result/error for the orchestrator
+            executedToolCalls.push({
+                ...toolCallInfo,
+                result: result as string | undefined, // Ensure type compatibility
+                error
+            });
+        } // End loop through parsedToolCalls
 
         return {
             messages,
@@ -308,60 +312,78 @@ export class ToolController {
      */
     async executeToolCall(
         toolCall: ToolCall,
-        callSpecificTools?: ToolDefinition[]
+        callSpecificTools?: ToolDefinition[],
+        mcpAdapter?: MCPServiceAdapter | null
     ): Promise<string | Record<string, unknown>> {
         const log = logger.createLogger({ prefix: 'ToolController.executeToolCall' });
-        log.debug('Executing tool call', { name: toolCall.name, id: toolCall.id, parameters: toolCall.arguments });
+        const { name, arguments: args, id } = toolCall;
 
-        // Find the tool using the new method
-        const tool = this.findToolDefinition(toolCall.name, callSpecificTools);
+        log.debug(`Attempting to execute tool: ${name}`, { toolCallId: id });
+
+        const tool = this.findToolDefinition(name, callSpecificTools);
+
         if (!tool) {
-            log.error(`Tool not found: ${toolCall.name}`);
-            throw new ToolNotFoundError(toolCall.name);
+            log.error(`Tool definition not found for execution: ${name}`);
+            throw new ToolNotFoundError(name);
         }
 
-        try {
-            // Validate parameters against schema
-            const args = toolCall.arguments || {};
-            const schema = tool.parameters;
+        log.debug(`Executing tool definition found: ${tool.name}`, { isMCP: tool.metadata?.isMCP });
 
-            // Check required parameters
-            if (schema && schema.required && Array.isArray(schema.required)) {
-                for (const requiredParam of schema.required) {
-                    if (!(requiredParam in args)) {
-                        throw new Error(`Missing required parameter: ${requiredParam}`);
-                    }
+        // --- MCP Tool Execution Logic --- 
+        if (tool.metadata?.isMCP) {
+            if (!mcpAdapter) {
+                log.error('MCP Adapter not provided for executing MCP tool:', { toolName: name });
+                throw new ToolExecutionError(name, 'MCP Adapter not provided to executeToolCall.');
+            }
+            const serverKey = tool.metadata.serverKey as string;
+            const originalToolName = tool.metadata.originalName as string;
+
+            if (!serverKey || !originalToolName) {
+                log.error('MCP tool metadata missing serverKey or originalName:', { toolName: name, metadata: tool.metadata });
+                throw new ToolExecutionError(name, 'Invalid MCP tool metadata.');
+            }
+
+            try {
+                log.debug(`Executing MCP tool via adapter: ${serverKey}.${originalToolName}`);
+                const resultRaw = await mcpAdapter.executeMcpTool(serverKey, originalToolName, args || {});
+                log.debug(`MCP tool execution successful: ${serverKey}.${originalToolName}`);
+                // Type check the raw result
+                if (typeof resultRaw === 'string' || (typeof resultRaw === 'object' && resultRaw !== null)) {
+                    return resultRaw as string | Record<string, unknown>;
+                } else if (resultRaw !== undefined) {
+                    return JSON.stringify(resultRaw);
+                } else {
+                    // Handle undefined result - perhaps return empty string or throw?
+                    // Let's return empty string for now to match signature.
+                    return '';
                 }
+            } catch (error) {
+                log.error(`MCP tool execution failed: ${serverKey}.${originalToolName}`, { error });
+                throw new ToolExecutionError(name, (error as Error).message);
             }
-
-            // Check for additional properties if not allowed
-            // Note: Zod validation might be more robust here if schema is Zod
-            if (schema && typeof schema === 'object' && 'properties' in schema && (schema as any).additionalProperties === false) {
-                const knownProps = schema.properties ? Object.keys(schema.properties) : [];
-                const extraProps = Object.keys(args).filter(key => !knownProps.includes(key));
-                if (extraProps.length > 0) {
-                    throw new Error(`Unexpected additional parameters: ${extraProps.join(', ')}`);
+        }
+        // --- Standard Tool Execution Logic (using callFunction) ---
+        else if (tool.callFunction) { // Use callFunction
+            try {
+                log.debug(`Executing standard function tool: ${tool.name}`);
+                const resultRaw = await tool.callFunction(args || {}); // Use callFunction
+                log.debug(`Standard function tool execution successful: ${tool.name}`);
+                // Type check the raw result
+                if (typeof resultRaw === 'string' || (typeof resultRaw === 'object' && resultRaw !== null)) {
+                    return resultRaw as string | Record<string, unknown>;
+                } else if (resultRaw !== undefined) {
+                    return JSON.stringify(resultRaw);
+                } else {
+                    // Handle undefined result
+                    return '';
                 }
+            } catch (error) {
+                log.error(`Standard function tool execution failed: ${tool.name}`, { error });
+                throw new ToolExecutionError(tool.name, (error as Error).message);
             }
-
-            // Execute the tool
-            if (!tool.callFunction) {
-                throw new ToolExecutionError(toolCall.name, 'Tool does not have a callFunction implementation');
-            }
-            const result = await tool.callFunction(args);
-            log.debug(`Tool execution successful: ${toolCall.name}`, {
-                id: toolCall.id,
-                resultType: typeof result
-            });
-            // log.debug('Tool execution result', { result }); // Avoid logging potentially large results
-
-            // Ensure we return the correct type
-            return typeof result === 'string' ? result : result as Record<string, unknown>;
-        } catch (error) {
-            // Handle tool execution errors
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            log.error(`Tool execution error: ${errorMessage}`, { toolName: toolCall.name });
-            throw new ToolExecutionError(toolCall.name, errorMessage);
+        } else {
+            log.error(`Tool definition is invalid or missing execution logic: ${tool.name}`);
+            throw new ToolExecutionError(tool.name, 'Tool function not defined.');
         }
     }
 } 

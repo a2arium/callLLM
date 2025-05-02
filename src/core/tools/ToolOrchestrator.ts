@@ -6,6 +6,7 @@ import { StreamController } from '../streaming/StreamController';
 import { logger } from '../../utils/logger';
 import { ToolCall, ToolDefinition, ToolNotFoundError } from '../../types/tooling';
 import { HistoryManager } from '../history/HistoryManager';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter';
 
 // Type to track called tools with their arguments
 type CalledTool = {
@@ -73,11 +74,13 @@ export class ToolOrchestrator {
      * Processes tool calls found in a response and adds their results to history
      * @param response - The response that may contain tool calls
      * @param callSpecificTools - Optional list of tools passed specifically for this call.
+     * @param mcpAdapterProvider - Function to get the MCPServiceAdapter instance.
      * @returns Object containing whether resubmission is required and the tool calls found
      */
     public async processToolCalls(
         response: UniversalChatResponse,
-        callSpecificTools?: ToolDefinition[]
+        callSpecificTools?: ToolDefinition[],
+        mcpAdapterProvider?: () => MCPServiceAdapter | null
     ): Promise<{ requiresResubmission: boolean; newToolCalls: number }> {
         // Reset iteration count at the beginning of each tool processing session
         this.toolController.resetIterationCount();
@@ -118,10 +121,14 @@ export class ToolOrchestrator {
             logger.debug(`After filtering: ${response.toolCalls.length} tool calls remaining`);
         }
 
-        // Process tools in the response
+        // Get the adapter instance using the provider function
+        const mcpAdapter = mcpAdapterProvider ? mcpAdapterProvider() : null;
+
+        // Process tools in the response, passing the adapter instance
         const toolResult = await this.toolController.processToolCalls(
             response,
-            callSpecificTools
+            callSpecificTools,
+            mcpAdapter
         );
 
         // If no tool calls were found or processed, return early
@@ -147,14 +154,19 @@ export class ToolOrchestrator {
                 }
 
                 // Add tool result directly to history with the EXACT original ID
-                if (call.result) {
-                    this.historyManager.addMessage('tool', call.result, {
+                if (call.result !== undefined) { // Check if result exists
+                    // *** Stringify result if it's not already a string ***
+                    const resultContentString = typeof call.result === 'string'
+                        ? call.result
+                        : JSON.stringify(call.result);
+
+                    this.historyManager.addMessage('tool', resultContentString, {
                         toolCallId: call.id,
                         name: call.toolName
                     });
                     logger.debug(`Added tool result for ${call.toolName} with ID ${call.id}`);
                 } else if (call.error) {
-                    // Handle error case
+                    // Handle error case (error should already be a string)
                     this.historyManager.addMessage('tool',
                         `Error executing tool ${call.toolName}: ${call.error}`,
                         { toolCallId: call.id });
@@ -166,7 +178,7 @@ export class ToolOrchestrator {
         }
 
         return {
-            requiresResubmission: true,
+            requiresResubmission: toolResult.requiresResubmission,
             newToolCalls: newToolCallsCount
         };
     }
