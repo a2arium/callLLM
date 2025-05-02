@@ -1177,7 +1177,6 @@ export class MCPServiceAdapter {
 
     /**
      * Processes arguments before sending to the MCP server
-     * This includes sanitizing paths for filesystem tools and providing defaults
      * @param serverKey Server key
      * @param toolName Tool name
      * @param args Arguments to process
@@ -1190,44 +1189,6 @@ export class MCPServiceAdapter {
     ): Record<string, unknown> {
         const log = logger.createLogger({ prefix: 'MCPServiceAdapter.processArguments' });
         const processedArgs = { ...args };
-
-        // Handle path parameters for filesystem tools
-        if (serverKey === 'filesystem' && ['list_directory', 'read_file', 'directory_tree'].includes(toolName)) {
-            // Sanitize path parameter if it exists but is invalid
-            if (typeof processedArgs.path === 'string') {
-                const originalPath = processedArgs.path as string;
-
-                // Check for obviously invalid characters that could indicate model confusion
-                // Note: we specifically check for closing quotes/braces which are common in LLM errors
-                if (/[}\]>)}]/.test(originalPath) ||
-                    originalPath.includes('"}') ||
-                    originalPath.includes('"]') ||
-                    originalPath.includes('"') ||
-                    originalPath.includes('}')) {
-
-                    log.warn(`Received malformed path parameter for ${toolName}: "${originalPath}", sanitizing`);
-
-                    // Extract just the valid path part, or use default if cannot sanitize
-                    // Keep alphanumeric, slashes, dots, dashes, underscores
-                    const sanitized = originalPath.replace(/[^\w\/\.\-_]/g, '');
-
-                    // If sanitized path is empty or just dots, use default
-                    if (!sanitized || sanitized === '.' || sanitized === '..') {
-                        processedArgs.path = './';
-                        log.debug(`Using default path './' instead of "${originalPath}"`);
-                    } else {
-                        processedArgs.path = sanitized;
-                        log.debug(`Sanitized path from "${originalPath}" to "${sanitized}"`);
-                    }
-                }
-            }
-
-            // For filesystem.list_directory, provide default path if missing or empty
-            if (toolName === 'list_directory' && (!processedArgs.path || (typeof processedArgs.path === 'string' && processedArgs.path.trim() === ''))) {
-                log.debug('Adding default path parameter for filesystem.list_directory');
-                processedArgs.path = './';
-            }
-        }
 
         return processedArgs;
     }
