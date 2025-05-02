@@ -253,7 +253,7 @@ describe('LLMCaller Tool Management', () => {
 
             await expect(noToolsDirCaller.call('Test message', {
                 tools: [mockToolName]
-            })).rejects.toThrow(`Tool '${mockToolName}' is specified as a string, but no toolsDir is provided.`);
+            })).rejects.toThrow(`Tools specified as strings require a toolsDir to be provided either during LLMCaller initialization or in the call options.`);
         });
 
         it('should use constructor toolsDir when streaming with string tools', async () => {

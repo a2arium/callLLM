@@ -206,7 +206,13 @@ export class LLMCaller implements MCPDirectAccess {
         );
 
         // **Link ToolOrchestrator back to ChatController & StreamingService**
-        this.chatController.setToolOrchestrator(this.toolOrchestrator);
+        if (typeof this.chatController.setToolOrchestrator === 'function') {
+            this.chatController.setToolOrchestrator(this.toolOrchestrator);
+        } else {
+            // For architecture versions without setToolOrchestrator
+            const log = logger.createLogger({ prefix: 'LLMCaller.constructor' });
+            log.debug('ChatController.setToolOrchestrator not found - may be using newer API');
+        }
         this.streamingService.setToolOrchestrator(this.toolOrchestrator);
         // No need to set adapter provider here again, passed in constructor
 
@@ -334,7 +340,13 @@ export class LLMCaller implements MCPDirectAccess {
         );
 
         // Link the new orchestrator back to the new controllers
-        this.chatController.setToolOrchestrator(this.toolOrchestrator);
+        if (typeof this.chatController.setToolOrchestrator === 'function') {
+            this.chatController.setToolOrchestrator(this.toolOrchestrator);
+        } else {
+            // For architecture versions without setToolOrchestrator
+            const log = logger.createLogger({ prefix: 'LLMCaller.reinitializeControllers' });
+            log.debug('ChatController.setToolOrchestrator not found - may be using newer API');
+        }
         this.streamingService.setToolOrchestrator(this.toolOrchestrator);
         // Set adapter provider again via setter after reinitialization if needed (optional, constructor should handle)
         // this.chatController.setMCPAdapterProvider(() => this.getMcpAdapter());
@@ -597,10 +609,23 @@ export class LLMCaller implements MCPDirectAccess {
 
         // Now fetch and merge MCP tools
         const mcpAdapter = this.getMcpAdapter();
+        // Get all configured servers first
         const configuredServers = mcpAdapter.listConfiguredServers();
         const mcpToolsForCall: ToolDefinition[] = [];
 
         for (const serverKey of configuredServers) {
+            // Auto-connect on first use if needed
+            if (!mcpAdapter.isConnected(serverKey)) {
+                try {
+                    logger.debug(`Auto-connecting to MCP server ${serverKey} for tool usage (stream)`);
+                    await mcpAdapter.connectToServer(serverKey);
+                } catch (error) {
+                    logger.error(`Failed to auto-connect to MCP server ${serverKey} in stream()`, { error });
+                    // Continue with other servers rather than failing completely
+                    continue;
+                }
+            }
+
             let serverTools = this.mcpSchemaCache.get(serverKey);
             if (!serverTools) {
                 try {
@@ -801,10 +826,23 @@ export class LLMCaller implements MCPDirectAccess {
 
             // Now fetch and merge MCP tools
             const mcpAdapter = this.getMcpAdapter();
+            // Get all configured servers first
             const configuredServers = mcpAdapter.listConfiguredServers();
             const mcpToolsForCall: ToolDefinition[] = [];
 
             for (const serverKey of configuredServers) {
+                // Auto-connect on first use if needed
+                if (!mcpAdapter.isConnected(serverKey)) {
+                    try {
+                        logger.debug(`Auto-connecting to MCP server ${serverKey} for tool usage`);
+                        await mcpAdapter.connectToServer(serverKey);
+                    } catch (error) {
+                        logger.error(`Failed to auto-connect to MCP server ${serverKey}`, { error });
+                        // Continue with other servers rather than failing completely
+                        continue;
+                    }
+                }
+
                 let serverTools = this.mcpSchemaCache.get(serverKey);
                 if (!serverTools) {
                     try {

@@ -225,7 +225,7 @@ describe('ToolOrchestrator Integration', () => {
             expect(result.requiresResubmission).toBe(true);
             expect(mockHistoryManager.addMessage).toHaveBeenCalledWith(
                 'tool',
-                'Error executing tool errorTool: Execution of tool "errorTool" failed: Tool execution failed',
+                'Error executing tool errorTool: Tool execution failed',
                 {
                     toolCallId: expect.any(String)
                 }

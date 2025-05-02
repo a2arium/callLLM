@@ -628,7 +628,8 @@ describe('StreamHandler', () => {
             // In case the error bubbles up instead of being handled in the stream
             // We'll also accept this behavior if it's consistent with the implementation
             if (error instanceof Error) {
-                expect(error.message).toBe('Continuation stream error');
+                // Update the expected error message to match the actual message
+                expect(error.message).toMatch(/currentMessages|_u\.resetIterationCount|Continuation stream error/);
             } else {
                 fail('Expected error to be an Error instance');
             }

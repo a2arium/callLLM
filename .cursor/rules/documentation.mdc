@@ -1,10 +1,5 @@
 ---
 description: Documentation standards and requirements that should be followed when writing or modifying code documentation
-globs: 
-alwaysApply: false
----
----
-description: Documentation standards and requirements that should be followed when writing or modifying code documentation
 globs: ["**/*.ts", "**/*.md"]
 alwaysApply: false
 ---
@@ -74,6 +69,7 @@ alwaysApply: false
 - Dependencies
 - Author information
 - License information
+- Include references to reasoning summary and chunk flags in README and code examples
 
 ### Module Documentation
 - Module purpose
@@ -97,6 +93,9 @@ alwaysApply: false
 - Basic usage
 - Configuration
 - Examples
+- Document `reasoning` field in chat and stream responses
+- Describe `reasoningText`, `isFirstContentChunk`, and `isFirstReasoningChunk`
+- Provide example code showing how to detect and display reasoning sections
 
 ### API Documentation
 - API endpoints
@@ -127,6 +126,8 @@ alwaysApply: false
 - Error handling
 - Configuration
 - Best practices
+- Illustrate reasoning summary usage in both non-streaming and streaming contexts
+- Show how to handle first content/reasoning chunks with `isFirstContentChunk` / `isFirstReasoningChunk`
 
 ### Version Documentation
 - Version changes
@@ -180,6 +181,11 @@ alwaysApply: false
 - Code correctness
 - Link validity
 - Format consistency
+
+# References
+- See @README.md for project documentation
+- See @src/core/types.ts for type documentation examples
+- See @docs/architecture.md for architecture documentation
 
 # References
 - See @README.md for project documentation

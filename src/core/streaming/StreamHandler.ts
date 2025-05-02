@@ -288,7 +288,9 @@ export class StreamHandler {
                         };
 
                         // Reset iteration count before processing tools for this chunk
-                        this.toolController?.resetIterationCount();
+                        if (this.toolController && typeof this.toolController.resetIterationCount === 'function') {
+                            this.toolController.resetIterationCount();
+                        }
 
                         // Ensure the call on line ~293 has exactly three arguments
                         const toolProcessingResult = await this.toolOrchestrator.processToolCalls(
@@ -320,7 +322,7 @@ export class StreamHandler {
                             // Add the continuation to the stream
                             const continuationParams: UniversalChatParams = {
                                 ...params,
-                                messages: [...currentMessages, assistantMessage, ...(Array.isArray(toolMessages) ? toolMessages : []), systemInstructionMessage]
+                                messages: [...(Array.isArray(currentMessages) ? currentMessages : []), assistantMessage, ...(Array.isArray(toolMessages) ? toolMessages : []), systemInstructionMessage]
                             };
 
                             const continuationStream = await this.streamingService.createStream(

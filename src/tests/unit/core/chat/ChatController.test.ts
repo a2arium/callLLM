@@ -363,7 +363,8 @@ describe('ChatController', () => {
                     },
                     required: ['param1']
                 }
-            }] // Expect the tools array as the second argument
+            }], // Expect the tools array as the second argument
+            expect.any(Function) // Accept any function for mcpAdapterProvider
         );
 
         // Verify final result is from the second call

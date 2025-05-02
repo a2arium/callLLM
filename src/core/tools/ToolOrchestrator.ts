@@ -167,8 +167,12 @@ export class ToolOrchestrator {
                     logger.debug(`Added tool result for ${call.toolName} with ID ${call.id}`);
                 } else if (call.error) {
                     // Handle error case (error should already be a string)
+                    const errorMessage = call.error.startsWith('Error executing tool')
+                        ? call.error
+                        : `Error executing tool ${call.toolName}: ${call.error}`;
+
                     this.historyManager.addMessage('tool',
-                        `Error executing tool ${call.toolName}: ${call.error}`,
+                        errorMessage,
                         { toolCallId: call.id });
                     logger.debug(`Added tool error for ${call.toolName} with ID ${call.id}: ${call.error}`);
                 }
