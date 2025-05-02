@@ -402,7 +402,7 @@ export type ModelCapabilities = {
          * Text output capability.
          * Boolean ftrue indicates basic text output only, object provides configuration options.
          */
-        text: true | {
+        text: true | false | {
             /**
              * Supported text output formats.
              * Replaces the old jsonMode flag. If 'json' is included, JSON output is supported.
