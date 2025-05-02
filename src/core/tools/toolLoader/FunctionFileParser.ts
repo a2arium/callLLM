@@ -8,6 +8,7 @@ import {
     SourceFile,
     ParameterDeclaration,
     CommentRange,
+    FunctionDeclaration,
     ts
 } from 'ts-morph';
 import path from 'path';
@@ -55,6 +56,14 @@ export class FunctionFileParser {
 
             // Force ts-morph to re-read the file from the disk to avoid internal caching issues
             sourceFile.refreshFromFileSystemSync();
+
+            // If there are any syntax or type diagnostics for this file, fail early
+            const allDiagnostics = this.project.getPreEmitDiagnostics();
+            const diagnostics = allDiagnostics.filter(d => d.getSourceFile()?.getFilePath() === filePath);
+            if (diagnostics.length > 0) {
+                const messages = diagnostics.map(d => d.getMessageText()).join('; ');
+                throw new ToolParsingError(`Error parsing file ${filePath}: ${messages}`);
+            }
 
             // --- Debug: Log file content briefly ---
             // console.log(`[Debug] Content of ${filePath}:\n${sourceFile.getText().substring(0, 300)}...`);
@@ -166,46 +175,91 @@ export class FunctionFileParser {
      * @param functionDeclaration - The function declaration to extract from
      * @returns The extracted description or empty string
      */
-    private extractFunctionDescription(functionDeclaration: any): string {
-        let functionDescription = '';
-
-        // First, try to get description from JSDoc comments
-        const jsDocComments = functionDeclaration.getJsDocs();
-        if (jsDocComments.length > 0) {
-            // Extract the main description (the text before any tags)
-            const mainComment = jsDocComments[0].getComment();
-            if (mainComment) {
-                functionDescription = typeof mainComment === 'string'
-                    ? mainComment
-                    : mainComment.map((block: JSDocText | JSDocLink | JSDocLinkCode | JSDocLinkPlain | undefined) =>
-                        block?.getText?.() || '').join(' ').trim();
-            }
-        }
-
-        // If no JSDoc description was found, try to get from single-line or block comments
-        if (!functionDescription) {
-            const leadingComments = functionDeclaration.getLeadingCommentRanges();
-            if (leadingComments.length > 0) {
-                // Combine all leading comments into one description
-                functionDescription = leadingComments
-                    .map((comment: CommentRange) => {
-                        const text = comment.getText();
-                        // Clean comment markers from the text
-                        return text
-                            .replace(/^\/\*\*/, '') // Remove opening /**
-                            .replace(/\*\/$/, '')   // Remove closing */
-                            .replace(/^\/\/\s*/, '') // Remove // and any spaces after it
-                            .replace(/^\/\*/, '')    // Remove opening /*
-                            .replace(/^\s*\*\s*/gm, '') // Remove * at the beginning of lines in block comments
-                            .trim();
-                    })
-                    .filter((text: string) => text.length > 0) // Filter out empty comments
+    private extractFunctionDescription(functionDeclaration: FunctionDeclaration): string {
+        // 1) JSDoc comments
+        const jsDocs = functionDeclaration.getJsDocs();
+        if (jsDocs.length > 0) {
+            const comment = jsDocs[0].getComment();
+            if (comment) {
+                if (typeof comment === 'string') {
+                    return comment.trim();
+                }
+                return (comment as JSDocText[])
+                    .map(block => block.getText())
                     .join(' ')
                     .trim();
             }
         }
 
-        return functionDescription;
+        // 2) Try to get leading comment ranges directly
+        const leadingCommentRanges = functionDeclaration.getLeadingCommentRanges();
+        if (leadingCommentRanges && leadingCommentRanges.length > 0) {
+            const lastComment = leadingCommentRanges[leadingCommentRanges.length - 1];
+            const commentText = lastComment.getText();
+            // Clean up comment markers
+            return commentText
+                .replace(/^\/\*\*/, '') // Remove opening /**
+                .replace(/\*\/$/, '')   // Remove closing */
+                .replace(/^\/\/\s*/, '') // Remove // and any spaces after it
+                .replace(/^\/\*/, '')    // Remove opening /*
+                .replace(/^\s*\*\s*/gm, '') // Remove * at beginning of lines in block comments
+                .trim();
+        }
+
+        // 3) Fallback: scan text before function declaration for comments
+        const sourceFile = functionDeclaration.getSourceFile();
+        const fullText = sourceFile.getFullText();
+        const start = functionDeclaration.getFullStart();
+        const beforeText = fullText.slice(0, start);
+
+        // Block comment fallback: capture the last /* ... */ block
+        const blockRegex = /\/\*+\s*([\s\S]*?)\s*\*+\//g;
+        const blockMatches = Array.from(beforeText.matchAll(blockRegex)) as RegExpMatchArray[];
+        if (blockMatches.length > 0) {
+            const raw = blockMatches[blockMatches.length - 1][1];
+            const lines = raw
+                .split(/\r?\n/)
+                .map((l: string) => l.replace(/^\s*\*+\s*/, '').trim())
+                .filter((l: string) => l.length > 0);
+            if (lines.length > 0) {
+                return lines.join(' ');
+            }
+        }
+
+        // Single-line comment fallback: scan for consecutive single-line comments
+        const singleLineComments: string[] = [];
+        const lineRegex = /^\s*\/\/\s*(.*)$/gm;
+        let match: RegExpExecArray | null;
+
+        while ((match = lineRegex.exec(beforeText)) !== null) {
+            if (match[1].trim()) {
+                singleLineComments.push(match[1].trim());
+            }
+        }
+
+        // If we found consecutive single-line comments, join them
+        if (singleLineComments.length > 0) {
+            // Get the last comment or consecutive comment group
+            let lastIndex = singleLineComments.length - 1;
+            const lastComments: string[] = [singleLineComments[lastIndex]];
+
+            // Check if there are consecutive comments (on adjacent lines)
+            while (lastIndex > 0) {
+                // This is a simple heuristic to detect consecutive comments
+                // A more accurate approach would check actual line numbers
+                lastIndex--;
+                lastComments.unshift(singleLineComments[lastIndex]);
+
+                // If we have a significant gap between comments, stop
+                // This is a simplistic approach - ideally we'd check line numbers
+                if (lastIndex === 0) break;
+            }
+
+            return lastComments.join(' ');
+        }
+
+        // No description found
+        return '';
     }
 
     /**

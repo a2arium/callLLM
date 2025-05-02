@@ -347,4 +347,81 @@ export function toolFunction(params: {
             }
         });
     });
+
+    // New test: function with multiple parameters
+    it('should parse a regular function with multiple parameters', async () => {
+        const fileContent = `
+        /**
+         * Sum two numbers
+         */
+        export function toolFunction(a: number, b: number): number {
+            return a + b;
+        }
+        `;
+        const tempFile = await createTempFile(fileContent, 'sum.ts');
+        const filePath = manageCleanup(tempFile);
+        const result = parser.parseFile(filePath);
+
+        expect(result.name).toBe('sum');
+        expect(result.description).toBe('Sum two numbers');
+        // Two parameters should be recognized
+        expect(Object.keys(result.schema.properties).sort()).toEqual(['a', 'b']);
+        expect(result.schema.properties).toEqual({
+            a: { type: 'number', description: 'Parameter: a' },
+            b: { type: 'number', description: 'Parameter: b' }
+        });
+        // Both should be required
+        expect(result.schema.required?.sort()).toEqual(['a', 'b']);
+    });
+
+    // New test: single-line leading comment description
+    it('should extract description from single-line comments', async () => {
+        const fileContent = `
+// Just a single-line description
+export function toolFunction(params: { id: string }): void {
+    // no-op
+}
+        `;
+        const tempFile = await createTempFile(fileContent, 'singleLine.ts');
+        const filePath = manageCleanup(tempFile);
+        const result = parser.parseFile(filePath);
+
+        expect(result.description).toContain('Just a single-line description');
+        expect(result.name).toBe('singleLine');
+        expect(Object.keys(result.schema.properties)).toEqual(['id']);
+    });
+
+    // New test: enum declaration parsing
+    it('should handle parameters referencing an enum declaration', async () => {
+        const fileContent = `
+        /**
+         * Select a color
+         */
+        enum Color { RED = "red", BLUE = "blue" }
+        export function toolFunction(params: { color: Color }): void {}
+        `;
+        const tempFile = await createTempFile(fileContent, 'selectColor.ts');
+        const filePath = manageCleanup(tempFile);
+        const result = parser.parseFile(filePath);
+
+        expect(result.name).toBe('selectColor');
+        expect(result.description).toBe('Select a color');
+        expect(result.schema.properties.color.type).toBe('string');
+        expect(result.schema.properties.color.enum?.sort()).toEqual(['blue', 'red']);
+    });
+
+    // New test: syntax error should throw ToolParsingError
+    it('should throw ToolParsingError on invalid TypeScript syntax', async () => {
+        const fileContent = `
+        /**
+         * Broken syntax
+         */
+        export function toolFunction(params: { x: string } ) { return x; // missing closing brace
+        `;
+        const tempFile = await createTempFile(fileContent, 'broken.ts');
+        const filePath = manageCleanup(tempFile);
+
+        expect(() => parser.parseFile(filePath)).toThrow(ToolParsingError);
+        expect(() => parser.parseFile(filePath)).toThrow(/Error parsing file/);
+    });
 });

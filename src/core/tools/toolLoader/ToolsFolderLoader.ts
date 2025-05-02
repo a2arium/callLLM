@@ -88,6 +88,14 @@ export class ToolsFolderLoader {
     }
 
     /**
+     * Gets the toolsDir path
+     * @returns The tools directory path
+     */
+    public getToolsDir(): string {
+        return this.toolsDir;
+    }
+
+    /**
      * Validates that a tool exists in the folder
      * @param name - The name of the tool
      * @returns True if the tool exists, false otherwise

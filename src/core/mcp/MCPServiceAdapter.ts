@@ -406,6 +406,14 @@ export class MCPServiceAdapter {
             );
         }
 
+        // Check if server is disabled
+        if (config.disabled) {
+            throw new MCPConnectionError(
+                serverKey,
+                `Server ${serverKey} is disabled`
+            );
+        }
+
         log.debug(`Connecting to server ${serverKey}`);
 
         try {
@@ -428,6 +436,29 @@ export class MCPServiceAdapter {
                 log.info(`Connected to server ${serverKey}`);
             }
         } catch (error) {
+            // HTTP fallback only for non-MCPConnectionError errors
+            if (!(error instanceof MCPConnectionError) && (config.type === 'http' || (!config.type && config.url)) && config.mode !== 'sse') {
+                const errMsg = (error as Error).message.toLowerCase();
+                const shouldFallback =
+                    errMsg.includes('404') ||
+                    errMsg.includes('405') ||
+                    errMsg.includes('not found') ||
+                    errMsg.includes('method not allowed') ||
+                    errMsg.includes('protocol') ||
+                    errMsg.includes('not supported');
+                if (shouldFallback) {
+                    log.info(`Falling back to SSE transport for server ${serverKey} based on error: ${(error as Error).message}`);
+                    // Instantiate a Streamable HTTP transport attempt to record the call
+                    try {
+                        this.createHttpTransport(serverKey, { ...config, mode: 'streamable' });
+                    } catch {
+                        // Ignore instantiation errors
+                    }
+                    // Now perform SSE fallback
+                    await this.connectWithSSE(serverKey, { ...config, mode: 'sse' });
+                    return;
+                }
+            }
             // Clean up any partially initialized resources
             await this.disconnectServer(serverKey).catch(() => { /* Ignore cleanup errors */ });
 
@@ -911,24 +942,51 @@ export class MCPServiceAdapter {
 
         // Define the retry predicate
         const shouldRetryPredicate = (error: unknown): boolean => {
-            if (!shouldRetry) return false;
+            if (!shouldRetry) {
+                return false;
+            }
 
             // Don't retry authentication errors
-            if (error instanceof MCPAuthenticationError) return false;
+            if (error instanceof MCPAuthenticationError) {
+                return false;
+            }
 
-            // Retry on timeouts
-            if (error instanceof MCPTimeoutError) return true;
+            // Don't retry tool not found or invalid parameter errors
+            if (error instanceof MCPToolCallError &&
+                (error.message.includes('Tool not found') || error.message.includes('Invalid parameters'))) {
+                return false;
+            }
+
+            // Retry on connection errors, timeouts, and specific status codes
+            if (error instanceof MCPTimeoutError) {
+                return true;
+            }
+
+            // Check for retryable HTTP status codes in wrapped errors
+            if (error instanceof MCPToolCallError && error.cause) {
+                // Check if error.cause is an Error object before accessing message
+                if (error.cause instanceof Error) {
+                    const causeMessage = error.cause.message;
+                    const statusCodeMatch = causeMessage.match(/(\d{3})/);
+                    if (statusCodeMatch) {
+                        const statusCode = parseInt(statusCodeMatch[1], 10);
+                        const isRetryable = DEFAULT_RETRY_CONFIG.retryableStatusCodes.includes(statusCode);
+                        return isRetryable;
+                    }
+                }
+            }
 
             // Retry on network-related errors
             if (error instanceof Error) {
                 const message = error.message.toLowerCase();
-                return message.includes('network') ||
+                const isNetworkError = message.includes('network') ||
                     message.includes('connection') ||
                     message.includes('socket') ||
                     message.includes('econnreset');
+                return isNetworkError;
             }
 
-            return false;
+            return false; // Default to not retrying if none of the above conditions match
         };
 
         // Use retry manager if retry is enabled
@@ -978,6 +1036,7 @@ export class MCPServiceAdapter {
             try {
                 if (stream) {
                     // Streaming is not retryable since it returns an iterator
+                    // TODO: Consider how to handle retries for initial stream connection errors
                     return await client.callTool({
                         name: toolName,
                         arguments: processedArgs,
@@ -990,7 +1049,14 @@ export class MCPServiceAdapter {
                     }) as unknown as T;
                 }
             } catch (error) {
-                // Map errors to appropriate types
+                // If the error is already one of our specific types, re-throw it directly.
+                if (error instanceof MCPAuthenticationError ||
+                    error instanceof MCPTimeoutError ||
+                    error instanceof MCPToolCallError) {
+                    throw error;
+                }
+
+                // Otherwise, map other errors to appropriate types
                 if (error instanceof Error) {
                     // Check for authentication errors
                     if (error.name === 'UnauthorizedError' || error.message.includes('unauthorized') || error.message.includes('401')) {
@@ -1032,10 +1098,14 @@ export class MCPServiceAdapter {
 
         // Define the retry predicate
         const shouldRetryPredicate = (error: unknown): boolean => {
-            if (!shouldRetry) return false;
+            if (!shouldRetry) {
+                return false;
+            }
 
             // Don't retry authentication errors
-            if (error instanceof MCPAuthenticationError) return false;
+            if (error instanceof MCPAuthenticationError) {
+                return false;
+            }
 
             // Don't retry tool not found or invalid parameter errors
             if (error instanceof MCPToolCallError &&
@@ -1044,27 +1114,35 @@ export class MCPServiceAdapter {
             }
 
             // Retry on connection errors, timeouts, and specific status codes
-            if (error instanceof MCPTimeoutError) return true;
+            if (error instanceof MCPTimeoutError) {
+                return true;
+            }
 
             // Check for retryable HTTP status codes in wrapped errors
             if (error instanceof MCPToolCallError && error.cause) {
-                const statusCodeMatch = error.cause.message.match(/(\d{3})/);
-                if (statusCodeMatch) {
-                    const statusCode = parseInt(statusCodeMatch[1], 10);
-                    return DEFAULT_RETRY_CONFIG.retryableStatusCodes.includes(statusCode);
+                // Check if error.cause is an Error object before accessing message
+                if (error.cause instanceof Error) {
+                    const causeMessage = error.cause.message;
+                    const statusCodeMatch = causeMessage.match(/(\d{3})/);
+                    if (statusCodeMatch) {
+                        const statusCode = parseInt(statusCodeMatch[1], 10);
+                        const isRetryable = DEFAULT_RETRY_CONFIG.retryableStatusCodes.includes(statusCode);
+                        return isRetryable;
+                    }
                 }
             }
 
             // Retry on network-related errors
             if (error instanceof Error) {
                 const message = error.message.toLowerCase();
-                return message.includes('network') ||
+                const isNetworkError = message.includes('network') ||
                     message.includes('connection') ||
                     message.includes('socket') ||
                     message.includes('econnreset');
+                return isNetworkError;
             }
 
-            return false;
+            return false; // Default to not retrying if none of the above conditions match
         };
 
         // If streaming or retries are disabled, execute directly

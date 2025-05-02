@@ -2,13 +2,22 @@
  * Unit tests for MCPServiceAdapter
  */
 import { MCPServiceAdapter } from '../../../../core/mcp/MCPServiceAdapter';
-import { MCPConnectionError, MCPToolCallError, MCPHttpMode, MCPServerConfig, MCPServersMap, MCPAuthenticationError, MCPTimeoutError } from '../../../../core/mcp/MCPConfigTypes';
+import {
+    MCPConnectionError,
+    MCPToolCallError,
+    MCPHttpMode,
+    MCPServerConfig,
+    MCPServersMap,
+    MCPAuthenticationError,
+    MCPTimeoutError
+} from '../../../../core/mcp/MCPConfigTypes';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { OAuthProvider } from '../../../../core/mcp/OAuthProvider';
+import { fail } from 'assert';
 
 // Mock all the SDK components
 jest.mock('@modelcontextprotocol/sdk/client/index.js', () => {
@@ -186,6 +195,55 @@ describe('MCPServiceAdapter', () => {
             });
 
             await expect(adapter.connectToServer('custom')).rejects.toThrow(/not yet supported in the MCPServiceAdapter/);
+        });
+
+        it('should throw MCPConnectionError if transport fails to start', async () => {
+            adapter = new MCPServiceAdapter({
+                stdioFail: { command: 'fail-command' }
+            });
+
+            // Mock the transport's start method to fail
+            const mockTransport = {
+                start: jest.fn().mockRejectedValue(new Error('Transport start failed')),
+                close: jest.fn().mockResolvedValue(undefined)
+            };
+            (StdioClientTransport as jest.Mock).mockImplementationOnce(() => mockTransport);
+
+            // Mock the client's connect method to simulate it failing because the transport failed
+            const mockClient = {
+                connect: jest.fn().mockImplementation(async (transport) => {
+                    // Simulate client trying to use the transport which fails
+                    await transport.start();
+                }),
+                close: jest.fn().mockResolvedValue(undefined)
+            };
+            (Client as jest.Mock).mockImplementationOnce(() => mockClient);
+
+            // Check for the specific error message originating from the transport
+            await expect(adapter.connectToServer('stdioFail')).rejects.toThrow('Transport start failed');
+        });
+
+        it('should throw MCPConnectionError if client fails to connect', async () => {
+            adapter = new MCPServiceAdapter({
+                clientFail: { command: 'client-fail-command' }
+            });
+            // Mock client connect to throw an error
+            const mockClient = {
+                connect: jest.fn().mockRejectedValue(new Error('Client connection failed')),
+                close: jest.fn().mockResolvedValue(undefined)
+            };
+            (Client as jest.Mock).mockImplementationOnce(() => mockClient);
+
+            // Check for the specific error message
+            await expect(adapter.connectToServer('clientFail')).rejects.toThrow('Client connection failed');
+        });
+
+        it('should throw error if attempting to connect to a disabled server', async () => {
+            adapter = new MCPServiceAdapter({
+                disabledServer: { command: 'disabled-cmd', disabled: true }
+            });
+            // The constructor filters out disabled servers, so the config won't be found.
+            await expect(adapter.connectToServer('disabledServer')).rejects.toThrow('Server configuration not found');
         });
     });
 
@@ -1003,6 +1061,152 @@ describe('MCPServiceAdapter', () => {
         });
     });
 
+    describe('OAuth support - Transport Integration', () => {
+        let adapter: MCPServiceAdapter;
+        const mockOAuthProvider = { mock: 'provider' }; // Simple mock object
+
+        beforeEach(() => {
+            jest.clearAllMocks();
+            adapter = new MCPServiceAdapter({
+                oauthStreamable: {
+                    url: 'https://test.com/streamable',
+                    mode: 'streamable',
+                    auth: { oauth: { redirectUrl: 'app://cb' } }
+                },
+                oauthSse: {
+                    url: 'https://test.com/sse',
+                    mode: 'sse',
+                    auth: { oauth: { redirectUrl: 'app://cb' } }
+                }
+            });
+            // Always return the mock provider when createOAuthProviderIfNeeded is called
+            jest.spyOn(adapter as any, 'createOAuthProviderIfNeeded').mockReturnValue(mockOAuthProvider);
+        });
+
+        test('passes OAuth provider to StreamableHTTP transport', async () => {
+            // Mock connectWithHttp to check the transport creation args
+            (adapter as any).connectWithHttp = jest.fn().mockImplementation(async (serverKey, config) => {
+                (adapter as any).createHttpTransport(serverKey, config);
+                // Simulate success
+                (adapter as any).sdkClients.set(serverKey, { connect: jest.fn().mockResolvedValue(undefined) });
+                (adapter as any).sdkTransports.set(serverKey, { /* mock */ });
+                return true;
+            });
+
+            await adapter.connectToServer('oauthStreamable');
+
+            expect(StreamableHTTPClientTransport).toHaveBeenCalledWith(
+                expect.any(URL),
+                expect.objectContaining({ authProvider: mockOAuthProvider })
+            );
+            expect(SSEClientTransport).not.toHaveBeenCalled(); // Ensure SSE wasn't called
+        });
+
+        test('passes OAuth provider to SSE transport (direct config)', async () => {
+            // Mock connectWithSSE to check the transport creation args
+            (adapter as any).connectWithSSE = jest.fn().mockImplementation(async (serverKey, config) => {
+                (adapter as any).createHttpTransport(serverKey, config);
+                // Simulate success
+                (adapter as any).sdkClients.set(serverKey, { connect: jest.fn().mockResolvedValue(undefined) });
+                (adapter as any).sdkTransports.set(serverKey, { /* mock */ });
+                return true;
+            });
+
+            await adapter.connectToServer('oauthSse'); // Connect to the SSE configured server
+
+            expect(SSEClientTransport).toHaveBeenCalledWith(
+                expect.any(URL),
+                expect.objectContaining({ authProvider: mockOAuthProvider })
+            );
+            expect(StreamableHTTPClientTransport).not.toHaveBeenCalled(); // Ensure Streamable wasn't called
+        });
+
+        test('passes OAuth provider to SSE transport (fallback)', async () => {
+            // Mock connectWithHttp to force fallback
+            (adapter as any).connectWithHttp = jest.fn().mockRejectedValue(new Error('HTTP 404 Not Found'));
+            // Mock connectWithSSE to check transport args during fallback
+            (adapter as any).connectWithSSE = jest.fn().mockImplementation(async (serverKey, config) => {
+                (adapter as any).createHttpTransport(serverKey, config);
+                // Simulate success
+                (adapter as any).sdkClients.set(serverKey, { connect: jest.fn().mockResolvedValue(undefined) });
+                (adapter as any).sdkTransports.set(serverKey, { /* mock */ });
+                return true;
+            });
+
+            await adapter.connectToServer('oauthStreamable'); // Connect to streamable which will fallback
+
+            expect(StreamableHTTPClientTransport).toHaveBeenCalled(); // Streamable was attempted
+            expect(SSEClientTransport).toHaveBeenCalledWith(
+                expect.any(URL),
+                expect.objectContaining({ authProvider: mockOAuthProvider })
+            ); // SSE was called with provider on fallback
+        });
+    });
+
+    describe('OAuth support - Provider Creation', () => {
+        let adapter: MCPServiceAdapter;
+
+        beforeEach(() => {
+            jest.clearAllMocks();
+            // Basic adapter setup needed for these tests
+            adapter = new MCPServiceAdapter({});
+        });
+
+        test('createOAuthProviderIfNeeded returns an OAuthProvider instance for valid config', () => {
+            const config: MCPServerConfig = {
+                url: 'https://oauth-test.com/mcp',
+                auth: { oauth: { redirectUrl: 'app://callback' } }
+            };
+            // Access private method for direct testing
+            const provider = (adapter as any).createOAuthProviderIfNeeded('testServer', config);
+            expect(provider).toBeDefined();
+            expect(OAuthProvider).toHaveBeenCalledWith('testServer', expect.objectContaining({
+                redirectUrl: 'app://callback'
+            }));
+        });
+
+        test('createOAuthProviderIfNeeded includes clientInfo if provided', () => {
+            const config: MCPServerConfig = {
+                url: 'https://oauth-test.com/mcp',
+                auth: {
+                    oauth: {
+                        redirectUrl: 'app://callback',
+                        clientId: 'test-id',
+                        clientSecret: 'test-secret'
+                    }
+                }
+            };
+            const provider = (adapter as any).createOAuthProviderIfNeeded('testServer', config);
+            expect(OAuthProvider).toHaveBeenCalledWith('testServer', expect.objectContaining({
+                clientInformation: {
+                    client_id: 'test-id',
+                    client_secret: 'test-secret'
+                }
+            }));
+        });
+
+        test('createOAuthProviderIfNeeded returns undefined for non-OAuth config', () => {
+            const config: MCPServerConfig = {
+                url: 'https://non-oauth.com/mcp'
+            };
+            // Access private method for direct testing
+            const provider = (adapter as any).createOAuthProviderIfNeeded('nonOauthServer', config);
+            expect(provider).toBeUndefined();
+            expect(OAuthProvider).not.toHaveBeenCalled();
+        });
+
+        test('createOAuthProviderIfNeeded returns undefined if auth or oauth is missing', () => {
+            const configNoAuth: MCPServerConfig = { url: 'https://test.com' };
+            const configNoOauth: MCPServerConfig = { url: 'https://test.com', auth: {} }; // Missing oauth key
+
+            const provider1 = (adapter as any).createOAuthProviderIfNeeded('test1', configNoAuth);
+            expect(provider1).toBeUndefined();
+
+            const provider2 = (adapter as any).createOAuthProviderIfNeeded('test2', configNoOauth);
+            expect(provider2).toBeUndefined();
+        });
+    });
+
     describe('Error handling and retry', () => {
         let adapter: MCPServiceAdapter;
 
@@ -1110,5 +1314,1099 @@ describe('MCPServiceAdapter', () => {
             // Verify tool was called only once (no retry)
             expect(mockClient.callTool).toHaveBeenCalledTimes(1);
         });
+
+        it('maps specific SDK ToolInputValidationError to MCPToolCallError', async () => {
+            await adapter.connectToServer('test');
+            const sdkError = new Error('Invalid input');
+            sdkError.name = 'ToolInputValidationError'; // Mimic SDK error name
+            const mockClient = { callTool: jest.fn().mockRejectedValue(sdkError) };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Only check that it throws MCPToolCallError, as errorType is not set
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow(MCPToolCallError);
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow('Invalid input'); // Check the original message is preserved
+        });
+
+        it('maps specific SDK ToolExecutionError to MCPToolCallError', async () => {
+            await adapter.connectToServer('test');
+            const sdkError = new Error('Tool crashed');
+            sdkError.name = 'ToolExecutionError'; // Mimic SDK error name
+            const mockClient = { callTool: jest.fn().mockRejectedValue(sdkError) };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Only check that it throws MCPToolCallError, as errorType is not set
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow(MCPToolCallError);
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow('Tool crashed'); // Check the original message is preserved
+        });
+
+        it('maps other specific SDK errors (e.g., MethodNotFound) to MCPToolCallError', async () => {
+            await adapter.connectToServer('test');
+            const sdkError = new Error('Method tools/call not found');
+            sdkError.name = 'MethodNotFound'; // Mimic SDK error name
+            const mockClient = { callTool: jest.fn().mockRejectedValue(sdkError) };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Only check that it throws MCPToolCallError, as errorType is not set
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow(MCPToolCallError);
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow('Method tools/call not found'); // Check the original message is preserved
+        });
+
+        it('maps generic errors during tool call to MCPToolCallError', async () => {
+            await adapter.connectToServer('test');
+            const genericError = new Error('Something unexpected happened');
+            const mockClient = { callTool: jest.fn().mockRejectedValue(genericError) };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Only check that it throws MCPToolCallError, as errorType is not set
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow(MCPToolCallError);
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow('Something unexpected happened'); // Check the original message is preserved
+        });
+
+        it('should retry on retryable HTTP status code within MCPToolCallError cause', async () => {
+            await adapter.connectToServer('test');
+
+            // Create an error that mimics a retryable HTTP error wrapped in cause
+            const httpError = new Error('Server error: 503 Service Unavailable');
+            const toolCallError = new MCPToolCallError('test', 'test_tool', 'Request failed', httpError);
+
+            // Mock client to fail once then succeed
+            const mockClient = {
+                callTool: jest.fn()
+                    .mockRejectedValueOnce(toolCallError)
+                    .mockResolvedValueOnce({ result: 'success' })
+            };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Execute tool call
+            const result = await adapter.executeMcpTool('test', 'test_tool', {});
+
+            // Verify tool was called twice (initial + retry)
+            expect(mockClient.callTool).toHaveBeenCalledTimes(2);
+            expect(result).toEqual({ result: 'success' });
+        });
+
+        it('should not retry on non-retryable HTTP status code within MCPToolCallError cause', async () => {
+            await adapter.connectToServer('test');
+
+            // Create an error that mimics a non-retryable HTTP error wrapped in cause
+            const httpError = new Error('Client error: 400 Bad Request');
+            const toolCallError = new MCPToolCallError('test', 'test_tool', 'Request failed', httpError);
+
+            // Mock client to fail
+            const mockClient = {
+                callTool: jest.fn().mockRejectedValue(toolCallError)
+            };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Execute tool call
+            await expect(adapter.executeMcpTool('test', 'test_tool', {}))
+                .rejects.toThrow(MCPToolCallError);
+
+            // Verify tool was called only once (no retry)
+            expect(mockClient.callTool).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('_ensureConnected checks', () => {
+        beforeEach(() => {
+            // Initialize adapter without connecting
+            adapter = new MCPServiceAdapter({
+                test: { command: 'test-command' }
+            });
+        });
+
+        it('executeTool should throw if not connected', async () => {
+            // Check for the specific error message when not connected
+            await expect(adapter.executeTool('test', 'tool', {}, false)).rejects.toThrow('Server not connected. Try connecting first with connectToServer().');
+        });
+
+        it('listTools should throw if not connected - corrected to getMcpServerToolSchemas', async () => {
+            // listTools is internal, the public method is getMcpServerToolSchemas
+            // Check for the specific error message when not connected
+            await expect(adapter.getMcpServerToolSchemas('test')).rejects.toThrow('Server not connected. Cannot fetch schemas.');
+        });
+
+        // Add similar checks for other methods calling _ensureConnected
+        it('listResources should throw if not connected', async () => {
+            await expect(adapter.listResources('test')).rejects.toThrow('Not connected to server');
+        });
+
+        it('readResource should throw if not connected', async () => {
+            await expect(adapter.readResource('test', { uri: 'uri' })).rejects.toThrow('Not connected to server');
+        });
+
+        it('listResourceTemplates should throw if not connected', async () => {
+            await expect(adapter.listResourceTemplates('test')).rejects.toThrow('Not connected to server');
+        });
+
+        it('listPrompts should throw if not connected', async () => {
+            await expect(adapter.listPrompts('test')).rejects.toThrow('Not connected to server');
+        });
+
+        it('getPrompt should throw if not connected', async () => {
+            await expect(adapter.getPrompt('test', { name: 'name' })).rejects.toThrow('Not connected to server');
+        });
+
+        it('getMcpServerToolSchemas should throw if not connected', async () => {
+            // This duplicates the corrected listTools test, but let's keep it for clarity
+            await expect(adapter.getMcpServerToolSchemas('test')).rejects.toThrow('Server not connected. Cannot fetch schemas.');
+        });
+    });
+
+    describe('processArguments', () => {
+        beforeEach(() => {
+            adapter = new MCPServiceAdapter({
+                filesystem: { command: 'fs-cmd' }, // Need a config for the server key
+                other: { command: 'other-cmd' }
+            });
+        });
+
+        it('should not modify args for non-filesystem tools', () => {
+            const args = { path: '/some/path', other: 'value' };
+            const processed = (adapter as any).processArguments('other', 'any_tool', args);
+            expect(processed).toEqual(args); // Should be unchanged
+        });
+
+        it('should not modify args for filesystem tools other than list_directory, read_file, directory_tree', () => {
+            const args = { path: './invalid"}', other: 'value' };
+            const processed = (adapter as any).processArguments('filesystem', 'write_file', args);
+            expect(processed).toEqual(args); // Should be unchanged
+        });
+
+        it('should not modify valid paths for relevant filesystem tools', () => {
+            const validArgs = { path: '/valid/path-to_file.txt' };
+            const tools = ['list_directory', 'read_file', 'directory_tree'];
+            for (const tool of tools) {
+                const processed = (adapter as any).processArguments('filesystem', tool, { ...validArgs });
+                expect(processed).toEqual(validArgs);
+            }
+        });
+
+        it('should sanitize malformed paths containing quotes or braces', () => {
+            const malformedPaths = [
+                './path"}',       // Malformed 1
+                '/path/"\"]',    // Malformed 2 (needs escape for backslash)
+                '/a}b>c]d'        // Malformed 3
+            ];
+            const expectedSanitized = [
+                './path',
+                '/path/',
+                '/abcd'
+            ];
+            const tools = ['list_directory', 'read_file', 'directory_tree'];
+
+            for (let i = 0; i < malformedPaths.length; i++) {
+                for (const tool of tools) {
+                    const processed = (adapter as any).processArguments('filesystem', tool, { path: malformedPaths[i] });
+                    expect(processed.path).toBe(expectedSanitized[i]);
+                }
+            }
+        });
+
+        it('should default sanitized path to ./ if sanitization results in empty or dot path', () => {
+            const malformedPaths = [
+                '"}',
+                ']]]>{',
+                '."}',
+                '.."}'
+            ];
+            const tools = ['list_directory', 'read_file', 'directory_tree'];
+
+            for (const path of malformedPaths) {
+                for (const tool of tools) {
+                    const processed = (adapter as any).processArguments('filesystem', tool, { path });
+                    expect(processed.path).toBe('./');
+                }
+            }
+        });
+
+        it('should add default path ./ for list_directory if path is missing or empty', () => {
+            const argsMissing = { other: 'value' };
+            const argsEmpty = { path: ' ', other: 'value' }; // Whitespace path
+
+            const processedMissing = (adapter as any).processArguments('filesystem', 'list_directory', argsMissing);
+            expect(processedMissing.path).toBe('./');
+            expect(processedMissing.other).toBe('value');
+
+            const processedEmpty = (adapter as any).processArguments('filesystem', 'list_directory', argsEmpty);
+            expect(processedEmpty.path).toBe('./');
+            expect(processedEmpty.other).toBe('value');
+        });
+
+        it('should not add default path for list_directory if path is present', () => {
+            const args = { path: '/provided/path', other: 'value' };
+            const processed = (adapter as any).processArguments('filesystem', 'list_directory', args);
+            expect(processed.path).toBe('/provided/path');
+            expect(processed.other).toBe('value');
+        });
+
+        it('should not add default path for tools other than list_directory even if path is missing', () => {
+            const argsMissing = { other: 'value' };
+            const processedRead = (adapter as any).processArguments('filesystem', 'read_file', argsMissing);
+            expect(processedRead.path).toBeUndefined();
+            const processedTree = (adapter as any).processArguments('filesystem', 'directory_tree', argsMissing);
+            expect(processedTree.path).toBeUndefined();
+        });
+    });
+
+    describe('convertToToolDefinition / createZodSchemaFromParameters', () => {
+        beforeEach(() => {
+            adapter = new MCPServiceAdapter({
+                test: { command: 'test-cmd' }
+            });
+        });
+
+        const mockSdkClientWithTools = (tools: any[]) => {
+            const mockClient = {
+                connect: jest.fn().mockResolvedValue(undefined),
+                close: jest.fn().mockResolvedValue(undefined),
+                listTools: jest.fn().mockResolvedValue({ tools }),
+                // Add other methods if needed by connectToServer
+            };
+            (Client as jest.Mock).mockImplementationOnce(() => mockClient);
+            return mockClient; // Return the mock client for potential assertions
+        };
+
+        it('should handle tool with no description and no parameters', async () => {
+            mockSdkClientWithTools([{ name: 'tool_no_desc_no_params' }]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+
+            expect(schemas).toHaveLength(1);
+            expect(schemas[0].name).toBe('tool_no_desc_no_params');
+            expect(schemas[0].description).toBe('No description provided');
+            expect(schemas[0].serverKey).toBe('test');
+            expect(schemas[0].llmToolName).toBe('test_tool_no_desc_no_params');
+            // Check for an empty Zod object schema
+            expect(schemas[0].parameters._def.shape()).toEqual({});
+        });
+
+        it('should handle various parameter types', async () => {
+            mockSdkClientWithTools([
+                {
+                    name: 'complex_tool',
+                    description: 'A tool with various params',
+                    inputSchema: {
+                        type: 'object',
+                        properties: {
+                            p_string: { type: 'string', description: 'String param' },
+                            p_number: { type: 'number' },
+                            p_integer: { type: 'integer' },
+                            p_boolean: { type: 'boolean' },
+                            p_array: { type: 'array', description: 'Array param' }, // Default items: any
+                            p_object: { type: 'object' }, // Default properties: any
+                            p_enum: { type: 'string', enum: ['A', 'B'] }
+                        },
+                        required: ['p_string', 'p_enum']
+                    }
+                }
+            ]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+
+            expect(schemas).toHaveLength(1);
+            const zodSchema = schemas[0].parameters;
+            const shape = zodSchema._def.shape();
+
+            // Check types and descriptions
+            expect(shape.p_string._def.typeName).toBe('ZodString');
+            expect(shape.p_string._def.description).toBe('String param');
+            expect(shape.p_enum._def.typeName).toBe('ZodEnum');
+            expect(shape.p_enum._def.values).toEqual(['A', 'B']);
+
+            // Optional fields (check inner type):
+            expect(shape.p_number._def.innerType._def.typeName).toBe('ZodNumber');
+            expect(shape.p_integer._def.innerType._def.typeName).toBe('ZodNumber'); // Zod integer is number().int()
+            expect(shape.p_boolean._def.innerType._def.typeName).toBe('ZodBoolean');
+            expect(shape.p_array._def.innerType._def.typeName).toBe('ZodArray');
+            expect(shape.p_array._def.innerType._def.description).toBe('Array param');
+            expect(shape.p_object._def.innerType._def.typeName).toBe('ZodRecord'); // Defaults to record(string, any)
+
+            // Check optionality using isOptional()
+            expect(shape.p_string.isOptional()).toBe(false);
+            expect(shape.p_number.isOptional()).toBe(true);
+            expect(shape.p_integer.isOptional()).toBe(true);
+            expect(shape.p_boolean.isOptional()).toBe(true);
+            expect(shape.p_array.isOptional()).toBe(true);
+            expect(shape.p_object.isOptional()).toBe(true);
+            expect(shape.p_enum.isOptional()).toBe(false);
+        });
+
+        it('should handle invalid inputSchema type gracefully', async () => {
+            mockSdkClientWithTools([
+                {
+                    name: 'invalid_schema_type',
+                    description: 'Tool with non-object schema',
+                    inputSchema: { type: 'string' } // Invalid type
+                }
+            ]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+
+            expect(schemas).toHaveLength(1);
+            // Should default to an empty object schema
+            expect(schemas[0].parameters._def.shape()).toEqual({});
+        });
+
+        it('should handle missing properties in inputSchema', async () => {
+            mockSdkClientWithTools([
+                {
+                    name: 'missing_properties',
+                    description: 'Tool with missing properties',
+                    inputSchema: { type: 'object' } // No properties field
+                }
+            ]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+
+            expect(schemas).toHaveLength(1);
+            // Should default to an empty object schema
+            expect(schemas[0].parameters._def.shape()).toEqual({});
+        });
+
+        it('should handle non-array required field', async () => {
+            mockSdkClientWithTools([
+                {
+                    name: 'non_array_required',
+                    inputSchema: {
+                        type: 'object',
+                        properties: { p1: { type: 'string' } },
+                        required: 'p1' // Invalid, should be array
+                    }
+                }
+            ]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+
+            expect(schemas).toHaveLength(1);
+            // Parameter should be optional as required was invalid
+            expect(schemas[0].parameters._def.shape().p1.isOptional()).toBe(true);
+        });
+
+        it('should default unknown parameter types to z.any()', async () => {
+            mockSdkClientWithTools([
+                {
+                    name: 'unknown_type_tool',
+                    inputSchema: {
+                        type: 'object',
+                        properties: { p_unknown: { type: 'custom_type' } },
+                        required: []
+                    }
+                }
+            ]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+            // Check inner type because it's optional by default when required is empty
+            expect(schemas[0].parameters._def.shape().p_unknown._def.innerType._def.typeName).toBe('ZodAny');
+            expect(schemas[0].parameters._def.shape().p_unknown.isOptional()).toBe(true);
+        });
+
+    });
+
+    describe('OAuth support - Authentication Completion', () => {
+        let adapter: MCPServiceAdapter;
+        const mockFinishAuth = jest.fn();
+        const mockHttpTransport = {
+            start: jest.fn(),
+            close: jest.fn(),
+            finishAuth: mockFinishAuth // Mock the method we need to call
+        };
+        const mockStdioTransport = {
+            start: jest.fn(),
+            close: jest.fn()
+            // No finishAuth method
+        };
+
+        beforeEach(() => {
+            jest.clearAllMocks();
+            adapter = new MCPServiceAdapter({
+                oauthServer: { url: 'https://test.com', auth: { oauth: { redirectUrl: 'app://cb' } } },
+                stdioServer: { command: 'node' }
+            });
+
+            // Helper to simulate a connected server with a specific transport
+            const simulateConnection = (serverKey: string, transport: any) => {
+                (adapter as any).sdkTransports.set(serverKey, transport);
+                // Need a client entry as well, though its methods aren't directly used here
+                (adapter as any).sdkClients.set(serverKey, { mock: 'client' });
+            };
+
+            // Simulate connections for the tests
+            simulateConnection('oauthServer', mockHttpTransport);
+            simulateConnection('stdioServer', mockStdioTransport);
+        });
+
+        test('completeAuthentication calls finishAuth on the correct transport', async () => {
+            await adapter.completeAuthentication('oauthServer', 'auth-code-123');
+            expect(mockFinishAuth).toHaveBeenCalledWith('auth-code-123');
+        });
+
+        test('completeAuthentication throws error if transport not found', async () => {
+            await expect(adapter.completeAuthentication('nonExistentServer', 'test-code'))
+                .rejects.toThrow('Transport not found. Start connection first.');
+        });
+
+        test('completeAuthentication throws error if transport does not support authentication', async () => {
+            await expect(adapter.completeAuthentication('stdioServer', 'test-code'))
+                .rejects.toThrow('Transport does not support authentication');
+        });
+    });
+
+    describe('OAuth support - Transport Integration', () => {
+        let adapter: MCPServiceAdapter;
+        const mockOAuthProvider = { mock: 'provider' }; // Simple mock object
+
+        beforeEach(() => {
+            jest.clearAllMocks();
+            adapter = new MCPServiceAdapter({
+                oauthStreamable: {
+                    url: 'https://test.com/streamable',
+                    mode: 'streamable',
+                    auth: { oauth: { redirectUrl: 'app://cb' } }
+                },
+                oauthSse: {
+                    url: 'https://test.com/sse',
+                    mode: 'sse',
+                    auth: { oauth: { redirectUrl: 'app://cb' } }
+                }
+            });
+            // Always return the mock provider when createOAuthProviderIfNeeded is called
+            jest.spyOn(adapter as any, 'createOAuthProviderIfNeeded').mockReturnValue(mockOAuthProvider);
+        });
+
+        test('passes OAuth provider to StreamableHTTP transport', async () => {
+            // Mock connectWithHttp to check the transport creation args
+            (adapter as any).connectWithHttp = jest.fn().mockImplementation(async (serverKey, config) => {
+                (adapter as any).createHttpTransport(serverKey, config);
+                // Simulate success
+                (adapter as any).sdkClients.set(serverKey, { connect: jest.fn().mockResolvedValue(undefined) });
+                (adapter as any).sdkTransports.set(serverKey, { /* mock */ });
+                return true;
+            });
+
+            await adapter.connectToServer('oauthStreamable');
+
+            expect(StreamableHTTPClientTransport).toHaveBeenCalledWith(
+                expect.any(URL),
+                expect.objectContaining({ authProvider: mockOAuthProvider })
+            );
+            expect(SSEClientTransport).not.toHaveBeenCalled(); // Ensure SSE wasn't called
+        });
+
+        test('passes OAuth provider to SSE transport (direct config)', async () => {
+            // Mock connectWithSSE to check the transport creation args
+            (adapter as any).connectWithSSE = jest.fn().mockImplementation(async (serverKey, config) => {
+                (adapter as any).createHttpTransport(serverKey, config);
+                // Simulate success
+                (adapter as any).sdkClients.set(serverKey, { connect: jest.fn().mockResolvedValue(undefined) });
+                (adapter as any).sdkTransports.set(serverKey, { /* mock */ });
+                return true;
+            });
+
+            await adapter.connectToServer('oauthSse'); // Connect to the SSE configured server
+
+            expect(SSEClientTransport).toHaveBeenCalledWith(
+                expect.any(URL),
+                expect.objectContaining({ authProvider: mockOAuthProvider })
+            );
+            expect(StreamableHTTPClientTransport).not.toHaveBeenCalled(); // Ensure Streamable wasn't called
+        });
+
+        test('passes OAuth provider to SSE transport (fallback)', async () => {
+            // Mock connectWithHttp to force fallback
+            (adapter as any).connectWithHttp = jest.fn().mockRejectedValue(new Error('HTTP 404 Not Found'));
+            // Mock connectWithSSE to check transport args during fallback
+            (adapter as any).connectWithSSE = jest.fn().mockImplementation(async (serverKey, config) => {
+                (adapter as any).createHttpTransport(serverKey, config);
+                // Simulate success
+                (adapter as any).sdkClients.set(serverKey, { connect: jest.fn().mockResolvedValue(undefined) });
+                (adapter as any).sdkTransports.set(serverKey, { /* mock */ });
+                return true;
+            });
+
+            await adapter.connectToServer('oauthStreamable'); // Connect to streamable which will fallback
+
+            expect(StreamableHTTPClientTransport).toHaveBeenCalled(); // Streamable was attempted
+            expect(SSEClientTransport).toHaveBeenCalledWith(
+                expect.any(URL),
+                expect.objectContaining({ authProvider: mockOAuthProvider })
+            ); // SSE was called with provider on fallback
+        });
+    });
+
+    describe('OAuth support - Provider Creation', () => {
+        let adapter: MCPServiceAdapter;
+
+        beforeEach(() => {
+            jest.clearAllMocks();
+            // Basic adapter setup needed for these tests
+            adapter = new MCPServiceAdapter({});
+        });
+
+        test('createOAuthProviderIfNeeded returns an OAuthProvider instance for valid config', () => {
+            const config: MCPServerConfig = {
+                url: 'https://oauth-test.com/mcp',
+                auth: { oauth: { redirectUrl: 'app://callback' } }
+            };
+            // Access private method for direct testing
+            const provider = (adapter as any).createOAuthProviderIfNeeded('testServer', config);
+            expect(provider).toBeDefined();
+            expect(OAuthProvider).toHaveBeenCalledWith('testServer', expect.objectContaining({
+                redirectUrl: 'app://callback'
+            }));
+        });
+
+        test('createOAuthProviderIfNeeded includes clientInfo if provided', () => {
+            const config: MCPServerConfig = {
+                url: 'https://oauth-test.com/mcp',
+                auth: {
+                    oauth: {
+                        redirectUrl: 'app://callback',
+                        clientId: 'test-id',
+                        clientSecret: 'test-secret'
+                    }
+                }
+            };
+            const provider = (adapter as any).createOAuthProviderIfNeeded('testServer', config);
+            expect(OAuthProvider).toHaveBeenCalledWith('testServer', expect.objectContaining({
+                clientInformation: {
+                    client_id: 'test-id',
+                    client_secret: 'test-secret'
+                }
+            }));
+        });
+
+        test('createOAuthProviderIfNeeded returns undefined for non-OAuth config', () => {
+            const config: MCPServerConfig = {
+                url: 'https://non-oauth.com/mcp'
+            };
+            // Access private method for direct testing
+            const provider = (adapter as any).createOAuthProviderIfNeeded('nonOauthServer', config);
+            expect(provider).toBeUndefined();
+            expect(OAuthProvider).not.toHaveBeenCalled();
+        });
+
+        test('createOAuthProviderIfNeeded returns undefined if auth or oauth is missing', () => {
+            const configNoAuth: MCPServerConfig = { url: 'https://test.com' };
+            const configNoOauth: MCPServerConfig = { url: 'https://test.com', auth: {} }; // Missing oauth key
+
+            const provider1 = (adapter as any).createOAuthProviderIfNeeded('test1', configNoAuth);
+            expect(provider1).toBeUndefined();
+
+            const provider2 = (adapter as any).createOAuthProviderIfNeeded('test2', configNoOauth);
+            expect(provider2).toBeUndefined();
+        });
+    });
+
+    describe('Error handling and retry', () => {
+        let adapter: MCPServiceAdapter;
+
+        beforeEach(() => {
+            adapter = new MCPServiceAdapter({
+                test: { command: 'test-command' }
+            });
+        });
+
+        it('maps network errors to MCPConnectionError', async () => {
+            // Mock connection
+            await adapter.connectToServer('test');
+
+            // Mock client to throw network error
+            const mockClient = {
+                callTool: jest.fn().mockRejectedValue(new Error('Network error: Connection reset'))
+            };
+
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Execute tool call and expect MCPConnectionError
+            await expect(
+                async () => await adapter.executeMcpTool('test', 'test_tool', {})
+            ).rejects.toThrow(MCPToolCallError);
+        });
+
+        it('maps authorization errors to MCPAuthenticationError', async () => {
+            // Mock connection
+            await adapter.connectToServer('test');
+
+            // Create an error that mimics UnauthorizedError
+            const authError = new Error('Unauthorized');
+            authError.name = 'UnauthorizedError';
+
+            // Mock client to throw auth error
+            const mockClient = {
+                callTool: jest.fn().mockRejectedValue(authError)
+            };
+
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Execute tool call with retry disabled to avoid looping
+            const options = { retry: false };
+            await expect(adapter.executeTool('test', 'test_tool', {}, false, options))
+                .rejects.toThrow(MCPAuthenticationError);
+        });
+
+        it('maps timeout errors to MCPTimeoutError', async () => {
+            // Mock connection
+            await adapter.connectToServer('test');
+
+            // Mock client to throw timeout error
+            const mockClient = {
+                callTool: jest.fn().mockRejectedValue(new Error('Request timed out after 30s'))
+            };
+
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Execute tool call with retry disabled
+            const options = { retry: false };
+            await expect(adapter.executeTool('test', 'test_tool', {}, false, options))
+                .rejects.toThrow(MCPTimeoutError);
+        });
+
+        it('retries transient errors', async () => {
+            // Mock connection
+            await adapter.connectToServer('test');
+
+            // Mock client to fail once then succeed
+            const mockClient = {
+                callTool: jest.fn()
+                    .mockRejectedValueOnce(new Error('Connection error'))
+                    .mockResolvedValueOnce({ result: 'success' })
+            };
+
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Execute tool call
+            const result = await adapter.executeMcpTool('test', 'test_tool', {});
+
+            // Verify tool was called twice (initial + retry)
+            expect(mockClient.callTool).toHaveBeenCalledTimes(2);
+            expect(result).toEqual({ result: 'success' });
+        });
+
+        it('does not retry permanent errors', async () => {
+            // Mock connection
+            await adapter.connectToServer('test');
+
+            // Create an error that mimics a "method not found" error
+            const toolNotFoundError = new Error('Tool not found on server');
+
+            // Mock client to throw method not found error
+            const mockClient = {
+                callTool: jest.fn().mockRejectedValue(toolNotFoundError)
+            };
+
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Execute tool call
+            await expect(
+                async () => await adapter.executeMcpTool('test', 'test_tool', {})
+            ).rejects.toThrow(MCPToolCallError);
+
+            // Verify tool was called only once (no retry)
+            expect(mockClient.callTool).toHaveBeenCalledTimes(1);
+        });
+
+        it('maps specific SDK ToolInputValidationError to MCPToolCallError', async () => {
+            await adapter.connectToServer('test');
+            const sdkError = new Error('Invalid input');
+            sdkError.name = 'ToolInputValidationError'; // Mimic SDK error name
+            const mockClient = { callTool: jest.fn().mockRejectedValue(sdkError) };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Only check that it throws MCPToolCallError, as errorType is not set
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow(MCPToolCallError);
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow('Invalid input'); // Check the original message is preserved
+        });
+
+        it('maps specific SDK ToolExecutionError to MCPToolCallError', async () => {
+            await adapter.connectToServer('test');
+            const sdkError = new Error('Tool crashed');
+            sdkError.name = 'ToolExecutionError'; // Mimic SDK error name
+            const mockClient = { callTool: jest.fn().mockRejectedValue(sdkError) };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Only check that it throws MCPToolCallError, as errorType is not set
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow(MCPToolCallError);
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow('Tool crashed'); // Check the original message is preserved
+        });
+
+        it('maps other specific SDK errors (e.g., MethodNotFound) to MCPToolCallError', async () => {
+            await adapter.connectToServer('test');
+            const sdkError = new Error('Method tools/call not found');
+            sdkError.name = 'MethodNotFound'; // Mimic SDK error name
+            const mockClient = { callTool: jest.fn().mockRejectedValue(sdkError) };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Only check that it throws MCPToolCallError, as errorType is not set
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow(MCPToolCallError);
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow('Method tools/call not found'); // Check the original message is preserved
+        });
+
+        it('maps generic errors during tool call to MCPToolCallError', async () => {
+            await adapter.connectToServer('test');
+            const genericError = new Error('Something unexpected happened');
+            const mockClient = { callTool: jest.fn().mockRejectedValue(genericError) };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Only check that it throws MCPToolCallError, as errorType is not set
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow(MCPToolCallError);
+            await expect(adapter.executeTool('test', 'tool', {}, false, { retry: false }))
+                .rejects.toThrow('Something unexpected happened'); // Check the original message is preserved
+        });
+
+        it('should retry on retryable HTTP status code within MCPToolCallError cause', async () => {
+            await adapter.connectToServer('test');
+
+            // Create an error that mimics a retryable HTTP error wrapped in cause
+            const httpError = new Error('Server error: 503 Service Unavailable');
+            const toolCallError = new MCPToolCallError('test', 'test_tool', 'Request failed', httpError);
+
+            // Mock client to fail once then succeed
+            const mockClient = {
+                callTool: jest.fn()
+                    .mockRejectedValueOnce(toolCallError)
+                    .mockResolvedValueOnce({ result: 'success' })
+            };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Execute tool call
+            const result = await adapter.executeMcpTool('test', 'test_tool', {});
+
+            // Verify tool was called twice (initial + retry)
+            expect(mockClient.callTool).toHaveBeenCalledTimes(2);
+            expect(result).toEqual({ result: 'success' });
+        });
+
+        it('should not retry on non-retryable HTTP status code within MCPToolCallError cause', async () => {
+            await adapter.connectToServer('test');
+
+            // Create an error that mimics a non-retryable HTTP error wrapped in cause
+            const httpError = new Error('Client error: 400 Bad Request');
+            const toolCallError = new MCPToolCallError('test', 'test_tool', 'Request failed', httpError);
+
+            // Mock client to fail
+            const mockClient = {
+                callTool: jest.fn().mockRejectedValue(toolCallError)
+            };
+            (adapter as any).sdkClients.set('test', mockClient);
+
+            // Execute tool call
+            await expect(adapter.executeMcpTool('test', 'test_tool', {}))
+                .rejects.toThrow(MCPToolCallError);
+
+            // Verify tool was called only once (no retry)
+            expect(mockClient.callTool).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('_ensureConnected checks', () => {
+        beforeEach(() => {
+            // Initialize adapter without connecting
+            adapter = new MCPServiceAdapter({
+                test: { command: 'test-command' }
+            });
+        });
+
+        it('executeTool should throw if not connected', async () => {
+            // Check for the specific error message when not connected
+            await expect(adapter.executeTool('test', 'tool', {}, false)).rejects.toThrow('Server not connected. Try connecting first with connectToServer().');
+        });
+
+        it('listTools should throw if not connected - corrected to getMcpServerToolSchemas', async () => {
+            // listTools is internal, the public method is getMcpServerToolSchemas
+            // Check for the specific error message when not connected
+            await expect(adapter.getMcpServerToolSchemas('test')).rejects.toThrow('Server not connected. Cannot fetch schemas.');
+        });
+
+        // Add similar checks for other methods calling _ensureConnected
+        it('listResources should throw if not connected', async () => {
+            await expect(adapter.listResources('test')).rejects.toThrow('Not connected to server');
+        });
+
+        it('readResource should throw if not connected', async () => {
+            await expect(adapter.readResource('test', { uri: 'uri' })).rejects.toThrow('Not connected to server');
+        });
+
+        it('listResourceTemplates should throw if not connected', async () => {
+            await expect(adapter.listResourceTemplates('test')).rejects.toThrow('Not connected to server');
+        });
+
+        it('listPrompts should throw if not connected', async () => {
+            await expect(adapter.listPrompts('test')).rejects.toThrow('Not connected to server');
+        });
+
+        it('getPrompt should throw if not connected', async () => {
+            await expect(adapter.getPrompt('test', { name: 'name' })).rejects.toThrow('Not connected to server');
+        });
+
+        it('getMcpServerToolSchemas should throw if not connected', async () => {
+            // This duplicates the corrected listTools test, but let's keep it for clarity
+            await expect(adapter.getMcpServerToolSchemas('test')).rejects.toThrow('Server not connected. Cannot fetch schemas.');
+        });
+    });
+
+    describe('processArguments', () => {
+        beforeEach(() => {
+            adapter = new MCPServiceAdapter({
+                filesystem: { command: 'fs-cmd' }, // Need a config for the server key
+                other: { command: 'other-cmd' }
+            });
+        });
+
+        it('should not modify args for non-filesystem tools', () => {
+            const args = { path: '/some/path', other: 'value' };
+            const processed = (adapter as any).processArguments('other', 'any_tool', args);
+            expect(processed).toEqual(args); // Should be unchanged
+        });
+
+        it('should not modify args for filesystem tools other than list_directory, read_file, directory_tree', () => {
+            const args = { path: './invalid"}', other: 'value' };
+            const processed = (adapter as any).processArguments('filesystem', 'write_file', args);
+            expect(processed).toEqual(args); // Should be unchanged
+        });
+
+        it('should not modify valid paths for relevant filesystem tools', () => {
+            const validArgs = { path: '/valid/path-to_file.txt' };
+            const tools = ['list_directory', 'read_file', 'directory_tree'];
+            for (const tool of tools) {
+                const processed = (adapter as any).processArguments('filesystem', tool, { ...validArgs });
+                expect(processed).toEqual(validArgs);
+            }
+        });
+
+        it('should sanitize malformed paths containing quotes or braces', () => {
+            const malformedPaths = [
+                './path"}',       // Malformed 1
+                '/path/"\"]',    // Malformed 2 (needs escape for backslash)
+                '/a}b>c]d'        // Malformed 3
+            ];
+            const expectedSanitized = [
+                './path',
+                '/path/',
+                '/abcd'
+            ];
+            const tools = ['list_directory', 'read_file', 'directory_tree'];
+
+            for (let i = 0; i < malformedPaths.length; i++) {
+                for (const tool of tools) {
+                    const processed = (adapter as any).processArguments('filesystem', tool, { path: malformedPaths[i] });
+                    expect(processed.path).toBe(expectedSanitized[i]);
+                }
+            }
+        });
+
+        it('should default sanitized path to ./ if sanitization results in empty or dot path', () => {
+            const malformedPaths = [
+                '"}',
+                ']]]>{',
+                '."}',
+                '.."}'
+            ];
+            const tools = ['list_directory', 'read_file', 'directory_tree'];
+
+            for (const path of malformedPaths) {
+                for (const tool of tools) {
+                    const processed = (adapter as any).processArguments('filesystem', tool, { path });
+                    expect(processed.path).toBe('./');
+                }
+            }
+        });
+
+        it('should add default path ./ for list_directory if path is missing or empty', () => {
+            const argsMissing = { other: 'value' };
+            const argsEmpty = { path: ' ', other: 'value' }; // Whitespace path
+
+            const processedMissing = (adapter as any).processArguments('filesystem', 'list_directory', argsMissing);
+            expect(processedMissing.path).toBe('./');
+            expect(processedMissing.other).toBe('value');
+
+            const processedEmpty = (adapter as any).processArguments('filesystem', 'list_directory', argsEmpty);
+            expect(processedEmpty.path).toBe('./');
+            expect(processedEmpty.other).toBe('value');
+        });
+
+        it('should not add default path for list_directory if path is present', () => {
+            const args = { path: '/provided/path', other: 'value' };
+            const processed = (adapter as any).processArguments('filesystem', 'list_directory', args);
+            expect(processed.path).toBe('/provided/path');
+            expect(processed.other).toBe('value');
+        });
+
+        it('should not add default path for tools other than list_directory even if path is missing', () => {
+            const argsMissing = { other: 'value' };
+            const processedRead = (adapter as any).processArguments('filesystem', 'read_file', argsMissing);
+            expect(processedRead.path).toBeUndefined();
+            const processedTree = (adapter as any).processArguments('filesystem', 'directory_tree', argsMissing);
+            expect(processedTree.path).toBeUndefined();
+        });
+    });
+
+    describe('convertToToolDefinition / createZodSchemaFromParameters', () => {
+        beforeEach(() => {
+            adapter = new MCPServiceAdapter({
+                test: { command: 'test-cmd' }
+            });
+        });
+
+        const mockSdkClientWithTools = (tools: any[]) => {
+            const mockClient = {
+                connect: jest.fn().mockResolvedValue(undefined),
+                close: jest.fn().mockResolvedValue(undefined),
+                listTools: jest.fn().mockResolvedValue({ tools }),
+                // Add other methods if needed by connectToServer
+            };
+            (Client as jest.Mock).mockImplementationOnce(() => mockClient);
+            return mockClient; // Return the mock client for potential assertions
+        };
+
+        it('should handle tool with no description and no parameters', async () => {
+            mockSdkClientWithTools([{ name: 'tool_no_desc_no_params' }]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+
+            expect(schemas).toHaveLength(1);
+            expect(schemas[0].name).toBe('tool_no_desc_no_params');
+            expect(schemas[0].description).toBe('No description provided');
+            expect(schemas[0].serverKey).toBe('test');
+            expect(schemas[0].llmToolName).toBe('test_tool_no_desc_no_params');
+            // Check for an empty Zod object schema
+            expect(schemas[0].parameters._def.shape()).toEqual({});
+        });
+
+        it('should handle various parameter types', async () => {
+            mockSdkClientWithTools([
+                {
+                    name: 'complex_tool',
+                    description: 'A tool with various params',
+                    inputSchema: {
+                        type: 'object',
+                        properties: {
+                            p_string: { type: 'string', description: 'String param' },
+                            p_number: { type: 'number' },
+                            p_integer: { type: 'integer' },
+                            p_boolean: { type: 'boolean' },
+                            p_array: { type: 'array', description: 'Array param' }, // Default items: any
+                            p_object: { type: 'object' }, // Default properties: any
+                            p_enum: { type: 'string', enum: ['A', 'B'] }
+                        },
+                        required: ['p_string', 'p_enum']
+                    }
+                }
+            ]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+
+            expect(schemas).toHaveLength(1);
+            const zodSchema = schemas[0].parameters;
+            const shape = zodSchema._def.shape();
+
+            // Check types and descriptions
+            expect(shape.p_string._def.typeName).toBe('ZodString');
+            expect(shape.p_string._def.description).toBe('String param');
+            expect(shape.p_enum._def.typeName).toBe('ZodEnum');
+            expect(shape.p_enum._def.values).toEqual(['A', 'B']);
+
+            // Optional fields (check inner type):
+            expect(shape.p_number._def.innerType._def.typeName).toBe('ZodNumber');
+            expect(shape.p_integer._def.innerType._def.typeName).toBe('ZodNumber'); // Zod integer is number().int()
+            expect(shape.p_boolean._def.innerType._def.typeName).toBe('ZodBoolean');
+            expect(shape.p_array._def.innerType._def.typeName).toBe('ZodArray');
+            expect(shape.p_array._def.innerType._def.description).toBe('Array param');
+            expect(shape.p_object._def.innerType._def.typeName).toBe('ZodRecord'); // Defaults to record(string, any)
+
+            // Check optionality using isOptional()
+            expect(shape.p_string.isOptional()).toBe(false);
+            expect(shape.p_number.isOptional()).toBe(true);
+            expect(shape.p_integer.isOptional()).toBe(true);
+            expect(shape.p_boolean.isOptional()).toBe(true);
+            expect(shape.p_array.isOptional()).toBe(true);
+            expect(shape.p_object.isOptional()).toBe(true);
+            expect(shape.p_enum.isOptional()).toBe(false);
+        });
+
+        it('should handle invalid inputSchema type gracefully', async () => {
+            mockSdkClientWithTools([
+                {
+                    name: 'invalid_schema_type',
+                    description: 'Tool with non-object schema',
+                    inputSchema: { type: 'string' } // Invalid type
+                }
+            ]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+
+            expect(schemas).toHaveLength(1);
+            // Should default to an empty object schema
+            expect(schemas[0].parameters._def.shape()).toEqual({});
+        });
+
+        it('should handle missing properties in inputSchema', async () => {
+            mockSdkClientWithTools([
+                {
+                    name: 'missing_properties',
+                    description: 'Tool with missing properties',
+                    inputSchema: { type: 'object' } // No properties field
+                }
+            ]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+
+            expect(schemas).toHaveLength(1);
+            // Should default to an empty object schema
+            expect(schemas[0].parameters._def.shape()).toEqual({});
+        });
+
+        it('should handle non-array required field', async () => {
+            mockSdkClientWithTools([
+                {
+                    name: 'non_array_required',
+                    inputSchema: {
+                        type: 'object',
+                        properties: { p1: { type: 'string' } },
+                        required: 'p1' // Invalid, should be array
+                    }
+                }
+            ]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+
+            expect(schemas).toHaveLength(1);
+            // Parameter should be optional as required was invalid
+            expect(schemas[0].parameters._def.shape().p1.isOptional()).toBe(true);
+        });
+
+        it('should default unknown parameter types to z.any()', async () => {
+            mockSdkClientWithTools([
+                {
+                    name: 'unknown_type_tool',
+                    inputSchema: {
+                        type: 'object',
+                        properties: { p_unknown: { type: 'custom_type' } },
+                        required: []
+                    }
+                }
+            ]);
+            await adapter.connectToServer('test');
+            const schemas = await adapter.getMcpServerToolSchemas('test');
+            // Check inner type because it's optional by default when required is empty
+            expect(schemas[0].parameters._def.shape().p_unknown._def.innerType._def.typeName).toBe('ZodAny');
+            expect(schemas[0].parameters._def.shape().p_unknown.isOptional()).toBe(true);
+        });
+
     });
 }); 

@@ -461,10 +461,19 @@ export class LLMCaller implements MCPDirectAccess {
 
         // Initialize loaders if needed
         let folderLoader: ToolsFolderLoader | undefined = undefined;
+
+        // If toolsDir is provided at call level, use it (may override constructor setting)
         if (toolsDir) {
             if (!this.folderLoader) {
                 this.folderLoader = new ToolsFolderLoader(toolsDir);
+            } else if (toolsDir !== this.folderLoader.getToolsDir()) {
+                // A different toolsDir was provided, create a new loader
+                this.folderLoader = new ToolsFolderLoader(toolsDir);
             }
+            folderLoader = this.folderLoader;
+        }
+        // If no toolsDir provided at call level but we have a class-level folderLoader, use that
+        else if (this.folderLoader) {
             folderLoader = this.folderLoader;
         }
 

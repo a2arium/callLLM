@@ -50,6 +50,10 @@ function getServerConfigs(): MCPServersMap {
                 "DOCKER_CONTAINER=true",
                 "mcp/puppeteer"
             ]
+        },
+        "skeet.build": {
+            "url": "https://skeet.sh/ot/bec485d7744e8ecccc86f81561f4ef9ce32fad43ee3da1fc86073347887cdea9",
+            "mode": "sse"  // Use SSE transport directly - more reliable for skeet.build
         }
         // Add more server configurations as needed
         // Example:
