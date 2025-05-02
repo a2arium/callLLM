@@ -203,20 +203,28 @@ export class StreamHandler {
                     this.toolController &&
                     this.toolOrchestrator &&
                     (
-                        // Check both finishReason metadata and actual presence of tool calls
+                        // Rely on the finishReason OR the presence of toolCalls on the yielded chunk
                         chunk.metadata?.finishReason === FinishReason.TOOL_CALLS ||
-                        (chunk.toolCalls && chunk.toolCalls.length > 0) ||
-                        contentAccumulator.getCompletedToolCalls().length > 0
+                        (chunk.toolCalls && chunk.toolCalls.length > 0)
                     ) &&
                     !hasExecutedTools) {
 
                     log.debug('Tool calls detected, processing with ToolOrchestrator.processToolCalls');
-                    hasExecutedTools = true;
 
-                    // Get completed tool calls
-                    const completedToolCalls = contentAccumulator.getCompletedToolCalls();
+                    // Get completed tool calls directly from the chunk OR the content accumulator if not present
+                    const completedToolCalls = chunk.toolCalls || contentAccumulator.getCompletedToolCalls() || [];
+                    log.debug(`Processing ${completedToolCalls.length} tool calls`, {
+                        chunkHasToolCalls: !!chunk.toolCalls,
+                        chunkToolCallsCount: chunk.toolCalls?.length || 0,
+                        accumulatorToolCallsCount: contentAccumulator.getCompletedToolCalls()?.length || 0,
+                        finishReason: chunk.metadata?.finishReason
+                    });
 
                     if (completedToolCalls.length > 0) {
+                        log.debug(`Found ${completedToolCalls.length} completed tool calls to process:`,
+                            completedToolCalls.map(call => ({ id: call.id, name: call.name })));
+                        hasExecutedTools = true; // Mark as executed only if we found tools to process
+
                         // Properly cast the completed tool calls
                         const mappedToolCalls = completedToolCalls.map(call => {
                             if ('function' in call) {
@@ -309,6 +317,7 @@ export class StreamHandler {
                                 for await (const continuationChunk of continuationStream) {
                                     yield continuationChunk as UniversalStreamResponse<T extends z.ZodType ? z.infer<T> : unknown>;
                                 }
+
                             }
                         } else if (toolCallsResult.requiresResubmission && !this.streamingService) {
                             // Handle case where StreamingService is not available

@@ -4,8 +4,6 @@ import { HistoryManager } from '../src/core/history/HistoryManager';
 
 async function main() {
 
-    // Initialize LLMCaller with OpenAI
-    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant that can call tools.');
 
     // Define tools
     const weatherTool: ToolDefinition = {
@@ -33,6 +31,12 @@ async function main() {
             return result;
         }
     };
+
+    // Initialize LLMCaller with OpenAI, you can pass tools in the constructor
+    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant that can call tools.', {
+        tools: [weatherTool]
+    });
+
 
     const timeTool: ToolDefinition = {
         name: 'get_time',
@@ -83,8 +87,8 @@ async function main() {
         }
     };
 
-    // Add tools to the caller
-    caller.addTools([weatherTool, timeTool, calculateTool]);
+    // You can also add tools later using the addTools method
+    caller.addTools([timeTool]);
 
     // 1. Basic Tool Call
     console.log('1. Basic Tool Call');
@@ -115,7 +119,7 @@ async function main() {
     const calculationResponse = await caller.call(
         'Calculate 15% of 85',
         {
-            tools: [calculateTool],
+            tools: [weatherTool, calculateTool], // note that calculateTool was not added to the caller, but we can specify it here on individual level
             settings: {
                 toolChoice: 'auto'
             }

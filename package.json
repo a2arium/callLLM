@@ -23,6 +23,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "example:simple": "ts-node examples/simpleChat.ts",
     "example:usage": "ts-node examples/usageTracking.ts",
     "example:history": "ts-node examples/historyModes.ts",
     "example:json": "ts-node examples/jsonOutput.ts",

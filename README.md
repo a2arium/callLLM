@@ -1304,75 +1304,40 @@ for await (const chunk of stream) {
 
 The library now supports OpenAI's function calling feature through a unified tool calling interface. This allows you to define tools (functions) that the model can use to perform actions or retrieve information.
 
+### Adding Tools
+
+You can provide tools to the `LLMCaller` during initialization using the `tools` option in the constructor:
+
+```typescript
+// Define tools
+const weatherTool = { /* ... definition ... */ };
+const timeTool = { /* ... definition ... */ };
+
+// Initialize LLMCaller with tools
+const caller = new LLMCaller('openai', 'gpt-4o-mini', 'System message', {
+    tools: [weatherTool, timeTool]
+});
+```
+
+You can also add tools later using the `addTools` method, which is useful for dynamically adding tools after the caller has been created:
+
+```typescript
+// Add another tool later
+const calculateTool = { /* ... definition ... */ };
+await caller.addTools([calculateTool]);
+```
+
+You can mix tool definitions, string identifiers for function folders, and MCP configurations in the `tools` array passed to the constructor or `addTools`.
+
+Alternatively, you can pass a tool at a call level, which will be used for that specific call only.
+
 ### Tool Behavior
 
 When making a call, you can control which tools are available to the model in two ways:
 - Provide a specific `tools` array in your call options to make only those tools available for that specific call
 - Omit the `tools` option to make all previously registered tools (via `addTool` or `addTools`) available to the model
 
-### Adding Tools
-
-You can add tools individually using `addTool`:
-
-```typescript
-caller.addTool({
-    name: 'get_weather',
-    description: 'Get the current weather',
-    parameters: {
-        type: 'object',
-        properties: {
-            location: {
-                type: 'string',
-                description: 'The city and state'
-            }
-        },
-        required: ['location']
-    }
-});
-```
-
-Or add multiple tools at once using `addTools`:
-
-```typescript
-caller.addTools([
-    {
-        name: 'get_weather',
-        description: 'Get the current weather',
-        parameters: {
-            type: 'object',
-            properties: {
-                location: {
-                    type: 'string',
-                    description: 'The city and state'
-                }
-            },
-            required: ['location']
-        }
-    },
-    {
-        name: 'get_time',
-        description: 'Get the current time',
-        parameters: {
-            type: 'object',
-            properties: {
-                timezone: {
-                    type: 'string',
-                    description: 'The timezone'
-                }
-            },
-            required: ['timezone']
-        }
-    }
-]);
-```
-
-This is more efficient than adding tools individually when you have multiple tools to register.
-
-## Overview
-
-The library now supports OpenAI's function calling feature through a unified tool calling interface. This allows you to define tools (functions) that the model can use to perform actions or retrieve information.
-
-## Basic Usage
+### Tool Configuration
 
 ```typescript
 // Define your tools
@@ -1391,40 +1356,60 @@ const tools = [{
     }
 }];
 
-// Make a chat call with tool definitions
-const response = await adapter.call(
-    'Hello, how are you?',
+// Recommended approach: tools at root level
+const response = await caller.call(
+    'What is the weather in New York?',
     {
+        tools,
         settings: {
             temperature: 0.7,
-            maxTokens: 100,
-            tools,
+            toolChoice: 'auto' // toolChoice remains in settings
+        }
+    }
+);
+```
+
+## Overview
+
+The library now supports OpenAI's function calling feature through a unified tool calling interface. This allows you to define tools (functions) that the model can use to perform actions or retrieve information.
+
+## Basic Usage
+
+```typescript
+// Define your tools
+const weatherTool = {
+    name: 'get_weather',
+    description: 'Get the current weather',
+    parameters: {
+        type: 'object',
+        properties: {
+            location: {
+                type: 'string',
+                description: 'The city and state'
+            }
+        },
+        required: ['location']
+    },
+    callFunction: async (params) => { /* ... implementation ... */ }
+};
+
+// Initialize caller with the tool
+const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+    tools: [weatherTool]
+});
+
+// Make a chat call - the model can now use get_weather
+const response = await caller.call(
+    'What is the weather in New York?',
+    {
+        settings: {
             toolChoice: 'auto' // Let the model decide when to use tools
         }
     }
 );
 
-// Handle tool calls in the response
-if (response.toolCalls) {
-    for (const call of response.toolCalls) {
-        if (call.name === 'get_weather') {
-            const weather = await getWeather(call.arguments.location);
-            // Send the tool's response back to continue the conversation
-            const followUpResponse = await adapter.call(
-                'Hello',
-                {
-                    settings: {
-                        temperature: 0.7,
-                        maxTokens: 100,
-                        tools,
-                        toolCalls: response.toolCalls,
-                        toolChoice: 'auto'
-                    }
-                }
-            );
-        }
-    }
-}
+// The caller handles the tool execution and sends the result back automatically
+console.log(response[0].content);
 ```
 
 ## Streaming Support

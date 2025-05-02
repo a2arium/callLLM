@@ -69,6 +69,8 @@ export type LLMCallerOptions = {
     historyMode?: HistoryMode;
     // Directory containing tool function files
     toolsDir?: string;
+    // Add the tools option
+    tools?: (ToolDefinition | string | MCPServersMap)[];
     // Dependency injection options for testing
     providerManager?: ProviderManager;
     modelManager?: ModelManager;
@@ -196,10 +198,9 @@ export class LLMCaller implements MCPDirectAccess {
         // **Link ToolOrchestrator back to ChatController**
         (this.chatController as any).toolOrchestrator = this.toolOrchestrator;
 
-        // **Link ToolOrchestrator back to StreamingService (if not mocked)**
-        if (!(options?.streamingService)) {
-            this.streamingService.setToolOrchestrator(this.toolOrchestrator);
-        }
+        // **Link ToolOrchestrator back to StreamingService using the setter method**
+        // This ensures the internal StreamHandler within StreamingService is updated.
+        this.streamingService.setToolOrchestrator(this.toolOrchestrator);
 
         // Initialize ChunkController (now all dependencies should be ready)
         this.chunkController = new ChunkController(
@@ -209,6 +210,16 @@ export class LLMCaller implements MCPDirectAccess {
             this.historyManager,
             20
         );
+
+        // Add tools if provided in options, after core components are set up
+        if (options?.tools && options.tools.length > 0) {
+            // Call addTools but don't await it here to keep constructor synchronous
+            // Note: Tools might not be fully loaded/connected immediately after constructor returns.
+            this.addTools(options.tools).catch(err => {
+                // Log error if initial tool loading fails
+                logger.error('Error adding tools during LLMCaller initialization:', err);
+            });
+        }
     }
 
     // Model management methods - delegated to ModelManager
@@ -280,7 +291,7 @@ export class LLMCaller implements MCPDirectAccess {
             this.callerId,
             { tokenBatchSize: 100 },
             this.toolController,
-            this.toolOrchestrator // ToolOrchestrator itself might not need re-init if its deps are stable
+            undefined // Don't pass toolOrchestrator here, use the setter method instead
         );
 
         // Re-link ToolOrchestrator to the new ChatController instance

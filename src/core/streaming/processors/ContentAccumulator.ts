@@ -43,6 +43,16 @@ export class ContentAccumulator implements IStreamProcessor {
                 logger.debug(`Accumulated content, length: ${this.accumulatedContent.length}`);
             }
 
+            // Handle tool calls directly present in the chunk
+            if (chunk.toolCalls && chunk.toolCalls.length > 0) {
+                logger.debug(`Processing ${chunk.toolCalls.length} complete tool calls from chunk`);
+                // Store these directly in the completedToolCalls array
+                this.completedToolCalls.push(...chunk.toolCalls);
+                logger.debug('Added tool calls from chunk:',
+                    chunk.toolCalls.map(call => ({ id: call.id, name: call.name }))
+                );
+            }
+
             // Process any raw tool call chunks
             if (chunk.toolCallChunks?.length) {
                 logger.debug(`Processing ${chunk.toolCallChunks.length} raw tool call chunks`);
