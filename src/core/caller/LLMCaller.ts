@@ -498,7 +498,7 @@ export class LLMCaller implements MCPDirectAccess {
                 // New format: Direct MCPServersMap object
                 if (!mcpToolLoader) {
                     const { MCPToolLoader } = await import('../mcp/MCPToolLoader');
-                    mcpToolLoader = new MCPToolLoader();
+                    mcpToolLoader = new MCPToolLoader(this.getMcpAdapter());
                 }
 
                 // Store the MCP adapter reference in _mcpAdapter for proper tracking
@@ -566,7 +566,20 @@ export class LLMCaller implements MCPDirectAccess {
         });
 
         // Resolve string tool names to ToolDefinition objects
-        const effectiveTools = await this.resolveToolDefinitions(tools, toolsDir);
+        const newlyResolvedTools = await this.resolveToolDefinitions(tools, toolsDir);
+        let effectiveTools: ToolDefinition[];
+        if (!tools || tools.length === 0) {
+            // If no tools provided in this call, use the previously added tools
+            effectiveTools = this.toolsManager.listTools();
+        } else {
+            // Merge previously added tools with newly resolved ones, ensuring uniqueness by name
+            const existingTools = this.toolsManager.listTools();
+            const merged: Map<string, ToolDefinition> = new Map();
+            for (const t of [...existingTools, ...newlyResolvedTools]) {
+                merged.set(t.name, t);
+            }
+            effectiveTools = Array.from(merged.values());
+        }
         const mergedSettings = this.mergeSettings(settings);
         // Get the effective history mode
         const effectiveHistoryMode = this.mergeHistoryMode(historyMode);
@@ -695,100 +708,159 @@ export class LLMCaller implements MCPDirectAccess {
         // Use the new LLMCallOptions type
         options: LLMCallOptions = {}
     ): Promise<UniversalChatResponse[]> {
-        const { data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode, toolsDir } = options;
+        const log = logger.createLogger({ prefix: 'LLMCaller.call' });
 
-        // Reset tool call tracking at the beginning of each call
-        if (this.toolOrchestrator) {
-            this.toolOrchestrator.resetCalledTools();
-        }
+        try {
+            log.debug(`Call: ${message.substring(0, 30)}...`);
 
-        // Use the RequestProcessor to process the request
-        const modelInfo = this.modelManager.getModel(this.model);
-        if (!modelInfo) {
-            throw new Error(`Model ${this.model} not found`);
-        }
-        const processedMessages = await this.requestProcessor.processRequest({
-            message,
-            data,
-            endingMessage,
-            model: modelInfo,
-            maxResponseTokens: settings?.maxTokens
-        });
+            // Process MCP tool config from options.tools if present
+            if (options.tools) {
+                const mcpConfigs = options.tools.filter(tool =>
+                    tool && typeof tool === 'object' && !Array.isArray(tool) &&
+                    Object.values(tool).some(value =>
+                        typeof value === 'object' && value !== null &&
+                        'command' in value && 'args' in value
+                    )
+                ) as MCPServersMap[];
 
-        // Resolve string tool names to ToolDefinition objects
-        const effectiveTools = await this.resolveToolDefinitions(tools, toolsDir);
-        const mergedSettings = this.mergeSettings(settings);
-        // Get the effective history mode
-        const effectiveHistoryMode = this.mergeHistoryMode(historyMode);
+                // If we found any MCP configurations, handle them
+                if (mcpConfigs.length > 0) {
+                    log.debug('Found MCP server configurations in tools parameter');
 
-        // If in stateless mode, get system message only
-        if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
-            this.historyManager.initializeWithSystemMessage();
-        }
+                    // Initialize the MCP adapter with each server configuration
+                    // This doesn't connect yet, just registers the configs
+                    for (const mcpConfig of mcpConfigs) {
+                        for (const [serverKey, serverConfig] of Object.entries(mcpConfig)) {
+                            log.debug(`Registering MCP server configuration for ${serverKey}`);
 
+                            // Get or create the MCP adapter
+                            if (!this._mcpAdapter) {
+                                this._mcpAdapter = new MCPServiceAdapter({});
+                            }
 
-        // Add the original user message to history *before* the call
-        this.historyManager.addMessage('user', message, { metadata: { timestamp: Date.now() } });
-
-        // Get the messages from history
-        let messages = this.historyManager.getHistoricalMessages();
-
-        // Check if JSON is requested and whether to use native mode
-        const jsonRequested = responseFormat === 'json' || jsonSchema !== undefined;
-        const modelSupportsJsonMode = typeof modelInfo.capabilities?.output?.text === 'object' &&
-            modelInfo.capabilities.output.text.textOutputFormats?.includes('json');
-        const useNativeJsonMode = modelSupportsJsonMode && jsonRequested &&
-            !(settings?.jsonMode === 'force-prompt');
-
-        // If there's only one chunk (no splitting occurred)
-        if (processedMessages.length === 1) {
-            const params: UniversalChatParams = {
-                model: this.model,
-                messages: messages,
-                settings: mergedSettings,
-                jsonSchema: jsonSchema,
-                responseFormat: useNativeJsonMode ? 'json' : (jsonSchema ? 'text' : responseFormat),
-                tools: effectiveTools,
-                callerId: this.callerId,
-                historyMode: effectiveHistoryMode
-            };
-            // History update for assistant happens inside internalChatCall
-            const response = await this.internalChatCall<T>(params);
-            return [response]; // Convert single response to array
-        }
-
-        // If chunking occurred, use ChunkController
-        const historyForChunks = this.historyManager.getHistoricalMessages(); // Get history *before* the latest user msg
-
-        // ChunkController processes chunks and returns responses
-        const responses = await this.chunkController.processChunks(processedMessages, {
-            model: this.model,
-            settings: mergedSettings,
-            jsonSchema: jsonSchema,
-            responseFormat: responseFormat,
-            tools: effectiveTools,
-            historicalMessages: historyForChunks
-        });
-
-        // Add assistant responses from all chunks to history AFTER all chunks are processed
-        // This ensures history is consistent after the multi-chunk operation completes
-        // BUT skip this history addition for tool calls, as the ChatController already adds these
-        if (processedMessages.length > 1) {
-            responses.forEach(response => {
-                // Only add non-tool response messages, since tool messages are already added in ChatController
-                if (response.content && (!response.toolCalls || response.toolCalls.length === 0) &&
-                    response.metadata?.finishReason !== 'tool_calls') {
-                    this.historyManager.addMessage('assistant', response.content);
+                            // Only update configs if not already connected
+                            if (!this._mcpAdapter.isConnected(serverKey)) {
+                                log.debug(`Server ${serverKey} not already connected, registering configuration`);
+                                // Store config on the adapter for later connections
+                                await this._mcpAdapter.connectToServer(serverKey, serverConfig).catch(err => {
+                                    log.warn(`Failed to initialize MCP server ${serverKey}:`, err);
+                                });
+                            } else {
+                                log.debug(`Server ${serverKey} already connected, skipping initialization`);
+                            }
+                        }
+                    }
                 }
+            }
+
+            // Reset tool call tracking at the beginning of each call
+            if (this.toolOrchestrator) {
+                this.toolOrchestrator.resetCalledTools();
+            }
+
+            // Use the RequestProcessor to process the request
+            const modelInfo = this.modelManager.getModel(this.model);
+            if (!modelInfo) {
+                throw new Error(`Model ${this.model} not found`);
+            }
+            const processedMessages = await this.requestProcessor.processRequest({
+                message,
+                data: options.data,
+                endingMessage: options.endingMessage,
+                model: modelInfo,
+                maxResponseTokens: options.settings?.maxTokens
             });
-        }
 
-        // Reset history if stateless mode was used for this call
-        if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
-            this.historyManager.initializeWithSystemMessage();
-        }
+            // Resolve string tool names to ToolDefinition objects
+            const newlyResolvedTools = await this.resolveToolDefinitions(options.tools, options.toolsDir);
+            let effectiveTools: ToolDefinition[];
+            if (!options.tools || options.tools.length === 0) {
+                // If no tools provided in this call, use the previously added tools
+                effectiveTools = this.toolsManager.listTools();
+            } else {
+                // Merge previously added tools with newly resolved ones, ensuring uniqueness by name
+                const existingTools = this.toolsManager.listTools();
+                const merged: Map<string, ToolDefinition> = new Map();
+                for (const t of [...existingTools, ...newlyResolvedTools]) {
+                    merged.set(t.name, t);
+                }
+                effectiveTools = Array.from(merged.values());
+            }
+            const mergedSettings = this.mergeSettings(options.settings);
+            // Get the effective history mode
+            const effectiveHistoryMode = this.mergeHistoryMode(options.historyMode);
 
-        return responses;
+            // If in stateless mode, get system message only
+            if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
+                this.historyManager.initializeWithSystemMessage();
+            }
+
+            // Add the original user message to history *before* the call
+            this.historyManager.addMessage('user', message, { metadata: { timestamp: Date.now() } });
+
+            // Get the messages from history
+            const messages = this.historyManager.getHistoricalMessages();
+
+            // Check if JSON is requested and whether to use native mode
+            const jsonRequested = options.responseFormat === 'json' || options.jsonSchema !== undefined;
+            const modelSupportsJsonMode = typeof modelInfo.capabilities?.output?.text === 'object' &&
+                modelInfo.capabilities.output.text.textOutputFormats?.includes('json');
+            const useNativeJsonMode = modelSupportsJsonMode && jsonRequested &&
+                !(options.settings?.jsonMode === 'force-prompt');
+
+            // If there's only one chunk (no splitting occurred)
+            if (processedMessages.length === 1) {
+                const params: UniversalChatParams = {
+                    model: this.model,
+                    messages: messages,
+                    settings: mergedSettings,
+                    jsonSchema: options.jsonSchema,
+                    responseFormat: useNativeJsonMode ? 'json' : (options.jsonSchema ? 'text' : options.responseFormat),
+                    tools: effectiveTools,
+                    callerId: this.callerId,
+                    historyMode: effectiveHistoryMode
+                };
+                // History update for assistant happens inside internalChatCall
+                const response = await this.internalChatCall<T>(params);
+                return [response]; // Convert single response to array
+            }
+
+            // If chunking occurred, use ChunkController
+            const historyForChunks = this.historyManager.getHistoricalMessages(); // Get history *before* the latest user msg
+
+            // ChunkController processes chunks and returns responses
+            const responses = await this.chunkController.processChunks(processedMessages, {
+                model: this.model,
+                settings: mergedSettings,
+                jsonSchema: options.jsonSchema,
+                responseFormat: options.responseFormat,
+                tools: effectiveTools,
+                historicalMessages: historyForChunks
+            });
+
+            // Add assistant responses from all chunks to history AFTER all chunks are processed
+            // This ensures history is consistent after the multi-chunk operation completes
+            // BUT skip this history addition for tool calls, as the ChatController already adds these
+            if (processedMessages.length > 1) {
+                responses.forEach(response => {
+                    // Only add non-tool response messages, since tool messages are already added in ChatController
+                    if (response.content && (!response.toolCalls || response.toolCalls.length === 0) &&
+                        response.metadata?.finishReason !== 'tool_calls') {
+                        this.historyManager.addMessage('assistant', response.content);
+                    }
+                });
+            }
+
+            // Reset history if stateless mode was used for this call
+            if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
+                this.historyManager.initializeWithSystemMessage();
+            }
+
+            return responses;
+        } catch (error) {
+            log.error('Error in call method:', error);
+            throw error;
+        }
     }
 
     // Tool management methods - delegated to ToolsManager
@@ -796,8 +868,43 @@ export class LLMCaller implements MCPDirectAccess {
         this.toolsManager.addTool(tool);
     }
 
-    public addTools(tools: ToolDefinition[]): void {
-        this.toolsManager.addTools(tools);
+    /**
+     * Adds tools configuration including MCP server configurations to the LLMCaller
+     * @param tools Array of tool definitions, string identifiers, or MCP configurations
+     */
+    public async addTools(tools: (ToolDefinition | string | MCPServersMap)[]): Promise<void> {
+        const log = logger.createLogger({ prefix: 'LLMCaller.addTools' });
+
+        // Handle MCP configurations
+        for (const tool of tools) {
+            if (tool && typeof tool === 'object' && !Array.isArray(tool) &&
+                Object.values(tool).some(value =>
+                    typeof value === 'object' && value !== null &&
+                    'command' in value && 'args' in value)) {
+
+                // This is an MCP configuration
+                log.debug('Found MCP server configuration');
+
+                // Store the configuration in the MCP adapter but don't connect
+                const mcpConfig = tool as MCPServersMap;
+                const mcpAdapter = this.getMcpAdapter();
+
+                // Just register the configurations without connecting
+                for (const [serverKey, serverConfig] of Object.entries(mcpConfig)) {
+                    log.debug(`Registering MCP server configuration for ${serverKey} (not connecting)`);
+
+                    // Just store the configuration in the adapter
+                    if (this._mcpAdapter) {
+                        // Add config to the adapter's serverConfigs but don't connect
+                        this._mcpAdapter.registerServerConfig(serverKey, serverConfig);
+                    }
+                }
+            }
+        }
+
+        // Resolve and add tool definitions as usual
+        const resolvedTools = await this.resolveToolDefinitions(tools as StringOrDefinition[]);
+        this.toolsManager.addTools(resolvedTools);
     }
 
     public removeTool(name: string): void {
@@ -1052,12 +1159,53 @@ export class LLMCaller implements MCPDirectAccess {
     }
 
     /**
+     * Explicitly connects to a specific MCP server that has been configured during LLMCaller initialization 
+     * or in previous LLM calls with 'tools' parameter.
+     * Call this method before using callMcpTool to ensure the server connection is established.
+     * 
+     * @param serverKey The server key to connect to (e.g., 'filesystem')
+     * @returns Promise that resolves when connection is complete
+     */
+    async connectToMcpServer(serverKey: string): Promise<void> {
+        const log = logger.createLogger({ prefix: 'LLMCaller.connectToMcpServer' });
+
+        if (!serverKey) {
+            throw new Error('Server key is required for connecting to an MCP server');
+        }
+
+        // Get the adapter (initializes with empty config if needed)
+        const mcpAdapter = this.getMcpAdapter();
+
+        try {
+            // Connect to the specified server
+            log.debug(`Connecting to MCP server: ${serverKey}`);
+            await mcpAdapter.connectToServer(serverKey);
+            log.info(`Successfully connected to MCP server: ${serverKey}`);
+        } catch (error) {
+            // Provide more helpful error message if server configuration is missing
+            if (error instanceof Error &&
+                error.message.includes('Server configuration not found')) {
+                const helpfulError = new Error(
+                    `No configuration found for MCP server "${serverKey}". ` +
+                    `Please ensure you've provided this server configuration either when initializing LLMCaller ` +
+                    `or in a previous call() with the 'tools' parameter.`
+                );
+                log.error(helpfulError.message);
+                throw helpfulError;
+            }
+            // Otherwise re-throw the original error
+            throw error;
+        }
+    }
+
+    /**
      * Disconnects from all MCP servers and cleans up resources.
+     * Call this when you're done with MCP tools to free up resources.
      * 
      * @returns Promise that resolves when all disconnections are complete
      */
-    async disconnect(): Promise<void> {
-        const log = logger.createLogger({ prefix: 'LLMCaller.disconnect' });
+    async disconnectMcpServers(): Promise<void> {
+        const log = logger.createLogger({ prefix: 'LLMCaller.disconnectMcpServers' });
 
         // Disconnect all MCP servers if the adapter exists
         if (this._mcpAdapter) {

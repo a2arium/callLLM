@@ -47,25 +47,50 @@ interface MCPDirectAccess {
 
 ### Using Direct Access
 
-After you've set up MCP servers for LLM usage, you can leverage the direct access methods:
+You can leverage the direct access calls to MCP servers whenever it's needed:
 
 ```typescript
 // Initialize LLMCaller and set up MCP for LLM usage
 const caller = new LLMCaller('openai', 'fast');
 
-// First use MCP with LLM - this establishes the connection
-await caller.call('List files', { tools: [mcpConfig] });
+// Define your MCP server configuration
+const mcpConfig = {
+  filesystem: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
+  }
+};
 
-// Now you can also access the tools directly when needed
-const schemas = await caller.getMcpServerToolSchemas('filesystem');
+// Add the MCP configuration to the caller
+await caller.addTools([mcpConfig]);
+
+// Explicitly connect to the server for direct access
+// You can uee 'connectToMcpServer' to preconnect to servers prior to calling any tools, as well
+await caller.connectToMcpServer('filesystem');
+
+// Now you can access the tools directly
 const result = await caller.callMcpTool('filesystem', 'read_file', { path: 'package.json' });
+
+// You can also use this server in LLM calls without reconnecting to it, since it's already connected with connectToMcpServer
+const response = await caller.call('Read the README.md file and summarize it');
+
+// Clean up when done
+await caller.disconnectMcpServers();
 ```
+
+The implementation   efficiently reuses connections and avoids redundant server startups. When you:
+
+1. Call `addTools([mcpConfig])` - Saves the configuration for future use
+2. Call `connectToMcpServer('filesystem')` - Establishes a connection if not already connected
+3. Call `call(...)` - Reuses the existing connection without needing to reconnect
+
+This prevents duplicate server instances when using direct MCP tool calls together with LLM calls.
 
 For more advanced cases where you need explicit connection management:
 
 ```typescript
 // Create and initialize the MCP service adapter with the SDK
-const adapter = new MCPServiceAdapter(mcpConfig.mcpServers);
+const adapter = new MCPServiceAdapter(mcpConfig);
 
 // Explicitly connect to a server
 await adapter.connectToServer('filesystem');
@@ -115,21 +140,7 @@ const fileContent = await caller.callMcpTool(
   'read_file',   // tool name (the original name from the MCP server, not the LLM tool name)
   { path: 'package.json' }  // parameters
 );
-
-// Directory listing
-const directoryContents = await caller.callMcpTool(
-  'filesystem',
-  'list_directory',
-  { path: '.' }
-);
-
-// Process execution (with process server)
-const processResult = await caller.callMcpTool(
-  'process',
-  'execute',
-  { command: 'ls', args: ['-la'] }
-);
-```
+  
 
 ### Error Handling
 

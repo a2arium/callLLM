@@ -134,7 +134,7 @@ describe('LLMCaller Tool Management', () => {
             expect(llmCaller.listTools()).toEqual([]);
         });
 
-        it('should add multiple tools successfully', () => {
+        it('should add multiple tools successfully', async () => {
             const mockTools = [
                 {
                     name: 'tool1',
@@ -154,7 +154,7 @@ describe('LLMCaller Tool Management', () => {
                 }
             ] as ToolDefinition[];
 
-            llmCaller.addTools(mockTools);
+            await llmCaller.addTools(mockTools);
             expect(llmCaller.getTool('tool1')).toEqual(mockTools[0]);
             expect(llmCaller.getTool('tool2')).toEqual(mockTools[1]);
         });

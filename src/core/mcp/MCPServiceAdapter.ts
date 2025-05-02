@@ -385,10 +385,11 @@ export class MCPServiceAdapter {
     /**
      * Connects to an MCP server using the SDK
      * @param serverKey Unique identifier for the server
+     * @param config Optional server configuration override
      * @returns Promise that resolves when connection is established
      * @throws MCPConnectionError if connection fails
      */
-    async connectToServer(serverKey: string): Promise<void> {
+    async connectToServer(serverKey: string, config?: MCPServerConfig): Promise<void> {
         const log = logger.createLogger({ prefix: 'MCPServiceAdapter.connectToServer' });
 
         // Check if already connected
@@ -397,9 +398,9 @@ export class MCPServiceAdapter {
             return;
         }
 
-        // Get server config
-        const config = this.serverConfigs.get(serverKey);
-        if (!config) {
+        // Get server config - use provided config or fetch from stored configs
+        const serverConfig = config || this.serverConfigs.get(serverKey);
+        if (!serverConfig) {
             throw new MCPConnectionError(
                 serverKey,
                 'Server configuration not found'
@@ -407,7 +408,7 @@ export class MCPServiceAdapter {
         }
 
         // Check if server is disabled
-        if (config.disabled) {
+        if (serverConfig.disabled) {
             throw new MCPConnectionError(
                 serverKey,
                 `Server ${serverKey} is disabled`
@@ -417,12 +418,12 @@ export class MCPServiceAdapter {
         log.debug(`Connecting to server ${serverKey}`);
 
         try {
-            if (config.type === 'http' || (!config.type && config.url)) {
+            if (serverConfig.type === 'http' || (!serverConfig.type && serverConfig.url)) {
                 // For HTTP, we implement the Streamable HTTP -> SSE fallback strategy
-                await this.connectWithHttp(serverKey, config);
+                await this.connectWithHttp(serverKey, serverConfig);
             } else {
                 // For stdio and custom, no fallback is needed
-                const transport = this.createTransport(serverKey, config);
+                const transport = this.createTransport(serverKey, serverConfig);
                 const client = this.createClient();
 
                 // Connect
@@ -435,9 +436,14 @@ export class MCPServiceAdapter {
 
                 log.info(`Connected to server ${serverKey}`);
             }
+
+            // If not already in the configs, store the configuration
+            if (!this.serverConfigs.has(serverKey) && config) {
+                this.serverConfigs.set(serverKey, config);
+            }
         } catch (error) {
             // HTTP fallback only for non-MCPConnectionError errors
-            if (!(error instanceof MCPConnectionError) && (config.type === 'http' || (!config.type && config.url)) && config.mode !== 'sse') {
+            if (!(error instanceof MCPConnectionError) && (serverConfig.type === 'http' || (!serverConfig.type && serverConfig.url)) && serverConfig.mode !== 'sse') {
                 const errMsg = (error as Error).message.toLowerCase();
                 const shouldFallback =
                     errMsg.includes('404') ||
@@ -450,12 +456,12 @@ export class MCPServiceAdapter {
                     log.info(`Falling back to SSE transport for server ${serverKey} based on error: ${(error as Error).message}`);
                     // Instantiate a Streamable HTTP transport attempt to record the call
                     try {
-                        this.createHttpTransport(serverKey, { ...config, mode: 'streamable' });
+                        this.createHttpTransport(serverKey, { ...serverConfig, mode: 'streamable' });
                     } catch {
                         // Ignore instantiation errors
                     }
                     // Now perform SSE fallback
-                    await this.connectWithSSE(serverKey, { ...config, mode: 'sse' });
+                    await this.connectWithSSE(serverKey, { ...serverConfig, mode: 'sse' });
                     return;
                 }
             }
@@ -1802,5 +1808,24 @@ export class MCPServiceAdapter {
         }
 
         throw new Error('Cannot determine transport type. Please specify command, url, pluginPath, or type explicitly.');
+    }
+
+    /**
+     * Registers a server configuration without establishing a connection.
+     * This is useful for setting up configurations ahead of time.
+     * 
+     * @param serverKey Unique identifier for the server
+     * @param config Server configuration
+     */
+    registerServerConfig(serverKey: string, config: MCPServerConfig): void {
+        const log = logger.createLogger({ prefix: 'MCPServiceAdapter.registerServerConfig' });
+
+        // Only update if the server isn't already configured, or if explicitly overriding
+        if (!this.serverConfigs.has(serverKey)) {
+            log.debug(`Registering configuration for server ${serverKey} (no connection)`);
+            this.serverConfigs.set(serverKey, config);
+        } else {
+            log.debug(`Server ${serverKey} already has a registered configuration`);
+        }
     }
 } 

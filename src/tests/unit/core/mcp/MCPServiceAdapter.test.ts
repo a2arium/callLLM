@@ -2217,4 +2217,93 @@ describe('MCPServiceAdapter', () => {
         });
 
     });
+
+    describe('registerServerConfig', () => {
+        it('should register server config without connecting', () => {
+            adapter = new MCPServiceAdapter({});
+
+            // Verify no configurations at start
+            expect((adapter as any).serverConfigs.size).toBe(0);
+
+            // Register a configuration
+            adapter.registerServerConfig('test', { command: 'test-command' });
+
+            // Verify configuration was stored
+            expect((adapter as any).serverConfigs.size).toBe(1);
+            expect((adapter as any).serverConfigs.get('test')).toEqual({ command: 'test-command' });
+
+            // Verify no connection was established
+            expect((adapter as any).sdkClients.size).toBe(0);
+            expect((adapter as any).sdkTransports.size).toBe(0);
+        });
+
+        it('should not override existing configuration by default', () => {
+            adapter = new MCPServiceAdapter({
+                test: { command: 'original-command', args: ['arg1'] }
+            });
+
+            // Try to register a new configuration with the same key
+            adapter.registerServerConfig('test', { command: 'new-command' });
+
+            // Verify original configuration was preserved
+            const config = (adapter as any).serverConfigs.get('test');
+            expect(config.command).toBe('original-command');
+            expect(config.args).toEqual(['arg1']);
+        });
+    });
+
+    describe('connection optimization', () => {
+        it('should not reconnect if already connected', async () => {
+            adapter = new MCPServiceAdapter({
+                test: { command: 'test-command' }
+            });
+
+            // First connection
+            await adapter.connectToServer('test');
+
+            // Get the connected client for tracking
+            const originalClient = (adapter as any).sdkClients.get('test');
+            expect(originalClient).toBeDefined();
+
+            // Mock transport and client creation to track if they're called again
+            const createTransportSpy = jest.spyOn(adapter as any, 'createTransport');
+            const createClientSpy = jest.spyOn(adapter as any, 'createClient');
+
+            // Try to connect again
+            await adapter.connectToServer('test');
+
+            // Verify no new transport or client was created
+            expect(createTransportSpy).not.toHaveBeenCalled();
+            expect(createClientSpy).not.toHaveBeenCalled();
+
+            // Verify the client is still the same instance
+            expect((adapter as any).sdkClients.get('test')).toBe(originalClient);
+        });
+
+        it('should accept optional config parameter in connectToServer', async () => {
+            adapter = new MCPServiceAdapter({});
+
+            // Connect with config parameter
+            const config = { command: 'test-command' };
+            await adapter.connectToServer('test', config);
+
+            // Verify connection was established
+            expect((adapter as any).sdkClients.has('test')).toBe(true);
+            expect((adapter as any).sdkTransports.has('test')).toBe(true);
+
+            // Verify config was stored
+            expect((adapter as any).serverConfigs.get('test')).toEqual(config);
+        });
+
+        it('should store provided config when connecting with new configuration', async () => {
+            adapter = new MCPServiceAdapter({});
+
+            // Connect with new config
+            const config = { command: 'test-command' };
+            await adapter.connectToServer('test', config);
+
+            // Verify config was stored
+            expect((adapter as any).serverConfigs.get('test')).toEqual(config);
+        });
+    });
 }); 

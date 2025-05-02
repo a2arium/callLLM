@@ -15,8 +15,6 @@ import { LLMCaller } from '../src';
 import type { MCPServersMap } from '../src/core/mcp/MCPConfigTypes';
 
 async function main() {
-    // Initialize the caller with OpenAI
-    const caller = new LLMCaller('openai', 'fast', 'You are a helpful assistant that can use MCP servers.');
 
     // Define MCP servers map
     const mcpConfig: MCPServersMap = {
@@ -26,6 +24,10 @@ async function main() {
             args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
         }
     };
+
+    // Initialize the caller with OpenAI
+    const caller = new LLMCaller('openai', 'fast', 'You are a helpful assistant that can use MCP servers.');
+    await caller.addTools([mcpConfig]);
 
     // Use the MCP server as a tool in a LLM call
     console.log('Listing current directory via MCP filesystem server...');
@@ -46,23 +48,33 @@ async function main() {
     console.log('\nLLM Response:');
     console.log(response[0].contentObject);
 
-    // Additional LLM + MCP examples
-    console.log('\nReading a specific file via MCP filesystem server...');
-    const fileResponse = await caller.call(
-        'Read the package.json file from the current directory and tell me its version number.',
-        {
-            tools: [mcpConfig]
-        }
+
+    console.log('Directly reading package.json file...');
+    const result = await caller.callMcpTool('filesystem', 'read_file', { path: 'package.json' });
+    console.log('Direct MCP call result:', result);
+
+    // Additional LLM + MCP examples - removing the redundant tools parameter since we already added tools
+    console.log('\nReading a specific file via MCP filesystem server using stream...');
+    const fileResponse = await caller.stream(
+        'Read the package.json file from the current directory and tell me its version number.'
     );
 
-    console.log('\nLLM Response (with extracted version):');
-    console.log(fileResponse[0].content);
+    for await (const chunk of fileResponse) {
+        if (!chunk.isComplete) {
+            process.stdout.write(chunk.content);
+        } else {
+            // console.log(chunk.contentText);
+        }
+    }
+
+
+    // console.log('\nLLM Response (with extracted version):');
+    // console.log(fileResponse[0].content);
 
     // Clean up and disconnect from MCP server
     console.log('\nDisconnecting from MCP server...');
-    await caller.disconnect();
+    await caller.disconnectMcpServers();
     console.log('Disconnected successfully');
-
 }
 
 main().catch((err) => {
