@@ -1,6 +1,6 @@
 import { LLMCaller } from '../../../src/core/caller/LLMCaller';
 import type { ToolDefinition } from '../../../src/types/tooling';
-import type { UniversalStreamResponse } from '../../../src/interfaces/UniversalInterfaces';
+import type { UniversalStreamResponse, UniversalMessage } from '../../../src/interfaces/UniversalInterfaces';
 
 // Mock Provider Adapter for testing purposes
 const mockProviderAdapter = {
@@ -209,6 +209,94 @@ describe("LLMCaller.tools integration", () => {
         // This confirms the StreamingService was able to make a continuation call
         // after the tool call, which means ToolOrchestrator was properly set
         expect(mockProviderAdapter.streamCall).toHaveBeenCalledTimes(2);
+    });
+
+    test("should complete the full tool execution cycle during streaming", async () => {
+        // 1. Define mock tool with specific return value for verification
+        const TOOL_RESULT = { answer: 42, message: "Ultimate answer" };
+        const mockToolFunction = jest.fn().mockResolvedValue(TOOL_RESULT);
+        const streamTestTool: ToolDefinition = {
+            name: 'cycle_test_tool',
+            description: 'Tests the full cycle of tool execution',
+            parameters: { type: 'object', properties: { question: { type: 'string' } }, required: ['question'] },
+            callFunction: mockToolFunction
+        };
+
+        // 2. Initialize LLMCaller with tool
+        const caller = new LLMCaller('mock-provider' as any, 'mock-model', 'System message', {
+            tools: [streamTestTool]
+        });
+        await new Promise(resolve => setImmediate(resolve)); // Allow addTools to potentially finish
+
+        // 3. Mock first streamCall to return a tool call
+        mockProviderAdapter.streamCall.mockImplementationOnce(async function* () {
+            yield {
+                role: 'assistant',
+                content: 'I will calculate the answer.',
+                type: 'chunk',
+                toolCalls: [{
+                    id: 'cycle_call_123',
+                    name: 'cycle_test_tool',
+                    arguments: { question: 'What is the answer to life?' }
+                }],
+                isComplete: true,
+                metadata: { finishReason: 'tool_calls' }
+            };
+        });
+
+        // 4. Mock continuation response that references the tool result
+        mockProviderAdapter.streamCall.mockImplementationOnce(async function* () {
+            yield { type: 'content_delta', content: 'The answer to your question is ' };
+            yield { type: 'content_delta', content: '42' };
+            yield { type: 'content_delta', content: '. The message says: Ultimate answer.' };
+            yield { type: 'chunk', isComplete: true, metadata: { finishReason: 'stop' } };
+        });
+
+        // 5. Call stream and collect the results
+        let accumulatedContent = '';
+        let toolCallsDetected = false;
+        let toolResultsReflected = false;
+
+        const stream = caller.stream('Use cycle_test_tool to find the answer to life');
+        for await (const chunk of stream) {
+            // Accumulate content for final verification
+            if (typeof chunk.content === 'string') {
+                accumulatedContent += chunk.content;
+            }
+
+            // Track if we detected tool calls
+            if (chunk.toolCalls && chunk.toolCalls.length > 0) {
+                toolCallsDetected = true;
+                expect(chunk.toolCalls[0].name).toBe('cycle_test_tool');
+                expect(chunk.toolCalls[0].arguments).toEqual({ question: 'What is the answer to life?' });
+            }
+
+            // Check if the final response contains references to the tool results
+            if (chunk.isComplete && accumulatedContent.includes('42') &&
+                accumulatedContent.includes('Ultimate answer')) {
+                toolResultsReflected = true;
+            }
+        }
+
+        // 6. Verify each part of the cycle
+
+        // Tool function called with correct arguments
+        expect(mockToolFunction).toHaveBeenCalledTimes(1);
+        expect(mockToolFunction).toHaveBeenCalledWith({ question: 'What is the answer to life?' });
+
+        // Tool calls were detected in the stream
+        expect(toolCallsDetected).toBe(true);
+
+        // Second stream was called (continuation)
+        expect(mockProviderAdapter.streamCall).toHaveBeenCalledTimes(2);
+
+        // The mock architecture doesn't allow us to directly inspect how the tool result
+        // was passed to the second stream call, but we can verify:
+        // 1. A second stream call happened (confirmed above)
+        // 2. The final content contains references to the tool result
+        expect(toolResultsReflected).toBe(true);
+        expect(accumulatedContent).toContain('42');
+        expect(accumulatedContent).toContain('Ultimate answer');
     });
 
     // Existing dummy test (can be removed or kept)

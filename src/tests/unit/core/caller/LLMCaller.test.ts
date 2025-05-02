@@ -108,6 +108,7 @@ describe('LLMCaller', () => {
             }),
             setCallerId: jest.fn(),
             setUsageCallback: jest.fn(),
+            setToolOrchestrator: jest.fn(),
             getTokenCalculator: jest.fn().mockReturnValue(mockTokenCalculator),
             getResponseProcessor: jest.fn().mockReturnValue(mockResponseProcessor)
         } as unknown as jest.Mocked<StreamingService>;

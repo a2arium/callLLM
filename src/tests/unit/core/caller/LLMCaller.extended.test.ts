@@ -97,6 +97,7 @@ describe('LLMCaller - Model Management', () => {
 
         mockStreamingService = {
             createStream: jest.fn(),
+            setToolOrchestrator: jest.fn()
         } as unknown as jest.Mocked<StreamingService>;
 
         mockRequestProcessor = {
