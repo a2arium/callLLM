@@ -66,6 +66,8 @@ export class SchemaValidator {
             return this.zodTypeToJsonSchema(def.innerType);
         }
 
+        let schema: Record<string, unknown>;
+
         switch (def.typeName) {
             case 'ZodObject': {
                 const shape = def.shape?.();
@@ -86,50 +88,64 @@ export class SchemaValidator {
                     }
                 }
 
-                return {
+                schema = {
                     type: 'object',
                     properties,
                     required: required.length > 0 ? required : undefined,
                     additionalProperties: false
                 };
+                break;
             }
 
             case 'ZodString': {
-                const schema: Record<string, unknown> = { type: 'string' };
+                schema = { type: 'string' };
                 if (def.checks?.some((check: any) => check.kind === 'email')) {
                     schema.format = 'email';
                 }
-                return schema;
+                break;
             }
 
             case 'ZodNumber':
-                return { type: 'number' };
+                schema = { type: 'number' };
+                break;
 
             case 'ZodBoolean':
-                return { type: 'boolean' };
+                schema = { type: 'boolean' };
+                break;
 
             case 'ZodArray': {
-                return {
+                schema = {
                     type: 'array',
                     items: this.zodTypeToJsonSchema(def.type)
                 };
+                break;
             }
 
             case 'ZodEnum':
-                return {
+                schema = {
                     type: 'string',
                     enum: def.values
                 };
+                break;
 
             case 'ZodRecord':
-                return {
+                schema = {
                     type: 'object',
                     additionalProperties: this.zodTypeToJsonSchema(def.valueType)
                 };
+                break;
 
             default:
-                return { type: 'string' }; // fallback
+                schema = { type: 'string' }; // fallback
+                break;
         }
+
+        // Add description if present
+        if (zodType.description) {
+            schema.description = zodType.description;
+        }
+
+        return schema;
     }
 
     /**

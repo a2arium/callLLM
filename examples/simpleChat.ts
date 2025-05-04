@@ -10,7 +10,6 @@ async function main() {
         const response = await caller.call(
             'What is TypeScript and why should I use it?',
             {
-                data: 'Reply in Russian',
                 settings: {
                     maxTokens: 300
                 }

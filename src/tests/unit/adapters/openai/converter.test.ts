@@ -3,6 +3,7 @@ import { ToolDefinition } from '../../../../types/tooling';
 import { UniversalChatParams, UniversalMessage, FinishReason, ModelInfo, ReasoningEffort } from '../../../../interfaces/UniversalInterfaces';
 import { ModelManager } from '../../../../core/models/ModelManager';
 import { OpenAIResponseValidationError } from '../../../../adapters/openai/errors';
+import { z } from 'zod';
 
 // Mock ModelManager
 jest.mock('../../../../core/models/ModelManager');
@@ -525,6 +526,41 @@ describe('OpenAI Response API Converter', () => {
 
                 expect(foundImages).toBe(2);
             }
+        });
+
+        it('should correctly include Zod schema descriptions in JSON Schema format', async () => {
+            // Create a Zod schema with descriptions
+            const zodSchema = z.object({
+                name: z.string().describe('The user\'s full name'),
+                email: z.string().email().describe('The user\'s email address'),
+                age: z.number().describe('The user\'s age in years')
+            }).describe('A user profile schema with personal information');
+
+            // Convert to OpenAI params
+            const result = await converter.convertToOpenAIResponseParams('test-model', {
+                model: 'test-model',
+                messages: [{ role: 'user', content: 'Hi' }],
+                jsonSchema: {
+                    name: 'UserProfile',
+                    schema: zodSchema
+                },
+                responseFormat: 'json'
+            });
+
+            // Verify the schema format and descriptions are preserved
+            expect(result.text).toBeDefined();
+            const format = (result.text as any).format;
+            expect(format).toBeDefined();
+            expect(format.type).toBe('json_schema');
+            expect(format.name).toBe('UserProfile');
+
+            // Check schema-level description
+            expect(format.schema.description).toBe('A user profile schema with personal information');
+
+            // Check field-level descriptions
+            expect(format.schema.properties.name.description).toBe('The user\'s full name');
+            expect(format.schema.properties.email.description).toBe('The user\'s email address');
+            expect(format.schema.properties.age.description).toBe('The user\'s age in years');
         });
     });
 

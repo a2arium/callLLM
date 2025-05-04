@@ -7,7 +7,7 @@ dotenv.config();
 
 // Define a Zod schema
 const UserSchema = z.object({
-    name: z.string(),
+    name: z.string().describe("The full name of the user. First name should start with A, Last name should start with W"),
     age: z.number(),
     interests: z.array(z.string())
 });

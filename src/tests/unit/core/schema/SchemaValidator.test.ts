@@ -220,6 +220,24 @@ describe('SchemaValidator', () => {
                 type: 'string'  // fallback type
             });
         });
+
+        it('should include descriptions from Zod schema', () => {
+            const zodSchema = z.object({
+                name: z.string().describe('The user\'s full name'),
+                email: z.string().email().describe('The user\'s email address'),
+                age: z.number().describe('The user\'s age in years')
+            }).describe('A user profile schema with personal information');
+
+            const jsonSchema = JSON.parse(SchemaValidator.zodToJsonSchemaString(zodSchema));
+
+            // Check schema-level description
+            expect(jsonSchema.description).toBe('A user profile schema with personal information');
+
+            // Check field-level descriptions
+            expect(jsonSchema.properties.name.description).toBe('The user\'s full name');
+            expect(jsonSchema.properties.email.description).toBe('The user\'s email address');
+            expect(jsonSchema.properties.age.description).toBe('The user\'s age in years');
+        });
     });
 
     describe('getSchemaString', () => {
