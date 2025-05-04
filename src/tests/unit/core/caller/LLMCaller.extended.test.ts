@@ -437,8 +437,8 @@ describe('LLMCaller - Model Management', () => {
             // Verify that the user message is added to history
             expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message, expect.anything());
 
-            // Since the response contains tool calls, it should not be added to history
-            // as tool calls are handled by the ChatController
+            // The behavior has changed - we now only call addMessage once with the user message
+            // The assistant message with tool calls is handled differently in the implementation
             expect(mockHistoryManager.addMessage).toHaveBeenCalledTimes(1);
         });
     });

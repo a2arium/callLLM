@@ -333,4 +333,58 @@ describe('UsageTracker', () => {
             expect(result).toBe(0);
         });
     });
+
+    test('should include image tokens in usage data when provided', async () => {
+        // Mock model info
+        const modelInfo = {
+            name: 'test-model',
+            inputPricePerMillion: 1,
+            outputPricePerMillion: 2,
+            maxRequestTokens: 1000,
+            maxResponseTokens: 2000,
+            characteristics: {
+                qualityIndex: 10,
+                outputSpeed: 10,
+                firstTokenLatency: 100
+            }
+        };
+
+        // Create mock token calculator
+        const tokenCalculator = {
+            calculateTokens: jest.fn().mockReturnValue(10),
+            calculateTotalTokens: jest.fn().mockReturnValue(20),
+            calculateUsage: jest.fn().mockReturnValue({
+                input: {
+                    total: 0.00001,
+                    cached: 0.000005
+                },
+                output: {
+                    total: 0.00002,
+                    reasoning: 0.00001
+                },
+                total: 0.000045
+            })
+        };
+
+        // Create mock callback
+        const mockCallback = jest.fn();
+
+        // Create usage tracker
+        const tracker = new UsageTracker(
+            tokenCalculator as any,
+            mockCallback,
+            'test-caller'
+        );
+
+        // Test with image tokens
+        const usage = await tracker.trackUsage('Hello', 'World', modelInfo, 5, 2, 85);
+
+        // Verify usage data includes image tokens
+        expect(usage.tokens.input.image).toBe(85);
+
+        // Verify callback was called with correct data
+        expect(mockCallback).toHaveBeenCalledTimes(1);
+        const callbackData = mockCallback.mock.calls[0][0];
+        expect(callbackData.usage.tokens.input.image).toBe(85);
+    });
 });

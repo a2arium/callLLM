@@ -66,6 +66,12 @@ export class RetryManager {
             }
         }
         // If all retry attempts fail, throw an error with the details of the last encountered error.
-        throw new Error(`Failed after ${attempt - 1} retries. Last error: ${(lastError instanceof Error) ? lastError.message : lastError}`);
+        if (attempt === 0) {
+            // No retries were attempted because the error was not retryable
+            throw new Error(`Operation failed without retrying (non-retryable error). Error: ${(lastError instanceof Error) ? lastError.message : lastError}`);
+        } else {
+            // Retries were attempted but still failed
+            throw new Error(`Failed after ${attempt - 1} retries. Last error: ${(lastError instanceof Error) ? lastError.message : lastError}`);
+        }
     }
 }

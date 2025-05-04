@@ -96,7 +96,7 @@ export class OpenAIResponseAdapter extends BaseAdapter {
 
         // Convert parameters to OpenAI Response format using native types
         // The converter needs to return a type compatible with ResponseCreateParamsNonStreaming base
-        const baseParams = this.converter.convertToOpenAIResponseParams(model, params);
+        const baseParams = await this.converter.convertToOpenAIResponseParams(model, params);
         const openAIParams: ResponseCreateParamsNonStreaming = {
             ...(baseParams as any),
             stream: false,
@@ -152,7 +152,7 @@ export class OpenAIResponseAdapter extends BaseAdapter {
 
         // Convert parameters to OpenAI Response format using native types
         // The converter needs to return a type compatible with ResponseCreateParamsStreaming base
-        const baseParams = this.converter.convertToOpenAIResponseParams(model, params);
+        const baseParams = await this.converter.convertToOpenAIResponseParams(model, params);
         const openAIParams: ResponseCreateParamsStreaming = {
             ...(baseParams as any),
             stream: true, // IMPORTANT: Ensure stream is explicitly set to true
@@ -242,8 +242,8 @@ export class OpenAIResponseAdapter extends BaseAdapter {
 
     // Update method signatures to use native types
     // Note: The return type from converter might need adjustment to align with the base param type
-    convertToProviderParams(model: string, params: UniversalChatParams): ResponseCreateParamsNonStreaming {
-        const baseParams = this.converter.convertToOpenAIResponseParams(model, params);
+    async convertToProviderParams(model: string, params: UniversalChatParams): Promise<ResponseCreateParamsNonStreaming> {
+        const baseParams = await this.converter.convertToOpenAIResponseParams(model, params);
         return {
             ...(baseParams as any),
             stream: false

@@ -17,7 +17,7 @@ describe('OpenAI Response API Converter', () => {
     });
 
     describe('convertToOpenAIResponseParams', () => {
-        test('should convert basic universal params to OpenAI Response params', () => {
+        test('should convert basic universal params to OpenAI Response params', async () => {
             const universalParams: UniversalChatParams = {
                 messages: [
                     { role: 'system', content: 'You are a helpful assistant.' },
@@ -30,7 +30,7 @@ describe('OpenAI Response API Converter', () => {
                 }
             };
 
-            const result = converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+            const result = await converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
 
             expect(result).toEqual(expect.objectContaining({
                 input: [
@@ -43,7 +43,7 @@ describe('OpenAI Response API Converter', () => {
             }));
         });
 
-        test('should convert universal tools to OpenAI Response tools', () => {
+        test('should convert universal tools to OpenAI Response tools', async () => {
             const toolDef: ToolDefinition = {
                 name: 'test_tool',
                 description: 'A test tool',
@@ -62,7 +62,7 @@ describe('OpenAI Response API Converter', () => {
                 model: 'gpt-4o'
             };
 
-            const result = converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+            const result = await converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
 
             expect(result.tools).toHaveLength(1);
             expect(result.tools?.[0]).toEqual({
@@ -80,7 +80,7 @@ describe('OpenAI Response API Converter', () => {
             });
         });
 
-        test('should handle toolChoice in settings', () => {
+        test('should handle toolChoice in settings', async () => {
             const toolDef: ToolDefinition = {
                 name: 'test_tool',
                 description: 'A test tool',
@@ -102,12 +102,12 @@ describe('OpenAI Response API Converter', () => {
                 }
             };
 
-            const result = converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+            const result = await converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
 
             expect(result.tool_choice).toBe('auto');
         });
 
-        test('should handle toolChoice object in settings', () => {
+        test('should handle toolChoice object in settings', async () => {
             const toolDef: ToolDefinition = {
                 name: 'test_tool',
                 description: 'A test tool',
@@ -132,7 +132,7 @@ describe('OpenAI Response API Converter', () => {
                 }
             };
 
-            const result = converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+            const result = await converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
 
             expect(result.tool_choice).toEqual({
                 type: 'function',
@@ -140,7 +140,7 @@ describe('OpenAI Response API Converter', () => {
             });
         });
 
-        test('should properly handle multipart message content', () => {
+        test('should properly handle multipart message content', async () => {
             const universalParams: UniversalChatParams = {
                 messages: [
                     {
@@ -160,7 +160,7 @@ describe('OpenAI Response API Converter', () => {
                 model: 'gpt-4o-vision'
             };
 
-            const result = converter.convertToOpenAIResponseParams('gpt-4o-vision', universalParams);
+            const result = await converter.convertToOpenAIResponseParams('gpt-4o-vision', universalParams);
 
             expect(result.input).toEqual([
                 {
@@ -179,7 +179,63 @@ describe('OpenAI Response API Converter', () => {
             ]);
         });
 
-        test('should ignore null or undefined parameters', () => {
+        test('should handle file placeholder format in message content', async () => {
+            const universalParams: UniversalChatParams = {
+                messages: [
+                    { role: 'user', content: '<file:/path/to/image.jpg>' }
+                ],
+                model: 'gpt-4o-vision'
+            };
+
+            // Mock the normalizeImageSource function
+            jest.spyOn(require('../../../../core/file-data/fileData'), 'normalizeImageSource')
+                .mockResolvedValue({ kind: 'base64', mime: 'image/jpeg', value: 'mock-base64-data' });
+
+            const result = await converter.convertToOpenAIResponseParams('gpt-4o-vision', universalParams, {
+                imageDetail: 'high'
+            });
+
+            expect(result.input).toEqual([
+                {
+                    role: 'user',
+                    content: expect.arrayContaining([
+                        {
+                            type: 'input_image',
+                            image_url: 'data:image/jpeg;base64,mock-base64-data'
+                        }
+                    ])
+                }
+            ]);
+        });
+
+        test('should use default imageDetail if not provided with file placeholder', async () => {
+            const universalParams: UniversalChatParams = {
+                messages: [
+                    { role: 'user', content: '<file:/path/to/image.jpg>' }
+                ],
+                model: 'gpt-4o-vision'
+            };
+
+            // Mock the normalizeImageSource function
+            jest.spyOn(require('../../../../core/file-data/fileData'), 'normalizeImageSource')
+                .mockResolvedValue({ kind: 'base64', mime: 'image/jpeg', value: 'mock-base64-data' });
+
+            const result = await converter.convertToOpenAIResponseParams('gpt-4o-vision', universalParams);
+
+            expect(result.input).toEqual([
+                {
+                    role: 'user',
+                    content: expect.arrayContaining([
+                        {
+                            type: 'input_image',
+                            image_url: 'data:image/jpeg;base64,mock-base64-data'
+                        }
+                    ])
+                }
+            ]);
+        });
+
+        test('should ignore null or undefined parameters', async () => {
             const universalParams: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'Hello' }],
                 model: 'gpt-4o',
@@ -189,7 +245,7 @@ describe('OpenAI Response API Converter', () => {
                 }
             };
 
-            const result = converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+            const result = await converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
 
             expect(result).toEqual(expect.objectContaining({
                 input: [{ role: 'user', content: 'Hello' }],
@@ -242,7 +298,7 @@ describe('OpenAI Response API Converter', () => {
                 systemMessage: 'You are a helpful assistant.'
             };
 
-            it('should set reasoning configuration for reasoning-capable models', () => {
+            it('should set reasoning configuration for reasoning-capable models', async () => {
                 // Setup
                 mockModelManager.getModel.mockReturnValue(reasoningModel);
 
@@ -255,26 +311,26 @@ describe('OpenAI Response API Converter', () => {
                 };
 
                 // Execute
-                const result = converter.convertToOpenAIResponseParams('o3-mini', params);
+                const result = await converter.convertToOpenAIResponseParams('o3-mini', params);
 
                 // Verify
                 expect(result.reasoning).toBeDefined();
                 expect(result.reasoning?.effort).toBe('high');
             });
 
-            it('should default to medium effort when reasoning capability is present but no effort specified', () => {
+            it('should default to medium effort when reasoning capability is present but no effort specified', async () => {
                 // Setup
                 mockModelManager.getModel.mockReturnValue(reasoningModel);
 
                 // Execute
-                const result = converter.convertToOpenAIResponseParams('o3-mini', basicParams);
+                const result = await converter.convertToOpenAIResponseParams('o3-mini', basicParams);
 
                 // Verify
                 expect(result.reasoning).toBeDefined();
                 expect(result.reasoning?.effort).toBe('medium');
             });
 
-            it('should not set temperature for reasoning-capable models even if specified', () => {
+            it('should not set temperature for reasoning-capable models even if specified', async () => {
                 // Setup
                 mockModelManager.getModel.mockReturnValue(reasoningModel);
 
@@ -288,14 +344,14 @@ describe('OpenAI Response API Converter', () => {
                 };
 
                 // Execute
-                const result = converter.convertToOpenAIResponseParams('o3-mini', params);
+                const result = await converter.convertToOpenAIResponseParams('o3-mini', params);
 
                 // Verify
                 expect(result.temperature).toBeUndefined();
                 expect(result.reasoning?.effort).toBe('medium');
             });
 
-            it('should transform system messages for reasoning models', () => {
+            it('should transform system messages for reasoning models', async () => {
                 // Setup
                 mockModelManager.getModel.mockReturnValue(reasoningModel);
 
@@ -307,7 +363,7 @@ describe('OpenAI Response API Converter', () => {
                 };
 
                 // Execute
-                const result = converter.convertToOpenAIResponseParams('o3-mini', params);
+                const result = await converter.convertToOpenAIResponseParams('o3-mini', params);
 
                 // Verify
                 expect(result.instructions).toBeUndefined(); // No instructions (system message) for reasoning models
@@ -328,7 +384,7 @@ describe('OpenAI Response API Converter', () => {
                 expect(JSON.stringify(result.input)).toContain('Tell me a joke');
             });
 
-            it('should treat standard models normally (not apply reasoning transformations)', () => {
+            it('should treat standard models normally (not apply reasoning transformations)', async () => {
                 // Setup
                 mockModelManager.getModel.mockReturnValue(standardModel);
 
@@ -342,7 +398,7 @@ describe('OpenAI Response API Converter', () => {
                 };
 
                 // Execute
-                const result = converter.convertToOpenAIResponseParams('gpt-4', params);
+                const result = await converter.convertToOpenAIResponseParams('gpt-4', params);
 
                 // Verify
                 expect(result.temperature).toBe(0.7);

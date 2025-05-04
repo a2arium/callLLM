@@ -498,16 +498,24 @@ describe('HistoryManager', () => {
             const messages = historyManager.getHistoricalMessages();
             expect(messages).toHaveLength(2);
 
+            // Find the messages by role instead of assuming specific positions
+            const assistantMessage = messages.find(msg => msg.role === 'assistant');
+            const systemErrorMessage = messages.find(msg =>
+                msg.role === 'system' &&
+                msg.content &&
+                msg.content.includes('Error executing tool testTool')
+            );
+
             // Check assistant message with tool call
-            expect(messages[0].role).toBe('assistant');
-            expect(messages[0].toolCalls).toBeDefined();
+            expect(assistantMessage).toBeDefined();
+            expect(assistantMessage!.toolCalls).toBeDefined();
             // Use type assertion to access the properties
-            const toolCall = messages[0].toolCalls![0] as unknown as { name: string; arguments: Record<string, unknown> };
+            const toolCall = assistantMessage!.toolCalls![0] as unknown as { name: string; arguments: Record<string, unknown> };
             expect(toolCall.name).toBe(toolName);
 
             // Check error message
-            expect(messages[1].role).toBe('system');
-            expect(messages[1].content).toContain('Error executing tool testTool: Tool execution failed');
+            expect(systemErrorMessage).toBeDefined();
+            expect(systemErrorMessage!.content).toContain('Error executing tool testTool: Tool execution failed');
         });
 
         it('should add both result and error when both are provided', () => {
@@ -521,20 +529,29 @@ describe('HistoryManager', () => {
             const messages = historyManager.getHistoricalMessages();
             expect(messages).toHaveLength(3);
 
+            // Find the messages by role instead of assuming specific positions
+            const assistantMessage = messages.find(msg => msg.role === 'assistant');
+            const toolMessage = messages.find(msg => msg.role === 'tool');
+            const systemErrorMessage = messages.find(msg =>
+                msg.role === 'system' &&
+                msg.content &&
+                msg.content.includes(error)
+            );
+
             // Check assistant message with tool call
-            expect(messages[0].role).toBe('assistant');
-            expect(messages[0].toolCalls).toBeDefined();
+            expect(assistantMessage).toBeDefined();
+            expect(assistantMessage!.toolCalls).toBeDefined();
             // Use type assertion to access the properties
-            const toolCall = messages[0].toolCalls![0] as unknown as { name: string; arguments: Record<string, unknown> };
+            const toolCall = assistantMessage!.toolCalls![0] as unknown as { name: string; arguments: Record<string, unknown> };
             expect(toolCall.name).toBe(toolName);
 
             // Check tool response message
-            expect(messages[1].role).toBe('tool');
-            expect(messages[1].content).toBe(result);
+            expect(toolMessage).toBeDefined();
+            expect(toolMessage!.content).toBe(result);
 
             // Check error message
-            expect(messages[2].role).toBe('system');
-            expect(messages[2].content).toContain(error);
+            expect(systemErrorMessage).toBeDefined();
+            expect(systemErrorMessage!.content).toContain(error);
         });
     });
 

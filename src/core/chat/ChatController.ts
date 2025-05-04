@@ -5,9 +5,10 @@ import { ModelManager } from '../models/ModelManager';
 import { ResponseProcessor } from '../processors/ResponseProcessor';
 import { RetryManager } from '../retry/RetryManager';
 import { UsageTracker } from '../telemetry/UsageTracker';
-import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage, UniversalChatSettings, JSONSchemaDefinition, HistoryMode } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage, UniversalChatSettings, JSONSchemaDefinition, HistoryMode, JsonModeType, ResponseFormat, toMessageParts } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent";
+import { shouldRetryDueToLLMError } from "../retry/utils/ShouldRetryDueToLLMError";
 import { logger } from '../../utils/logger';
 import { ToolController } from '../tools/ToolController';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator';
@@ -153,8 +154,11 @@ export class ChatController {
                 const existingInstructions = this.historyManager.getMessages().filter(msg =>
                     msg.metadata?.isFormatInstruction);
 
-                const alreadyHasInstruction = existingInstructions.some(msg =>
-                    msg.content === formatInstruction.content);
+                const alreadyHasInstruction = existingInstructions.some(msg => {
+                    const msgParts = toMessageParts(msg.content);
+                    const formatParts = toMessageParts(formatInstruction.content);
+                    return msg.content === formatInstruction.content;
+                });
 
                 if (!alreadyHasInstruction) {
                     this.historyManager.addMessage(
@@ -172,6 +176,7 @@ export class ChatController {
         // Validate messages (ensure role, content/tool_calls validity)
         const validatedMessages = enhancedMessages.map(msg => {
             if (!msg.role) throw new Error('Message missing role');
+            const parts = toMessageParts(msg.content);
             const hasContent = msg.content && msg.content.trim().length > 0;
             const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
             if (!hasContent && !hasToolCalls && msg.role !== 'assistant' && msg.role !== 'tool') {
@@ -218,15 +223,34 @@ export class ChatController {
                 if (!resp.metadata) resp.metadata = {};
 
                 const systemContentForUsage = systemMessageContent;
-                const usage = await this.usageTracker.trackUsage(
-                    systemContentForUsage + '\n' + lastUserMessage,
-                    resp.content ?? '',
-                    modelInfo,
-                    resp.metadata?.usage?.tokens.input?.cached,
-                    resp.metadata?.usage?.tokens.output?.reasoning
-                );
 
-                resp.metadata.usage = usage;
+                // Only calculate tokens if the provider didn't include usage data
+                if (!resp.metadata?.usage?.tokens?.input?.total) {
+                    const usage = await this.usageTracker.trackUsage(
+                        systemContentForUsage + '\n' + lastUserMessage,
+                        resp.content ?? '',
+                        modelInfo,
+                        resp.metadata?.usage?.tokens?.input?.cached,
+                        resp.metadata?.usage?.tokens?.output?.reasoning,
+                        resp.metadata?.usage?.tokens?.input?.image  // Pass image tokens if present
+                    );
+
+                    resp.metadata.usage = usage;
+                } else {
+                    // If provider already supplied usage data (e.g., image tokens), calculate costs only
+                    if (resp.metadata?.usage && !resp.metadata.usage.costs?.total) {
+                        const existingTokens = resp.metadata.usage.tokens;
+
+                        // Calculate costs based on the provider's token counts
+                        resp.metadata.usage.costs = this.usageTracker.calculateCosts(
+                            existingTokens.input.total,
+                            existingTokens.output.total,
+                            modelInfo,
+                            existingTokens.input.cached || 0,
+                            existingTokens.output.reasoning || 0
+                        );
+                    }
+                }
 
                 // Pass the complete response object to consider tool calls in the retry decision
                 if (shouldRetryDueToContent(resp)) {
@@ -235,11 +259,9 @@ export class ChatController {
                 return resp;
             },
             (error: unknown) => {
-                // Only retry if the error is due to content triggering retry
-                if (error instanceof Error) {
-                    return error.message === "Response content triggered retry";
-                }
-                return false;
+                // Use the centralized shouldRetryDueToLLMError utility
+                // This handles both content-triggered retries and HTTP status/network errors
+                return shouldRetryDueToLLMError(error);
             }
         );
 

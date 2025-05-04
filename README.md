@@ -57,6 +57,7 @@ const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assista
 ## Documentation
 
 - [Function Folders](docs/function-folders.md) - Learn how to organize tools in separate files
+- [Working with Images](docs/images.md) - Guide to using multimodal models with image inputs
 - More documentation coming soon
 
 ## Usage

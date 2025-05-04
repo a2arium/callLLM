@@ -29,7 +29,8 @@ export class UsageTracker {
         output: string,
         modelInfo: ModelInfo,
         inputCachedTokens: number = 0,
-        outputReasoningTokens: number = 0
+        outputReasoningTokens: number = 0,
+        imageTokens?: number
     ): Promise<Usage> {
         const inputTokens = this.tokenCalculator.calculateTokens(input);
         const outputTokens = this.tokenCalculator.calculateTokens(output);
@@ -39,6 +40,7 @@ export class UsageTracker {
                 input: {
                     total: inputTokens,
                     cached: inputCachedTokens,
+                    ...(imageTokens ? { image: imageTokens } : {})
                 },
                 output: {
                     total: outputTokens,
@@ -83,6 +85,7 @@ export class UsageTracker {
         modelInfo: ModelInfo,
         options?: {
             inputCachedTokens?: number;
+            imageTokens?: number;
             tokenBatchSize?: number;
             callerId?: string;
         }
@@ -95,6 +98,7 @@ export class UsageTracker {
             callerId: effectiveCallerId,
             inputTokens,
             inputCachedTokens: options?.inputCachedTokens,
+            imageTokens: options?.imageTokens,
             modelInfo,
             tokenBatchSize: options?.tokenBatchSize
         });
@@ -118,5 +122,33 @@ export class UsageTracker {
      */
     calculateTotalTokens(messages: { role: string; content: string }[]): number {
         return this.tokenCalculator.calculateTotalTokens(messages);
+    }
+
+    /**
+     * Calculate costs for token counts
+     * 
+     * @param inputTokens Number of input tokens
+     * @param outputTokens Number of output tokens
+     * @param modelInfo Model information including pricing
+     * @param inputCachedTokens Number of cached input tokens (optional)
+     * @param outputReasoningTokens Number of output reasoning tokens (optional)
+     * @returns Cost breakdown
+     */
+    calculateCosts(
+        inputTokens: number,
+        outputTokens: number,
+        modelInfo: ModelInfo,
+        inputCachedTokens: number = 0,
+        outputReasoningTokens: number = 0
+    ): Usage['costs'] {
+        return this.tokenCalculator.calculateUsage(
+            inputTokens,
+            outputTokens,
+            modelInfo.inputPricePerMillion,
+            modelInfo.outputPricePerMillion,
+            inputCachedTokens,
+            modelInfo.inputCachedPricePerMillion,
+            outputReasoningTokens
+        );
     }
 }

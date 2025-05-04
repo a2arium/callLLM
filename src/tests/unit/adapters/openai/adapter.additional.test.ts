@@ -199,7 +199,7 @@ describe('OpenAIResponseAdapter Additional Tests', () => {
     });
 
     describe('convertToProviderParams', () => {
-        it('should call converter with correct parameters', () => {
+        it('should call converter with correct parameters', async () => {
             const model = 'test-model';
             const params: UniversalChatParams = {
                 messages: [{ role: 'user', content: 'hello' }],
@@ -210,13 +210,12 @@ describe('OpenAIResponseAdapter Additional Tests', () => {
             const mockConvertedParams = {
                 model: 'test-model',
                 input: [{ role: 'user', content: 'hello' }],
-                stream: false
             };
 
             // @ts-ignore - accessing private property for testing
-            adapter.converter.convertToOpenAIResponseParams = jest.fn().mockReturnValue(mockConvertedParams);
+            adapter.converter.convertToOpenAIResponseParams = jest.fn().mockResolvedValue(mockConvertedParams);
 
-            const result = adapter.convertToProviderParams(model, params);
+            const result = await adapter.convertToProviderParams(model, params);
 
             // @ts-ignore - accessing private property for testing
             expect(adapter.converter.convertToOpenAIResponseParams).toHaveBeenCalledWith(model, params);

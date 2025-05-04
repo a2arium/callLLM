@@ -16,6 +16,10 @@ export type UsageData = {
                  * Number of cached input tokens (if any)
                  */
                 cached: number;
+                /**
+                 * Tokens attributable to file/image inputs (if any)
+                 */
+                image?: number;
             },
             /**
              * Output token details

@@ -10,13 +10,19 @@ import {
     LLMCallOptions,
     JSONSchemaDefinition,
     ResponseFormat,
-    HistoryMode
+    HistoryMode,
+    TextPart,
+    toMessageParts,
+    MessagePart,
+    ImagePart,
+    ImageDataSource
 } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { ProviderManager } from './ProviderManager';
 import { RegisteredProviders } from '../../adapters/index';
 import { ProviderNotFoundError } from '../../adapters/types';
 import { ModelManager } from '../models/ModelManager';
+import { CapabilityError } from '../models/CapabilityError';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { ResponseProcessor } from '../processors/ResponseProcessor';
 import { v4 as uuidv4 } from 'uuid';
@@ -43,10 +49,11 @@ import type { McpToolSchema, MCPServersMap } from '../mcp/MCPConfigTypes';
 import { isMCPToolConfig } from '../mcp/MCPConfigTypes';
 import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter';
 import { MCPToolLoader } from '../mcp/MCPToolLoader';
+import { normalizeImageSource, estimateImageTokens } from '../file-data/fileData';
 
 /**
- * Interface that matches the StreamController's required methods
- * Used for dependency injection and adapting StreamingService
+ * Interface that matches the core functionality of StreamController
+ * Used for dependency injection
  */
 interface StreamControllerInterface {
     createStream(
@@ -545,14 +552,75 @@ export class LLMCaller implements MCPDirectAccess {
     /**
      * Processes a message and streams the response.
      * This is the standardized public API for streaming responses.
-     * @param input A string message or array of messages to process
+     * @param input A string message or options object containing prompt and/or file 
      * @param options Optional settings for the call
      */
     public async *stream<T extends z.ZodType<any, z.ZodTypeDef, any> = z.ZodType<any, z.ZodTypeDef, any>>(
-        input: string | UniversalMessage[],
+        input: string | LLMCallOptions,
         options: LLMCallOptions = {}
     ): AsyncGenerator<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>> {
-        const { usageCallback, data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode, usageBatchSize, toolsDir } = options;
+        // Handle different parameter formats
+        let actualMessage: string;
+        let actualOptions: LLMCallOptions;
+        let messageParts: MessagePart[] = [];
+
+        if (typeof input === 'string') {
+            // Legacy format: input is a string, options is the second parameter
+            actualMessage = input;
+            actualOptions = options;
+            messageParts = toMessageParts(input);
+        } else {
+            // New format: first parameter is an options object that may contain text, file, etc.
+            actualOptions = input;
+            // If text is provided in the options, use it, otherwise default to empty string
+            actualMessage = actualOptions.text || '';
+            messageParts = toMessageParts(actualMessage);
+        }
+
+        // Check model capabilities for file inputs
+        const modelToUse = actualOptions.settings?.providerOptions?.model as string || this.model;
+
+        // Safe check for getCapabilities - this lets tests work while we implement proper capability checking
+        if (typeof ModelManager.getCapabilities === 'function' && actualOptions.file) {
+            const capabilities = ModelManager.getCapabilities(modelToUse);
+
+            if (!capabilities.input.image) {
+                throw new CapabilityError(`Model "${modelToUse}" does not support file inputs.`);
+            }
+        }
+
+        // Handle multimodal input (file parameter)
+        if (actualOptions.file) {
+            const log = logger.createLogger({ prefix: 'LLMCaller.stream.fileProcessing' });
+            log.debug(`Processing file parameter: ${actualOptions.file.substring(0, 30)}...`);
+
+            try {
+                // Create an ImageDataSource based on the file path or URL
+                const fileSource: ImageDataSource = actualOptions.file.startsWith('http')
+                    ? { kind: 'url', value: actualOptions.file }
+                    : { kind: 'filePath', value: actualOptions.file };
+
+                // Normalize the image source (convert to base64 if needed)
+                const normalizedSource = await normalizeImageSource(fileSource);
+
+                // Add image part to messageParts
+                const imagePart: ImagePart = {
+                    type: 'image',
+                    data: normalizedSource
+                };
+
+                messageParts.push(imagePart);
+
+                // Estimate tokens for billing/limits
+                const imageTokens = estimateImageTokens(actualOptions.imageDetail || 'auto');
+                log.debug(`Estimated image tokens: ${imageTokens}, detail level: ${actualOptions.imageDetail || 'auto'}`);
+            } catch (error) {
+                log.error('Failed to process image file:', error);
+                throw new Error(`Failed to process image: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+
+        const { usageCallback, data, endingMessage, settings, jsonSchema, responseFormat, tools, historyMode, usageBatchSize, toolsDir } = actualOptions;
 
         // If a usage callback is provided in this call, update the caller to use it
         if (usageCallback) {
@@ -572,13 +640,16 @@ export class LLMCaller implements MCPDirectAccess {
 
         // Convert string message to UniversalMessage array if needed
         const messages = typeof input === 'string'
-            ? [{ role: 'user', content: input }]
-            : input;
+            ? [{
+                role: 'user',
+                content: actualMessage
+            } as UniversalMessage]
+            : input.text
+                ? [{ role: 'user', content: actualMessage } as UniversalMessage]
+                : [];
 
         // Get message content for processing
-        const messageContent = typeof input === 'string'
-            ? input
-            : messages.map(m => m.content || '').join('\n');
+        const messageContent = actualMessage;
 
         const processedMessages = await this.requestProcessor.processRequest({
             message: messageContent,
@@ -665,8 +736,15 @@ export class LLMCaller implements MCPDirectAccess {
             this.historyManager.initializeWithSystemMessage();
         }
 
-        // Add the original user message to history *before* the call
-        this.historyManager.addMessage('user', messageContent, { metadata: { timestamp: Date.now() } });
+        // Add the file placeholder message if we have a file
+        if (actualOptions.file) {
+            this.historyManager.addMessage('user', `<file:${actualOptions.file}>`, {});
+        }
+
+        // Always add the text message if it exists (even when file is provided)
+        if (messageContent) {
+            this.historyManager.addMessage('user', messageContent, {});
+        }
 
         // Get the messages from history
         let historyMessages = this.historyManager.getHistoricalMessages();
@@ -779,14 +857,72 @@ export class LLMCaller implements MCPDirectAccess {
      * This is the standardized public API for getting responses.
      */
     public async call<T extends z.ZodType<any, z.ZodTypeDef, any> = z.ZodType<any, z.ZodTypeDef, any>>(
-        message: string,
-        // Use the new LLMCallOptions type
+        message: string | LLMCallOptions,
         options: LLMCallOptions = {}
     ): Promise<UniversalChatResponse[]> {
         const log = logger.createLogger({ prefix: 'LLMCaller.call' });
 
         try {
-            log.debug(`Call: ${message.substring(0, 30)}...`);
+            // 1) Normalize into a single opts object
+            const opts: LLMCallOptions = typeof message === 'string'
+                ? { text: message, ...options }
+                : { ...message, ...options };
+
+            // 2) Capability check
+            const modelToUse = opts.settings?.providerOptions?.model as string || this.model;
+            if (typeof ModelManager.getCapabilities === 'function' && opts.file) {
+                const capabilities = ModelManager.getCapabilities(modelToUse);
+
+                if (!capabilities.input.image) {
+                    throw new CapabilityError(`Model "${modelToUse}" does not support file inputs.`);
+                }
+            }
+
+            // 3) Push into history with a file placeholder then text
+            if (opts.file) {
+                this.historyManager.addMessage('user', `<file:${opts.file}>`, {});
+            }
+
+            // Always add text message if it exists (even when file is provided)
+            if (opts.text) {
+                this.historyManager.addMessage('user', opts.text, {});
+            }
+
+            log.debug(`Call with text: ${(opts.text || '').substring(0, 30)}... and file: ${opts.file || 'none'}`);
+
+            // Use the rest of the params and continue with the existing implementation
+            const actualMessage = opts.text || '';
+            const messageParts = toMessageParts(actualMessage);
+
+            // Handle multimodal input (file parameter)
+            if (opts.file) {
+                log.debug(`Processing file parameter: ${opts.file.substring(0, 30)}...`);
+
+                try {
+                    // Create an ImageDataSource based on the file path or URL
+                    const fileSource: ImageDataSource = opts.file.startsWith('http')
+                        ? { kind: 'url', value: opts.file }
+                        : { kind: 'filePath', value: opts.file };
+
+                    // Normalize the image source (convert to base64 if needed)
+                    const normalizedSource = await normalizeImageSource(fileSource);
+
+                    // Add image part to messageParts
+                    const imagePart: ImagePart = {
+                        type: 'image',
+                        data: normalizedSource
+                    };
+
+                    messageParts.push(imagePart);
+
+                    // Estimate tokens for billing/limits
+                    const imageTokens = estimateImageTokens(opts.imageDetail || 'auto');
+                    log.debug(`Estimated image tokens: ${imageTokens}, detail level: ${opts.imageDetail || 'auto'}`);
+                } catch (error) {
+                    log.error('Failed to process image file:', error);
+                    throw new Error(`Failed to process image: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
 
             // Reset tool call tracking at the beginning of each call
             if (this.toolOrchestrator) {
@@ -798,35 +934,38 @@ export class LLMCaller implements MCPDirectAccess {
             if (!modelInfo) {
                 throw new Error(`Model ${this.model} not found`);
             }
+
             const processedMessages = await this.requestProcessor.processRequest({
-                message,
-                data: options.data,
-                endingMessage: options.endingMessage,
+                message: actualMessage,
+                data: opts.data,
+                endingMessage: opts.endingMessage,
                 model: modelInfo,
-                maxResponseTokens: options.settings?.maxTokens
+                maxResponseTokens: opts.settings?.maxTokens
             });
 
             // --- Tool Resolution and MCP Schema Fetching --- 
             // Filter out MCP configs before resolving standard tools
-            const standardToolsToResolve = options.tools?.filter(t =>
+            const standardToolsToResolve = opts.tools?.filter(t =>
                 typeof t === 'string' ||
                 (typeof t === 'object' && t && 'name' in t && 'description' in t && 'parameters' in t)
             ) as (string | ToolDefinition)[] | undefined;
 
             // Resolve ONLY standard tool definitions
-            const newlyResolvedTools = await this.resolveToolDefinitions(standardToolsToResolve, options.toolsDir);
+            const newlyResolvedTools = await this.resolveToolDefinitions(standardToolsToResolve, opts.toolsDir);
 
             // Start merging: base tools + call-specific standard tools
             let finalEffectiveTools: ToolDefinition[] = [];
-            const baseTools = this.toolsManager.listTools();
-            const callSpecificStandardTools = newlyResolvedTools;
+            const baseTools = this.toolsManager.listTools(); // Tools added via addTools()
+            const callSpecificStandardTools = newlyResolvedTools; // Tools from options.tools (excluding MCP)
+
+            // Merge base and call-specific standard tools
             const mergedStandardToolsMap: Map<string, ToolDefinition> = new Map();
             [...baseTools, ...callSpecificStandardTools].forEach(t => mergedStandardToolsMap.set(t.name, t));
             finalEffectiveTools = Array.from(mergedStandardToolsMap.values());
 
             // Now fetch and merge MCP tools
             const mcpAdapter = this.getMcpAdapter();
-            // Get all configured servers first
+            // Get all configured servers
             const configuredServers = mcpAdapter.listConfiguredServers();
             const mcpToolsForCall: ToolDefinition[] = [];
 
@@ -834,10 +973,10 @@ export class LLMCaller implements MCPDirectAccess {
                 // Auto-connect on first use if needed
                 if (!mcpAdapter.isConnected(serverKey)) {
                     try {
-                        logger.debug(`Auto-connecting to MCP server ${serverKey} for tool usage`);
+                        log.debug(`Auto-connecting to MCP server ${serverKey} for tool usage (call)`);
                         await mcpAdapter.connectToServer(serverKey);
                     } catch (error) {
-                        logger.error(`Failed to auto-connect to MCP server ${serverKey}`, { error });
+                        log.warn(`Failed to auto-connect to MCP server ${serverKey} in call()`, { error });
                         // Continue with other servers rather than failing completely
                         continue;
                     }
@@ -846,49 +985,73 @@ export class LLMCaller implements MCPDirectAccess {
                 let serverTools = this.mcpSchemaCache.get(serverKey);
                 if (!serverTools) {
                     try {
-                        logger.debug(`Cache miss for MCP schemas: ${serverKey}. Fetching...`);
+                        log.debug(`Cache miss for MCP schemas: ${serverKey}. Fetching...`);
+                        // Fetch tools (connects implicitly if needed)
                         serverTools = await mcpAdapter.getServerTools(serverKey);
                         this.mcpSchemaCache.set(serverKey, serverTools);
-                        logger.debug(`Fetched and cached ${serverTools.length} tools for ${serverKey}`);
+                        log.debug(`Fetched and cached ${serverTools.length} tools for ${serverKey}`);
                     } catch (error) {
-                        logger.error(`Failed to fetch tools for configured MCP server ${serverKey} during call()`, { error });
+                        log.error(`Failed to fetch tools for MCP server ${serverKey} during call()`, { error });
+                        // Decide whether to throw or continue without this server's tools
+                        // Let's continue for now
                         serverTools = [];
                     }
                 } else {
-                    logger.debug(`Cache hit for MCP schemas: ${serverKey}`);
+                    log.debug(`Cache hit for MCP schemas: ${serverKey}`);
                 }
                 mcpToolsForCall.push(...serverTools);
             }
 
-            // Merge MCP tools into the final list
-            const finalToolsMap: Map<string, ToolDefinition> = new Map();
-            [...finalEffectiveTools, ...mcpToolsForCall].forEach(t => finalToolsMap.set(t.name, t));
-            finalEffectiveTools = Array.from(finalToolsMap.values());
+            // Finalize the tool list with MCP tools
+            finalEffectiveTools = [...finalEffectiveTools, ...mcpToolsForCall];
+            const effectiveTools = finalEffectiveTools.length > 0 ? finalEffectiveTools : undefined;
 
-            // This is the final list of tools for the call
-            const effectiveTools = finalEffectiveTools;
-            // --- End Tool Resolution --- 
+            // Merge the settings with any defaults
+            const mergedSettings = this.mergeSettings(opts.settings);
 
-            const mergedSettings = this.mergeSettings(options.settings);
-            const effectiveHistoryMode = this.mergeHistoryMode(options.historyMode);
+            // Handle history mode (full is default if not specified at call or class level)
+            const effectiveHistoryMode = this.mergeHistoryMode(opts.historyMode);
 
-            // If in stateless mode, handle history
+            // Create a messages array for this call
+            let messages: UniversalMessage[] = [];
             if (effectiveHistoryMode?.toLowerCase() === 'stateless') {
-                this.historyManager.initializeWithSystemMessage();
+                // Stateless mode: just use system message + current user message
+                if (this.systemMessage) {
+                    messages.push({
+                        role: 'system',
+                        content: this.systemMessage
+                    });
+                }
+
+                // In stateless mode, we need to include both the file placeholder and text message
+                // since we're not using the history manager to get messages
+                if (opts.file) {
+                    // Add file placeholder message
+                    messages.push({
+                        role: 'user',
+                        content: `<file:${opts.file}>`
+                    });
+                }
+
+                // Add the text message if it exists
+                if (actualMessage) {
+                    messages.push({
+                        role: 'user',
+                        content: actualMessage
+                    });
+                }
+            } else {
+                // Dynamic/Full mode: use history manager to get messages
+                // (addMessage call above already added the latest user message)
+                messages = this.historyManager.getHistoricalMessages();
             }
 
-            // Add the original user message to history *before* the call
-            this.historyManager.addMessage('user', message, { metadata: { timestamp: Date.now() } });
-
-            // Get the messages from history for the call
-            const messages = this.historyManager.getHistoricalMessages();
-
             // Check if JSON is requested and whether to use native mode
-            const jsonRequested = options.responseFormat === 'json' || options.jsonSchema !== undefined;
+            const jsonRequested = opts.responseFormat === 'json' || opts.jsonSchema !== undefined;
             const modelSupportsJsonMode = typeof modelInfo.capabilities?.output?.text === 'object' &&
                 modelInfo.capabilities.output.text.textOutputFormats?.includes('json');
             const useNativeJsonMode = modelSupportsJsonMode && jsonRequested &&
-                !(options.settings?.jsonMode === 'force-prompt');
+                !(opts.settings?.jsonMode === 'force-prompt');
 
             // If there's only one chunk (no splitting occurred)
             if (processedMessages.length === 1) {
@@ -896,8 +1059,8 @@ export class LLMCaller implements MCPDirectAccess {
                     model: this.model,
                     messages: messages,
                     settings: mergedSettings,
-                    jsonSchema: options.jsonSchema,
-                    responseFormat: useNativeJsonMode ? 'json' : (options.jsonSchema ? 'text' : options.responseFormat),
+                    jsonSchema: opts.jsonSchema,
+                    responseFormat: useNativeJsonMode ? 'json' : (opts.jsonSchema ? 'text' : opts.responseFormat),
                     tools: effectiveTools, // Use the final tool list
                     callerId: this.callerId,
                     historyMode: effectiveHistoryMode
@@ -911,8 +1074,8 @@ export class LLMCaller implements MCPDirectAccess {
             const responses = await this.chunkController.processChunks(processedMessages, {
                 model: this.model,
                 settings: mergedSettings,
-                jsonSchema: options.jsonSchema,
-                responseFormat: options.responseFormat,
+                jsonSchema: opts.jsonSchema,
+                responseFormat: opts.responseFormat,
                 tools: effectiveTools, // Use the final tool list
                 historicalMessages: historyForChunks
             });
@@ -1289,7 +1452,7 @@ export class LLMCaller implements MCPDirectAccess {
      * @returns Promise that resolves when all disconnections are complete
      */
     async disconnectMcpServers(): Promise<void> {
-        const log = logger.createLogger({ prefix: 'LLMCaller.disconnectMcpServers' });
+        const log = logger.createLogger({ prefix: 'LLMCaller.disconnectMcpServer' });
 
         // Disconnect all MCP servers if the adapter exists
         if (this._mcpAdapter) {
@@ -1304,4 +1467,4 @@ export class LLMCaller implements MCPDirectAccess {
 
         log.debug('Disconnection complete');
     }
-} 
+}

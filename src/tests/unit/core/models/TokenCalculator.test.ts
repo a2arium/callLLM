@@ -35,11 +35,12 @@ describe('TokenCalculator', () => {
 
             // Regular input cost: (100-20) * 1000 / 1_000_000 = 0.08
             // Cached input cost: 20 * 500 / 1_000_000 = 0.01
+            // Total input cost: 0.08 + 0.01 = 0.09
             // Output cost: 200 * 2000 / 1_000_000 = 0.4
-            expect(result.input.total).toBe(0.08);
+            expect(result.input.total).toBe(0.09);  // 0.08 + 0.01 (includes both regular and cached)
             expect(result.input.cached).toBe(0.01);
             expect(result.output.total).toBe(0.4);
-            expect(result.total).toBe(0.49);  // 0.08 + 0.01 + 0.4
+            expect(result.total).toBe(0.49);  // 0.09 + 0.4
         });
 
         it('should handle cached tokens without cached price', () => {
@@ -102,10 +103,13 @@ describe('TokenCalculator', () => {
             );
 
             // All input tokens use cached price
-            expect(result.input.total).toBe(0);      // no regular tokens
-            expect(result.input.cached).toBe(0.05);  // 100 * 500 / 1_000_000
-            expect(result.output.total).toBe(0.4);   // 200 * 2000 / 1_000_000
-            expect(result.total).toBe(0.45);   // 0.05 + 0.4
+            // Regular input cost: (100-100) * 1000 / 1_000_000 = 0
+            // Cached input cost: 100 * 500 / 1_000_000 = 0.05
+            // Total input cost: 0 + 0.05 = 0.05
+            expect(result.input.total).toBe(0.05);  // includes both regular and cached = 0 + 0.05
+            expect(result.input.cached).toBe(0.05); // 100 * 500 / 1_000_000
+            expect(result.output.total).toBe(0.4);  // 200 * 2000 / 1_000_000
+            expect(result.total).toBe(0.45);  // 0.05 + 0.4
         });
     });
 

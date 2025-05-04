@@ -1,0 +1,189 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# File Handling Guidelines
+
+## Core Principles
+
+1. **Unified Interface**: Maintain consistent API for all file types across providers
+2. **Type Safety**: Enforce proper typing for file operations
+3. **Provider Abstraction**: Abstract provider-specific file handling details
+4. **Token Accounting**: Track file token usage accurately
+5. **Clear Documentation**: Document file handling patterns clearly
+
+## Input Patterns
+
+### File Input Methods
+
+Two main approaches are supported:
+
+#### 1. Explicit File Parameter
+
+```typescript
+await caller.call("Analyze this image", {
+  file: "path/to/image.jpg",
+  imageDetail: "high" // "low", "high", or "auto"
+});
+```
+
+- Use for standalone files with text prompts
+- Preferred for clarity and explicit control
+- Supports additional file-specific parameters
+
+#### 2. Placeholder Syntax
+
+```typescript
+await caller.call("<file:path/to/image.jpg> What's in this image?");
+```
+
+- Use for inline file references in text content
+- Ideal for multiple files or contextual placement
+- Detected and processed automatically
+
+### File Reference Types
+
+Three types of file references are supported:
+
+1. **URLs**: `https://example.com/image.jpg`
+   - External web resources
+   - No local file access required
+   - Preferred for publicly available resources
+
+2. **Local Paths**: `./images/photo.jpg`
+   - Relative to current working directory
+   - Absolute paths supported but discouraged
+   - Automatically loaded from filesystem
+
+3. **Base64 Data**: `data:image/jpeg;base64,/9j/4AAQ...`
+   - Direct embedding of file data
+   - No external dependencies
+   - Higher payload size
+
+## Implementation Details
+
+### Directory Structure
+
+- `core/file-data/`: Core file handling utilities
+  - `fileLoader.ts`: File loading and validation
+  - `fileUtils.ts`: Utility functions for file processing
+  - `fileConverter.ts`: Format conversion for provider compatibility
+
+### Processing Flow
+
+1. **Detection**: Identify file references in input
+2. **Validation**: Verify file existence and type
+3. **Loading**: Load file content (if local path)
+4. **Conversion**: Convert to provider-specific format
+5. **Injection**: Integrate with message payload
+6. **Tracking**: Record token usage for files
+
+### Provider Adapters
+
+Each provider adapter handles files differently:
+
+- **OpenAI Adapter**:
+  - Converts file references to `input_image` objects
+  - Handles base64 encoding as needed
+  - Supports image detail level
+
+- **Anthropic Adapter**:
+  - Uses Anthropic's image content format
+  - Includes MIME type handling
+  - Manages media integration
+
+### Token Calculation
+
+Files consume tokens based on:
+
+1. **File Type**: Different file types have different token calculations
+2. **Size/Resolution**: Larger files consume more tokens
+3. **Detail Level**: Higher detail settings use more tokens
+4. **Provider Rules**: Different providers count tokens differently
+
+## Token Usage Tracking
+
+### Token Accounting
+
+File token usage is tracked in the `Usage` object:
+
+```typescript
+{
+  tokens: {
+    input: {
+      total: 100,
+      cached: 0,
+      image: 85  // Tokens specifically for file/image input
+    },
+    // ...
+  }
+}
+```
+
+### Detail Level Impact
+
+Approximate token usage by detail level:
+
+| Detail Level | Approx. Tokens | Best Use Case |
+|--------------|----------------|--------------|
+| Low          | ~85            | Basic visual recognition |
+| Auto         | ~130           | General purpose |
+| High         | ~170           | Detailed analysis |
+
+### Cost Impact
+
+- File tokens are billed at the same rate as text tokens
+- Token costs are automatically calculated
+- Token counts are included in usage callbacks
+
+## Error Handling
+
+### Common Errors
+
+1. **FileNotFoundError**: Local file not accessible
+2. **UnsupportedFileTypeError**: File type not supported by model
+3. **FileSizeLimitError**: File exceeds size limits
+4. **ModelCapabilityError**: Model doesn't support files
+
+### Error Patterns
+
+```typescript
+try {
+  await caller.call("Analyze this image", { file: "nonexistent.jpg" });
+} catch (error) {
+  if (error instanceof FileNotFoundError) {
+    // Handle file not found
+  } else if (error instanceof ModelCapabilityError) {
+    // Handle unsupported model capability
+  }
+}
+```
+
+## Best Practices
+
+1. **File Size**: Optimize file size before sending
+2. **Path References**: Use relative paths for local files
+3. **Error Handling**: Add specific error handling for file operations
+4. **Token Monitoring**: Track file token usage for cost control
+5. **Detail Level**: Use appropriate detail level for the task
+
+## Testing Requirements
+
+1. **Mock Files**: Use small test files in `tests/__fixtures__/`
+2. **URL Mocking**: Mock URL fetching for consistent tests
+3. **Token Calculation**: Verify file token calculations
+4. **Error Cases**: Test all file-related error scenarios
+5. **Provider Coverage**: Test across all supported providers
+
+## Documentation Standards
+
+1. **Examples**: Include file handling examples in docs
+2. **Token Impact**: Document token usage expectations
+3. **Error Documentation**: Document potential file errors
+4. **Capability Matrix**: Document file support by model
+
+# References
+- See @docs/images.md for consumer documentation
+- See @examples/image.ts for usage examples
+- See @src/core/file-data/ for implementation details

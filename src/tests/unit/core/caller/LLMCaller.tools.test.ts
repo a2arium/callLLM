@@ -1,14 +1,117 @@
-import { LLMCaller } from '../../../../core/caller/LLMCaller';
-import type { ToolDefinition } from '../../../../types/tooling';
-import { ModelManager } from '../../../../core/models/ModelManager';
-import { ToolsFolderLoader } from '../../../../core/tools/toolLoader/ToolsFolderLoader';
+import { jest } from '@jest/globals';
 import path from 'path';
 import fs from 'fs';
+import { LLMCaller } from '../../../../core/caller/LLMCaller';
+import { ModelManager } from '../../../../core/models/ModelManager';
+import { ToolDefinition } from '../../../../types/tooling';
+import { ToolsFolderLoader } from '../../../../core/tools/toolLoader/ToolsFolderLoader';
+import { ModelCapabilities, UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces';
 
-jest.mock('../../../../core/models/ModelManager');
-jest.mock('../../../../core/tools/toolLoader/ToolsFolderLoader');
+// Mock dependencies
+jest.mock('../../../../core/caller/ProviderManager');
 jest.mock('path');
 jest.mock('fs');
+jest.mock('../../../../core/tools/toolLoader/ToolsFolderLoader');
+
+// Setup ModelManager mock
+jest.mock('../../../../core/models/ModelManager', () => {
+    const mockModelManager = {
+        getModel: jest.fn().mockReturnValue({
+            name: 'gpt-3.5-turbo',
+            inputPricePerMillion: 0.1,
+            outputPricePerMillion: 0.2,
+            maxRequestTokens: 1000,
+            maxResponseTokens: 500,
+            tokenizationModel: 'test',
+            characteristics: {
+                qualityIndex: 80,
+                outputSpeed: 100,
+                firstTokenLatency: 100
+            },
+            capabilities: {
+                streaming: true,
+                toolCalls: true,
+                parallelToolCalls: true,
+                batchProcessing: true,
+                input: {
+                    text: true
+                },
+                output: {
+                    text: {
+                        textOutputFormats: ['text', 'json']
+                    }
+                }
+            }
+        }),
+        getAvailableModels: jest.fn()
+    };
+
+    return {
+        ModelManager: jest.fn(() => mockModelManager),
+        getCapabilities: jest.fn(function (modelId: unknown) {
+            // Cast model ID to string for safe handling
+            const modelIdStr = String(modelId);
+
+            if (modelIdStr === 'image-model') {
+                return {
+                    streaming: true,
+                    input: {
+                        text: true,
+                        image: true
+                    },
+                    output: {
+                        text: true
+                    }
+                } as ModelCapabilities;
+            }
+
+            // Default capabilities for any other model
+            return {
+                streaming: true,
+                toolCalls: true,
+                parallelToolCalls: true,
+                batchProcessing: true,
+                input: {
+                    text: true,
+                    // No image capability
+                },
+                output: {
+                    text: {
+                        textOutputFormats: ['text', 'json']
+                    }
+                }
+            } as ModelCapabilities;
+        })
+    };
+});
+
+// Setup base mock provider with proper types
+const mockProvider = {
+    chatCall: jest.fn().mockImplementation(() => {
+        return Promise.resolve({
+            content: 'mock response',
+            role: 'assistant',
+            metadata: {},
+            usage: {
+                promptTokens: 10,
+                completionTokens: 20,
+                totalTokens: 30
+            }
+        });
+    })
+};
+
+// Mock the ProviderManager constructor
+const mockProviderManager = {
+    getProvider: jest.fn().mockReturnValue(mockProvider)
+};
+
+// Setup ProviderManager mock to return our mock instance
+jest.mock('../../../../core/caller/ProviderManager', () => {
+    return {
+        ProviderManager: jest.fn().mockImplementation(() => mockProviderManager)
+    };
+});
 
 describe('LLMCaller Tool Management', () => {
     let llmCaller: LLMCaller;
@@ -16,38 +119,6 @@ describe('LLMCaller Tool Management', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
-
-        // Setup ModelManager mock
-        (ModelManager as jest.Mock).mockImplementation(() => ({
-            getModel: jest.fn().mockReturnValue({
-                name: 'gpt-3.5-turbo',
-                inputPricePerMillion: 0.1,
-                outputPricePerMillion: 0.2,
-                maxRequestTokens: 1000,
-                maxResponseTokens: 500,
-                tokenizationModel: 'test',
-                characteristics: {
-                    qualityIndex: 80,
-                    outputSpeed: 100,
-                    firstTokenLatency: 100
-                },
-                capabilities: {
-                    streaming: true,
-                    toolCalls: true,
-                    parallelToolCalls: true,
-                    batchProcessing: true,
-                    input: {
-                        text: true
-                    },
-                    output: {
-                        text: {
-                            textOutputFormats: ['text', 'json']
-                        }
-                    }
-                }
-            }),
-            getAvailableModels: jest.fn()
-        }));
 
         llmCaller = new LLMCaller('openai', 'gpt-3.5-turbo');
         mockTool = {
@@ -168,7 +239,7 @@ describe('LLMCaller Tool Management', () => {
 
         beforeEach(() => {
             // Create a shared mock for getTool that we can check in tests
-            mockGetTool = jest.fn().mockResolvedValue({
+            mockGetTool = jest.fn().mockImplementation(() => ({
                 name: mockToolName,
                 description: 'A mock tool for testing',
                 parameters: {
@@ -176,7 +247,7 @@ describe('LLMCaller Tool Management', () => {
                     properties: {}
                 },
                 callFunction: jest.fn()
-            });
+            }));
 
             // Setup ToolsFolderLoader mock
             (ToolsFolderLoader as jest.Mock).mockImplementation((dirPath) => ({

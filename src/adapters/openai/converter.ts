@@ -1,5 +1,5 @@
 import { OpenAI } from 'openai'; // Import OpenAI namespace
-import { UniversalChatParams, UniversalChatResponse, UniversalMessage, FinishReason, Usage, ModelCapabilities, ReasoningEffort } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, UniversalMessage, FinishReason, Usage, ModelCapabilities, ReasoningEffort, ImageDataSource } from '../../interfaces/UniversalInterfaces';
 import { OpenAIResponseValidationError } from './errors';
 import { ToolDefinition, ToolParameters, ToolCall } from '../../types/tooling';
 import { logger } from '../../utils/logger';
@@ -18,6 +18,22 @@ import {
     EasyInputMessage
 } from './types';
 import { ModelManager } from '../../core/models/ModelManager';
+import { normalizeImageSource, estimateImageTokens } from '../../core/file-data/fileData';
+import { TokenCalculator } from '../../core/models/TokenCalculator';
+
+/**
+ * Extract the file path from a file placeholder string
+ * @param placeholder String that follows the format "<file:path/to/file>"
+ * @returns The extracted file path
+ */
+export function extractPathFromPlaceholder(placeholder: string): string {
+    // Remove the "<file:" prefix and the ">" suffix
+    if (!placeholder.startsWith('<file:') || !placeholder.endsWith('>')) {
+        throw new Error(`Invalid file placeholder format: ${placeholder}`);
+    }
+
+    return placeholder.substring(6, placeholder.length - 1);
+}
 
 export class Converter {
     private modelManager: ModelManager;
@@ -30,9 +46,14 @@ export class Converter {
      * Converts UniversalChatParams to OpenAI Response API parameters (native types)
      * @param model The model name to use
      * @param params Universal chat parameters
+     * @param adapterOpts Additional adapter-specific options
      * @returns Parameters formatted for the OpenAI Response API (native type)
      */
-    convertToOpenAIResponseParams(model: string, params: UniversalChatParams): Partial<ResponseCreateParams> { // Return partial native type
+    async convertToOpenAIResponseParams(
+        model: string,
+        params: UniversalChatParams,
+        adapterOpts?: { imageDetail?: 'low' | 'high' | 'auto' }
+    ): Promise<Partial<ResponseCreateParams>> { // Return partial native type
         const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.convertToOpenAIResponseParams' });
         log.debug('Converting universal params:', params);
 
@@ -127,11 +148,73 @@ export class Converter {
             // Don't set instructions for reasoning models
             instructions = undefined;
         } else {
-            // Standard behavior for non-reasoning models
-            input = params.messages.map(message => ({
-                role: this.transformRoleToOpenAIResponseRole(message.role),
-                content: message.content
-            }));
+            // Process messages to handle file placeholders
+            input = [];
+
+            let hasProcessedImage = false;
+
+            for (const message of params.messages) {
+                // Handle file placeholder in message content
+                if (typeof message.content === 'string' && message.content.startsWith('<file:') && message.content.endsWith('>')) {
+                    try {
+                        const filePath = extractPathFromPlaceholder(message.content);
+
+                        // Different handling based on source type
+                        let imageSource: any;
+
+                        if (filePath.startsWith('data:')) {
+                            // Already a data URL, use as is
+                            imageSource = filePath;
+                        } else if (filePath.startsWith('http')) {
+                            // Remote URL, use as is
+                            imageSource = filePath;
+                        } else {
+                            // Local file path - create a file source and convert to base64
+                            const fileSource: ImageDataSource = { kind: 'filePath', value: filePath };
+                            const normalized = await normalizeImageSource(fileSource);
+
+                            // Use the base64 data URL for OpenAI
+                            if (normalized.kind === 'base64') {
+                                imageSource = `data:${normalized.mime};base64,${normalized.value}`;
+                            } else {
+                                // Fallback if normalization returned a URL instead
+                                imageSource = normalized.value;
+                            }
+                        }
+
+                        // Create a multi-part message with image
+                        const content: any[] = [
+                            {
+                                type: 'input_image',
+                                image_url: imageSource
+                            }
+                        ];
+
+                        const newMessage: EasyInputMessage = {
+                            role: this.transformRoleToOpenAIResponseRole(message.role),
+                            content: content
+                        };
+                        input.push(newMessage);
+
+                        // Remember we processed an image file to set metadata later
+                        hasProcessedImage = true;
+                    } catch (error) {
+                        log.error('Failed to process file placeholder:', error);
+                        // If there's an error, fall back to the original content
+                        input.push({
+                            role: this.transformRoleToOpenAIResponseRole(message.role),
+                            content: message.content
+                        });
+                    }
+                } else {
+                    // Standard message without file placeholder
+                    input.push({
+                        role: this.transformRoleToOpenAIResponseRole(message.role),
+                        content: message.content
+                    });
+                }
+            }
+
             instructions = params.systemMessage || undefined;
         }
 
@@ -223,8 +306,20 @@ export class Converter {
         if (params.settings?.user) {
             openAIParams.user = params.settings.user;
         }
+        // Setup metadata
+        openAIParams.metadata = {};
+
+        // Add user-provided metadata if any
         if (params.settings?.providerOptions?.metadata) {
-            openAIParams.metadata = params.settings.providerOptions.metadata as Record<string, string>;
+            openAIParams.metadata = {
+                ...openAIParams.metadata,
+                ...params.settings.providerOptions.metadata as Record<string, string>
+            };
+        }
+
+        // Add image detail for usage calculation if provided
+        if (adapterOpts?.imageDetail) {
+            openAIParams.metadata.image_detail = adapterOpts.imageDetail;
         }
 
         log.debug('Converted to native params (partial):', openAIParams);
@@ -347,17 +442,48 @@ export class Converter {
         // Extract usage info from native usage structure
         if (response.usage) {
             universalResponse.metadata = universalResponse.metadata || {};
+
+            // Extract raw token counts from API response
+            const rawInputTokens = response.usage.input_tokens || 0;
+            const rawOutputTokens = response.usage.output_tokens || 0;
+            const rawTotalTokens = response.usage.total_tokens || 0;
+            const cachedTokens = response.usage.input_tokens_details?.cached_tokens || 0;
+            const reasoningTokens = response.usage.output_tokens_details?.reasoning_tokens || 0;
+
+            log.debug('Raw usage data from API:', {
+                input_tokens: rawInputTokens,
+                output_tokens: rawOutputTokens,
+                total_tokens: rawTotalTokens
+            });
+
+            // Calculate image tokens by subtracting estimated text tokens
+            let imageTokens = 0;
+
+            // If we have a very large number of input tokens, it's likely from an image
+            if (rawInputTokens > 100) {
+                // Simple estimate: text messages are typically small, so most tokens are from the image
+                const estimatedTextTokens = 50; // Fixed approximation for text portion
+
+                // Image tokens = total - estimated text tokens
+                imageTokens = Math.max(0, rawInputTokens - estimatedTextTokens);
+
+                log.debug(`Estimated image tokens: ${imageTokens} (raw: ${rawInputTokens}, text: ~${estimatedTextTokens})`);
+            }
+
+            // ALWAYS use exactly what the model returns for totals
             universalResponse.metadata.usage = {
                 tokens: {
                     input: {
-                        total: response.usage.input_tokens || 0,
-                        cached: response.usage.input_tokens_details?.cached_tokens || 0,
+                        total: rawInputTokens,
+                        cached: cachedTokens,
+                        // Only include image tokens if we've detected them
+                        image: imageTokens > 0 ? imageTokens : undefined
                     },
                     output: {
-                        total: response.usage.output_tokens || 0,
-                        reasoning: response.usage.output_tokens_details?.reasoning_tokens || 0,
+                        total: rawOutputTokens,
+                        reasoning: reasoningTokens,
                     },
-                    total: response.usage.total_tokens || 0
+                    total: rawTotalTokens
                 },
                 costs: {
                     input: {
@@ -371,6 +497,8 @@ export class Converter {
                     total: 0
                 } // Costs calculated later
             };
+
+            log.debug('Converted usage data:', universalResponse.metadata.usage.tokens);
         }
 
         // Process output items from native structure
@@ -555,4 +683,4 @@ export class Converter {
 
         return preparedParams;
     }
-} 
+}

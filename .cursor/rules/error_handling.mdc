@@ -39,6 +39,12 @@ alwaysApply: false
 - Input validation errors
 - State validation errors
 
+### Capability Errors
+- Model capability validation errors
+- Use CapabilityError for feature support checks
+- Throw early at entry points before processing
+- Include specific model information in error message
+
 ### Runtime Errors
 - Handle async operation failures
 - Manage stream processing errors
@@ -149,3 +155,4 @@ alwaysApply: false
 - See @src/core/retry/RetryManager.ts for retry implementation
 - See @src/adapters/openai/errors.ts for provider error handling
 - See @src/core/types.ts for error type definitions
+- See @src/core/models/CapabilityError.ts for model capability validation errors

@@ -9,22 +9,10 @@ async function runLoadHistoryExample() {
     console.log('--- Preloading History Example ---');
 
     // 1. Initialize LLMCaller
-    // Assumes PROVIDER, MODEL, and API_KEY are set in the environment
-    const provider = (process.env.PROVIDER || 'openai') as any; // Cast to any to bypass strict literal check for example
-    const model = process.env.MODEL || 'gpt-4o-mini';
-    const apiKey = process.env.API_KEY; // API key might be optional depending on provider setup
-
-    if (!apiKey && provider === 'openai') { // Simple check for common case
-        console.warn('Warning: API_KEY environment variable not set for OpenAI provider.');
-        // Depending on the library's internal handling, this might still work if
-        // OPENAI_API_KEY is set, or fail if no key is found.
-    }
-
     const caller = new LLMCaller(
-        provider,
-        model,
-        'You are a helpful assistant focusing on capitals and their countries.',
-        { apiKey } // Pass apiKey; it might be undefined, let the adapter handle it
+        'openai',
+        'gpt-4o-mini',
+        'You are a helpful assistant focusing on capitals and their countries.'
     );
 
     // 2. Define the historical messages to preload

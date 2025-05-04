@@ -1,14 +1,41 @@
-import { ModelInfo, ModelAlias } from '../../interfaces/UniversalInterfaces';
+import { ModelInfo, ModelAlias, ModelCapabilities } from '../../interfaces/UniversalInterfaces';
 import { ModelSelector } from './ModelSelector';
 import { defaultModels as openAIResponseModels } from '../../adapters/openai/models';
 import { RegisteredProviders } from '../../adapters';
 
 export class ModelManager {
+    private static instance: ModelManager;
     private models: Map<string, ModelInfo>;
 
     constructor(providerName: RegisteredProviders) {
         this.models = new Map();
         this.initializeModels(providerName);
+        ModelManager.instance = this;
+    }
+
+    // Static method to get model capabilities with defaults for missing values
+    public static getCapabilities(modelId: string): ModelCapabilities {
+        const model = this.instance?.getModel(modelId);
+
+        // Default capabilities if model not found or capabilities not defined
+        const defaultCapabilities: ModelCapabilities = {
+            streaming: true,
+            toolCalls: false,
+            parallelToolCalls: false,
+            batchProcessing: false,
+            reasoning: false,
+            input: {
+                text: true,
+                // By default, models don't support image input
+                image: undefined
+            },
+            output: {
+                text: true
+            }
+        };
+
+        // Return model capabilities if found, otherwise return defaults
+        return model?.capabilities || defaultCapabilities;
     }
 
     private initializeModels(providerName: RegisteredProviders): void {

@@ -2,18 +2,19 @@ import { jest } from '@jest/globals';
 import { LLMCaller } from '../../../../core/caller/LLMCaller';
 import type { StreamingService } from '../../../../core/streaming/StreamingService';
 import type { ProviderManager } from '../../../../core/caller/ProviderManager';
-import type { ModelManager } from '../../../../core/models/ModelManager';
+import { ModelManager } from '../../../../core/models/ModelManager';
 import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
 import { RetryManager } from '../../../../core/retry/RetryManager';
 import type { HistoryManager } from '../../../../core/history/HistoryManager';
 import type { TokenCalculator } from '../../../../core/models/TokenCalculator';
-import type { UniversalMessage, UniversalStreamResponse, ModelInfo, Usage, UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces';
+import type { UniversalMessage, UniversalStreamResponse, ModelInfo, Usage, UniversalChatResponse, ModelCapabilities } from '../../../../interfaces/UniversalInterfaces';
 import { RegisteredProviders } from '../../../../adapters';
 import type { ToolController } from '../../../../core/tools/ToolController';
 import type { ChatController } from '../../../../core/chat/ChatController';
 import type { UniversalChatParams, UniversalChatSettings, LLMCallOptions, HistoryMode } from '../../../../interfaces/UniversalInterfaces';
 import type { ToolsManager } from '../../../../core/tools/ToolsManager';
 import type { ToolDefinition, ToolCall } from '../../../../types/tooling';
+import { CapabilityError } from '../../../../core/models/CapabilityError';
 
 // Define RequestProcessor interface type
 type RequestProcessor = {
@@ -227,6 +228,35 @@ describe('LLMCaller', () => {
         // Verify that the system message is initialized
         expect(mockHistoryManager.initializeWithSystemMessage).toHaveBeenCalled();
         expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('system', defaultSystemMessage);
+
+        // Mock the ModelManager.getCapabilities static method using a different approach
+        const originalGetCapabilities = ModelManager.getCapabilities;
+        jest.spyOn(ModelManager, 'getCapabilities').mockImplementation((modelId: string) => {
+            if (modelId === 'image-model') {
+                return {
+                    streaming: true,
+                    input: {
+                        text: true,
+                        image: true
+                    },
+                    output: {
+                        text: true
+                    }
+                } as ModelCapabilities;
+            }
+
+            // Default capabilities - text only
+            return {
+                streaming: true,
+                input: {
+                    text: true,
+                    // No image capability
+                },
+                output: {
+                    text: true
+                }
+            } as ModelCapabilities;
+        });
     });
 
     afterEach(() => {
@@ -502,6 +532,158 @@ describe('LLMCaller', () => {
 
             expect(mockHistoryManager.getHistoricalMessages).toHaveBeenCalledTimes(1);
             expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('capability enforcement', () => {
+        test('call with file on text-only model throws CapabilityError', async () => {
+            // Set up mockModelManager to return a text-only model
+            mockModelManager.getModel.mockReturnValue({
+                name: 'text-only-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                },
+                capabilities: {
+                    input: {
+                        text: true,
+                        // No image capability
+                    },
+                    output: {
+                        text: true
+                    }
+                }
+            });
+
+            // Create a new instance with this model
+            const textOnlyCaller = new LLMCaller('openai' as RegisteredProviders, 'text-only-model', 'You are a helpful assistant.', {
+                providerManager: mockProviderManager,
+                modelManager: mockModelManager,
+                historyManager: mockHistoryManager,
+                streamingService: mockStreamingService,
+                toolsManager: mockToolsManager,
+                chatController: mockChatController,
+                retryManager: mockRetryManager,
+                tokenCalculator: mockTokenCalculator,
+                responseProcessor: mockResponseProcessor
+            });
+
+            // Test that using a file throws CapabilityError
+            await expect(textOnlyCaller.call("Hi", { file: "./image.png" }))
+                .rejects
+                .toThrow(CapabilityError);
+
+            await expect(textOnlyCaller.call("Hi", { file: "./image.png" }))
+                .rejects
+                .toThrow('Model "text-only-model" does not support file inputs.');
+        });
+
+        test('stream with file on text-only model throws CapabilityError', async () => {
+            // Set up mockModelManager to return a text-only model
+            mockModelManager.getModel.mockReturnValue({
+                name: 'text-only-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                },
+                capabilities: {
+                    input: {
+                        text: true,
+                        // No image capability
+                    },
+                    output: {
+                        text: true
+                    }
+                }
+            });
+
+            // Create a new instance with this model
+            const textOnlyCaller = new LLMCaller('openai' as RegisteredProviders, 'text-only-model', 'You are a helpful assistant.', {
+                providerManager: mockProviderManager,
+                modelManager: mockModelManager,
+                historyManager: mockHistoryManager,
+                streamingService: mockStreamingService,
+                toolsManager: mockToolsManager,
+                chatController: mockChatController,
+                retryManager: mockRetryManager,
+                tokenCalculator: mockTokenCalculator,
+                responseProcessor: mockResponseProcessor
+            });
+
+            // Test that streaming with a file throws CapabilityError
+            await expect(async () => {
+                const stream = textOnlyCaller.stream("Hi", { file: "./image.png" });
+                // Consume the stream to trigger the error
+                for await (const _ of stream) {
+                    // Nothing to do here
+                }
+            }).rejects.toThrow(CapabilityError);
+        });
+
+        test('call with file on image-capable model succeeds', async () => {
+            // Set up mockModelManager to return an image-capable model
+            mockModelManager.getModel.mockReturnValue({
+                name: 'image-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 4000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 20,
+                    firstTokenLatency: 500
+                },
+                capabilities: {
+                    input: {
+                        text: true,
+                        image: true
+                    },
+                    output: {
+                        text: true
+                    }
+                }
+            });
+
+            // Create a new instance with this model
+            const imageCapableCaller = new LLMCaller('openai' as RegisteredProviders, 'image-model', 'You are a helpful assistant.', {
+                providerManager: mockProviderManager,
+                modelManager: mockModelManager,
+                historyManager: mockHistoryManager,
+                streamingService: mockStreamingService,
+                toolsManager: mockToolsManager,
+                chatController: mockChatController,
+                retryManager: mockRetryManager,
+                tokenCalculator: mockTokenCalculator,
+                responseProcessor: mockResponseProcessor
+            });
+
+            // Mock the normalizeImageSource and estimateImageTokens to avoid errors
+            jest.spyOn(require('../../../../core/file-data/fileData'), 'normalizeImageSource')
+                .mockResolvedValue({ kind: 'base64', value: 'test-base64' });
+            jest.spyOn(require('../../../../core/file-data/fileData'), 'estimateImageTokens')
+                .mockReturnValue(1000);
+
+            // Test that using a file succeeds
+            await expect(imageCapableCaller.call("Hi", { file: "./image.png" }))
+                .resolves
+                .not.toThrow();
+        });
+
+        test('call without file succeeds on any model', async () => {
+            // Should work with a text-only model
+            await expect(llmCaller.call("Hello world"))
+                .resolves
+                .not.toThrow();
         });
     });
 });

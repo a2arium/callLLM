@@ -14,19 +14,47 @@ export enum FinishReason {
     ERROR = 'error'
 }
 
+// Image data source types
+export type UrlSource = { kind: 'url'; value: string }
+export type Base64Source = { kind: 'base64'; value: string; mime: string }
+export type FilePathSource = { kind: 'filePath'; value: string }
+export type ImageDataSource = UrlSource | Base64Source | FilePathSource
+
+// Message part types
+export type TextPart = { type: 'text'; text: string }
+export type ImagePart = { type: 'image'; data: ImageDataSource }
+export type MessagePart = TextPart | ImagePart
+
+/**
+ * Helper function to convert string or MessagePart[] to MessagePart[]
+ */
+export function toMessageParts(input: string): MessagePart[]
+export function toMessageParts(input: MessagePart[]): MessagePart[]
+export function toMessageParts(input: string | MessagePart[]): MessagePart[] {
+    if (typeof input === 'string') {
+        return [{ type: 'text', text: input }];
+    }
+    return input;
+}
+
 export type UniversalMessage = {
     role: 'system' | 'user' | 'assistant' | 'tool' | 'function' | 'developer';
+    /**
+     * The content of the message.
+     * NOTE: In future versions, this will support MessagePart[] in addition to string.
+     * The implementation will be: content: string | MessagePart[];
+     */
     content: string;
     name?: string;
     toolCallId?: string;  // ID linking a tool result to its original tool call
     toolCalls?: Array<{
         id: string;
-        type?: 'function'; // Optional type, often 'function'
+        type?: 'function';
         function: {
             name: string;
-            arguments: string; // Often a JSON string
+            arguments: string;  // JSON-encoded argument object
         };
-    } | ToolCall>; // Allow defined ToolCall type as well
+    } | ToolCall>;
     metadata?: Record<string, unknown>;
 };
 
@@ -121,6 +149,12 @@ export type UniversalChatSettings = {
 
 // Define the new options structure for call/stream methods
 export type LLMCallOptions = {
+    /** Optional text prompt (alternative to passing string directly) */
+    text?: string;
+    /** Optional file path, URL, or base64 data for image input */
+    file?: string;
+    /** Optional image detail level */
+    imageDetail?: 'low' | 'high' | 'auto';
     /** Optional callback to receive incremental usage stats */
     usageCallback?: UsageCallback;
     /** Batch size of tokens between callbacks. Default=100 when callback provided. */
@@ -194,6 +228,8 @@ export type Usage = {
         input: {
             total: number;
             cached: number;
+            /** Tokens attributable to file/image inputs (if any) */
+            image?: number;
         },
         output: {
             total: number;
@@ -241,6 +277,8 @@ export interface UniversalChatResponse<T = unknown> {
         // Add JSON repair metadata
         jsonRepaired?: boolean;
         originalContent?: string;
+        // Add raw usage data
+        rawUsage?: Record<string, number>;
     };
 }
 
@@ -311,6 +349,8 @@ export interface UniversalStreamResponse<T = unknown> {
         toolId?: string; // Corresponds to ToolCall.id
         toolResult?: string;
         toolError?: string;
+        // Add raw usage data
+        rawUsage?: Record<string, number>;
     };
 }
 

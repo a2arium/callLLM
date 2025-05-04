@@ -24,16 +24,19 @@ export class TokenCalculator {
             ? (inputCachedTokens * inputCachedPricePerMillion) / 1_000_000
             : 0;
 
+        // Total input cost should include both regular and cached costs
+        const totalInputCost = regularInputCost + cachedInputCost;
+
         // Calculate output cost
         const outputCost = (outputTokens * outputPricePerMillion) / 1_000_000;
 
         const outputReasoningCost = (outputReasoningTokens * outputPricePerMillion) / 1_000_000;
         // Calculate total cost
-        const totalCost = regularInputCost + cachedInputCost + outputCost + outputReasoningCost;
+        const totalCost = totalInputCost + outputCost + outputReasoningCost;
 
         return {
             input: {
-                total: regularInputCost,
+                total: totalInputCost, // Include both regular and cached input costs
                 cached: cachedInputCost,
             },
             output: {

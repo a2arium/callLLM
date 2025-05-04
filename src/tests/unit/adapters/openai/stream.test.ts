@@ -681,6 +681,189 @@ describe('StreamHandler', () => {
         expect(finalChunk.content).toBe('');
         expect(finalChunk.isComplete).toBe(true);
     });
+
+    test('should correctly process usage data with image tokens', async () => {
+        const streamHandler = new StreamHandler();
+
+        // Mock a stream with usage data containing high input token count (indicating image tokens)
+        const mockEvents = [
+            // First content chunk
+            {
+                type: 'response.output_text.delta',
+                delta: 'Analyzing the image...',
+            } as ResponseStreamEvent,
+            // Progress event with usage data
+            {
+                type: 'response.in_progress',
+                response: {
+                    usage: {
+                        input_tokens: 3691,    // High token count indicating image
+                        output_tokens: 12,
+                        total_tokens: 3703,
+                        output_tokens_details: {
+                            reasoning_tokens: 0
+                        }
+                    }
+                }
+            } as ResponseStreamEvent,
+            // Second content chunk
+            {
+                type: 'response.output_text.delta',
+                delta: ' I can see a landscape.',
+            } as ResponseStreamEvent,
+            // Completion with final usage data
+            {
+                type: 'response.completed',
+                response: {
+                    id: 'resp_123',
+                    model: 'gpt-4o',
+                    status: 'completed',
+                    usage: {
+                        input_tokens: 3691,    // High token count indicating image
+                        output_tokens: 24,
+                        total_tokens: 3715
+                    }
+                }
+            } as ResponseStreamEvent
+        ];
+
+        const mockStream = createMockStream(mockEvents);
+        const results = [];
+
+        for await (const chunk of streamHandler.handleStream(mockStream)) {
+            results.push(chunk);
+        }
+
+        // Check we have all expected chunks
+        expect(results.length).toBe(4);
+
+        // First chunk should be text only
+        expect(results[0].content).toBe('Analyzing the image...');
+
+        // Second chunk should have usage data with image tokens
+        expect(results[1].metadata?.usage).toBeDefined();
+        expect(results[1].metadata?.usage.tokens.input.total).toBe(3691);
+        // Image tokens should be calculated as total input tokens minus standard text tokens
+        expect(results[1].metadata?.usage.tokens.input.image).toBeGreaterThan(3600);
+
+        // Third chunk should be text
+        expect(results[2].content).toBe(' I can see a landscape.');
+
+        // Final chunk should have complete usage data
+        expect(results[3].isComplete).toBe(true);
+        expect(results[3].metadata?.usage.tokens.input.total).toBe(3691);
+        expect(results[3].metadata?.usage.tokens.input.image).toBeGreaterThan(3600);
+        expect(results[3].metadata?.usage.tokens.output.total).toBe(24);
+        expect(results[3].metadata?.usage.tokens.total).toBe(3715);
+    });
+
+    test('should update usage data in final chunk with source of truth from API', async () => {
+        const streamHandler = new StreamHandler();
+
+        // First set of deltas will cause local token calculation 
+        // Then final chunk will have different (correct) token count from API
+        const mockEvents = [
+            {
+                type: 'response.output_text.delta',
+                delta: 'First',
+            } as ResponseStreamEvent,
+            {
+                type: 'response.output_text.delta',
+                delta: ' chunk',
+            } as ResponseStreamEvent,
+            {
+                type: 'response.in_progress',
+                response: {
+                    usage: {
+                        output_tokens: 2
+                    }
+                }
+            } as ResponseStreamEvent,
+            {
+                type: 'response.output_text.delta',
+                delta: ' of text.',
+            } as ResponseStreamEvent,
+            {
+                type: 'response.completed',
+                response: {
+                    id: 'resp_123',
+                    model: 'gpt-4o',
+                    status: 'completed',
+                    usage: {
+                        input_tokens: 50,
+                        output_tokens: 12,     // API reports different token count than what we calculate locally
+                        total_tokens: 62
+                    }
+                }
+            } as ResponseStreamEvent
+        ];
+
+        const mockStream = createMockStream(mockEvents);
+        const results = [];
+
+        for await (const chunk of streamHandler.handleStream(mockStream)) {
+            results.push(chunk);
+        }
+
+        // Check the final chunk has the API usage data, not our calculated value
+        expect(results[results.length - 1].metadata?.usage.tokens.output.total).toBe(12);
+        expect(results[results.length - 1].metadata?.usage.tokens.total).toBe(62);
+    });
+
+    test('should handle reasoning tokens in usage data', async () => {
+        const streamHandler = new StreamHandler();
+
+        const mockEvents = [
+            {
+                type: 'response.output_text.delta',
+                delta: 'Thinking',
+            } as ResponseStreamEvent,
+            {
+                type: 'response.in_progress',
+                response: {
+                    usage: {
+                        output_tokens: 10,
+                        output_tokens_details: {
+                            reasoning_tokens: 8
+                        }
+                    }
+                }
+            } as ResponseStreamEvent,
+            {
+                type: 'response.output_text.delta',
+                delta: ' through this problem...',
+            } as ResponseStreamEvent,
+            {
+                type: 'response.completed',
+                response: {
+                    id: 'resp_123',
+                    model: 'gpt-4o',
+                    status: 'completed',
+                    usage: {
+                        input_tokens: 30,
+                        output_tokens: 25,
+                        output_tokens_details: {
+                            reasoning_tokens: 15
+                        },
+                        total_tokens: 55
+                    }
+                }
+            } as ResponseStreamEvent
+        ];
+
+        const mockStream = createMockStream(mockEvents);
+        const results = [];
+
+        for await (const chunk of streamHandler.handleStream(mockStream)) {
+            results.push(chunk);
+        }
+
+        // Check intermediate chunk has reasoning tokens 
+        expect(results[1].metadata?.usage.tokens.output.reasoning).toBe(8);
+
+        // Check final chunk has updated reasoning tokens
+        expect(results[results.length - 1].metadata?.usage.tokens.output.reasoning).toBe(15);
+    });
 });
 
 describe('OpenAI Response API Stream Handler', () => {

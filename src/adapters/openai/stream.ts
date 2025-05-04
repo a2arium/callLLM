@@ -14,6 +14,12 @@ export class StreamHandler {
     private inputTokens = 0; // Track input tokens for progress events
     private tokenCalculator?: TokenCalculator; // Optional token calculator for more accurate estimates
 
+    // Add trackers for reported tokens
+    private reportedInputTokens = 0;
+    private reportedOutputTokens = 0;
+    private reportedReasoningTokens = 0;
+    private reportedImageTokens = 0;
+
     constructor(tools?: ToolDefinition[], tokenCalculator?: TokenCalculator) {
         if (tools && tools.length > 0) {
             this.tools = tools;
@@ -52,6 +58,12 @@ export class StreamHandler {
         this.toolCallMap.clear(); // Clear map for each stream
         this.inputTokens = 0; // Reset input tokens
 
+        // Reset reported token trackers
+        this.reportedInputTokens = 0;
+        this.reportedOutputTokens = 0;
+        this.reportedReasoningTokens = 0;
+        this.reportedImageTokens = 0;
+
         // State management
         let accumulatedContent = '';
         let finishReason: FinishReason = FinishReason.NULL;
@@ -67,7 +79,25 @@ export class StreamHandler {
 
         try {
             for await (const chunk of stream) {
-                this.log.debug(`Received stream event: ${chunk.type}`);
+                if ('response' in chunk && chunk.response?.usage) {
+
+                    // If we receive usage data and haven't set input tokens yet, set them now
+                    if (chunk.response.usage.input_tokens && this.inputTokens === 0) {
+                        this.inputTokens = chunk.response.usage.input_tokens;
+                        this.log.debug(`Setting input tokens from stream usage: ${this.inputTokens}`);
+
+                        // Check for image tokens if we have high input token count
+                        if (this.inputTokens > 100) {
+                            const estimatedTextTokens = 50; // Fixed approximation for text portion
+                            const estimatedImageTokens = Math.max(0, this.inputTokens - estimatedTextTokens);
+                            this.log.debug(`Detected possible image in stream, estimating ${estimatedImageTokens} image tokens`);
+                            this.reportedImageTokens = estimatedImageTokens;
+                        }
+
+                        // Update reported input tokens to match what the API reports
+                        this.reportedInputTokens = this.inputTokens;
+                    }
+                }
 
                 // Update latestReasoningTokens if present in any event
                 if ('response' in chunk && chunk.response?.usage?.output_tokens_details?.reasoning_tokens !== undefined) {
@@ -102,15 +132,34 @@ export class StreamHandler {
                                     outputChunk.metadata = outputChunk.metadata || {};
                                     outputChunk.metadata.usage = {
                                         tokens: {
-                                            input: this.inputTokens,
-                                            inputCached: 0,
-                                            output: deltaTokenCount,
-                                            outputReasoning: currentReasoningTokens,
+                                            input: {
+                                                total: this.inputTokens,
+                                                cached: 0,
+                                                image: this.reportedImageTokens > 0 ? this.reportedImageTokens : undefined
+                                            },
+                                            output: {
+                                                total: deltaTokenCount,
+                                                reasoning: currentReasoningTokens
+                                            },
                                             total: this.inputTokens + deltaTokenCount + currentReasoningTokens
                                         },
-                                        costs: { input: 0, inputCached: 0, output: 0, outputReasoning: 0, total: 0 },
+                                        costs: {
+                                            input: {
+                                                total: 0,
+                                                cached: 0
+                                            },
+                                            output: {
+                                                total: 0,
+                                                reasoning: 0
+                                            },
+                                            total: 0
+                                        },
                                         incremental: deltaTokenCount // Signal this is an incremental update
                                     };
+
+                                    // Update reported token totals
+                                    this.reportedOutputTokens += deltaTokenCount;
+                                    this.reportedReasoningTokens = currentReasoningTokens; // This is an absolute value, not incremental
                                 }
 
                                 yieldChunk = true;
@@ -223,32 +272,70 @@ export class StreamHandler {
                             const usageDetails = (finalResponse.usage as any).output_tokens_details ?? {};
                             const reasoningTokens = usageDetails.reasoning_tokens || 0;
 
-                            // Calculate incremental tokens for the final chunk
-                            const outputTokensSoFar = Math.max(0, this.tokenCalculator ?
-                                this.tokenCalculator.calculateTokens(accumulatedContent) :
-                                Math.ceil(accumulatedContent.length / 4));
+                            // Extract full token counts from API response (source of truth)
+                            const actualInputTokens = finalResponse.usage.input_tokens || 0;
+                            const actualOutputTokens = finalResponse.usage.output_tokens || 0;
+                            const actualCachedTokens = (finalResponse.usage as any).input_tokens_details?.cached_tokens || 0;
+                            const actualTotalTokens = finalResponse.usage.total_tokens || 0;
 
-                            // Calculate the delta (incremental tokens only)
-                            const finalOutputDelta = Math.max(0,
-                                (finalResponse.usage.output_tokens || outputTokensSoFar) - outputTokensSoFar);
+                            // Calculate image tokens if input tokens are high (similar to non-streaming logic)
+                            let imageTokens = 0;
+                            if (actualInputTokens > 100) {
+                                const estimatedTextTokens = 50; // Fixed approximation for text portion
+                                imageTokens = Math.max(0, actualInputTokens - estimatedTextTokens);
+                                this.log.debug(`Estimated image tokens in stream: ${imageTokens} (raw: ${actualInputTokens}, text: ~${estimatedTextTokens})`);
+                            }
 
-                            this.log.debug(`Final chunk tokens: total=${finalResponse.usage.output_tokens}, ` +
-                                `soFar=${outputTokensSoFar}, delta=${finalOutputDelta}, reasoning=${reasoningTokens}`);
+                            // Calculate deltas between reported and actual totals
+                            // We only want to report the difference to avoid double-counting
+                            const inputTokensDelta = Math.max(0, actualInputTokens - this.reportedInputTokens);
+                            // For output tokens, we need to handle the case where we've been estimating
+                            // and the actual count might be different
+                            const outputTokensDelta = Math.max(0, actualOutputTokens - this.reportedOutputTokens);
+                            const reasoningTokensDelta = Math.max(0, reasoningTokens - this.reportedReasoningTokens);
+                            const imageTokensDelta = Math.max(0, imageTokens - this.reportedImageTokens);
 
-                            // For the final chunk, include only the incremental delta
+                            this.log.debug(`Final token counts - actual input: ${actualInputTokens}, output: ${actualOutputTokens}, ` +
+                                `reasoning: ${reasoningTokens}, image: ${imageTokens}, total: ${actualTotalTokens}`);
+                            this.log.debug(`Previously reported - input: ${this.reportedInputTokens}, output: ${this.reportedOutputTokens}, ` +
+                                `reasoning: ${this.reportedReasoningTokens}, image: ${this.reportedImageTokens}`);
+                            this.log.debug(`Token deltas in final chunk - input: ${inputTokensDelta}, output: ${outputTokensDelta}, ` +
+                                `reasoning: ${reasoningTokensDelta}, image: ${imageTokensDelta}`);
+
+                            // Update the final usage with the EXACT structure we want in the output
+                            // This matches what we'd expect from a non-streaming response
                             outputChunk.metadata.usage = {
                                 tokens: {
-                                    input: finalResponse.usage.input_tokens || 0,
-                                    inputCached: (finalResponse.usage as any).input_tokens_details?.cached_tokens || 0,
-                                    // Only include the incremental delta of tokens
-                                    output: finalOutputDelta,
-                                    outputReasoning: reasoningTokens,
-                                    total: (finalResponse.usage.input_tokens || 0) + finalOutputDelta + reasoningTokens
+                                    input: {
+                                        total: actualInputTokens,
+                                        cached: actualCachedTokens,
+                                        image: imageTokens > 0 ? imageTokens : undefined
+                                    },
+                                    output: {
+                                        total: actualOutputTokens,
+                                        reasoning: reasoningTokens
+                                    },
+                                    total: actualTotalTokens
                                 },
-                                costs: { input: 0, inputCached: 0, output: 0, outputReasoning: 0, total: 0 },
-                                // Signal this is an incremental update
-                                incremental: true
+                                costs: {
+                                    input: {
+                                        total: 0,
+                                        cached: 0
+                                    },
+                                    output: {
+                                        total: 0,
+                                        reasoning: 0
+                                    },
+                                    total: 0
+                                },
+                                incremental: false
                             };
+
+                            // Update reported totals to match actual values
+                            this.reportedInputTokens = actualInputTokens;
+                            this.reportedOutputTokens = actualOutputTokens;
+                            this.reportedReasoningTokens = reasoningTokens;
+                            this.reportedImageTokens = imageTokens;
                         }
 
                         yieldChunk = true;
@@ -308,15 +395,35 @@ export class StreamHandler {
                             outputChunk.metadata = outputChunk.metadata || {};
                             outputChunk.metadata.usage = {
                                 tokens: {
-                                    input: this.inputTokens || 0,
-                                    inputCached: 0,
-                                    output: outputTokens,
-                                    outputReasoning: reasoningTokens,
+                                    input: {
+                                        total: this.inputTokens || 0,
+                                        cached: 0,
+                                        image: this.reportedImageTokens > 0 ? this.reportedImageTokens : undefined
+                                    },
+                                    output: {
+                                        total: outputTokens,
+                                        reasoning: reasoningTokens
+                                    },
                                     total: (this.inputTokens || 0) + outputTokens + reasoningTokens
                                 },
-                                costs: { input: 0, inputCached: 0, output: 0, outputReasoning: 0, total: 0 },
+                                costs: {
+                                    input: {
+                                        total: 0,
+                                        cached: 0
+                                    },
+                                    output: {
+                                        total: 0,
+                                        reasoning: 0
+                                    },
+                                    total: 0
+                                },
                                 incremental: true // Signal this is an incremental update
                             };
+
+                            // Update reported token totals
+                            this.reportedInputTokens = this.inputTokens;
+                            this.reportedOutputTokens = outputTokens;
+                            this.reportedReasoningTokens = reasoningTokens;
 
                             yieldChunk = true;
                         }

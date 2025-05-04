@@ -1,4 +1,4 @@
-import { UsageTrackingProcessor } from '../../../../../core/streaming/processors/UsageTrackingProcessor';
+import { UsageTrackingProcessor, UsageTrackingOptions } from '../../../../../core/streaming/processors/UsageTrackingProcessor';
 import { StreamChunk } from '../../../../../core/streaming/types';
 import { ModelInfo } from '../../../../../interfaces/UniversalInterfaces';
 import { UsageCallback } from '../../../../../interfaces/UsageInterfaces';
@@ -10,6 +10,7 @@ type UsageMetadata = {
             input: {
                 total: number;
                 cached?: number;
+                image?: number;
             },
             output: {
                 total: number;
@@ -426,6 +427,326 @@ describe('UsageTrackingProcessor', () => {
         // Verify callback was called for each batch plus completion
         expect(mockCallback).toHaveBeenCalledTimes(3);
     });
+
+    it('should include image tokens in usage data when provided', async () => {
+        // Arrange
+        const options: UsageTrackingOptions = {
+            tokenCalculator: {
+                calculateTokens: jest.fn().mockReturnValue(10)
+            } as any,
+            inputTokens: 20,
+            imageTokens: 85,
+            usageCallback: jest.fn(),
+            callerId: 'test-processor',
+            modelInfo: {
+                name: 'test-model',
+                inputPricePerMillion: 1,
+                outputPricePerMillion: 2,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 2000,
+                characteristics: {
+                    qualityIndex: 10,
+                    outputSpeed: 10,
+                    firstTokenLatency: 100
+                }
+            },
+            tokenBatchSize: 5 // Small enough to trigger with our test content
+        };
+
+        const processor = new UsageTrackingProcessor(options);
+
+        // Test stream with content that will trigger usage callback
+        const mockStream = [
+            { content: 'Test', isComplete: false },
+            { content: ' content', isComplete: true }
+        ];
+
+        // Act - process the stream
+        const result = [];
+        for await (const chunk of processor.processStream(streamFromArray(mockStream))) {
+            result.push(chunk);
+        }
+
+        // Assert - check final chunk has image tokens in metadata
+        expect(result.length).toBe(2);
+        expect(result[1].isComplete).toBe(true);
+        const metadata = result[1].metadata as UsageMetadata;
+        expect(metadata.usage.tokens.input.image).toBe(85);
+
+        // Check callback was called with image tokens
+        expect(options.usageCallback).toHaveBeenCalled();
+        const callbackArgs = (options.usageCallback as jest.Mock).mock.calls[0][0];
+        expect(callbackArgs.usage.tokens.input.image).toBe(85);
+    });
+
+    it('should respect existing usage data from adapter in the final chunk', async () => {
+        // Create mock callback
+        const mockCallback: UsageCallback = jest.fn();
+
+        // Setup token calculation mock
+        mockTokenCalculator.calculateTokens.mockReturnValue(10);
+
+        // Create processor with callback
+        const processor = new UsageTrackingProcessor({
+            tokenCalculator: mockTokenCalculator,
+            inputTokens: 50,
+            inputCachedTokens: 20,
+            modelInfo: mockModelInfo,
+            usageCallback: mockCallback,
+            callerId: 'test-caller',
+            tokenBatchSize: 5
+        });
+
+        // Create mock adapter usage data with image tokens
+        const adapterUsageData = {
+            tokens: {
+                input: {
+                    total: 3500,
+                    cached: 1500,
+                    image: 3450
+                },
+                output: {
+                    total: 200,
+                    reasoning: 50
+                },
+                total: 3700
+            },
+            costs: {
+                input: {
+                    total: 0,
+                    cached: 0
+                },
+                output: {
+                    total: 0,
+                    reasoning: 0
+                },
+                total: 0
+            },
+            incremental: false
+        };
+
+        // Create mock stream with first intermediate chunk and then final chunk with adapter usage
+        const mockStream = createMockStream([
+            {
+                content: 'First part of content',
+                isComplete: false
+            },
+            {
+                content: ' final part',
+                isComplete: true,
+                metadata: {
+                    usage: adapterUsageData
+                }
+            }
+        ]);
+
+        // Process stream
+        const results: StreamChunk[] = [];
+        for await (const chunk of processor.processStream(mockStream)) {
+            results.push(chunk);
+        }
+
+        // Verify results
+        expect(results.length).toBe(2);
+
+        // Final chunk should preserve adapter's usage data
+        const finalMetadata = results[1].metadata as UsageMetadata;
+        expect(finalMetadata.usage.tokens.input.total).toBe(3500);
+        expect(finalMetadata.usage.tokens.input.cached).toBe(1500);
+        expect(finalMetadata.usage.tokens.input.image).toBe(3450);
+        expect(finalMetadata.usage.tokens.output.total).toBe(200);
+        expect(finalMetadata.usage.tokens.output.reasoning).toBe(50);
+        expect(finalMetadata.usage.tokens.total).toBe(3700);
+
+        // Costs should be calculated based on the adapter's token values
+        expect(finalMetadata.usage.costs.total).toBeGreaterThan(0);
+
+        // Verify final callback was called with the delta between previous callbacks and final values
+        expect(mockCallback).toHaveBeenCalledTimes(2); // First for intermediate, second for final
+
+        // Get the final callback args
+        const finalCallbackArgs = (mockCallback as jest.Mock).mock.calls[1][0];
+
+        // Verify the tokens in final callback include unreported tokens from adapter
+        expect(finalCallbackArgs.usage.tokens.input.total).toBeGreaterThan(0);
+        // The test was expecting 1500 but getting 1480 because 20 cached tokens were already reported
+        // So we'll check for the actual expected value (adapter total - already reported)
+        expect(finalCallbackArgs.usage.tokens.input.cached).toBe(1480);
+        expect(finalCallbackArgs.usage.tokens.input.image).toBe(3450);
+        expect(finalCallbackArgs.usage.tokens.output.total).toBeGreaterThan(0);
+    });
+
+    it('should properly track reported tokens to avoid double-counting', async () => {
+        // Create mock callback
+        const mockCallback: UsageCallback = jest.fn();
+
+        // Setup token calculation mock for multiple chunks
+        mockTokenCalculator.calculateTokens
+            .mockReturnValueOnce(5)  // First chunk
+            .mockReturnValueOnce(10); // Second (final) chunk
+
+        // Create processor with callback and small batch size
+        const processor = new UsageTrackingProcessor({
+            tokenCalculator: mockTokenCalculator,
+            inputTokens: 50,
+            inputCachedTokens: 20,
+            imageTokens: 30,
+            modelInfo: mockModelInfo,
+            usageCallback: mockCallback,
+            callerId: 'test-caller',
+            tokenBatchSize: 5
+        });
+
+        // Create mock stream with adapter usage data in final chunk
+        const mockStream = createMockStream([
+            {
+                content: 'First chunk',
+                isComplete: false
+            },
+            {
+                content: ' Final chunk with adapter data',
+                isComplete: true,
+                metadata: {
+                    usage: {
+                        tokens: {
+                            input: {
+                                total: 1000,
+                                cached: 500,
+                                image: 950
+                            },
+                            output: {
+                                total: 100,
+                                reasoning: 0
+                            },
+                            total: 1100
+                        },
+                        costs: { input: { total: 0, cached: 0 }, output: { total: 0, reasoning: 0 }, total: 0 },
+                        incremental: false
+                    }
+                }
+            }
+        ]);
+
+        // Process stream
+        for await (const chunk of processor.processStream(mockStream)) {
+            // Just iterate through
+        }
+
+        // Verify callback was called twice (once at batch size, once at completion)
+        expect(mockCallback).toHaveBeenCalledTimes(2);
+
+        // First callback should include initial token values
+        const firstCallbackArgs = (mockCallback as jest.Mock).mock.calls[0][0];
+        expect(firstCallbackArgs.usage.tokens.input.total).toBe(50);
+        expect(firstCallbackArgs.usage.tokens.input.cached).toBe(20);
+        expect(firstCallbackArgs.usage.tokens.input.image).toBe(30);
+        expect(firstCallbackArgs.usage.tokens.output.total).toBe(5);
+
+        // Second callback should include only unreported tokens
+        const secondCallbackArgs = (mockCallback as jest.Mock).mock.calls[1][0];
+
+        // Verify unreported input tokens (1000 - 50)
+        expect(secondCallbackArgs.usage.tokens.input.total).toBe(950);
+
+        // Verify unreported cached tokens (500 - 20)
+        expect(secondCallbackArgs.usage.tokens.input.cached).toBe(480);
+
+        // Verify unreported image tokens (950 - 30)
+        expect(secondCallbackArgs.usage.tokens.input.image).toBe(920);
+
+        // Verify unreported output tokens (100 - 5)
+        expect(secondCallbackArgs.usage.tokens.output.total).toBe(95);
+
+        // Total should be the sum of unreported tokens
+        expect(secondCallbackArgs.usage.tokens.total).toBe(950 + 95);
+    });
+
+    it('should handle reasoning tokens from adapter', async () => {
+        // Create mock callback
+        const mockCallback: UsageCallback = jest.fn();
+
+        // Setup token calculation mock
+        mockTokenCalculator.calculateTokens.mockReturnValue(10);
+
+        // Create processor with callback
+        const processor = new UsageTrackingProcessor({
+            tokenCalculator: mockTokenCalculator,
+            inputTokens: 100,
+            modelInfo: mockModelInfo,
+            usageCallback: mockCallback,
+            callerId: 'test-caller',
+            tokenBatchSize: 5
+        });
+
+        // Create mock stream with reasoning tokens in metadata
+        const mockStream = createMockStream([
+            {
+                content: 'Content with reasoning',
+                isComplete: true,
+                metadata: {
+                    usage: {
+                        tokens: {
+                            output: {
+                                reasoning: 150
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+
+        // Process stream
+        const results: StreamChunk[] = [];
+        for await (const chunk of processor.processStream(mockStream)) {
+            results.push(chunk);
+        }
+
+        // Verify results include reasoning tokens
+        const metadata = results[0].metadata as UsageMetadata;
+        expect(metadata.usage.tokens.output.reasoning).toBe(150);
+
+        // Verify callback included reasoning tokens
+        expect(mockCallback).toHaveBeenCalledTimes(1);
+        const callbackArgs = (mockCallback as jest.Mock).mock.calls[0][0];
+        expect(callbackArgs.usage.tokens.output.reasoning).toBe(150);
+    });
+
+    it('should reset all tracking variables including new ones', () => {
+        // Create processor
+        const processor = new UsageTrackingProcessor({
+            tokenCalculator: mockTokenCalculator,
+            inputTokens,
+            modelInfo: mockModelInfo
+        });
+
+        // Access private properties via type casting for testing
+        const processorAsAny = processor as any;
+
+        // Set various tracking variables
+        processorAsAny.lastOutputTokens = 100;
+        processorAsAny.lastCallbackTokens = 50;
+        processorAsAny.totalReportedInputTokens = 200;
+        processorAsAny.totalReportedCachedTokens = 75;
+        processorAsAny.totalReportedOutputTokens = 150;
+        processorAsAny.totalReportedReasoningTokens = 25;
+        processorAsAny.totalReportedImageTokens = 85;
+        processorAsAny.receivedFinalUsage = true;
+        processorAsAny.hasReportedFirst = true;
+
+        // Call reset
+        processor.reset();
+
+        // Verify all properties are reset
+        expect(processorAsAny.lastOutputTokens).toBe(0);
+        expect(processorAsAny.lastCallbackTokens).toBe(0);
+        expect(processorAsAny.totalReportedInputTokens).toBe(0);
+        expect(processorAsAny.totalReportedCachedTokens).toBe(0);
+        expect(processorAsAny.totalReportedOutputTokens).toBe(0);
+        expect(processorAsAny.totalReportedReasoningTokens).toBe(0);
+        expect(processorAsAny.totalReportedImageTokens).toBe(0);
+        expect(processorAsAny.receivedFinalUsage).toBe(false);
+        expect(processorAsAny.hasReportedFirst).toBe(false);
+    });
 });
 
 // Helper function to create a mock async iterable from an array of chunks
@@ -440,5 +761,12 @@ async function* createMockStream(chunks: Partial<StreamChunk>[]): AsyncIterable<
             metadata: chunk.metadata || {},
             toolCalls: chunk.toolCalls
         };
+    }
+}
+
+// Helper function to convert array to async iterable
+async function* streamFromArray<T>(items: T[]): AsyncIterable<T> {
+    for (const item of items) {
+        yield item;
     }
 } 

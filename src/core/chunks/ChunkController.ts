@@ -2,19 +2,20 @@ import { TokenCalculator } from '../models/TokenCalculator';
 import { logger } from '../../utils/logger';
 // DataSplitter might not be used if RequestProcessor handles splitting
 // import { DataSplitter } from '../processors/DataSplitter';
-import type {
-    UniversalMessage,
-    UniversalChatResponse,
-    UniversalStreamResponse,
-    UniversalChatSettings,
-    UniversalChatParams,
+import {
     JSONSchemaDefinition,
     ResponseFormat,
+    UniversalChatParams,
+    UniversalChatResponse,
+    UniversalChatSettings,
+    UniversalMessage,
+    UniversalStreamResponse
 } from '../../interfaces/UniversalInterfaces';
 import { ChatController } from '../chat/ChatController';
 // Use StreamControllerInterface or StreamController based on what's passed
 import { StreamController } from '../streaming/StreamController';
 import { HistoryManager } from '../history/HistoryManager';
+import { toMessageParts } from '../../interfaces/UniversalInterfaces';
 import type { ToolDefinition } from '../../types/tooling';
 
 /**
@@ -76,6 +77,7 @@ export class ChunkController {
         if (params.historicalMessages) {
             const systemMsg = params.historicalMessages.find((m: UniversalMessage) => m.role === 'system');
             if (systemMsg) {
+                const parts = toMessageParts(systemMsg.content);
                 currentSystemMessage = systemMsg.content;
                 chunkProcessingHistory.updateSystemMessage(currentSystemMessage, false); // Set system message
                 // Add back non-system messages
@@ -149,6 +151,7 @@ export class ChunkController {
         if (params.historicalMessages) {
             const systemMsg = params.historicalMessages.find((m: UniversalMessage) => m.role === 'system');
             if (systemMsg) {
+                const parts = toMessageParts(systemMsg.content);
                 currentSystemMessage = systemMsg.content;
                 chunkProcessingHistory.updateSystemMessage(currentSystemMessage, false);
                 params.historicalMessages.filter((m: UniversalMessage) => m.role !== 'system')
