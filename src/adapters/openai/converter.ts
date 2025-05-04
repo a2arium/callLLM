@@ -35,6 +35,29 @@ export function extractPathFromPlaceholder(placeholder: string): string {
     return placeholder.substring(6, placeholder.length - 1);
 }
 
+// Create a new helper function to detect and parse file placeholders
+/**
+ * Parse a string to find file placeholders and extract their paths
+ * @param content String that may contain file placeholders in the format "<file:path/to/file>"
+ * @returns Array of objects with placeholder text and extracted file path
+ */
+export function parseFileReferences(content: string): Array<{ placeholder: string; path: string }> {
+    // Match all occurrences of <file:...> pattern
+    const regex = /<file:(.*?)>/g;
+    const matches: Array<{ placeholder: string; path: string }> = [];
+
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+        // match[0] is the full placeholder, match[1] is the path
+        matches.push({
+            placeholder: match[0],
+            path: match[1]
+        });
+    }
+
+    return matches;
+}
+
 export class Converter {
     private modelManager: ModelManager;
 
@@ -154,64 +177,139 @@ export class Converter {
             let hasProcessedImage = false;
 
             for (const message of params.messages) {
-                // Handle file placeholder in message content
-                if (typeof message.content === 'string' && message.content.startsWith('<file:') && message.content.endsWith('>')) {
-                    try {
-                        const filePath = extractPathFromPlaceholder(message.content);
+                // Check if the message content is a string
+                if (typeof message.content === 'string') {
+                    const fileReferences = parseFileReferences(message.content);
 
-                        // Different handling based on source type
-                        let imageSource: any;
+                    if (fileReferences.length > 0) {
+                        // This message contains file references
+                        try {
+                            // If the entire content is just a single file placeholder, handle it as before
+                            if (fileReferences.length === 1 && fileReferences[0].placeholder === message.content) {
+                                const filePath = fileReferences[0].path;
 
-                        if (filePath.startsWith('data:')) {
-                            // Already a data URL, use as is
-                            imageSource = filePath;
-                        } else if (filePath.startsWith('http')) {
-                            // Remote URL, use as is
-                            imageSource = filePath;
-                        } else {
-                            // Local file path - create a file source and convert to base64
-                            const fileSource: ImageDataSource = { kind: 'filePath', value: filePath };
-                            const normalized = await normalizeImageSource(fileSource);
+                                // Different handling based on source type
+                                let imageSource: any;
 
-                            // Use the base64 data URL for OpenAI
-                            if (normalized.kind === 'base64') {
-                                imageSource = `data:${normalized.mime};base64,${normalized.value}`;
+                                if (filePath.startsWith('data:')) {
+                                    // Already a data URL, use as is
+                                    imageSource = filePath;
+                                } else if (filePath.startsWith('http')) {
+                                    // Remote URL, use as is
+                                    imageSource = filePath;
+                                } else {
+                                    // Local file path - create a file source and convert to base64
+                                    const fileSource: ImageDataSource = { kind: 'filePath', value: filePath };
+                                    const normalized = await normalizeImageSource(fileSource);
+
+                                    // Use the base64 data URL for OpenAI
+                                    if (normalized.kind === 'base64') {
+                                        imageSource = `data:${normalized.mime};base64,${normalized.value}`;
+                                    } else {
+                                        // Fallback if normalization returned a URL instead
+                                        imageSource = normalized.value;
+                                    }
+                                }
+
+                                // Add the single image message
+                                const newMessage: EasyInputMessage = {
+                                    role: this.transformRoleToOpenAIResponseRole(message.role),
+                                    content: [{
+                                        type: 'input_image',
+                                        image_url: imageSource,
+                                        detail: adapterOpts?.imageDetail || 'auto'
+                                    }]
+                                };
+                                input.push(newMessage);
+                                hasProcessedImage = true;
                             } else {
-                                // Fallback if normalization returned a URL instead
-                                imageSource = normalized.value;
+                                // Handle multiple file references OR text mixed with file references
+                                // Create separate message objects for text and image parts
+                                let remainingContent = message.content;
+
+                                // Process each file reference and the text around it
+                                for (const fileRef of fileReferences) {
+                                    const filePath = fileRef.path;
+                                    const placeholderIndex = remainingContent.indexOf(fileRef.placeholder);
+
+                                    // Add text part before the placeholder, if any
+                                    if (placeholderIndex > 0) {
+                                        const textBefore = remainingContent.substring(0, placeholderIndex);
+                                        input.push({
+                                            role: this.transformRoleToOpenAIResponseRole(message.role),
+                                            content: textBefore
+                                        });
+                                    }
+
+                                    // Process and add the image part
+                                    let imageSource: any;
+                                    if (filePath.startsWith('data:')) {
+                                        imageSource = filePath;
+                                    } else if (filePath.startsWith('http')) {
+                                        imageSource = filePath;
+                                    } else {
+                                        const fileSource: ImageDataSource = { kind: 'filePath', value: filePath };
+                                        try {
+                                            const normalized = await normalizeImageSource(fileSource);
+                                            if (normalized.kind === 'base64') {
+                                                imageSource = `data:${normalized.mime};base64,${normalized.value}`;
+                                            } else {
+                                                imageSource = normalized.value;
+                                            }
+                                        } catch (err) {
+                                            log.error(`Failed to process image: ${filePath}`, err);
+                                            // If image processing fails, add the placeholder back as text
+                                            input.push({
+                                                role: this.transformRoleToOpenAIResponseRole(message.role),
+                                                content: fileRef.placeholder
+                                            });
+                                            imageSource = null; // Skip adding image message
+                                        }
+                                    }
+
+                                    if (imageSource) {
+                                        input.push({
+                                            role: this.transformRoleToOpenAIResponseRole(message.role),
+                                            content: [{
+                                                type: 'input_image',
+                                                image_url: imageSource,
+                                                detail: adapterOpts?.imageDetail || 'auto'
+                                            }]
+                                        });
+                                        hasProcessedImage = true;
+                                    }
+
+                                    // Update remaining content
+                                    remainingContent = remainingContent.substring(placeholderIndex + fileRef.placeholder.length);
+                                }
+
+                                // Add any remaining text after the last placeholder
+                                if (remainingContent.length > 0) {
+                                    input.push({
+                                        role: this.transformRoleToOpenAIResponseRole(message.role),
+                                        content: remainingContent
+                                    });
+                                }
                             }
+                        } catch (error) {
+                            log.error('Failed to process file references:', error);
+                            // If there's an error, fall back to the original content
+                            input.push({
+                                role: this.transformRoleToOpenAIResponseRole(message.role),
+                                content: message.content
+                            });
                         }
-
-                        // Create a multi-part message with image
-                        const content: any[] = [
-                            {
-                                type: 'input_image',
-                                image_url: imageSource
-                            }
-                        ];
-
-                        const newMessage: EasyInputMessage = {
-                            role: this.transformRoleToOpenAIResponseRole(message.role),
-                            content: content
-                        };
-                        input.push(newMessage);
-
-                        // Remember we processed an image file to set metadata later
-                        hasProcessedImage = true;
-                    } catch (error) {
-                        log.error('Failed to process file placeholder:', error);
-                        // If there's an error, fall back to the original content
+                    } else {
+                        // Regular text message, add as is
                         input.push({
                             role: this.transformRoleToOpenAIResponseRole(message.role),
                             content: message.content
                         });
                     }
                 } else {
-                    // Standard message without file placeholder
-                    input.push({
-                        role: this.transformRoleToOpenAIResponseRole(message.role),
-                        content: message.content
-                    });
+                    // Handle non-string content (e.g., if MessagePart[] support is added later)
+                    // For now, just push the message as is, assuming it's valid OpenAI format
+                    input.push(message as EasyInputMessage);
                 }
             }
 

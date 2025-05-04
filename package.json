@@ -34,7 +34,7 @@
     "example:mcpDirect": "ts-node examples/mcpDirectTools.ts",
     "example:historyModes": "ts-node examples/historyModes.ts",
     "example:loadHistory": "ts-node examples/loadHistory.ts",
-    "example:image": "ts-node examples/image.ts"
+    "example:image": "ts-node examples/imageInput.ts"
   },
   "author": "",
   "license": "MIT",
