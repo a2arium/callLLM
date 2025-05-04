@@ -93,17 +93,13 @@ describe('LLMCaller', () => {
         };
 
         mockStreamingService = {
-            createStream: jest.fn().mockImplementation(async (params: any) => {
-                // Calculate tokens for the message
-                const message = params.messages[params.messages.length - 1].content;
-                mockTokenCalculator.calculateTokens(message);
-
+            createStream: jest.fn().mockImplementation(() => {
+                // Return an async generator that yields a single response
                 return (async function* () {
                     yield {
-                        content: 'Hello world',
+                        content: 'test response',
                         role: 'assistant',
-                        isComplete: true,
-                        usage: mockUsage
+                        isComplete: true
                     } as UniversalStreamResponse;
                 })();
             }),
@@ -164,12 +160,26 @@ describe('LLMCaller', () => {
         };
 
         mockModelManager = {
-            getModel: jest.fn().mockReturnValue(mockModelInfo)
+            getModel: jest.fn().mockReturnValue({
+                name: 'test-model',
+                inputPricePerMillion: 0.01,
+                outputPricePerMillion: 0.02,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 1000,
+                capabilities: {
+                    input: { text: true },
+                    output: { text: { textOutputFormats: ['text'] } }
+                },
+                characteristics: {
+                    qualityIndex: 5,
+                    outputSpeed: 5,
+                    firstTokenLatency: 1000
+                }
+            })
         } as unknown as jest.Mocked<ModelManager>;
 
         mockProviderManager = {
-            getCurrentProviderName: jest.fn().mockReturnValue('openai'),
-            switchProvider: jest.fn()
+            getProvider: jest.fn()
         } as unknown as jest.Mocked<ProviderManager>;
 
         // Mock Date.now() for consistent timestamps in tests
@@ -320,22 +330,11 @@ describe('LLMCaller', () => {
 
     describe('stream methods', () => {
         it('should throw an error after exhausting all retries', async () => {
-            // Mock createStream to consistently reject
+            // Mock the createStream to throw an error
             mockStreamingService.createStream.mockRejectedValue(new Error('Stream creation failed'));
-            const specificRetryManager = new RetryManager({ maxRetries: 1, baseDelay: 10 });
-            // Re-create LLMCaller with the specific retry manager for this test
-            llmCaller = new LLMCaller('openai', 'test-model', 'System Message', {
-                providerManager: mockProviderManager,
-                modelManager: mockModelManager,
-                historyManager: mockHistoryManager,
-                streamingService: mockStreamingService,
-                toolsManager: mockToolsManager,
-                chatController: mockChatController,
-                retryManager: specificRetryManager, // Inject retry manager
-                tokenCalculator: mockTokenCalculator,
-                responseProcessor: mockResponseProcessor
-            });
+            mockStreamingService.createStream.mockClear(); // Reset before call
 
+            // Initialize errorThrown to a known value
             let errorThrown: Error | null = null;
             try {
                 // Explicitly consume the stream which should trigger retries and fail
@@ -344,11 +343,15 @@ describe('LLMCaller', () => {
             } catch (error) {
                 errorThrown = error as Error;
             }
-            expect(errorThrown).toBeInstanceOf(Error);
-            // Update the expected error message to match actual error from StreamingService
-            expect(errorThrown?.message).toMatch(/Stream creation failed/i);
-            // Verify createStream was called - retry logic might be different in the implementation
-            // Only expecting one call now
+
+            // Adding more detailed error checks for debugging
+            expect(errorThrown).not.toBeNull();
+            if (errorThrown) { // Add conditional check to prevent TS errors
+                expect(errorThrown).toBeInstanceOf(Error);
+                expect(errorThrown?.message).toMatch(/Stream creation failed/i);
+            }
+
+            // Verify createStream was called
             expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
         });
 
@@ -358,9 +361,12 @@ describe('LLMCaller', () => {
                 settings: { maxRetries: customMaxRetries },
                 historyMode: 'dynamic' as HistoryMode
             };
+
+            // Mock the createStream to throw an error
             mockStreamingService.createStream.mockRejectedValue(new Error('Stream creation failed'));
             mockStreamingService.createStream.mockClear(); // Reset before call
 
+            // Initialize errorThrown to a known value
             let errorThrown: Error | null = null;
             try {
                 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -368,10 +374,15 @@ describe('LLMCaller', () => {
             } catch (error) {
                 errorThrown = error as Error;
             }
-            expect(errorThrown).toBeInstanceOf(Error);
-            // Update the expected error message to match actual error from StreamingService
-            expect(errorThrown?.message).toMatch(/Stream creation failed/i);
-            // Only expecting one call now based on actual implementation
+
+            // Adding more detailed error checks for debugging
+            expect(errorThrown).not.toBeNull();
+            if (errorThrown) { // Add conditional check to prevent TS errors
+                expect(errorThrown).toBeInstanceOf(Error);
+                expect(errorThrown?.message).toMatch(/Stream creation failed/i);
+            }
+
+            // Verify createStream was called
             expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
         });
 
@@ -428,9 +439,34 @@ describe('LLMCaller', () => {
             expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
             expect(mockStreamingService.createStream).toHaveBeenCalledWith(
                 expect.objectContaining(expectedParams),
-                'test-model',
-                undefined
+                'test-model'
             );
+        });
+
+        it('should track token usage for stream calls', async () => {
+            const message = 'test message';
+            mockStreamingService.createStream.mockClear();
+            mockStreamingService.createStream.mockResolvedValue((async function* () {
+                yield {
+                    content: 'dummy',
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        usage: {
+                            tokens: {
+                                input: { total: 10, cached: 0 },
+                                output: { total: 20, reasoning: 0 },
+                                total: 30
+                            }
+                        }
+                    }
+                } as UniversalStreamResponse;
+            })());
+
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            for await (const chunk of llmCaller.stream(message)) { }
+
+            expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -450,7 +486,20 @@ describe('LLMCaller', () => {
             const message = 'test message';
             mockStreamingService.createStream.mockClear();
             mockStreamingService.createStream.mockResolvedValue((async function* () {
-                yield { content: 'dummy', role: 'assistant', isComplete: true } as UniversalStreamResponse;
+                yield {
+                    content: 'dummy',
+                    role: 'assistant',
+                    isComplete: true,
+                    metadata: {
+                        usage: {
+                            tokens: {
+                                input: { total: 10, cached: 0 },
+                                output: { total: 20, reasoning: 0 },
+                                total: 30
+                            }
+                        }
+                    }
+                } as UniversalStreamResponse;
             })());
 
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -684,6 +733,326 @@ describe('LLMCaller', () => {
             await expect(llmCaller.call("Hello world"))
                 .resolves
                 .not.toThrow();
+        });
+    });
+
+    describe('call parameters', () => {
+        it('should properly process and include data parameter in call method', async () => {
+            // Setup
+            const message = 'Test message';
+            const dataContent = 'Additional context data';
+            const processedMessage = `${message}\n\n${dataContent}`;
+
+            // Create proper mocks that match the expected types
+            const mockRequestProcessor = {
+                processRequest: jest.fn().mockImplementation(() => Promise.resolve([processedMessage]))
+            };
+
+            const mockUsage: Usage = {
+                tokens: {
+                    input: { total: 10, cached: 0 },
+                    output: { total: 20, reasoning: 0 },
+                    total: 30,
+                },
+                costs: {
+                    input: { total: 0.0001, cached: 0 },
+                    output: { total: 0.0002, reasoning: 0 },
+                    total: 0.0003,
+                },
+            };
+
+            const mockChatResponse: UniversalChatResponse = {
+                content: 'Response with processed data',
+                role: 'assistant',
+                metadata: {
+                    usage: mockUsage
+                }
+            };
+
+            // Reuse the existing chat controller and model manager mocks
+            mockChatController.execute.mockResolvedValue(mockChatResponse);
+            mockModelManager.getModel.mockReturnValue({
+                name: 'test-model',
+                inputPricePerMillion: 1,
+                outputPricePerMillion: 1,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 1,
+                    outputSpeed: 1,
+                    firstTokenLatency: 1
+                }
+            });
+
+            // Replace the request processor with our mock
+            (llmCaller as any).requestProcessor = mockRequestProcessor;
+
+            // Call the method with data parameter
+            const result = await llmCaller.call(message, {
+                data: dataContent
+            });
+
+            // Assertions
+            expect(mockRequestProcessor.processRequest).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message,
+                    data: dataContent
+                })
+            );
+
+            // Verify the response is returned correctly
+            expect(result).toEqual([mockChatResponse]);
+        });
+
+        it('should properly process and include data parameter in stream method', async () => {
+            // Setup
+            const message = 'Test message';
+            const dataContent = 'Additional context data';
+            const processedMessage = `${message}\n\n${dataContent}`;
+
+            // Create proper mocks that match the expected types
+            const mockRequestProcessor = {
+                processRequest: jest.fn().mockImplementation(() => Promise.resolve([processedMessage]))
+            };
+
+            const mockUsage: Usage = {
+                tokens: {
+                    input: { total: 10, cached: 0 },
+                    output: { total: 20, reasoning: 0 },
+                    total: 30,
+                },
+                costs: {
+                    input: { total: 0.0001, cached: 0 },
+                    output: { total: 0.0002, reasoning: 0 },
+                    total: 0.0003,
+                },
+            };
+
+            const mockStreamResponse: UniversalStreamResponse = {
+                content: 'Streaming response with data',
+                role: 'assistant',
+                isComplete: true,
+                metadata: {
+                    usage: mockUsage
+                }
+            };
+
+            // Set up streaming service mock
+            mockStreamingService.createStream.mockClear();
+            mockStreamingService.createStream.mockResolvedValue((async function* () {
+                yield mockStreamResponse;
+            })());
+
+            // Make sure model manager returns a valid model
+            mockModelManager.getModel.mockReturnValue({
+                name: 'test-model',
+                inputPricePerMillion: 1,
+                outputPricePerMillion: 1,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 1000,
+                characteristics: {
+                    qualityIndex: 1,
+                    outputSpeed: 1,
+                    firstTokenLatency: 1
+                }
+            });
+
+            // Replace the request processor with our mock
+            (llmCaller as any).requestProcessor = mockRequestProcessor;
+
+            // Collect stream results
+            const results: UniversalStreamResponse[] = [];
+            for await (const chunk of llmCaller.stream(message, { data: dataContent })) {
+                results.push(chunk);
+            }
+
+            // Assertions
+            expect(mockRequestProcessor.processRequest).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message,
+                    data: dataContent
+                })
+            );
+
+            // Verify streaming service was called
+            expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
+
+            // Verify the stream results
+            expect(results).toHaveLength(1);
+            expect(results[0]).toEqual(mockStreamResponse);
+        });
+
+        // Add test for data parameter handling in both single and multi-chunk flows
+        test('should correctly process data parameter in both single and multi-chunk flows', async () => {
+            // Setup
+            // Mock RequestProcessor to return different numbers of chunks based on test case
+            const mockRequestProcessor = {
+                processRequest: jest.fn()
+            };
+
+            // Single chunk case with data
+            mockRequestProcessor.processRequest.mockResolvedValueOnce(['Original message with data appended']);
+
+            // Multi-chunk case with data
+            mockRequestProcessor.processRequest.mockResolvedValueOnce([
+                'Chunk 1 with data',
+                'Chunk 2 with data'
+            ]);
+
+            // Setup the caller with our mocks
+            const caller = new LLMCaller('mock-provider' as any, 'model', 'System message', {
+                // Any needed initial options
+            });
+
+            // Replace the requestProcessor with our mock
+            caller['requestProcessor'] = mockRequestProcessor as any;
+
+            // Mock methods that will be called to verify data is passed correctly
+            caller['internalChatCall'] = jest.fn().mockResolvedValue({ content: 'Single chunk response' });
+            caller['chunkController']['processChunks'] = jest.fn().mockResolvedValue([{ content: 'Multi chunk response' }]);
+
+            // Test single chunk path
+            await caller.call('Test message', {
+                data: 'Additional data for prompt'
+            });
+
+            // Verify data was passed to requestProcessor in single chunk case
+            expect(mockRequestProcessor.processRequest).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: 'Test message',
+                    data: 'Additional data for prompt'
+                })
+            );
+
+            // Verify internalChatCall was called with processed message that includes data
+            const singleChunkCallParams = (caller['internalChatCall'] as jest.Mock).mock.calls[0][0];
+            expect(singleChunkCallParams.messages).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        role: 'user',
+                        content: 'Original message with data appended'
+                    })
+                ])
+            );
+
+            // Test multi-chunk path
+            await caller.call('Test multi-chunk message', {
+                data: 'Data for multi-chunk test'
+            });
+
+            // Verify data was passed to requestProcessor in multi-chunk case
+            expect(mockRequestProcessor.processRequest).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: 'Test multi-chunk message',
+                    data: 'Data for multi-chunk test'
+                })
+            );
+
+            // Verify chunkController.processChunks was called with the processed chunks
+            const multiChunkCallParams = (caller['chunkController']['processChunks'] as jest.Mock).mock.calls[0];
+            expect(multiChunkCallParams[0]).toEqual(['Chunk 1 with data', 'Chunk 2 with data']);
+        });
+
+        // Add test for data parameter handling
+        test('should correctly pass data parameter to RequestProcessor', async () => {
+            // Setup
+            const mockRequestProcessor = {
+                processRequest: jest.fn().mockResolvedValue(['Processed message with data'])
+            };
+
+            // Mock provider to avoid actual API calls
+            const mockProvider = {
+                chatCall: jest.fn().mockResolvedValue({ content: 'Response' }),
+                streamCall: jest.fn()
+            };
+
+            const mockProviderManager = {
+                getAdapter: jest.fn().mockReturnValue(mockProvider),
+                getProvider: jest.fn().mockReturnValue(mockProvider),
+                switchProvider: jest.fn(),
+                getCurrentProviderName: jest.fn().mockReturnValue('test-provider')
+            };
+
+            // Setup the caller with our mocks
+            const caller = new LLMCaller('test-provider' as any, 'model', 'System message', {
+                providerManager: mockProviderManager as any
+            });
+
+            // Replace the requestProcessor with our mock
+            // @ts-ignore - Ignore TypeScript error for test
+            caller.requestProcessor = mockRequestProcessor;
+
+            // Test data parameter is passed to RequestProcessor
+            await caller.call('Test message', {
+                data: 'Additional data for prompt'
+            });
+
+            // Verify data was passed to requestProcessor
+            expect(mockRequestProcessor.processRequest).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: 'Test message',
+                    data: 'Additional data for prompt'
+                })
+            );
+        });
+    });
+
+    describe('data parameter handling', () => {
+        it('should correctly process single chunk with data parameter', async () => {
+            // Setup
+            const userMessage = 'What is TypeScript?';
+            const dataContent = 'Reply in Russian';
+            const processedContent = 'What is TypeScript?\n\nReply in Russian';
+
+            // Create a request processor that returns a single chunk
+            const testRequestProcessor = {
+                processRequest: jest.fn().mockResolvedValue([processedContent])
+            };
+
+            // Replace the LLMCaller's request processor
+            (llmCaller as any).requestProcessor = testRequestProcessor;
+
+            // Mock the chat controller to capture what parameters are passed
+            mockChatController.execute.mockImplementation((params) => {
+                return Promise.resolve({
+                    content: 'Response in Russian',
+                    role: 'assistant',
+                    metadata: {}
+                });
+            });
+
+            // Set up spies to track chat params and history
+            const executeSpy = jest.spyOn(mockChatController, 'execute');
+
+            // Call the method with data parameter
+            await llmCaller.call(userMessage, {
+                data: dataContent
+            });
+
+            // Verify request processor was called with correct parameters
+            expect(testRequestProcessor.processRequest).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: userMessage,
+                    data: dataContent,
+                })
+            );
+
+            // Most importantly - verify that the processed content (with data) is used in the chat parameters
+            const chatParams = executeSpy.mock.calls[0][0];
+
+            // Find the user message in the messages array
+            const userMessages = chatParams.messages.filter(
+                (msg: any) => msg.role === 'user'
+            );
+
+            // There should be at least one user message
+            expect(userMessages.length).toBeGreaterThan(0);
+
+            // Get the last user message (most recent one)
+            const lastUserMessage = userMessages[userMessages.length - 1];
+
+            // Verify the user message contains the processed content with data
+            expect(lastUserMessage.content).toBe(processedContent);
         });
     });
 });

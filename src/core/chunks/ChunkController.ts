@@ -28,7 +28,10 @@ export class ChunkIterationLimitError extends Error {
     }
 }
 
-// Update ChunkProcessingParams to include the new separated options
+/**
+ * Processing parameters for streamChunks and processChunks
+ * Includes all the parameters needed for both methods
+ */
 export type ChunkProcessingParams = {
     model: string;
     historicalMessages?: UniversalMessage[]; // Base history before chunk processing starts
@@ -36,6 +39,7 @@ export type ChunkProcessingParams = {
     jsonSchema?: { name?: string; schema: JSONSchemaDefinition };
     responseFormat?: ResponseFormat;
     tools?: ToolDefinition[];
+    callerId?: string; // Add callerId for usage tracking
 };
 
 /**
@@ -136,7 +140,24 @@ export class ChunkController {
     }
 
     /**
-     * Processes chunked messages for streaming responses.
+     * Asynchronously streams responses from multiple text chunks as a single stream
+     * This method is part of the refactoring effort to unify code paths between 
+     * single-chunk and multi-chunk processing.
+     * 
+     * IMPLEMENTATION NOTE:
+     * This creates a synthetic stream from chunk responses to maintain consistent behavior
+     * with the direct streaming path. Future improvements could include real-time streaming
+     * of each chunk as it's processed.
+     * 
+     * Key benefits:
+     * - Caller code doesn't need to branch based on chunk count
+     * - Consistent callerId propagation for usage tracking
+     * - Identical parameter handling for all calls
+     * - Unified history management 
+     * 
+     * @param chunks Array of text chunks to process
+     * @param params Processing parameters
+     * @returns An AsyncGenerator yielding stream responses
      */
     async *streamChunks(
         messages: string[],
