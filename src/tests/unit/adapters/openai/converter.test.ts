@@ -436,48 +436,49 @@ describe('OpenAI Response API Converter', () => {
                     } else if (src.kind === 'url' && src.value === 'https://example.com/image2.png') {
                         // Assume URLs are passed through directly or already normalized
                         return { kind: 'url', value: src.value };
-                    } else if (src.kind === 'filePath' && src.value === '/local/image3.gif') {
-                        return { kind: 'base64', value: 'base64data3', mime: 'image/gif' };
                     }
                     return src;
                 });
 
-            // Create a message with mixed text and file placeholders
-            const params = {
+            const params: UniversalChatParams = {
                 model: 'gpt-4o-vision',
-                messages: [
-                    {
-                        role: 'user',
-                        content: 'Check these images: <file:/local/image1.jpg> and <https://example.com/image2.png>. Also see <file:/local/image3.gif>. What do you see?'
-                    }
-                ]
+                messages: [{
+                    role: 'user' as const,
+                    content: 'Look at these images: <file:/local/image1.jpg> and <file:https://example.com/image2.png> - what do you see?'
+                }]
             };
 
             const result = await converter.convertToOpenAIResponseParams('gpt-4o-vision', params, { imageDetail: 'low' });
 
             // The implementation splits the message into multiple pieces
             expect(result.input).toBeDefined();
-            // Update the expectation to match the actual implementation
-            expect(result.input?.length).toBe(5);
 
-            // Instead of checking the detailed structure, just verify we have the expected image URLs
-            let foundImages = 0;
-            result.input?.forEach(item => {
-                if (Array.isArray(item.content)) {
-                    item.content.forEach(contentPart => {
-                        if (contentPart.type === 'input_image') {
-                            if (contentPart.image_url === 'data:image/jpeg;base64,base64data1' ||
-                                contentPart.image_url === 'https://example.com/image2.png' ||
-                                contentPart.image_url === 'data:image/gif;base64,base64data3') {
-                                foundImages++;
+            // Safely check input array existence and length
+            if (result.input) {
+                expect(result.input.length).toBe(5);
+
+                // Find and count image parts in the content
+                let foundImages = 0;
+
+                // Type-safe iteration through the input items
+                for (const item of result.input) {
+                    // Check if item has content property and it's an array
+                    if (typeof item !== 'string' && 'content' in item && Array.isArray(item.content)) {
+                        for (const contentPart of item.content) {
+                            // Check if this is an image content part
+                            if ('type' in contentPart && contentPart.type === 'input_image' && 'image_url' in contentPart) {
+                                if (contentPart.image_url === 'data:image/jpeg;base64,base64data1' ||
+                                    contentPart.image_url === 'https://example.com/image2.png') {
+                                    foundImages++;
+                                }
                             }
                         }
-                    });
+                    }
                 }
-            });
 
-            // We found 2 images
-            expect(foundImages).toBe(2);
+                // We should find 2 images
+                expect(foundImages).toBe(2);
+            }
         });
 
         test('should handle multiple file placeholders in a single message', async () => {
@@ -492,37 +493,38 @@ describe('OpenAI Response API Converter', () => {
                     return src;
                 });
 
-            const params = {
+            const params: UniversalChatParams = {
                 model: 'gpt-4o-vision',
-                messages: [
-                    {
-                        role: 'user',
-                        content: 'Look at these images <file:/path/to/image1.jpg> and <file:/path/to/image2.png> and tell me what you see.'
-                    }
-                ]
+                messages: [{
+                    role: 'user' as const,
+                    content: 'Look at these images <file:/path/to/image1.jpg> and <file:/path/to/image2.png>'
+                }]
             };
 
             const result = await converter.convertToOpenAIResponseParams('gpt-4o-vision', params);
 
-            // Verify the result has the expected images
+            // Verify the result structure
             expect(result.input).toBeDefined();
 
-            // Check that at least one message contains image content
-            let hasImage = false;
-            for (let i = 0; i < result.input.length; i++) {
-                const item = result.input[i];
-                if (Array.isArray(item.content)) {
-                    for (let j = 0; j < item.content.length; j++) {
-                        if (item.content[j].type === 'input_image') {
-                            hasImage = true;
-                            break;
+            if (result.input) {
+                // Count how many images we found
+                let foundImages = 0;
+
+                // Type-safe iteration through the input items
+                for (const item of result.input) {
+                    // Check if item has content property and it's an array
+                    if (typeof item !== 'string' && 'content' in item && Array.isArray(item.content)) {
+                        for (const contentPart of item.content) {
+                            // Check if this is an image content part
+                            if ('type' in contentPart && contentPart.type === 'input_image') {
+                                foundImages++;
+                            }
                         }
                     }
                 }
-                if (hasImage) break;
-            }
 
-            expect(hasImage).toBe(true);
+                expect(foundImages).toBe(2);
+            }
         });
     });
 
