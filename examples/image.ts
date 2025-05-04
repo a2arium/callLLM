@@ -14,32 +14,22 @@ import path from 'path';
 // Load environment variables
 dotenv.config();
 
-const usageCallback = (usageData: any) => {
-    console.log("Usage data from callback:")
-    console.log(usageData.usage);
-};
-
 async function runExamples() {
     // Initialize with a multimodal model
-    const caller = new LLMCaller('openai', 'gpt-4.1-nano', 'You are a helpful assistant.',
-        {
-            usageCallback
-            // historyMode: 'full'
-        }
-    );
+    const caller = new LLMCaller('openai', 'gpt-4.1-nano', 'You are a helpful assistant.');
 
     try {
 
-        // console.log('Example 1: Image + text call\n');
-        // // // File + text example with a public image URL
-        // // console.log('Sending image URL:', "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg");
-        //     const imageResponse = await caller.call("Analyze this image", {
-        //         file: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
-        //         imageDetail: "high"
-        //     });
+        console.log('Example 1: Image + text call\n');
+        // // File + text example with a public image URL
+        // console.log('Sending image URL:', "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg");
+        const imageResponse = await caller.call("Analyze this image", {
+            file: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
+            imageDetail: "high"
+        });
 
-        //     console.log(`Response:`, imageResponse[0].content);
-        //     console.log(imageResponse[0].metadata?.usage);
+        console.log(`Response:`, imageResponse[0].content);
+        console.log(imageResponse[0].metadata?.usage);
 
 
         // console.log('Example 2: Image and stream\n');

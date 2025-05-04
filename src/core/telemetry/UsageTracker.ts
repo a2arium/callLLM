@@ -2,6 +2,7 @@ import { TokenCalculator } from '../models/TokenCalculator';
 import { ModelInfo, Usage } from '../../interfaces/UniversalInterfaces';
 import { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces';
 import { UsageTrackingProcessor } from '../streaming/processors/UsageTrackingProcessor';
+import { logger } from '../../utils/logger';
 
 /**
  * UsageTracker
@@ -32,6 +33,7 @@ export class UsageTracker {
         outputReasoningTokens: number = 0,
         imageTokens?: number
     ): Promise<Usage> {
+        const log = logger.createLogger({ prefix: 'UsageTracker.trackUsage' });
         const inputTokens = this.tokenCalculator.calculateTokens(input);
         const outputTokens = this.tokenCalculator.calculateTokens(output);
 
@@ -60,6 +62,9 @@ export class UsageTracker {
         };
 
         if (this.callback && this.callerId) {
+            log.debug(`Invoking usage callback for callerId: ${this.callerId}`);
+            console.log(`[DEBUG] Non-streaming usage callback firing for caller: ${this.callerId}`, usage.tokens);
+
             await Promise.resolve(
                 this.callback({
                     callerId: this.callerId,
@@ -67,6 +72,8 @@ export class UsageTracker {
                     timestamp: Date.now()
                 })
             );
+        } else {
+            log.debug(`No usage callback invoked. Callback: ${Boolean(this.callback)}, CallerId: ${this.callerId}`);
         }
 
         return usage;
@@ -150,5 +157,30 @@ export class UsageTracker {
             modelInfo.inputCachedPricePerMillion,
             outputReasoningTokens
         );
+    }
+
+    /**
+     * Trigger usage callback directly with provided usage data
+     * This is useful when usage data comes directly from the provider
+     * 
+     * @param usage Usage data to send to the callback
+     * @returns Promise that resolves when the callback completes
+     */
+    async triggerCallback(usage: Usage): Promise<void> {
+        const log = logger.createLogger({ prefix: 'UsageTracker.triggerCallback' });
+
+        if (this.callback && this.callerId) {
+            log.debug(`Manually triggering usage callback for callerId: ${this.callerId}`);
+
+            await Promise.resolve(
+                this.callback({
+                    callerId: this.callerId,
+                    usage,
+                    timestamp: Date.now()
+                })
+            );
+        } else {
+            log.debug(`Cannot trigger callback. Callback: ${Boolean(this.callback)}, CallerId: ${this.callerId}`);
+        }
     }
 }

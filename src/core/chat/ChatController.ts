@@ -249,6 +249,10 @@ export class ChatController {
                             existingTokens.input.cached || 0,
                             existingTokens.output.reasoning || 0
                         );
+
+                        // Add explicit callback trigger for provider-supplied usage data
+                        // This ensures the callback is triggered even when the provider returns usage data
+                        await this.usageTracker.triggerCallback(resp.metadata.usage);
                     }
                 }
 

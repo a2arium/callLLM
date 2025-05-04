@@ -967,4 +967,60 @@ describe('ChatController', () => {
 
         // ... existing code ...
     });
+
+    it('should trigger usage callback when provider returns usage data with image tokens', async () => {
+        // 1. Mock the calculateCosts method and triggerCallback method on the usageTracker
+        (mockUsageTracker as any).calculateCosts = jest.fn().mockReturnValue({
+            input: { total: 0.01, cached: 0 },
+            output: { total: 0.005, reasoning: 0 },
+            total: 0.015
+        });
+
+        (mockUsageTracker as any).triggerCallback = jest.fn().mockResolvedValue(undefined);
+
+        // 2. Create a special mock response for this test
+        const originalChatCall = mockProviderManager.getProvider().chatCall;
+
+        // Replace with a specialized implementation just for this test
+        mockProviderManager.getProvider().chatCall = jest.fn().mockImplementation((model, params) => {
+            return Promise.resolve({
+                content: 'Image analysis result',
+                role: 'assistant',
+                metadata: {
+                    finishReason: FinishReason.STOP,
+                    usage: {
+                        tokens: {
+                            input: {
+                                total: 3500,
+                                cached: 0,
+                                image: 3450
+                            },
+                            output: {
+                                total: 150,
+                                reasoning: 0
+                            },
+                            total: 3650
+                        }
+                        // No costs intentionally - should be calculated by our mocked method
+                    }
+                }
+            });
+        });
+
+        // 3. Execute chat call
+        const result = await chatController.execute({
+            model: 'test-model',
+            messages: [{ role: 'user', content: 'Analyze image' }]
+        });
+
+        // 4. Restore original mock
+        mockProviderManager.getProvider().chatCall = originalChatCall;
+
+        // 5. Verify triggerCallback was called with correct usage data
+        expect((mockUsageTracker as any).triggerCallback).toHaveBeenCalled();
+
+        // 6. Test if usage data in result has the expected structure
+        expect(result.metadata?.usage?.tokens.input.image).toBe(3450);
+        expect(result.metadata?.usage?.costs.total).toBe(0.015);
+    });
 });
