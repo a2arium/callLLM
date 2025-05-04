@@ -5,7 +5,7 @@
  * @param params.location - The city and country, e.g. "Tokyo, Japan"
  * @returns The current time at the specified location
  */
-export function toolFunction(params: { location: string }): { time: string; timezone: string } {
+export async function toolFunction(params: { location: string }): Promise<{ time: string; timezone: string }> {
     console.log(`getTime tool called with location: ${params.location}`);
 
     // In a real implementation, this would use a timezone API

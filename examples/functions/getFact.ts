@@ -13,7 +13,7 @@ export type FunctionParams = {
 }
 
 // Get a random fact about a topic
-export function toolFunction(params: FunctionParams): { fact: string; source?: string } {
+export async function toolFunction(params: FunctionParams): Promise<{ fact: string; source?: string }> {
     console.log(`getFact tool called with topic: ${params.topic} and mood: ${params.mood}`);
 
     // List of random facts

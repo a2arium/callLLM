@@ -1,13 +1,7 @@
 # Function Folders
 
 The Function Folders feature allows you to define tools as individual TypeScript files in a directory. This makes it easier to organize and maintain your tools, especially when you have many of them.
-
-## Quick Start
-
-```bash
-yarn add callllm ts-morph
-```
-
+ 
 ### Step 1: Create a functions directory
 
 ```bash
@@ -26,7 +20,7 @@ Create a file in your functions directory (e.g., `my-tools/getWeather.ts`):
  * @param params.location - City and country e.g. Bogotá, Colombia
  * @returns Weather information for the location
  */
-export function toolFunction(params: { location: string }): { temperature: number; conditions: string } {
+export async function toolFunction(params: { location: string }): Promise<{ temperature: number; conditions: string }> {
   console.log(`Getting weather for ${params.location}`);
   
   // Your implementation here

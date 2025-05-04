@@ -175,12 +175,14 @@ export class ToolController {
             error?: string;
         }[] = [];
 
-        for (const { id, name, arguments: args } of parsedToolCalls) {
-            log.debug(`Processing tool call: ${name}`, {
+        // Create a collection of execution promises
+        const toolExecutionPromises = parsedToolCalls.map(async ({ id, name, arguments: args }) => {
+            log.debug(`Setting up execution for tool call: ${name}`, {
                 hasArguments: Boolean(args),
                 argumentsCount: Object.keys(args || {}).length,
                 arguments: args || {}
             });
+
             const toolCallId = id || `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
             const toolCallInfo = {
@@ -189,11 +191,12 @@ export class ToolController {
                 arguments: args
             };
 
-            // Use the new findToolDefinition method
+            // Use the findToolDefinition method
             const tool = this.findToolDefinition(name, callSpecificTools);
 
             let result: string | Record<string, unknown> | undefined;
             let error: string | undefined;
+            let toolMessage: UniversalMessage | undefined;
 
             if (!tool) {
                 log.warn(`Tool not found: ${name}`, {
@@ -203,11 +206,11 @@ export class ToolController {
                 const notFoundError = new ToolNotFoundError(name);
                 // Add error message to history via Tool result structure
                 error = `Error: ${notFoundError.message}`;
-                messages.push({ // Keep the original message push for context if desired
+                toolMessage = {
                     role: 'tool',
                     content: error,
                     metadata: { tool_call_id: toolCallId }
-                });
+                };
             } else {
                 // --- Execute the tool (Standard or MCP) --- 
                 try {
@@ -257,25 +260,49 @@ export class ToolController {
                         throw new ToolExecutionError(tool.name, 'Tool function not defined.');
                     }
 
+                    // Prepare JSON content for tool result messages
+                    if (result !== undefined) {
+                        const content = typeof result === 'string' ? result : JSON.stringify(result);
+                        toolMessage = {
+                            role: 'tool',
+                            content,
+                            metadata: { tool_call_id: toolCallId }
+                        };
+                    }
                 } catch (execError) {
                     log.error(`Tool execution failed: ${name}`, { error: execError });
                     const execErrorMsg = execError instanceof Error ? execError.message : String(execError);
                     error = `Error executing tool ${name}: ${execErrorMsg}`;
-                    messages.push({ // Keep the original message push for context if desired
+                    toolMessage = {
                         role: 'tool',
                         content: error,
                         metadata: { tool_call_id: toolCallId }
-                    });
+                    };
                 }
             }
 
-            // Store result/error for the orchestrator
-            executedToolCalls.push({
-                ...toolCallInfo,
-                result: result as string | undefined, // Ensure type compatibility
-                error
-            });
-        } // End loop through parsedToolCalls
+            // Return all information needed for further processing
+            return {
+                toolCallInfo: {
+                    ...toolCallInfo,
+                    result: result as string | undefined,
+                    error
+                },
+                toolMessage
+            };
+        });
+
+        // Execute all tools in parallel
+        log.debug(`Executing ${toolExecutionPromises.length} tools in parallel`);
+        const toolResults = await Promise.all(toolExecutionPromises);
+
+        // Process results
+        for (const { toolCallInfo, toolMessage } of toolResults) {
+            if (toolMessage) {
+                messages.push(toolMessage);
+            }
+            executedToolCalls.push(toolCallInfo);
+        }
 
         return {
             messages,
