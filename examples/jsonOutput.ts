@@ -16,7 +16,7 @@ async function main() {
     // Initialize the caller with OpenAI
     const caller = new LLMCaller(
         'openai',
-        'gpt-4o-mini',
+        'fast',
         'You are a helpful assistant.',
         {
             historyMode: 'full'
@@ -27,7 +27,7 @@ async function main() {
         // Example 1: Using Zod schema(recommended approach with properties at root level)
         console.log('\nExample 1: Using Zod schema for structured output');
         const response1 = await caller.call(
-            'Generate a profile for a fictional user named Alice who loves technology',
+            'Generate a profile for a fictional user who loves technology',
             {
                 jsonSchema: {
                     name: 'UserProfile',

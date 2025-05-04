@@ -209,12 +209,12 @@ describe('SchemaFormatter', () => {
             expect(parsed).toEqual({
                 type: 'object',
                 properties: {
-                    name: { type: 'string' },
-                    age: { type: 'number' }
+                    name: { type: 'string', description: "The user's name" },
+                    age: { type: 'number', description: "The user's age" },
                 },
                 required: ['name', 'age'],
                 additionalProperties: false,
-                description: 'A user profile schema'
+                description: 'A user profile schema',
             });
         });
 

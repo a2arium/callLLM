@@ -46,12 +46,12 @@ Schema:
         // Create a copy of messages to avoid modifying the original
         const enhancedMessages = [...messages];
 
+        // Extract the system message if it exists
+        const systemMessages = enhancedMessages.filter(msg => msg.role === 'system');
+        const nonSystemMessages = enhancedMessages.filter(msg => msg.role !== 'system');
+
         // Generate the instruction string
         const instruction = this.generateInstructionString(options);
-
-        // Find the system message to insert after it
-        const systemMessageIndex = enhancedMessages.findIndex(msg => msg.role === 'system');
-        const insertIndex = systemMessageIndex >= 0 ? systemMessageIndex + 1 : 0;
 
         // Create an instruction message as a user message
         const instructionMessage: UniversalMessage = {
@@ -62,10 +62,12 @@ Schema:
             }
         };
 
-        // Insert the instruction message after the system message
-        enhancedMessages.splice(insertIndex, 0, instructionMessage);
-
-        return enhancedMessages;
+        // Ensure system messages come first, then instruction message, then other messages
+        return [
+            ...systemMessages,
+            instructionMessage,
+            ...nonSystemMessages
+        ];
     }
 
     /**

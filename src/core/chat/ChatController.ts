@@ -133,10 +133,11 @@ export class ChatController {
         // Use PromptEnhancer for adding JSON instructions
         const enhancedMessages = effectiveResponseFormat === 'json'
             ? PromptEnhancer.enhanceMessages(
-                // Only include the system message once to avoid duplication
-                messagesForProvider.filter(m => m.role !== 'system').concat([
-                    { role: 'system', content: systemMessageContent }
-                ]),
+                // Ensure system message is first, followed by all other messages
+                [
+                    { role: 'system', content: systemMessageContent },
+                    ...messagesForProvider.filter(m => m.role !== 'system')
+                ],
                 {
                     responseFormat: 'json',
                     jsonSchema: jsonSchema,
