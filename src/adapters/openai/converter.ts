@@ -4,7 +4,7 @@ import { OpenAIResponseValidationError } from './errors';
 import { ToolDefinition, ToolParameters, ToolCall } from '../../types/tooling';
 import { logger } from '../../utils/logger';
 import { SchemaValidator } from '../../core/schema/SchemaValidator';
-import { SchemaFormatter } from '../../core/schema/SchemaFormatter';
+import { SchemaFormatter, isZodSchema } from '../../core/schema/SchemaFormatter';
 import { z } from 'zod';
 import {
     ResponseCreateParams,
@@ -366,8 +366,8 @@ export class Converter {
                     formatConfig.name = params.jsonSchema.name;
                 }
 
-                // Process the schema according to its type
-                if (params.jsonSchema.schema instanceof z.ZodType) {
+                // Convert schema to appropriate format
+                if (isZodSchema(params.jsonSchema.schema)) {
                     // Convert Zod schema to JSON Schema object
                     formatConfig.schema = SchemaValidator.getSchemaObject(params.jsonSchema.schema);
                 } else if (typeof params.jsonSchema.schema === 'string') {

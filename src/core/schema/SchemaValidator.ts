@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SchemaFormatter } from './SchemaFormatter';
+import { SchemaFormatter, isZodSchema } from './SchemaFormatter';
 import { JSONSchemaDefinition } from '../../interfaces/UniversalInterfaces';
 
 export class SchemaValidationError extends Error {
@@ -25,9 +25,10 @@ export class SchemaValidator {
                 // TODO: Implement JSON Schema validation
                 // For now, just return the data as we'll implement proper JSON Schema validation later
                 return data;
-            } else if (schema instanceof z.ZodType) {
+            } else if (isZodSchema(schema)) {
                 // Validate using Zod
-                const result = schema.safeParse(data);
+                const zodSchema = schema as z.ZodType;
+                const result = zodSchema.safeParse(data);
                 if (!result.success) {
                     throw new SchemaValidationError(
                         'Validation failed',
@@ -155,13 +156,18 @@ export class SchemaValidator {
         if (typeof schema === 'string') {
             return schema;
         }
-        return this.zodToJsonSchemaString(schema);
+        return this.zodToJsonSchemaString(schema as z.ZodType);
     }
 
     public static getSchemaObject(schema: JSONSchemaDefinition): object {
         if (typeof schema === 'string') {
             return SchemaFormatter.addAdditionalPropertiesFalse(JSON.parse(schema));
         }
-        return this.zodTypeToJsonSchema(schema);
+
+        if (isZodSchema(schema)) {
+            return this.zodTypeToJsonSchema(schema as z.ZodType);
+        }
+
+        throw new Error('Unsupported schema type');
     }
 } 
