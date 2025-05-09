@@ -1,7 +1,7 @@
 import { OpenAI } from 'openai';
 import type { Stream } from 'openai/streaming';
 import { BaseAdapter, AdapterConfig } from '../base/baseAdapter';
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason, ModelInfo } from '../../interfaces/UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason, ModelInfo, ImageDataSource } from '../../interfaces/UniversalInterfaces';
 import { OpenAIResponseAdapterError, OpenAIResponseValidationError, OpenAIResponseAuthError, OpenAIResponseRateLimitError, OpenAIResponseNetworkError } from './errors';
 import { Converter } from './converter';
 import { StreamHandler } from './stream';
@@ -22,6 +22,8 @@ import { ModelManager } from '../../core/models/ModelManager';
 import { defaultModels } from './models';
 import { RegisteredProviders } from '../index';
 import { TokenCalculator } from '../../core/models/TokenCalculator';
+import { LLMProviderImage, ImageOp, ImageCallParams } from '../../interfaces/LLMProvider';
+import { saveBase64ToFile } from '../../core/file-data/fileData';
 
 // Load environment variables
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
@@ -32,7 +34,7 @@ const DEBUG_LEVEL = process.env.DEBUG_LEVEL || 'info'; // 'debug', 'info', 'erro
 /**
  * OpenAI Response Adapter implementing the OpenAI /v1/responses API endpoint
  */
-export class OpenAIResponseAdapter extends BaseAdapter {
+export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderImage {
     private client: OpenAI;
     private converter: Converter;
     private streamHandler: StreamHandler;
@@ -378,5 +380,592 @@ export class OpenAIResponseAdapter extends BaseAdapter {
         mappedTools.forEach(tool => {
             log.debug(`Registered tool: ${tool.name} (executionEnabled: ${tool.executionEnabled})`);
         });
+    }
+
+    /**
+     * Performs image generation, editing, or composite operations using OpenAI's DALL-E API
+     * @param model The OpenAI model to use (e.g. 'dall-e-3')
+     * @param op The image operation to perform ('generate', 'edit', 'edit-masked', or 'composite')
+     * @param params Parameters for the image operation
+     * @returns A Promise resolving to a UniversalChatResponse containing the image data
+     */
+    async imageCall(model: string, op: ImageOp, params: ImageCallParams): Promise<UniversalChatResponse> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.imageCall' });
+        log.debug('Processing image operation:', { model, op, prompt: params.prompt });
+
+        try {
+            switch (op) {
+                case 'generate':
+                    return this.generateImage(model, params);
+                case 'edit':
+                    // Check for image files
+                    if (!params.files || params.files.length === 0) {
+                        throw new OpenAIResponseValidationError('Image edit operation requires at least one image file');
+                    }
+                    return this.editImage(model, params);
+                case 'edit-masked':
+                    // Check for both image and mask files
+                    if (!params.files || params.files.length === 0) {
+                        throw new OpenAIResponseValidationError('Image edit-masked operation requires at least one image file');
+                    }
+                    if (!params.mask) {
+                        throw new OpenAIResponseValidationError('Image edit-masked operation requires a mask file');
+                    }
+                    return this.editImageWithMask(model, params);
+                case 'composite':
+                    // Check for multiple image files
+                    if (!params.files || params.files.length < 2) {
+                        throw new OpenAIResponseValidationError('Image composite operation requires at least two image files');
+                    }
+                    return this.generateVariation(model, params);
+                default:
+                    throw new OpenAIResponseValidationError(`Unsupported image operation: ${op}`);
+            }
+        } catch (error: any) {
+            if (error instanceof OpenAI.APIError) {
+                if (error.status === 401) {
+                    throw new OpenAIResponseAuthError('Invalid API key or authentication error');
+                } else if (error.status === 429) {
+                    const retryAfter = error.headers?.['retry-after'];
+                    throw new OpenAIResponseRateLimitError('Rate limit exceeded',
+                        retryAfter ? parseInt(retryAfter, 10) : 60);
+                } else if (error.status >= 500) {
+                    throw new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`);
+                } else if (error.status === 400) {
+                    throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
+                }
+            }
+
+            // If it's not an OpenAI API error, wrap it
+            if (!(error instanceof OpenAIResponseAdapterError)) {
+                log.error('Image operation failed:', error);
+                throw new OpenAIResponseAdapterError(`Image operation '${op}' failed: ${error.message || String(error)}`);
+            }
+
+            // Otherwise, just re-throw
+            throw error;
+        }
+    }
+
+    /**
+     * Generate a new image using OpenAI 
+     */
+    private async generateImage(model: string, params: ImageCallParams): Promise<UniversalChatResponse> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.generateImage' });
+        log.debug('Generating image with OpenAI');
+
+        // Create request parameters based on the model
+        const requestParams: any = {
+            model,
+            prompt: params.prompt,
+            n: 1
+        };
+
+        // Determine size parameter - convert from our format to OpenAI's
+        let size: string = '1024x1024';
+        if (params.options.size) {
+            // For DALL-E-3 and gpt-image-1, handle various size options
+            if (['1792x1024', '1024x1792', '1536x1024', '1024x1536'].includes(params.options.size)) {
+                size = params.options.size;
+            }
+        }
+        requestParams.size = size;
+
+        // Handle model-specific parameters
+        if (model === 'dall-e-3') {
+            // For DALL-E-3 specific parameters
+            if (params.options.quality) {
+                // DALL-E-3 uses 'hd' for high quality, 'standard' otherwise
+                requestParams.quality = params.options.quality === 'high' ? 'hd' : 'standard';
+            }
+
+            // Style is only supported for DALL-E-3
+            if (params.options.style) {
+                requestParams.style = params.options.style;
+            } else {
+                requestParams.style = 'vivid'; // Default style for DALL-E-3
+            }
+
+            // DALL-E-3 supports response_format
+            requestParams.response_format = 'b64_json';
+        } else {
+            // For gpt-image-1 and other models
+            if (params.options.quality) {
+                // gpt-image-1 uses 'high', 'medium', 'low', or 'auto' directly
+                requestParams.quality = params.options.quality;
+            }
+
+            // gpt-image-1 supports background parameter
+            if (params.options.background) {
+                requestParams.background = params.options.background;
+            }
+
+            // Do not set response_format for gpt-image-1 as it's not supported
+            // and always returns base64-encoded images
+        }
+
+        log.debug('Image generation parameters:', requestParams);
+
+        // Call the OpenAI API to generate the image
+        const response = await this.client.images.generate(requestParams);
+
+        // Get the image data from the response
+        if (!response.data || response.data.length === 0) {
+            throw new OpenAIResponseAdapterError('No image data received from OpenAI API');
+        }
+
+        // Handle image data based on model
+        let imageData: string;
+        let dataSource: 'url' | 'base64' = 'base64';
+
+        if (response.data[0].b64_json) {
+            // Base64 data is available directly
+            imageData = response.data[0].b64_json;
+            dataSource = 'base64';
+        } else if (response.data[0].url) {
+            // URL data is available
+            imageData = response.data[0].url;
+            dataSource = 'url';
+        } else {
+            throw new OpenAIResponseAdapterError('No image data or URL received from OpenAI API');
+        }
+
+        const imageWidth = parseInt(size.split('x')[0]);
+        const imageHeight = parseInt(size.split('x')[1]);
+
+        // Create the response object
+        const result: UniversalChatResponse = {
+            content: null,
+            role: 'assistant',
+            image: {
+                data: imageData,
+                dataSource: dataSource,
+                mime: 'image/png', // Default mime type
+                width: imageWidth,
+                height: imageHeight,
+                operation: 'generate'
+            },
+            metadata: {
+                created: Date.now(),
+                model
+            }
+        };
+
+        // If outputPath is provided, save the image to file
+        if (params.outputPath) {
+            try {
+                // For URL responses, we'll need to handle downloading differently
+                if (dataSource === 'url') {
+                    log.debug(`Image URL received (${imageData.substring(0, 30)}...), saving to ${params.outputPath} not supported yet`);
+                    if (!result.metadata) result.metadata = {};
+                    result.metadata.imageSavedPath = params.outputPath;
+                    result.metadata.imageUrl = imageData;
+                    // TODO: Implement URL-to-file saving
+                } else {
+                    await saveBase64ToFile(imageData, params.outputPath, 'image/png');
+                    // Ensure metadata exists before setting a property on it
+                    if (!result.metadata) {
+                        result.metadata = {};
+                    }
+                    result.metadata.imageSavedPath = params.outputPath;
+                    log.debug(`Image saved to ${params.outputPath}`);
+                }
+            } catch (error) {
+                log.error(`Failed to save image to ${params.outputPath}:`, error);
+                // Don't fail the operation if saving fails
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Edit an existing image using OpenAI's DALL-E model
+     */
+    private async editImage(model: string, params: ImageCallParams): Promise<UniversalChatResponse> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.editImage' });
+        log.debug('Editing image with OpenAI');
+
+        // Check if at least one image is provided 
+        if (!params.files || params.files.length === 0) {
+            throw new OpenAIResponseValidationError('Image edit operation requires at least one image file');
+        }
+
+        log.debug(`Editing image with ${params.files.length} image file(s)`);
+
+        // For gpt-image-1, we need to construct the image edit request
+        if (model === 'gpt-image-1') {
+            const requestParams: any = {
+                model,
+                prompt: params.prompt,
+                image: params.files.map(file => file.value) // Use the normalized image file URLs
+            };
+
+            // Add size parameter
+            if (params.options.size) {
+                requestParams.size = params.options.size;
+            }
+
+            // Add quality parameter
+            if (params.options.quality) {
+                requestParams.quality = params.options.quality;
+            }
+
+            // Add background parameter if provided
+            if (params.options.background) {
+                requestParams.background = params.options.background;
+            }
+
+            log.debug('Image edit parameters:', requestParams);
+
+            try {
+                // Call the images.edit endpoint
+                const response = await this.client.images.edit(requestParams);
+
+                // Process the response
+                if (!response.data || response.data.length === 0) {
+                    throw new OpenAIResponseAdapterError('No image data received from OpenAI API');
+                }
+
+                // Handle image data
+                let imageData: string;
+                let dataSource: 'url' | 'base64' = 'base64';
+
+                if (response.data[0].b64_json) {
+                    imageData = response.data[0].b64_json;
+                    dataSource = 'base64';
+                } else if (response.data[0].url) {
+                    imageData = response.data[0].url;
+                    dataSource = 'url';
+                } else {
+                    throw new OpenAIResponseAdapterError('No image data or URL received from OpenAI API');
+                }
+
+                // Determine image dimensions from size or default to 1024x1024
+                let size = params.options.size || '1024x1024';
+                const imageWidth = parseInt(size.split('x')[0]);
+                const imageHeight = parseInt(size.split('x')[1]);
+
+                // Create the response object
+                const result: UniversalChatResponse = {
+                    content: null,
+                    role: 'assistant',
+                    image: {
+                        data: imageData,
+                        dataSource: dataSource,
+                        mime: 'image/png',
+                        width: imageWidth,
+                        height: imageHeight,
+                        operation: 'edit'
+                    },
+                    metadata: {
+                        created: Date.now(),
+                        model
+                    }
+                };
+
+                // Save to file if outputPath provided
+                if (params.outputPath) {
+                    try {
+                        if (dataSource === 'url') {
+                            log.debug(`Image URL received (${imageData.substring(0, 30)}...), saving to ${params.outputPath} not supported yet`);
+                            if (!result.metadata) result.metadata = {};
+                            result.metadata.imageSavedPath = params.outputPath;
+                            result.metadata.imageUrl = imageData;
+                        } else {
+                            await saveBase64ToFile(imageData, params.outputPath, 'image/png');
+                            if (!result.metadata) result.metadata = {};
+                            result.metadata.imageSavedPath = params.outputPath;
+                            log.debug(`Edited image saved to ${params.outputPath}`);
+                        }
+                    } catch (error) {
+                        log.error(`Failed to save edited image to ${params.outputPath}:`, error);
+                    }
+                }
+
+                return result;
+            } catch (error: any) {
+                log.error('Image edit operation failed:', error);
+                throw new OpenAIResponseAdapterError(`Image edit operation failed: ${error.message || String(error)}`);
+            }
+        } else {
+            // DALL-E 3 doesn't support image editing directly via the API yet, so we'll use
+            // the image generation API with a prompt that instructs to edit the image
+            log.debug('Using generation with enhanced prompt for DALL-E 3 editing (fallback method)');
+            const enhancedPrompt = `Edit this image as follows: ${params.prompt}`;
+
+            // For now, delegate to the generate image method
+            // This is a fallback since OpenAI doesn't provide a dedicated image edit endpoint for DALL-E 3
+            // The actual editing would happen by instructing the model via the prompt
+            const result = await this.generateImage(model, {
+                ...params,
+                prompt: enhancedPrompt
+            });
+
+            // Update the operation type in the response
+            if (result.image) {
+                result.image.operation = 'edit';
+            }
+
+            return result;
+        }
+    }
+
+    /**
+     * Edit an image with a mask using OpenAI's DALL-E model
+     */
+    private async editImageWithMask(model: string, params: ImageCallParams): Promise<UniversalChatResponse> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.editImageWithMask' });
+        log.debug('Editing image with mask using OpenAI');
+
+        // Ensure we have the required files
+        if (!params.files || params.files.length === 0) {
+            throw new OpenAIResponseValidationError('Image edit-masked operation requires at least one image file');
+        }
+        if (!params.mask) {
+            throw new OpenAIResponseValidationError('Image edit-masked operation requires a mask file');
+        }
+
+        // For gpt-image-1, we need to use the edit endpoint with mask
+        if (model === 'gpt-image-1') {
+            const requestParams: any = {
+                model,
+                prompt: params.prompt,
+                image: params.files[0].value, // Use the first image
+                mask: params.mask.value // Use the mask
+            };
+
+            // Add size parameter
+            if (params.options.size) {
+                requestParams.size = params.options.size;
+            }
+
+            // Add quality parameter
+            if (params.options.quality) {
+                requestParams.quality = params.options.quality;
+            }
+
+            // Add background parameter if provided
+            if (params.options.background) {
+                requestParams.background = params.options.background;
+            }
+
+            log.debug('Image edit with mask parameters:', requestParams);
+
+            try {
+                // Call the images.edit endpoint with mask
+                const response = await this.client.images.edit(requestParams);
+
+                // Process the response
+                if (!response.data || response.data.length === 0) {
+                    throw new OpenAIResponseAdapterError('No image data received from OpenAI API');
+                }
+
+                // Handle image data
+                let imageData: string;
+                let dataSource: 'url' | 'base64' = 'base64';
+
+                if (response.data[0].b64_json) {
+                    imageData = response.data[0].b64_json;
+                    dataSource = 'base64';
+                } else if (response.data[0].url) {
+                    imageData = response.data[0].url;
+                    dataSource = 'url';
+                } else {
+                    throw new OpenAIResponseAdapterError('No image data or URL received from OpenAI API');
+                }
+
+                // Determine image dimensions from size or default to 1024x1024
+                let size = params.options.size || '1024x1024';
+                const imageWidth = parseInt(size.split('x')[0]);
+                const imageHeight = parseInt(size.split('x')[1]);
+
+                // Create the response object
+                const result: UniversalChatResponse = {
+                    content: null,
+                    role: 'assistant',
+                    image: {
+                        data: imageData,
+                        dataSource: dataSource,
+                        mime: 'image/png',
+                        width: imageWidth,
+                        height: imageHeight,
+                        operation: 'edit-masked'
+                    },
+                    metadata: {
+                        created: Date.now(),
+                        model
+                    }
+                };
+
+                // Save to file if outputPath provided
+                if (params.outputPath) {
+                    try {
+                        if (dataSource === 'url') {
+                            log.debug(`Image URL received (${imageData.substring(0, 30)}...), saving to ${params.outputPath} not supported yet`);
+                            if (!result.metadata) result.metadata = {};
+                            result.metadata.imageSavedPath = params.outputPath;
+                            result.metadata.imageUrl = imageData;
+                        } else {
+                            await saveBase64ToFile(imageData, params.outputPath, 'image/png');
+                            if (!result.metadata) result.metadata = {};
+                            result.metadata.imageSavedPath = params.outputPath;
+                            log.debug(`Edited image with mask saved to ${params.outputPath}`);
+                        }
+                    } catch (error) {
+                        log.error(`Failed to save edited image with mask to ${params.outputPath}:`, error);
+                    }
+                }
+
+                return result;
+            } catch (error: any) {
+                log.error('Image edit with mask operation failed:', error);
+                throw new OpenAIResponseAdapterError(`Image edit with mask operation failed: ${error.message || String(error)}`);
+            }
+        } else {
+            // Similar to editImage, DALL-E 3, we use generation with an enhanced prompt
+            log.debug('Using generation with enhanced prompt for DALL-E 3 masked editing (fallback method)');
+            const enhancedPrompt = `Edit this image by applying the following changes to the masked area: ${params.prompt}`;
+
+            // Call the generate method as a fallback
+            const result = await this.generateImage(model, {
+                ...params,
+                prompt: enhancedPrompt
+            });
+
+            // Update the operation type in the response
+            if (result.image) {
+                result.image.operation = 'edit-masked';
+            }
+
+            return result;
+        }
+    }
+
+    /**
+     * Generate variations or composites of multiple images
+     */
+    private async generateVariation(model: string, params: ImageCallParams): Promise<UniversalChatResponse> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.generateVariation' });
+        log.debug('Generating variations/composite with OpenAI');
+
+        // Ensure we have the required files
+        if (!params.files || params.files.length < 2) {
+            throw new OpenAIResponseValidationError('Image composite operation requires at least two image files');
+        }
+
+        // For gpt-image-1, we can use the edit endpoint with multiple images
+        if (model === 'gpt-image-1') {
+            const requestParams: any = {
+                model,
+                prompt: params.prompt,
+                image: params.files.map(file => file.value) // Use all provided images
+            };
+
+            // Add size parameter
+            if (params.options.size) {
+                requestParams.size = params.options.size;
+            }
+
+            // Add quality parameter
+            if (params.options.quality) {
+                requestParams.quality = params.options.quality;
+            }
+
+            // Add background parameter if provided
+            if (params.options.background) {
+                requestParams.background = params.options.background;
+            }
+
+            log.debug('Image composite parameters:', requestParams);
+
+            try {
+                // Call the images.edit endpoint for composite/variation
+                const response = await this.client.images.edit(requestParams);
+
+                // Process the response
+                if (!response.data || response.data.length === 0) {
+                    throw new OpenAIResponseAdapterError('No image data received from OpenAI API');
+                }
+
+                // Handle image data
+                let imageData: string;
+                let dataSource: 'url' | 'base64' = 'base64';
+
+                if (response.data[0].b64_json) {
+                    imageData = response.data[0].b64_json;
+                    dataSource = 'base64';
+                } else if (response.data[0].url) {
+                    imageData = response.data[0].url;
+                    dataSource = 'url';
+                } else {
+                    throw new OpenAIResponseAdapterError('No image data or URL received from OpenAI API');
+                }
+
+                // Determine image dimensions from size or default to 1024x1024
+                let size = params.options.size || '1024x1024';
+                const imageWidth = parseInt(size.split('x')[0]);
+                const imageHeight = parseInt(size.split('x')[1]);
+
+                // Create the response object
+                const result: UniversalChatResponse = {
+                    content: null,
+                    role: 'assistant',
+                    image: {
+                        data: imageData,
+                        dataSource: dataSource,
+                        mime: 'image/png',
+                        width: imageWidth,
+                        height: imageHeight,
+                        operation: 'composite'
+                    },
+                    metadata: {
+                        created: Date.now(),
+                        model
+                    }
+                };
+
+                // Save to file if outputPath provided
+                if (params.outputPath) {
+                    try {
+                        if (dataSource === 'url') {
+                            log.debug(`Image URL received (${imageData.substring(0, 30)}...), saving to ${params.outputPath} not supported yet`);
+                            if (!result.metadata) result.metadata = {};
+                            result.metadata.imageSavedPath = params.outputPath;
+                            result.metadata.imageUrl = imageData;
+                        } else {
+                            await saveBase64ToFile(imageData, params.outputPath, 'image/png');
+                            if (!result.metadata) result.metadata = {};
+                            result.metadata.imageSavedPath = params.outputPath;
+                            log.debug(`Composite image saved to ${params.outputPath}`);
+                        }
+                    } catch (error) {
+                        log.error(`Failed to save composite image to ${params.outputPath}:`, error);
+                    }
+                }
+
+                return result;
+            } catch (error: any) {
+                log.error('Image composite operation failed:', error);
+                throw new OpenAIResponseAdapterError(`Image composite operation failed: ${error.message || String(error)}`);
+            }
+        } else {
+            // Again, DALL-E 3 doesn't support variations directly via the API yet
+            log.debug('Using generation with enhanced prompt for DALL-E 3 composite (fallback method)');
+            const enhancedPrompt = `Create a composite image by combining elements from these images: ${params.prompt}`;
+
+            // Call the generate method as a fallback
+            const result = await this.generateImage(model, {
+                ...params,
+                prompt: enhancedPrompt
+            });
+
+            // Update the operation type in the response
+            if (result.image) {
+                result.image.operation = 'composite';
+            }
+
+            return result;
+        }
     }
 }

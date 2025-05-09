@@ -1,41 +1,55 @@
 /**
- * Image Handling Example
+ * Image Input Example
  * 
  * This example demonstrates how to use callLLM to:
- * 1. Make a simple text-only call
- * 2. Send an image with text for multimodal models
+ * 1. Send an image with text for multimodal models
+ * 2. Use multiple images in a single query
+ * 3. Stream responses with image inputs
+ * 4. Use JSON output format with image inputs
  */
 import { LLMCaller } from '../src';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 import path from 'path';
 
-
 // Load environment variables
 dotenv.config();
 
 async function runExamples() {
     // Initialize with a multimodal model
-    const caller = new LLMCaller('openai', 'gpt-4.1-nano', 'You are a helpful assistant.');
+    const caller = new LLMCaller('openai', 'gpt-4-vision-preview', 'You are a helpful assistant.');
 
     try {
+        console.log('\n\n=========================================');
+        console.log('Example 1: Image + text call with URL');
+        console.log('=========================================\n');
 
-        console.log('Example 1: Image + text call\n');
-        // File + text example with a public image URL
-        const imageResponse = await caller.call("Analyze this image", {
+        // URL + text example with a public image URL
+        const imageResponse = await caller.call({
+            text: "Analyze this image",
             file: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
-            imageDetail: "high"
+            input: {
+                image: {
+                    detail: "high"
+                }
+            }
         });
 
         console.log(`Response:`, imageResponse[0].content);
         console.log(`Usage:`, imageResponse[0].metadata?.usage);
 
+        console.log('\n\n=========================================');
+        console.log('Example 2: Local image with JSON output');
+        console.log('=========================================\n');
 
-        console.log('Example 2: Image and stream with JSON output\n');
-
-        const stream = await caller.stream("Get the data from the table in the image", {
+        const stream = await caller.stream({
+            text: "Get the data from the table in the image",
             file: path.join(__dirname, 'table.png'),
-            imageDetail: "high",
+            input: {
+                image: {
+                    detail: "high"
+                }
+            },
             jsonSchema: {
                 name: 'Animals',
                 schema: z.object({
@@ -50,17 +64,29 @@ async function runExamples() {
         for await (const chunk of stream) {
             process.stdout.write(chunk.content);
             if (chunk.isComplete) {
-                console.log(chunk.metadata?.usage);
+                console.log('\n');
+                console.log('Final usage:', chunk.metadata?.usage);
             }
         }
 
-        console.log('Example 3: Provide images as <file:path>\n');
-        const imageResponseCompare = await caller.call(
-            `<file:${path.join(__dirname, 'dogs.jpg')}> and  <file:https://upload.wikimedia.org/wikipedia/commons/6/6e/Golde33443.jpg>  Compare these images.`);
+        console.log('\n\n=========================================');
+        console.log('Example 3: Multiple images using file paths');
+        console.log('=========================================\n');
+
+        const imageResponseCompare = await caller.call({
+            files: [
+                path.join(__dirname, 'dogs.jpg'),
+                "https://upload.wikimedia.org/wikipedia/commons/6/6e/Golde33443.jpg"
+            ],
+            text: "Compare these two dog images and tell me their breeds and differences.",
+            input: {
+                image: {
+                    detail: "auto" // Automatically determine detail level
+                }
+            }
+        });
 
         console.log(`Response:`, imageResponseCompare[0].content);
-
-
 
     } catch (error) {
         console.error('Error processing image:', error);

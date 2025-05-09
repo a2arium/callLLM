@@ -1,0 +1,229 @@
+---
+description: Guidelines for handling image generation, editing, and masking operations in the codebase
+globs: 
+alwaysApply: false
+---
+# Image Generation and Editing Guidelines
+
+## Core Principles
+
+1. **Unified Interface**: Maintain consistent API for all image operations across providers
+2. **Type Safety**: Enforce proper typing for image operations
+3. **Provider Abstraction**: Abstract provider-specific image handling details
+4. **Token Accounting**: Track image token usage accurately
+5. **Capability-Based**: Only expose operations supported by each model
+6. **Intelligent Defaults**: Infer operations when possible, minimize required configuration
+
+## Operation Types
+
+The library supports the following image operations:
+
+1. **Generation**: Create images from text prompts
+   - Input: Text prompt
+   - Output: Generated image
+
+2. **Editing**: Modify existing images with a prompt
+   - Input: Text prompt + image
+   - Output: Modified image
+
+3. **Masked Editing** (Inpainting): Edit specific parts of an image
+   - Input: Text prompt + image + mask
+   - Output: Modified image with masked area replaced
+
+4. **Composite**: Generate new images using multiple reference images
+   - Input: Text prompt + multiple images
+   - Output: New image incorporating elements from references
+
+## API Structure
+
+### Input Configuration
+
+```typescript
+// Basic image generation
+await caller.call("Generate a sunset over mountains", {
+  input: {
+    image: {
+      detail: "high" // 'low', 'high', or 'auto'
+    }
+  },
+  output: {
+    image: {
+      quality: "high",
+      size: "1024x1024"
+    }
+  },
+  outputPath: "./generated/sunset.png" // Optional
+});
+
+// Image editing
+await caller.call("Transform this landscape into winter", {
+  file: "path/to/image.jpg",
+  input: {
+    image: {
+      detail: "high"
+    }
+  },
+  output: {
+    image: {
+      quality: "high"
+    }
+  }
+});
+
+// Masked editing
+await caller.call("Replace the sky with a sunset", {
+  file: "path/to/image.jpg",
+  mask: "path/to/mask.png",
+  output: {
+    image: {
+      quality: "high"
+    }
+  }
+});
+
+// Multiple image composite
+await caller.call("Create a gift basket with these items", {
+  files: ["soap.png", "lotion.png", "candle.png"],
+  output: {
+    image: {
+      quality: "high"
+    }
+  }
+});
+```
+
+### Operation Inference
+
+Operations are automatically inferred based on provided parameters:
+
+| Parameters | Inferred Operation |
+|------------|-------------------|
+| `prompt` only | `generate` |
+| `prompt` + `file` | `edit` |
+| `prompt` + `file` + `mask` | `edit-masked` |
+| `prompt` + `files` (multiple) | `composite` |
+
+### Input Options
+
+Input configuration is specified in the `input.image` object:
+
+```typescript
+input: {
+  image: {
+    detail: "high" // 'low', 'high', or 'auto'
+  }
+}
+```
+
+| Option | Values | Description |
+|--------|--------|-------------|
+| `detail` | `'low'`, `'high'`, `'auto'` | Detail level for image analysis |
+
+### Output Options
+
+Output configuration is specified in the `output.image` object:
+
+```typescript
+output: {
+  image: {
+    quality: "high",
+    size: "1024x1024",
+    format: "png",
+    background: "transparent",
+    compression: 50
+  }
+}
+```
+
+| Option | Values | Description |
+|--------|--------|-------------|
+| `quality` | `'low'`, `'medium'`, `'high'`, `'auto'` | Rendering quality |
+| `size` | `'1024x1024'`, `'1024x1536'`, `'1536x1024'`, etc. | Image dimensions |
+| `format` | `'png'`, `'jpeg'`, `'webp'` | Output file format |
+| `background` | `'transparent'`, `'auto'` | Background type (PNG/WebP only) |
+| `compression` | `0-100` | Compression level for JPEG and WebP |
+
+### Output Handling
+
+Two methods for handling generated images:
+
+1. **Base64 in Response**: Images are returned as base64-encoded data in the response
+2. **Save to File**: Images are saved to a specified path using the `outputPath` parameter
+
+```typescript
+// Return base64 in response
+const result = await caller.call("Generate a sunset", {
+  output: { image: { quality: "high" } }
+});
+// Access with: result[0].image.data (base64 string)
+
+// Save to file
+await caller.call("Generate a sunset", {
+  output: { image: { quality: "high" } },
+  outputPath: "./sunset.png"
+});
+```
+
+## File References
+
+Like regular file input, images can be referenced using the placeholder syntax:
+
+```typescript
+// Explicit parameter
+await caller.call("Edit this image", {
+  file: "path/to/image.jpg"
+});
+
+// Placeholder syntax
+await caller.call("<file:path/to/image.jpg> Add snow to this landscape");
+```
+
+When using placeholders with multiple images, the operation is inferred based on the number of references.
+
+## Provider Implementation
+
+Each LLM provider implements image operations based on their supported capabilities:
+
+- **OpenAI**: Uses the OpenAI Image API endpoints (generations, edits, variations)
+- Other providers: Implement as their services support these features
+
+## Capability Checking
+
+Before performing image operations, the system checks if the selected model supports the operation:
+
+```typescript
+// Example capability structure
+capabilities: {
+  output: {
+    image: {
+      generate: true,
+      edit: true,
+      editWithMask: true,
+      formats: ["png", "jpeg", "webp"],
+      dimensions: [[1024, 1024], [1536, 1024], [1024, 1536]]
+    }
+  }
+}
+```
+
+## Error Handling
+
+Special error types for image operations:
+
+1. **ImageCapabilityError**: Model doesn't support requested image operation
+2. **ImageFormatError**: Unsupported image format
+3. **ImageSizeError**: Image dimensions not supported
+4. **MaskValidationError**: Mask file invalid or incompatible with image
+
+## Testing Guidelines
+
+1. **Mock Responses**: Use fixture data for image responses
+2. **File Validation**: Test all file validation paths
+3. **Operation Inference**: Verify correct operation is inferred
+4. **Error Handling**: Test error scenarios thoroughly
+5. **Output Formats**: Verify all output format combinations
+
+# References
+- See @examples/imageGenerationAndEditing.ts for usage examples
+- See @src/core/file-data/fileData.ts for implementation details
+- See @docs/image-generation.md for consumer documentation

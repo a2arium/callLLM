@@ -1,7 +1,8 @@
-import { LLMProvider } from '../../interfaces/LLMProvider';
+import { LLMProvider, LLMProviderImage, ImageOp, ImageCallParams } from '../../interfaces/LLMProvider';
 import { AdapterConfig } from '../../adapters/base/baseAdapter';
 import { adapterRegistry, RegisteredProviders } from '../../adapters/index';
 import { ProviderNotFoundError } from '../../adapters/types';
+import { UniversalChatResponse } from '../../interfaces/UniversalInterfaces';
 
 export class ProviderManager {
     private provider: LLMProvider;
@@ -25,6 +26,44 @@ export class ProviderManager {
 
     public getProvider(): LLMProvider {
         return this.provider;
+    }
+
+    /**
+     * Type guard to check if the provider implements the LLMProviderImage interface
+     * @returns true if the provider implements LLMProviderImage, false otherwise
+     */
+    public supportsImageGeneration(): boolean {
+        // Check if the provider has the imageCall method
+        return 'imageCall' in this.provider;
+    }
+
+    /**
+     * Attempts to access the image generation capabilities of the current provider
+     * @returns The provider cast to LLMProviderImage if it supports image generation, or null if not
+     */
+    public getImageProvider(): LLMProviderImage | null {
+        // Use the type guard to check if the provider implements the LLMProviderImage interface
+        if (this.supportsImageGeneration()) {
+            return this.provider as unknown as LLMProviderImage;
+        }
+        return null;
+    }
+
+    /**
+     * Executes an image operation using the current provider if it supports image generation
+     * @param model The model to use for image generation
+     * @param op The image operation to perform
+     * @param params Parameters for the image operation
+     * @returns A Promise resolving to the image generation response
+     * @throws Error if the provider doesn't support image generation
+     */
+    public async callImageOperation(model: string, op: ImageOp, params: ImageCallParams): Promise<UniversalChatResponse> {
+        const imageProvider = this.getImageProvider();
+        if (!imageProvider) {
+            throw new Error(`Provider '${this.currentProviderName}' does not support image generation`);
+        }
+
+        return imageProvider.imageCall(model, op, params);
     }
 
     public switchProvider(providerName: RegisteredProviders, apiKey?: string): void {

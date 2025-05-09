@@ -57,7 +57,7 @@ const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assista
 ## Documentation
 
 - [Function Folders](docs/function-folders.md) - Learn how to organize tools in separate files
-- [Working with Images](docs/images.md) - Guide to using multimodal models with image inputs
+- [Working with Images](docs/images.md) - Guide to using multimodal models with image inputs and generating images
 - More documentation coming soon
 
 ## Usage
@@ -65,97 +65,83 @@ const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assista
 ```typescript
 import { LLMCaller } from 'callllm';
 
-// Initialize with OpenAI using model alias
-const caller = new LLMCaller('openai', 'fast', 'You are a helpful assistant.');
-// Or with specific model
-const caller = new LLMCaller('openai', 'gpt-4o', 'You are a helpful assistant.');
+// Standard initialization
+const caller = new LLMCaller('openai', 'gpt-4');
 
-// Basic chat call with usage tracking
-const response = await caller.call(
-    'Hello, how are you?',
-    {
-        settings: {
-            temperature: 0.7,
-            maxTokens: 100
-        }
+// With system message
+const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.');
+
+// With options
+const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
+    apiKey: 'your-api-key',  // Use env var instead in production
+    historyMode: 'stateless',
+    settings: {
+        temperature: 0.7,
+        maxTotalTokens: 4000
     }
-);
-
-console.log(response.metadata?.usage);
-// {
-//     inputTokens: 123,
-//     outputTokens: 456,
-//     totalTokens: 579,
-//     costs: {
-//         inputCost: 0.000369,    // For gpt-4o at $30/M tokens
-//         outputCost: 0.00456,    // For gpt-4o at $60/M tokens
-//         totalCost: 0.004929
-//     }
-// }
-
-// Streaming call with real-time token counting
-const stream = await caller.stream(
-    'Tell me a story',
-    {
-        settings: {
-            temperature: 0.9
-        }
-    }
-);
-
-for await (const chunk of stream) {
-    // For intermediate chunks, use content for incremental display
-    if (!chunk.isComplete) {
-        process.stdout.write(chunk.content);
-    } else {
-        // For the final chunk, contentText has the complete response
-        console.log(`\nFinal response: ${chunk.contentText}`);
-    }
-    
-    // Each chunk includes current token usage and costs
-    console.log(chunk.metadata?.usage);
-}
-
-// Model Management
-// Get available models
-const models = caller.getAvailableModels();
-
-// Get model info (works with both aliases and direct names)
-const modelInfo = caller.getModel('fast');  // Using alias
-const modelInfo = caller.getModel('gpt-4o'); // Using direct name
-
-// Add a custom model
-caller.addModel({
-    name: "custom-model",
-    inputPricePerMillion: 30.0,  // $30 per million input tokens
-    outputPricePerMillion: 60.0, // $60 per million output tokens
-    maxRequestTokens: 8192,
-    maxResponseTokens: 4096,
-    characteristics: {
-        qualityIndex: 85,         // 0-100 quality score
-        outputSpeed: 50,          // Tokens per second
-        firstTokenLatency: 0.5    // Seconds to first token
-    }
-});
-
-// Update existing model
-caller.updateModel('gpt-4o', {
-    inputPricePerMillion: 40.0,  // Update to $40 per million input tokens
-    outputPricePerMillion: 80.0, // Update to $80 per million output tokens
-    characteristics: {
-        qualityIndex: 90
-    }
-});
-
-// Switch models or providers
-caller.setModel({ nameOrAlias: 'fast' });  // Switch to fastest model
-caller.setModel({ nameOrAlias: 'gpt-4o' }); // Switch to specific model
-caller.setModel({  // Switch provider and model
-    provider: 'openai',
-    nameOrAlias: 'fast',
-    apiKey: 'optional-new-key'
 });
 ```
+
+### Simple Chat
+
+```typescript
+// Basic call
+const response = await caller.call('Tell me about AI');
+
+// Response is an array of chat responses
+console.log(response[0].content);
+
+// For streaming, use an async generator
+for await (const chunk of caller.stream('Tell me about AI')) {
+    process.stdout.write(chunk.contentChunk || '');
+}
+```
+
+### Image Generation and Editing
+
+```typescript
+// Generate an image and save to file
+const result = await caller.call({
+  text: "A beautiful mountain landscape",
+  output: {
+    image: {
+      quality: "high",
+      size: "1024x1024"
+    }
+  },
+  outputPath: "./mountain.png"
+});
+
+console.log("Image saved to:", result[0].metadata?.imageSavedPath);
+
+// Get image as base64 data
+const result = await caller.call({
+  text: "A futuristic city skyline",
+  output: {
+    image: {
+      quality: "medium",
+      size: "1024x1024"
+    }
+  }
+});
+
+// Image data is available in the response
+console.log("Image data:", result[0].image?.data);
+
+// Edit an existing image
+const editResult = await caller.call({
+  text: "Add a small cabin to this landscape",
+  file: "./mountain.png",
+  output: {
+    image: { quality: "high" }
+  },
+  outputPath: "./mountain_with_cabin.png"
+});
+```
+
+For more examples, see the [examples directory](examples).
+
+### JSON Output
 
 ## Model Aliases
 

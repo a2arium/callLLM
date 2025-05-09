@@ -20,9 +20,16 @@ export type Base64Source = { kind: 'base64'; value: string; mime: string }
 export type FilePathSource = { kind: 'filePath'; value: string }
 export type ImageDataSource = UrlSource | Base64Source | FilePathSource
 
+// A simpler type for image data source in responses
+export type ImageResponseDataSource = 'url' | 'base64' | 'file'
+
 // Message part types
 export type TextPart = { type: 'text'; text: string }
-export type ImagePart = { type: 'image'; data: ImageDataSource }
+export type ImagePart = {
+    type: 'image';
+    data: ImageDataSource;
+    _isMask?: boolean; // Optional property to indicate if this image part is a mask
+}
 export type MessagePart = TextPart | ImagePart
 
 /**
@@ -147,14 +154,58 @@ export type UniversalChatSettings = {
     };
 };
 
+/**
+ * Options for image input processing
+ */
+export type ImageInputOpts = {
+    /** Detail level for image analysis */
+    detail?: 'low' | 'high' | 'auto'
+}
+
+/**
+ * Options for image output generation
+ */
+export type ImageOutputOpts = {
+    /** Whether the model can generate images from scratch */
+    generate?: boolean
+    /** Whether the model can edit existing images */
+    edit?: boolean
+    /** Whether the model can edit images with a mask */
+    editWithMask?: boolean
+    /** Quality level for generated images */
+    quality?: 'low' | 'medium' | 'high' | 'auto'
+    /** Image dimensions in format "widthxheight" (e.g., "1024x1024") */
+    size?: string
+    /** Output image format */
+    format?: 'png' | 'jpeg' | 'webp'
+    /** Background handling for images with transparency */
+    background?: 'transparent' | 'auto'
+    /** Compression level (0-100) for jpeg/webp formats */
+    compression?: number
+    /** Style setting for image generation (e.g., 'vivid', 'natural' for DALL-E 3) */
+    style?: string
+}
+
 // Define the new options structure for call/stream methods
 export type LLMCallOptions = {
     /** Optional text prompt (alternative to passing string directly) */
     text?: string;
     /** Optional file path, URL, or base64 data for image input */
     file?: string;
-    /** Optional image detail level */
-    imageDetail?: 'low' | 'high' | 'auto';
+    /** Optional array of file paths, URLs, or base64 data for multiple image inputs */
+    files?: string[];
+    /** Optional mask file path, URL, or base64 data for in-painting */
+    mask?: string;
+    /** Optional settings for image input */
+    input?: {
+        image?: ImageInputOpts
+    };
+    /** Optional settings for image output */
+    output?: {
+        image?: ImageOutputOpts
+    };
+    /** Optional path where to save generated image */
+    outputPath?: string;
     /** Optional callback to receive incremental usage stats */
     usageCallback?: UsageCallback;
     /** Batch size of tokens between callbacks. Default=100 when callback provided. */
@@ -250,6 +301,36 @@ export type Usage = {
     };
 };
 
+export type ProcessingInfo = {
+    currentChunk: number;
+    totalChunks: number;
+};
+
+export type Metadata = {
+    finishReason?: FinishReason;
+    created?: number;
+    usage?: Usage;
+    refusal?: any;
+    model?: string;
+    jsonSchemaUsed?: JSONSchemaDefinition;
+    isGenerated?: boolean;
+    chatId?: string;
+    callId?: string;
+    processInfo?: ProcessingInfo;
+    imageSavedPath?: string; // Path where the image was saved
+    imageUrl?: string; // URL of the generated image (for models that return URLs)
+    responseFormat?: ResponseFormat;
+    validationErrors?: Array<{ message: string; path: (string | number)[] }>;
+    jsonRepaired?: boolean;
+    originalContent?: string;
+    rawUsage?: Record<string, number>;
+    toolStatus?: 'running' | 'complete' | 'error';
+    toolName?: string;
+    toolId?: string;
+    toolResult?: string;
+    toolError?: string;
+};
+
 export interface UniversalChatResponse<T = unknown> {
     content: string | null; // Content can be null if tool_calls are present
     contentObject?: T;
@@ -260,26 +341,30 @@ export interface UniversalChatResponse<T = unknown> {
      */
     reasoning?: string;
 
+    /**
+     * Generated image data, if the model was asked to generate an image.
+     * Only present if output.image was requested.
+     */
+    image?: {
+        /** Image data as base64 string or URL */
+        data: string;
+        /** Source of the image data (base64, url, file) */
+        dataSource?: ImageResponseDataSource;
+        /** MIME type of the image (e.g., 'image/png') */
+        mime: string;
+        /** Width of the image in pixels */
+        width: number;
+        /** Height of the image in pixels */
+        height: number;
+        /** Operation that was performed to generate this image */
+        operation: 'generate' | 'edit' | 'edit-masked' | 'composite';
+    };
+
     role: string; // Typically 'assistant'
     messages?: UniversalMessage[];  // May include history or context messages
     // Use imported ToolCall type
     toolCalls?: ToolCall[];
-    metadata?: {
-        finishReason?: FinishReason;
-        created?: number; // Unix timestamp
-        usage?: Usage;
-        refusal?: any; // Provider-specific refusal details
-        model?: string;
-        // Add schema/format info here if needed for response metadata
-        jsonSchemaUsed?: { name?: string; schema: JSONSchemaDefinition };
-        responseFormat?: ResponseFormat;
-        validationErrors?: Array<{ message: string; path: (string | number)[] }>; // Zod-like error path
-        // Add JSON repair metadata
-        jsonRepaired?: boolean;
-        originalContent?: string;
-        // Add raw usage data
-        rawUsage?: Record<string, number>;
-    };
+    metadata?: Metadata;
 }
 
 // Universal interface for streaming response
@@ -316,6 +401,24 @@ export interface UniversalStreamResponse<T = unknown> {
      * The parsed object from the response, only available for JSON responses when isComplete is true.
      */
     contentObject?: T;
+
+    /**
+     * Generated image data, if the model was asked to generate an image.
+     * Only present if output.image was requested and isComplete is true.
+     */
+    image?: {
+        /** Base64-encoded image data */
+        data: string;
+        /** MIME type of the image (e.g., 'image/png') */
+        mime: string;
+        /** Width of the image in pixels */
+        width: number;
+        /** Height of the image in pixels */
+        height: number;
+        /** Operation that was performed to generate this image */
+        operation: 'generate' | 'edit' | 'edit-masked' | 'composite';
+    };
+
     role: string; // Typically 'assistant'
     isComplete: boolean;
     messages?: UniversalMessage[];  // Array of messages for tool call responses
@@ -329,29 +432,7 @@ export interface UniversalStreamResponse<T = unknown> {
     }>;
     // Use imported ToolCallChunk type for partial tool calls during streaming
     toolCallChunks?: ToolCallChunk[];
-    metadata?: {
-        finishReason?: FinishReason;
-        usage?: Usage; // Usage might be partial or final
-        created?: number; // Unix timestamp
-        model?: string;
-        refusal?: any; // Provider-specific refusal details
-        // Add schema/format info here if needed for response metadata
-        jsonSchemaUsed?: { name?: string; schema: JSONSchemaDefinition };
-        responseFormat?: ResponseFormat;
-        validationErrors?: Array<{ message: string; path: (string | number)[] }>; // Zod-like error path
-        processInfo?: {
-            currentChunk: number;
-            totalChunks: number;
-        };
-        // Tool execution status fields (if orchestrator adds them)
-        toolStatus?: 'running' | 'complete' | 'error';
-        toolName?: string;
-        toolId?: string; // Corresponds to ToolCall.id
-        toolResult?: string;
-        toolError?: string;
-        // Add raw usage data
-        rawUsage?: Record<string, number>;
-    };
+    metadata?: Metadata;
 }
 
 /**
@@ -455,12 +536,7 @@ export type ModelCapabilities = {
          * Image output capability.
          * Boolean true indicates basic support, object provides configuration options.
          */
-        image?: true | {
-            /** Supported image formats */
-            formats?: string[];
-            /** Available image dimensions */
-            dimensions?: Array<[number, number]>;
-        };
+        image?: boolean | ImageOutputOpts;
 
         /**
          * Audio output capability.

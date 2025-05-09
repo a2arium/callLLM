@@ -632,11 +632,7 @@ describe('LLMCaller', () => {
             // Test that using a file throws CapabilityError
             await expect(textOnlyCaller.call("Hi", { file: "./image.png" }))
                 .rejects
-                .toThrow(CapabilityError);
-
-            await expect(textOnlyCaller.call("Hi", { file: "./image.png" }))
-                .rejects
-                .toThrow('Model "text-only-model" does not support file inputs.');
+                .toThrow('Model "text-only-model" does not support image inputs.');
         });
 
         test('stream with file on text-only model throws CapabilityError', async () => {

@@ -1,5 +1,5 @@
 import { ModelManager } from '../../../../core/models/ModelManager';
-import { ModelInfo, ModelAlias } from '../../../../interfaces/UniversalInterfaces';
+import { ModelInfo, ModelAlias, ModelCapabilities, ImageOutputOpts } from '../../../../interfaces/UniversalInterfaces';
 import { RegisteredProviders } from '../../../../adapters';
 
 // Mock the ModelSelector
@@ -23,6 +23,32 @@ jest.mock('../../../../adapters/openai/models', () => ({
                 qualityIndex: 80,
                 outputSpeed: 200,
                 firstTokenLatency: 500
+            }
+        },
+        {
+            name: "mock-image-model",
+            inputPricePerMillion: 5.0,
+            outputPricePerMillion: 40.0,
+            maxRequestTokens: 2000,
+            maxResponseTokens: 0,
+            capabilities: {
+                streaming: false,
+                input: {
+                    text: true
+                },
+                output: {
+                    text: false,
+                    image: {
+                        generate: true,
+                        edit: true,
+                        editWithMask: true
+                    }
+                }
+            },
+            characteristics: {
+                qualityIndex: 85,
+                outputSpeed: 0,
+                firstTokenLatency: 2000
             }
         }
     ]
@@ -58,8 +84,9 @@ describe('ModelManager', () => {
         it('should initialize with openai-response models', () => {
             const responseManager = new ModelManager('openai' as RegisteredProviders);
             const models = responseManager.getAvailableModels();
-            expect(models.length).toBe(1);
+            expect(models.length).toBe(2);
             expect(models[0].name).toBe('mock-response-model-1');
+            expect(models[1].name).toBe('mock-image-model');
         });
 
         it('should throw error for unsupported provider', () => {
@@ -229,7 +256,7 @@ describe('ModelManager', () => {
             // Add a model
             manager.clearModels();
             manager.addModel(validModel);
-            expect(manager.getAvailableModels().length).toBe(1);
+            expect(manager.getAvailableModels().length).toBe(1); // Only one model added after clearModels
 
             // Clear models
             manager.clearModels();
@@ -247,6 +274,94 @@ describe('ModelManager', () => {
         it('should return false for non-existent model', () => {
             manager.clearModels();
             expect(manager.hasModel('test-model')).toBe(false);
+        });
+    });
+
+    describe('getCapabilities', () => {
+        beforeEach(() => {
+            // Reset the instance to ensure a clean test environment
+            // @ts-ignore - accessing private property for testing
+            ModelManager.instance = undefined;
+            // Create a new instance which will set the static instance properly
+            manager = new ModelManager('openai' as RegisteredProviders);
+        });
+
+        it('should return default capabilities for unknown model', () => {
+            // Create a new instance to ensure the static instance is properly set
+            new ModelManager('openai' as RegisteredProviders);
+            const capabilities = ModelManager.getCapabilities('unknown-model');
+            expect(capabilities).toEqual({
+                streaming: true,
+                toolCalls: false,
+                parallelToolCalls: false,
+                batchProcessing: false,
+                reasoning: false,
+                input: {
+                    text: true,
+                    image: undefined
+                },
+                output: {
+                    text: true
+                }
+            });
+        });
+
+        it('should return image generation capabilities for image model', () => {
+            // Create a new instance to ensure the static instance is properly set
+            new ModelManager('openai' as RegisteredProviders);
+            const capabilities = ModelManager.getCapabilities('mock-image-model');
+
+            expect(capabilities.output.image).toBeDefined();
+
+            // Check for the specific image output capabilities
+            const imageOutput = capabilities.output.image as ImageOutputOpts;
+            expect(imageOutput.generate).toBe(true);
+            expect(imageOutput.edit).toBe(true);
+            expect(imageOutput.editWithMask).toBe(true);
+        });
+
+        it('should return model capabilities with merged defaults', () => {
+            // Create a new instance to ensure the static instance is properly set
+            manager = new ModelManager('openai' as RegisteredProviders);
+
+            // Add a model with partial capabilities
+            const partialCapabilitiesModel: ModelInfo = {
+                name: 'partial-capabilities-model',
+                inputPricePerMillion: 1,
+                outputPricePerMillion: 2,
+                maxRequestTokens: 1000,
+                maxResponseTokens: 1000,
+                capabilities: {
+                    // Only specify toolCalls - other capabilities will use defaults
+                    toolCalls: true,
+                    input: {
+                        text: true,
+                        image: true
+                    },
+                    // Include the required output property
+                    output: {
+                        text: true // Minimal required output property
+                    }
+                },
+                characteristics: {
+                    qualityIndex: 80,
+                    outputSpeed: 150,
+                    firstTokenLatency: 2000
+                }
+            };
+
+            manager.addModel(partialCapabilitiesModel);
+
+            const capabilities = ModelManager.getCapabilities('partial-capabilities-model');
+
+            // Check that specified capabilities are preserved
+            expect(capabilities.toolCalls).toBe(true);
+            expect(capabilities.input.image).toBe(true);
+
+            // Check that defaults are applied where not specified
+            // Per the implementation in ModelManager.getCapabilities, only return the model's capabilities
+            // or the default if the model is not found
+            expect(capabilities).toBe(partialCapabilitiesModel.capabilities);
         });
     });
 }); 

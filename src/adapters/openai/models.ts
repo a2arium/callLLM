@@ -158,7 +158,11 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: false,
-                image: true
+                image: {
+                    generate: true,
+                    edit: true,
+                    editWithMask: true
+                }
             }
         },
         characteristics: {
@@ -295,5 +299,33 @@ export const defaultModels: ModelInfo[] = [
                 }
             }
         }
-    }
+    },
+    {
+        name: 'dall-e-3',
+        maxRequestTokens: 4096,
+        maxResponseTokens: 1, // Setting a minimal value since this is an image-only model
+        inputPricePerMillion: 4.0,
+        outputPricePerMillion: 0.0, // Pricing is per image, not tokens
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            parallelToolCalls: false,
+            input: {
+                text: true
+            },
+            output: {
+                text: false,
+                image: {
+                    generate: true,
+                    edit: false,
+                    editWithMask: false
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 80,
+            outputSpeed: 0,
+            firstTokenLatency: 2000,
+        },
+    },
 ]; 

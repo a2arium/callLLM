@@ -15,7 +15,9 @@ import {
     toMessageParts,
     MessagePart,
     ImagePart,
-    ImageDataSource
+    ImageDataSource,
+    UrlSource,
+    FilePathSource,
 } from '../../interfaces/UniversalInterfaces';
 import { z } from 'zod';
 import { ProviderManager } from './ProviderManager';
@@ -49,7 +51,10 @@ import type { McpToolSchema, MCPServersMap } from '../mcp/MCPConfigTypes';
 import { isMCPToolConfig } from '../mcp/MCPConfigTypes';
 import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter';
 import { MCPToolLoader } from '../mcp/MCPToolLoader';
-import { normalizeImageSource, estimateImageTokens } from '../file-data/fileData';
+import { normalizeImageSource, estimateImageTokens, saveBase64ToFile } from '../file-data/fileData';
+import { readFileAsBase64, validateImageFile } from '../file-data/fileData';
+import { BaseAdapter } from '../../adapters/base/baseAdapter';
+import { ImageOp, ImageCallParams } from '../../interfaces/LLMProvider';
 
 /**
  * Interface that matches the core functionality of StreamController
@@ -436,21 +441,24 @@ export class LLMCaller implements MCPDirectAccess {
     private async internalChatCall<T extends z.ZodType<any, z.ZodTypeDef, any>>(
         params: UniversalChatParams
     ): Promise<UniversalChatResponse> {
+        const log = logger.createLogger({ prefix: 'LLMCaller.internalChatCall' });
+        log.debug(`Calling chat with ${params.messages?.length} messages`);
+
         this.toolController.resetIterationCount(); // Reset tool iteration
 
         // Ensure essential parameters are present
         params.callerId = params.callerId || this.callerId;
         params.model = params.model || this.model;
-        // System message is typically part of params.messages handled by HistoryManager
 
-        // Pass params excluding systemMessage if ChatController doesn't expect it explicitly
-        // Assuming ChatController gets system message from params.messages
         const { systemMessage, ...paramsForController } = params;
+        const chatResponse = await this.chatController.execute(paramsForController as any);
 
-        // Ensure the type passed matches ChatController.execute's expectation
-        const response = await this.chatController.execute(paramsForController as any); // Cast needed if signature mismatch persists
+        // Process image output if present (save to file if outputPath provided)
+        // Note: outputPath handling will be moved to the public call/stream methods
+        // to use the original LLMCallOptions.outputPath directly.
+        // This internalChatCall will just return the response from ChatController.
 
-        return response;
+        return chatResponse;
     }
 
 
@@ -547,6 +555,105 @@ export class LLMCaller implements MCPDirectAccess {
         }
 
         return resolvedTools;
+    }
+
+    /**
+     * Helper method to build chat params and process files consistently for both call() and stream()
+     * @private
+     */
+    private async processImageFiles(
+        actualOptions: LLMCallOptions,
+        messageParts: MessagePart[]
+    ): Promise<{
+        messageParts: MessagePart[];
+        totalImageTokens: number;
+        imageOperation: 'generate' | 'edit' | 'edit-masked' | 'composite';
+    }> {
+        const log = logger.createLogger({ prefix: 'LLMCaller.processImageFiles' });
+        let totalImageTokens = 0;
+        let imageOperation: 'generate' | 'edit' | 'edit-masked' | 'composite' = 'generate';
+
+        const allFileSources: (string | ImageDataSource)[] = [];
+
+        if (actualOptions.file) {
+            allFileSources.push(actualOptions.file);
+        }
+        if (actualOptions.files && Array.isArray(actualOptions.files)) {
+            allFileSources.push(...actualOptions.files);
+        }
+
+        if (actualOptions.mask) {
+            imageOperation = 'edit-masked';
+        } else if (allFileSources.length > 1) {
+            imageOperation = 'composite';
+        } else if (allFileSources.length === 1) {
+            imageOperation = 'edit';
+        } else {
+            imageOperation = 'generate';
+        }
+
+        log.debug(`Inferred image operation: ${imageOperation}, processing ${allFileSources.length} sources.`);
+
+        for (const source of allFileSources) {
+            log.debug(`Processing source: ${typeof source === 'string' ? source.substring(0, 50) : source.kind}...`);
+            try {
+                let fileSourceInput: ImageDataSource;
+                if (typeof source === 'string') {
+                    fileSourceInput = source.startsWith('http')
+                        ? { kind: 'url', value: source }
+                        : { kind: 'filePath', value: source };
+                } else {
+                    fileSourceInput = source;
+                }
+
+                // Normalize the image source (e.g., read file to base64 if it's a path)
+                const normalizedSource = await normalizeImageSource(fileSourceInput);
+
+                const imagePart: ImagePart = {
+                    type: 'image', // Internal type is 'image'
+                    data: normalizedSource // Containing kind, value, mime
+                };
+                messageParts.push(imagePart);
+
+                const imageTokens = estimateImageTokens(
+                    actualOptions.input?.image?.detail || 'auto'
+                );
+                totalImageTokens += imageTokens;
+                log.debug(
+                    `Estimated image tokens: ${imageTokens} for source, detail level: ${actualOptions.input?.image?.detail || 'auto'
+                    }`
+                );
+            } catch (error) {
+                log.error('Failed to process image file/source:', error);
+                throw new Error(`Failed to process image: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+
+        if (actualOptions.mask) {
+            log.debug(`Processing mask file: ${actualOptions.mask.substring(0, 50)}...`);
+            try {
+                const maskDataSource: ImageDataSource = actualOptions.mask.startsWith('http')
+                    ? { kind: 'url', value: actualOptions.mask }
+                    : { kind: 'filePath', value: actualOptions.mask };
+
+                const normalizedMask = await normalizeImageSource(maskDataSource);
+
+                const maskPart: ImagePart = {
+                    type: 'image',
+                    data: normalizedMask,
+                    _isMask: true // Custom property to identify this as a mask internally
+                };
+                messageParts.push(maskPart);
+
+                const maskTokens = estimateImageTokens('low');
+                totalImageTokens += maskTokens;
+                log.debug(`Estimated mask tokens: ${maskTokens}`);
+            } catch (error) {
+                log.error('Failed to process mask file:', error);
+                throw new Error(`Failed to process mask: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+        return { messageParts, totalImageTokens, imageOperation };
     }
 
     /**
@@ -719,98 +826,90 @@ export class LLMCaller implements MCPDirectAccess {
         const log = logger.createLogger({ prefix: 'LLMCaller.stream' });
 
         try {
-            // Handle different parameter formats
             let actualOptions: LLMCallOptions;
             let messageParts: MessagePart[] = [];
 
             if (typeof input === 'string') {
-                // Legacy format: input is a string, options is the second parameter
                 actualOptions = { text: input, ...options };
                 messageParts = toMessageParts(input);
             } else {
-                // New format: first parameter is an options object that may contain text, file, etc.
                 actualOptions = input;
-                // If text is provided in the options, use it, otherwise default to empty string
                 messageParts = actualOptions.text ? toMessageParts(actualOptions.text) : [];
             }
 
-            // Check model capabilities for file inputs
             const modelToUse = actualOptions.settings?.providerOptions?.model as string || this.model;
-
-            // Safe check for getCapabilities - this lets tests work while we implement proper capability checking
-            if (typeof ModelManager.getCapabilities === 'function' && actualOptions.file) {
+            if (typeof ModelManager.getCapabilities === 'function') {
                 const capabilities = ModelManager.getCapabilities(modelToUse);
+                const hasImageInput = actualOptions.file || (actualOptions.files && actualOptions.files.length > 0);
+                const hasImageOutput = Boolean(actualOptions.output?.image);
+                if (hasImageInput && !capabilities.input.image) {
+                    throw new CapabilityError(`Model "${modelToUse}" does not support image inputs.`);
+                }
+                if (hasImageOutput && !capabilities.output.image) {
+                    throw new CapabilityError(`Model "${modelToUse}" does not support image outputs.`);
+                }
 
-                if (!capabilities.input.image) {
-                    throw new CapabilityError(`Model "${modelToUse}" does not support file inputs.`);
+                // If this is going to be an image operation, determine which one and check capability
+                if (hasImageOutput) {
+                    let imageOperation: ImageOp = 'generate';
+                    if (actualOptions.mask) {
+                        imageOperation = 'edit-masked';
+                    } else if (actualOptions.files && actualOptions.files.length > 1) {
+                        imageOperation = 'composite';
+                    } else if (actualOptions.file || (actualOptions.files && actualOptions.files.length === 1)) {
+                        imageOperation = 'edit';
+                    }
+
+                    // Check if the model supports this specific image operation
+                    if (typeof capabilities.output.image === 'object') {
+                        if (imageOperation === 'generate' && !capabilities.output.image.generate) {
+                            throw new CapabilityError(`Model "${modelToUse}" does not support image generation.`);
+                        } else if (imageOperation === 'edit' && !capabilities.output.image.edit) {
+                            throw new CapabilityError(`Model "${modelToUse}" does not support image editing.`);
+                        } else if (imageOperation === 'edit-masked' && !capabilities.output.image.editWithMask) {
+                            throw new CapabilityError(`Model "${modelToUse}" does not support masked image editing.`);
+                        } else if (imageOperation === 'composite') {
+                            // Composite operation requires edit capability with multiple images
+                            if (!capabilities.output.image.edit) {
+                                throw new CapabilityError(`Model "${modelToUse}" does not support editing multiple images.`);
+                            }
+                        }
+                    }
                 }
             }
 
-            // Handle multimodal input (file parameter)
-            if (actualOptions.file) {
-                log.debug(`Processing file parameter: ${actualOptions.file.substring(0, 30)}...`);
+            let totalImageTokens = 0;
+            let imageOperation: 'generate' | 'edit' | 'edit-masked' | 'composite' = 'generate';
 
-                try {
-                    // Create an ImageDataSource based on the file path or URL
-                    const fileSource: ImageDataSource = actualOptions.file.startsWith('http')
-                        ? { kind: 'url', value: actualOptions.file }
-                        : { kind: 'filePath', value: actualOptions.file };
-
-                    // Normalize the image source (convert to base64 if needed)
-                    const normalizedSource = await normalizeImageSource(fileSource);
-
-                    // Add image part to messageParts
-                    const imagePart: ImagePart = {
-                        type: 'image',
-                        data: normalizedSource
-                    };
-
-                    messageParts.push(imagePart);
-
-                    // Estimate tokens for billing/limits
-                    const imageTokens = estimateImageTokens(actualOptions.imageDetail || 'auto');
-                    log.debug(`Estimated image tokens: ${imageTokens}, detail level: ${actualOptions.imageDetail || 'auto'}`);
-                } catch (error) {
-                    log.error('Failed to process image file:', error);
-                    throw new Error(`Failed to process image: ${error instanceof Error ? error.message : String(error)}`);
-                }
+            if (actualOptions.file || (actualOptions.files && actualOptions.files.length > 0) || actualOptions.mask) {
+                const result = await this.processImageFiles(actualOptions, messageParts);
+                messageParts = result.messageParts;
+                totalImageTokens = result.totalImageTokens;
+                imageOperation = result.imageOperation;
+                if (!actualOptions.settings) actualOptions.settings = {};
+                if (!actualOptions.settings.providerOptions) actualOptions.settings.providerOptions = {};
+                actualOptions.settings.providerOptions.imageOperation = imageOperation;
             }
 
-            // If a usage callback is provided in this call, update the caller to use it
-            if (actualOptions.usageCallback) {
-                this.setUsageCallback(actualOptions.usageCallback);
-            }
+            if (actualOptions.usageCallback) this.setUsageCallback(actualOptions.usageCallback);
+            if (this.toolOrchestrator) this.toolOrchestrator.resetCalledTools();
 
-            // Reset tool call tracking at the beginning of each stream call
-            if (this.toolOrchestrator) {
-                this.toolOrchestrator.resetCalledTools();
+            if (actualOptions.file) this.historyManager.addMessage('user', `<file:${actualOptions.file}>`, {});
+            if (actualOptions.files && Array.isArray(actualOptions.files)) {
+                for (const file of actualOptions.files) this.historyManager.addMessage('user', `<file:${file}>`, {});
             }
-
-            // Add the file placeholder message if we have a file
-            if (actualOptions.file) {
-                this.historyManager.addMessage('user', `<file:${actualOptions.file}>`, {});
-            }
-
-            // Store the original user message text for history
+            if (actualOptions.mask) this.historyManager.addMessage('user', `<mask:${actualOptions.mask}>`, {});
             const originalUserText = actualOptions.text;
+            if (originalUserText) this.historyManager.addMessage('user', originalUserText, {});
 
-            // Always add text message if it exists (even when file is provided)
-            if (originalUserText) {
-                this.historyManager.addMessage('user', originalUserText, {});
-            }
-
-            // Process the request potentially into chunks
             const processedMessages = await this.requestProcessor.processRequest({
                 message: actualOptions.text || '',
                 data: actualOptions.data,
                 endingMessage: actualOptions.endingMessage,
-                model: this.modelManager.getModel(this.model) ||
-                    // Fallback to throw meaningful error if model not found
-                    (() => { throw new Error(`Model ${this.model} not found`); })(),
+                model: this.modelManager.getModel(this.model) || (() => { throw new Error(`Model ${this.model} not found`); })(),
                 maxResponseTokens: actualOptions.settings?.maxTokens
             });
 
-            // Build unified chat parameters using the common helper
             const { chatParams, processedMessages: finalProcessedMessages } =
                 await this.buildChatParams({
                     ...actualOptions,
@@ -818,68 +917,64 @@ export class LLMCaller implements MCPDirectAccess {
                     processedMessages
                 });
 
-            // Handle streaming in a unified way
             if (finalProcessedMessages.length <= 1) {
-                // Single chunk flow - direct streaming
                 const stream = await this.internalStreamCall(chatParams);
-                yield* stream as AsyncIterable<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>>;
-
-                // Reset history if stateless mode was used for this call
-                if (chatParams.historyMode?.toLowerCase() === 'stateless') {
-                    this.historyManager.initializeWithSystemMessage();
-                }
-                return;
-            }
-
-            // Multi-chunk flow - use ChunkController's streamChunks method
-            // This directly yields stream-compatible responses from all chunks
-            const chunkStreamParams = {
-                ...chatParams,
-                historicalMessages: chatParams.messages // Use consistent message history
-            };
-
-            // Use processChunks method and convert to stream responses
-            const responses = await this.chunkController.processChunks(
-                finalProcessedMessages,
-                chunkStreamParams
-            );
-
-            // Add assistant responses to history
-            responses.forEach(response => {
-                // Only add non-tool response messages
-                if (response.content &&
-                    (!response.toolCalls || response.toolCalls.length === 0) &&
-                    response.metadata?.finishReason !== 'tool_calls') {
-                    this.historyManager.addMessage('assistant', response.content);
-                }
-            });
-
-            // Convert array of responses to stream format with proper typing
-            for (let i = 0; i < responses.length; i++) {
-                const response = responses[i];
-                const isLast = i === responses.length - 1;
-
-                const streamResponse: UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown> = {
-                    content: response.content || '',
-                    contentText: isLast ? response.content || '' : undefined,
-                    contentObject: isLast ? response.contentObject as T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown : undefined,
-                    role: response.role,
-                    isComplete: isLast,
-                    messages: chatParams.messages, // Use consistent messages from chatParams
-                    toolCalls: response.toolCalls,
-                    metadata: {
-                        ...response.metadata,
-                        processInfo: {
-                            currentChunk: i + 1,
-                            totalChunks: responses.length
+                for await (const chunk of stream as AsyncIterable<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>>) {
+                    if (chunk.isComplete && actualOptions.outputPath && chunk.image) {
+                        // Create a temporary UniversalChatResponse to use with processImageOutput
+                        const tempResponse: UniversalChatResponse = {
+                            content: chunk.contentText || null,
+                            role: chunk.role,
+                            image: chunk.image,
+                            metadata: chunk.metadata
+                        };
+                        const processedOutputResponse = await this.processImageOutput(tempResponse, actualOptions.outputPath);
+                        // Update chunk with imageSavedPath from metadata if present
+                        if (processedOutputResponse.metadata?.imageSavedPath) {
+                            if (!chunk.metadata) chunk.metadata = {};
+                            chunk.metadata.imageSavedPath = processedOutputResponse.metadata.imageSavedPath;
                         }
                     }
-                };
+                    yield chunk;
+                }
+            } else {
+                const chunkStreamParams = { ...chatParams, historicalMessages: chatParams.messages };
+                const responses = await this.chunkController.processChunks(finalProcessedMessages, chunkStreamParams);
+                responses.forEach(response => {
+                    if (response.content && (!response.toolCalls || response.toolCalls.length === 0) && response.metadata?.finishReason !== 'tool_calls') {
+                        this.historyManager.addMessage('assistant', response.content);
+                    }
+                });
 
-                yield streamResponse;
+                for (let i = 0; i < responses.length; i++) {
+                    const response = responses[i];
+                    const isLast = i === responses.length - 1;
+                    const streamResponseChunk: UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown> = {
+                        content: response.content || '',
+                        contentText: isLast ? response.content || '' : undefined,
+                        contentObject: isLast ? response.contentObject as T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown : undefined,
+                        role: response.role,
+                        isComplete: isLast,
+                        messages: chatParams.messages,
+                        toolCalls: response.toolCalls,
+                        image: isLast ? response.image : undefined, // Include image only on the last chunk
+                        metadata: {
+                            ...response.metadata,
+                            processInfo: { currentChunk: i + 1, totalChunks: responses.length }
+                        }
+                    };
+
+                    if (streamResponseChunk.isComplete && actualOptions.outputPath && streamResponseChunk.image) {
+                        const processedOutputResponse = await this.processImageOutput(response, actualOptions.outputPath); // Pass full response for processImageOutput
+                        if (processedOutputResponse.metadata?.imageSavedPath) {
+                            if (!streamResponseChunk.metadata) streamResponseChunk.metadata = {};
+                            streamResponseChunk.metadata.imageSavedPath = processedOutputResponse.metadata.imageSavedPath;
+                        }
+                    }
+                    yield streamResponseChunk;
+                }
             }
 
-            // Reset history if stateless mode was used for this call
             if (chatParams.historyMode?.toLowerCase() === 'stateless') {
                 this.historyManager.initializeWithSystemMessage();
             }
@@ -900,53 +995,159 @@ export class LLMCaller implements MCPDirectAccess {
         const log = logger.createLogger({ prefix: 'LLMCaller.call' });
 
         try {
-            // 1) Normalize into a single opts object
             const opts: LLMCallOptions = typeof message === 'string'
                 ? { text: message, ...options }
                 : { ...message };
 
-            // 2) Capability check for image files
             const modelToUse = opts.settings?.providerOptions?.model as string || this.model;
-            if (typeof ModelManager.getCapabilities === 'function' && opts.file) {
+            if (typeof ModelManager.getCapabilities === 'function') {
                 const capabilities = ModelManager.getCapabilities(modelToUse);
+                const hasImageInput = opts.file || (opts.files && opts.files.length > 0);
+                const hasImageOutput = Boolean(opts.output?.image);
+                if (hasImageInput && !capabilities.input.image) {
+                    throw new CapabilityError(`Model "${modelToUse}" does not support image inputs.`);
+                }
+                if (hasImageOutput && !capabilities.output.image) {
+                    throw new CapabilityError(`Model "${modelToUse}" does not support image outputs.`);
+                }
 
-                if (!capabilities.input.image) {
-                    throw new CapabilityError(`Model "${modelToUse}" does not support file inputs.`);
+                // If this is an image output request, route it to the image generation API directly
+                if (hasImageOutput) {
+                    log.debug('Image output requested, routing to image generation API');
+
+                    // Determine the image operation type
+                    let imageOperation: ImageOp = 'generate';
+                    if (opts.mask) {
+                        imageOperation = 'edit-masked';
+                    } else if (opts.files && opts.files.length > 1) {
+                        imageOperation = 'composite';
+                    } else if (opts.file || (opts.files && opts.files.length === 1)) {
+                        imageOperation = 'edit';
+                    }
+
+                    // Check if the model supports this specific image operation
+                    if (typeof capabilities.output.image === 'object') {
+                        if (imageOperation === 'generate' && !capabilities.output.image.generate) {
+                            throw new CapabilityError(`Model "${modelToUse}" does not support image generation.`);
+                        } else if (imageOperation === 'edit' && !capabilities.output.image.edit) {
+                            throw new CapabilityError(`Model "${modelToUse}" does not support image editing.`);
+                        } else if (imageOperation === 'edit-masked' && !capabilities.output.image.editWithMask) {
+                            throw new CapabilityError(`Model "${modelToUse}" does not support masked image editing.`);
+                        } else if (imageOperation === 'composite') {
+                            // Composite operation requires edit capability with multiple images
+                            if (!capabilities.output.image.edit) {
+                                throw new CapabilityError(`Model "${modelToUse}" does not support editing multiple images.`);
+                            }
+                        }
+                    }
+
+                    // Create parameters for the image operation
+                    const imageParams: ImageCallParams = {
+                        prompt: opts.text || '',
+                        options: {
+                            ...(opts.input?.image || {}),
+                            ...(opts.output?.image || {})
+                        },
+                        outputPath: opts.outputPath
+                    };
+
+                    // Add files if present
+                    if (opts.files && opts.files.length > 0) {
+                        imageParams.files = [];
+                        for (const file of opts.files) {
+                            // Convert string paths to FilePathSource or UrlSource objects
+                            if (typeof file === 'string') {
+                                const source: FilePathSource | UrlSource = file.startsWith('http')
+                                    ? { kind: 'url', value: file }
+                                    : { kind: 'filePath', value: file };
+
+                                // If it's a URL, we can add it directly
+                                if (source.kind === 'url') {
+                                    imageParams.files.push(source);
+                                } else {
+                                    // For file paths, we need to normalize them first
+                                    const normalized = await normalizeImageSource(source);
+                                    if (normalized.kind === 'url') {
+                                        imageParams.files.push(normalized);
+                                    }
+                                }
+                            } else {
+                                // If it's already a DataSource, normalize it if needed
+                                const normalized = await normalizeImageSource(file as ImageDataSource);
+                                if (normalized.kind === 'url') {
+                                    imageParams.files.push(normalized);
+                                }
+                            }
+                        }
+                    } else if (opts.file) {
+                        // Convert string path to FilePathSource or UrlSource
+                        const source: FilePathSource | UrlSource = opts.file.startsWith('http')
+                            ? { kind: 'url', value: opts.file }
+                            : { kind: 'filePath', value: opts.file };
+
+                        const normalized = await normalizeImageSource(source);
+                        if (normalized.kind === 'url') {
+                            imageParams.files = [normalized];
+                        }
+                    }
+
+                    // Add mask if present
+                    if (opts.mask) {
+                        const maskSource: FilePathSource | UrlSource = opts.mask.startsWith('http')
+                            ? { kind: 'url', value: opts.mask }
+                            : { kind: 'filePath', value: opts.mask };
+
+                        imageParams.mask = await normalizeImageSource(maskSource);
+                    }
+
+                    // Call the image operation directly
+                    const response = await this.providerManager.callImageOperation(
+                        modelToUse,
+                        imageOperation,
+                        imageParams
+                    );
+
+                    // Process image output if needed
+                    const processedResponse = opts.outputPath && response.image
+                        ? await this.processImageOutput(response, opts.outputPath)
+                        : response;
+
+                    return [processedResponse];
                 }
             }
 
-            // 3) Handle file/image files in history
-            if (opts.file) {
-                this.historyManager.addMessage('user', `<file:${opts.file}>`, {});
+            let messageParts: MessagePart[] = opts.text ? toMessageParts(opts.text) : [];
+            let imageOperation: 'generate' | 'edit' | 'edit-masked' | 'composite' = 'generate';
+
+            if (opts.file || (opts.files && opts.files.length > 0) || opts.mask) {
+                const result = await this.processImageFiles(opts, messageParts);
+                messageParts = result.messageParts;
+                imageOperation = result.imageOperation;
+                if (!opts.settings) opts.settings = {};
+                if (!opts.settings.providerOptions) opts.settings.providerOptions = {};
+                opts.settings.providerOptions.imageOperation = imageOperation;
             }
 
-            // Store the original user message text for history
+            if (opts.file) this.historyManager.addMessage('user', `<file:${opts.file}>`, {});
+            if (opts.files && Array.isArray(opts.files)) {
+                for (const file of opts.files) this.historyManager.addMessage('user', `<file:${file}>`, {});
+            }
+            if (opts.mask) this.historyManager.addMessage('user', `<mask:${opts.mask}>`, {});
             const originalUserText = opts.text;
+            if (originalUserText) this.historyManager.addMessage('user', originalUserText, {});
 
-            // Always add text message if it exists (even when file is provided)
-            if (originalUserText) {
-                this.historyManager.addMessage('user', originalUserText, {});
-            }
+            log.debug(`Call with text: ${(opts.text || '').substring(0, 30)}... and files: ${opts.file || (opts.files?.length ? opts.files.length + ' files' : 'none')}`);
 
-            log.debug(`Call with text: ${(opts.text || '').substring(0, 30)}... and file: ${opts.file || 'none'}`);
+            if (this.toolOrchestrator) this.toolOrchestrator.resetCalledTools();
 
-            // Reset tool call tracking at the beginning of each call
-            if (this.toolOrchestrator) {
-                this.toolOrchestrator.resetCalledTools();
-            }
-
-            // Process the request potentially into chunks
             const processedMessages = await this.requestProcessor.processRequest({
                 message: opts.text || '',
                 data: opts.data,
                 endingMessage: opts.endingMessage,
-                model: this.modelManager.getModel(this.model) ||
-                    // Fallback to throw meaningful error if model not found
-                    (() => { throw new Error(`Model ${this.model} not found`); })(),
+                model: this.modelManager.getModel(this.model) || (() => { throw new Error(`Model ${this.model} not found`); })(),
                 maxResponseTokens: opts.settings?.maxTokens
             });
 
-            // Build universal chat parameters in a consistent way
             const { chatParams, processedMessages: finalProcessedMessages } =
                 await this.buildChatParams({
                     ...opts,
@@ -954,42 +1155,35 @@ export class LLMCaller implements MCPDirectAccess {
                     processedMessages
                 });
 
-            // Unified handling for single or multiple chunks
+            let responses: UniversalChatResponse[];
             if (finalProcessedMessages.length <= 1) {
-                // Single chunk flow - use direct chat call
                 const response = await this.internalChatCall<T>(chatParams);
-
-                // Reset history if stateless mode was used for this call
-                if (chatParams.historyMode?.toLowerCase() === 'stateless') {
-                    this.historyManager.initializeWithSystemMessage();
-                }
-
-                return [response]; // Convert single response to array
+                responses = [response];
             } else {
-                // Multi-chunk flow - use ChunkController with the SAME parameters
-                const responses = await this.chunkController.processChunks(finalProcessedMessages, {
+                responses = await this.chunkController.processChunks(finalProcessedMessages, {
                     ...chatParams,
-                    historicalMessages: chatParams.messages // Use the same messages set in buildChatParams
+                    historicalMessages: chatParams.messages
                 });
-
-                // Add assistant responses from all chunks to history AFTER all chunks are processed
-                // Skip this history addition for tool calls, as the ChatController already adds these
                 responses.forEach(response => {
-                    // Only add non-tool response messages
-                    if (response.content &&
-                        (!response.toolCalls || response.toolCalls.length === 0) &&
-                        response.metadata?.finishReason !== 'tool_calls') {
+                    if (response.content && (!response.toolCalls || response.toolCalls.length === 0) && response.metadata?.finishReason !== 'tool_calls') {
                         this.historyManager.addMessage('assistant', response.content);
                     }
                 });
-
-                // Reset history if stateless mode was used for this call
-                if (chatParams.historyMode?.toLowerCase() === 'stateless') {
-                    this.historyManager.initializeWithSystemMessage();
-                }
-
-                return responses;
             }
+
+            // After getting all responses, process image output for each if applicable
+            const processedResponses = await Promise.all(responses.map(async (res) => {
+                if (opts.outputPath && res.image) {
+                    return await this.processImageOutput(res, opts.outputPath);
+                }
+                return res;
+            }));
+
+            if (chatParams.historyMode?.toLowerCase() === 'stateless') {
+                this.historyManager.initializeWithSystemMessage();
+            }
+
+            return processedResponses;
         } catch (error) {
             log.error('Error in call method:', error);
             throw error;
@@ -1357,5 +1551,48 @@ export class LLMCaller implements MCPDirectAccess {
         }
 
         log.debug('Disconnection complete');
+    }
+
+    /**
+     * Processes image output from a response, including saving to file if outputPath provided
+     * @param response The chat response that might contain image data
+     * @param outputPath Optional path to save the image to
+     * @private
+     */
+    private async processImageOutput(
+        response: UniversalChatResponse,
+        outputPath?: string
+    ): Promise<UniversalChatResponse> {
+        const log = logger.createLogger({ prefix: 'LLMCaller.processImageOutput' });
+
+        // If there's no image in the response or no outputPath, return as-is
+        if (!response.image || !outputPath) {
+            return response;
+        }
+
+        try {
+            log.debug(`Processing image output, saving to: ${outputPath}`);
+
+            // Save the image to the specified path
+            await saveBase64ToFile(
+                response.image.data,
+                outputPath,
+                response.image.mime
+            );
+
+            log.debug(`Successfully saved image to ${outputPath}`);
+
+            // Add the saved path to the response metadata for reference
+            if (!response.metadata) {
+                response.metadata = {};
+            }
+
+            response.metadata.imageSavedPath = outputPath;
+
+            return response;
+        } catch (error) {
+            log.error('Failed to save image output:', error);
+            throw new Error(`Failed to save image to ${outputPath}: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 }
