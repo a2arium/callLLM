@@ -1,4 +1,4 @@
-import { OpenAI } from 'openai';
+import { OpenAI, toFile } from 'openai';
 import type { Stream } from 'openai/streaming';
 import { BaseAdapter, AdapterConfig } from '../base/baseAdapter';
 import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason, ModelInfo, ImageDataSource } from '../../interfaces/UniversalInterfaces';
@@ -24,6 +24,9 @@ import { RegisteredProviders } from '../index';
 import { TokenCalculator } from '../../core/models/TokenCalculator';
 import { LLMProviderImage, ImageOp, ImageCallParams } from '../../interfaces/LLMProvider';
 import { saveBase64ToFile } from '../../core/file-data/fileData';
+import * as fs from 'fs';
+import { UrlSource, Base64Source, FilePathSource } from '../../interfaces/UniversalInterfaces';
+import { RetryManager } from '../../core/retry/RetryManager';
 
 // Load environment variables
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
@@ -394,33 +397,90 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
         log.debug('Processing image operation:', { model, op, prompt: params.prompt });
 
         try {
-            switch (op) {
-                case 'generate':
-                    return this.generateImage(model, params);
-                case 'edit':
-                    // Check for image files
-                    if (!params.files || params.files.length === 0) {
-                        throw new OpenAIResponseValidationError('Image edit operation requires at least one image file');
-                    }
-                    return this.editImage(model, params);
-                case 'edit-masked':
-                    // Check for both image and mask files
-                    if (!params.files || params.files.length === 0) {
-                        throw new OpenAIResponseValidationError('Image edit-masked operation requires at least one image file');
-                    }
-                    if (!params.mask) {
-                        throw new OpenAIResponseValidationError('Image edit-masked operation requires a mask file');
-                    }
-                    return this.editImageWithMask(model, params);
-                case 'composite':
-                    // Check for multiple image files
-                    if (!params.files || params.files.length < 2) {
-                        throw new OpenAIResponseValidationError('Image composite operation requires at least two image files');
-                    }
-                    return this.generateVariation(model, params);
-                default:
-                    throw new OpenAIResponseValidationError(`Unsupported image operation: ${op}`);
+            // Enhanced error handling for file operations
+            if ((op === 'edit' || op === 'edit-masked' || op === 'composite') && (!params.files || params.files.length === 0)) {
+                log.error(`Image ${op} operation failed: No image files provided`, {
+                    filesProvided: Boolean(params.files),
+                    fileCount: params.files?.length || 0,
+                    sourceTypes: params.files?.map(f => f.kind).join(', ')
+                });
+                throw new OpenAIResponseValidationError(`Image ${op} operation requires at least one image file`);
             }
+
+            // Create a retry manager for image operations
+            const retryManager = new RetryManager({
+                baseDelay: 1000,
+                maxRetries: 3 // Default to 3 retries for image operations
+            });
+
+            // Define what errors should be retried
+            const shouldRetry = (error: unknown): boolean => {
+                // Retry on connection errors
+                if (error instanceof Error) {
+                    // Check for API connection errors from OpenAI lib
+                    if (error.message?.includes('Connection error')) return true;
+
+                    // Check for common network errors
+                    if ((error as any).code === 'ECONNRESET' ||
+                        (error as any).code === 'ETIMEDOUT' ||
+                        (error as any).code === 'ECONNABORTED') {
+                        return true;
+                    }
+
+                    // Check for nested error causes
+                    if ((error as any).cause) {
+                        const cause = (error as any).cause;
+                        if (cause.code === 'ECONNRESET' ||
+                            cause.code === 'ETIMEDOUT' ||
+                            cause.code === 'ECONNABORTED') {
+                            return true;
+                        }
+                    }
+                }
+
+                // Retry on 5xx server errors
+                if (error instanceof OpenAI.APIError && error.status && error.status >= 500) {
+                    return true;
+                }
+
+                // Retry on rate limit errors
+                if (error instanceof OpenAIResponseRateLimitError) {
+                    return true;
+                }
+
+                return false;
+            };
+
+            // Use retry manager for all image operations
+            return await retryManager.executeWithRetry(async () => {
+                switch (op) {
+                    case 'generate':
+                        return await this.generateImage(model, params);
+                    case 'edit':
+                        // Check for image files
+                        if (!params.files || params.files.length === 0) {
+                            throw new OpenAIResponseValidationError('Image edit operation requires at least one image file');
+                        }
+                        return await this.editImage(model, params);
+                    case 'edit-masked':
+                        // Check for both image and mask files
+                        if (!params.files || params.files.length === 0) {
+                            throw new OpenAIResponseValidationError('Image edit-masked operation requires at least one image file');
+                        }
+                        if (!params.mask) {
+                            throw new OpenAIResponseValidationError('Image edit-masked operation requires a mask file');
+                        }
+                        return await this.editImageWithMask(model, params);
+                    case 'composite':
+                        // Check for multiple image files
+                        if (!params.files || params.files.length < 2) {
+                            throw new OpenAIResponseValidationError('Image composite operation requires at least two image files');
+                        }
+                        return await this.generateVariation(model, params);
+                    default:
+                        throw new OpenAIResponseValidationError(`Unsupported image operation: ${op}`);
+                }
+            }, shouldRetry);
         } catch (error: any) {
             if (error instanceof OpenAI.APIError) {
                 if (error.status === 401) {
@@ -434,6 +494,12 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 } else if (error.status === 400) {
                     throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
                 }
+            }
+
+            // Handle connection errors specifically
+            if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' ||
+                (error.cause && (error.cause.code === 'ECONNRESET' || error.cause.code === 'ETIMEDOUT'))) {
+                throw new OpenAIResponseNetworkError(`Connection error: ${error.message || String(error)}`);
             }
 
             // If it's not an OpenAI API error, wrap it
@@ -461,18 +527,23 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             n: 1
         };
 
+        // Get the model capabilities
+        const modelInfo = this.modelManager.getModel(model);
+        // Is Dall-E family model
+        const isDallE3 = model.toLowerCase().includes('dall-e');
+
         // Determine size parameter - convert from our format to OpenAI's
         let size: string = '1024x1024';
         if (params.options.size) {
-            // For DALL-E-3 and gpt-image-1, handle various size options
+            // Handle various size options
             if (['1792x1024', '1024x1792', '1536x1024', '1024x1536'].includes(params.options.size)) {
                 size = params.options.size;
             }
         }
         requestParams.size = size;
 
-        // Handle model-specific parameters
-        if (model === 'dall-e-3') {
+        // Handle model-specific parameters based on capabilities or model type
+        if (isDallE3) {
             // For DALL-E-3 specific parameters
             if (params.options.quality) {
                 // DALL-E-3 uses 'hd' for high quality, 'standard' otherwise
@@ -489,19 +560,18 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             // DALL-E-3 supports response_format
             requestParams.response_format = 'b64_json';
         } else {
-            // For gpt-image-1 and other models
+            // For other models like gpt-image-1
             if (params.options.quality) {
-                // gpt-image-1 uses 'high', 'medium', 'low', or 'auto' directly
+                // Uses 'high', 'medium', 'low', or 'auto' directly
                 requestParams.quality = params.options.quality;
             }
 
-            // gpt-image-1 supports background parameter
+            // Some models support background parameter
             if (params.options.background) {
                 requestParams.background = params.options.background;
             }
 
-            // Do not set response_format for gpt-image-1 as it's not supported
-            // and always returns base64-encoded images
+            // Do not set response_format for models that don't support it
         }
 
         log.debug('Image generation parameters:', requestParams);
@@ -514,7 +584,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             throw new OpenAIResponseAdapterError('No image data received from OpenAI API');
         }
 
-        // Handle image data based on model
+        // Handle image data based on response format
         let imageData: string;
         let dataSource: 'url' | 'base64' = 'base64';
 
@@ -593,20 +663,30 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
 
         log.debug(`Editing image with ${params.files.length} image file(s)`);
 
-        // For gpt-image-1, we need to construct the image edit request
-        if (model === 'gpt-image-1') {
+        try {
+            // Create base request parameters
             const requestParams: any = {
                 model,
-                prompt: params.prompt,
-                image: params.files.map(file => file.value) // Use the normalized image file URLs
+                prompt: params.prompt
             };
 
-            // Add size parameter
+            // Process image(s) based on whether we have single or multiple images
+            if (params.files.length === 1) {
+                // Single image case
+                requestParams.image = await this.toOpenAIImageArg(params.files[0]);
+            } else {
+                // Multiple images case - need to await all the conversions
+                requestParams.image = await Promise.all(
+                    params.files.map(file => this.toOpenAIImageArg(file))
+                );
+            }
+
+            // Add size parameter if specified
             if (params.options.size) {
                 requestParams.size = params.options.size;
             }
 
-            // Add quality parameter
+            // Add quality parameter if specified
             if (params.options.quality) {
                 requestParams.quality = params.options.quality;
             }
@@ -616,98 +696,82 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 requestParams.background = params.options.background;
             }
 
-            log.debug('Image edit parameters:', requestParams);
-
-            try {
-                // Call the images.edit endpoint
-                const response = await this.client.images.edit(requestParams);
-
-                // Process the response
-                if (!response.data || response.data.length === 0) {
-                    throw new OpenAIResponseAdapterError('No image data received from OpenAI API');
-                }
-
-                // Handle image data
-                let imageData: string;
-                let dataSource: 'url' | 'base64' = 'base64';
-
-                if (response.data[0].b64_json) {
-                    imageData = response.data[0].b64_json;
-                    dataSource = 'base64';
-                } else if (response.data[0].url) {
-                    imageData = response.data[0].url;
-                    dataSource = 'url';
-                } else {
-                    throw new OpenAIResponseAdapterError('No image data or URL received from OpenAI API');
-                }
-
-                // Determine image dimensions from size or default to 1024x1024
-                let size = params.options.size || '1024x1024';
-                const imageWidth = parseInt(size.split('x')[0]);
-                const imageHeight = parseInt(size.split('x')[1]);
-
-                // Create the response object
-                const result: UniversalChatResponse = {
-                    content: null,
-                    role: 'assistant',
-                    image: {
-                        data: imageData,
-                        dataSource: dataSource,
-                        mime: 'image/png',
-                        width: imageWidth,
-                        height: imageHeight,
-                        operation: 'edit'
-                    },
-                    metadata: {
-                        created: Date.now(),
-                        model
-                    }
-                };
-
-                // Save to file if outputPath provided
-                if (params.outputPath) {
-                    try {
-                        if (dataSource === 'url') {
-                            log.debug(`Image URL received (${imageData.substring(0, 30)}...), saving to ${params.outputPath} not supported yet`);
-                            if (!result.metadata) result.metadata = {};
-                            result.metadata.imageSavedPath = params.outputPath;
-                            result.metadata.imageUrl = imageData;
-                        } else {
-                            await saveBase64ToFile(imageData, params.outputPath, 'image/png');
-                            if (!result.metadata) result.metadata = {};
-                            result.metadata.imageSavedPath = params.outputPath;
-                            log.debug(`Edited image saved to ${params.outputPath}`);
-                        }
-                    } catch (error) {
-                        log.error(`Failed to save edited image to ${params.outputPath}:`, error);
-                    }
-                }
-
-                return result;
-            } catch (error: any) {
-                log.error('Image edit operation failed:', error);
-                throw new OpenAIResponseAdapterError(`Image edit operation failed: ${error.message || String(error)}`);
-            }
-        } else {
-            // DALL-E 3 doesn't support image editing directly via the API yet, so we'll use
-            // the image generation API with a prompt that instructs to edit the image
-            log.debug('Using generation with enhanced prompt for DALL-E 3 editing (fallback method)');
-            const enhancedPrompt = `Edit this image as follows: ${params.prompt}`;
-
-            // For now, delegate to the generate image method
-            // This is a fallback since OpenAI doesn't provide a dedicated image edit endpoint for DALL-E 3
-            // The actual editing would happen by instructing the model via the prompt
-            const result = await this.generateImage(model, {
-                ...params,
-                prompt: enhancedPrompt
+            // Log request parameters for debugging
+            log.debug('Image edit parameters:', {
+                model: requestParams.model,
+                prompt: requestParams.prompt,
+                imageCount: params.files.length,
+                hasOptions: !!params.options
             });
 
-            // Update the operation type in the response
-            if (result.image) {
-                result.image.operation = 'edit';
+            // Call the OpenAI API to edit the image
+            const response = await this.client.images.edit(requestParams);
+
+            // Process the response
+            if (!response.data || response.data.length === 0) {
+                throw new OpenAIResponseAdapterError('No image data received from OpenAI API');
+            }
+
+            // Handle image data
+            let imageData: string;
+            let dataSource: 'url' | 'base64' = 'base64';
+
+            if (response.data[0].b64_json) {
+                imageData = response.data[0].b64_json;
+                dataSource = 'base64';
+            } else if (response.data[0].url) {
+                imageData = response.data[0].url;
+                dataSource = 'url';
+            } else {
+                throw new OpenAIResponseAdapterError('No image data or URL received from OpenAI API');
+            }
+
+            // Determine image dimensions from size or default to 1024x1024
+            let size = params.options.size || '1024x1024';
+            const imageWidth = parseInt(size.split('x')[0]);
+            const imageHeight = parseInt(size.split('x')[1]);
+
+            // Create the response object
+            const result: UniversalChatResponse = {
+                content: null,
+                role: 'assistant',
+                image: {
+                    data: imageData,
+                    dataSource: dataSource,
+                    mime: 'image/png',
+                    width: imageWidth,
+                    height: imageHeight,
+                    operation: 'edit'
+                },
+                metadata: {
+                    created: Date.now(),
+                    model
+                }
+            };
+
+            // Save to file if outputPath provided
+            if (params.outputPath) {
+                try {
+                    if (dataSource === 'url') {
+                        log.debug(`Image URL received (${imageData.substring(0, 30)}...), saving to ${params.outputPath} not supported yet`);
+                        if (!result.metadata) result.metadata = {};
+                        result.metadata.imageSavedPath = params.outputPath;
+                        result.metadata.imageUrl = imageData;
+                    } else {
+                        await saveBase64ToFile(imageData, params.outputPath, 'image/png');
+                        if (!result.metadata) result.metadata = {};
+                        result.metadata.imageSavedPath = params.outputPath;
+                        log.debug(`Edited image saved to ${params.outputPath}`);
+                    }
+                } catch (error) {
+                    log.error(`Failed to save edited image to ${params.outputPath}:`, error);
+                }
             }
 
             return result;
+        } catch (error: any) {
+            log.error('Image edit operation failed:', error);
+            throw new OpenAIResponseAdapterError(`Image edit operation failed: ${error.message || String(error)}`);
         }
     }
 
@@ -726,21 +790,21 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             throw new OpenAIResponseValidationError('Image edit-masked operation requires a mask file');
         }
 
-        // For gpt-image-1, we need to use the edit endpoint with mask
-        if (model === 'gpt-image-1') {
+        try {
+            // Create request parameters
             const requestParams: any = {
                 model,
                 prompt: params.prompt,
-                image: params.files[0].value, // Use the first image
-                mask: params.mask.value // Use the mask
+                image: await this.toOpenAIImageArg(params.files[0]),
+                mask: await this.toOpenAIImageArg(params.mask)
             };
 
-            // Add size parameter
+            // Add size parameter if specified
             if (params.options.size) {
                 requestParams.size = params.options.size;
             }
 
-            // Add quality parameter
+            // Add quality parameter if specified
             if (params.options.quality) {
                 requestParams.quality = params.options.quality;
             }
@@ -750,95 +814,83 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 requestParams.background = params.options.background;
             }
 
-            log.debug('Image edit with mask parameters:', requestParams);
-
-            try {
-                // Call the images.edit endpoint with mask
-                const response = await this.client.images.edit(requestParams);
-
-                // Process the response
-                if (!response.data || response.data.length === 0) {
-                    throw new OpenAIResponseAdapterError('No image data received from OpenAI API');
-                }
-
-                // Handle image data
-                let imageData: string;
-                let dataSource: 'url' | 'base64' = 'base64';
-
-                if (response.data[0].b64_json) {
-                    imageData = response.data[0].b64_json;
-                    dataSource = 'base64';
-                } else if (response.data[0].url) {
-                    imageData = response.data[0].url;
-                    dataSource = 'url';
-                } else {
-                    throw new OpenAIResponseAdapterError('No image data or URL received from OpenAI API');
-                }
-
-                // Determine image dimensions from size or default to 1024x1024
-                let size = params.options.size || '1024x1024';
-                const imageWidth = parseInt(size.split('x')[0]);
-                const imageHeight = parseInt(size.split('x')[1]);
-
-                // Create the response object
-                const result: UniversalChatResponse = {
-                    content: null,
-                    role: 'assistant',
-                    image: {
-                        data: imageData,
-                        dataSource: dataSource,
-                        mime: 'image/png',
-                        width: imageWidth,
-                        height: imageHeight,
-                        operation: 'edit-masked'
-                    },
-                    metadata: {
-                        created: Date.now(),
-                        model
-                    }
-                };
-
-                // Save to file if outputPath provided
-                if (params.outputPath) {
-                    try {
-                        if (dataSource === 'url') {
-                            log.debug(`Image URL received (${imageData.substring(0, 30)}...), saving to ${params.outputPath} not supported yet`);
-                            if (!result.metadata) result.metadata = {};
-                            result.metadata.imageSavedPath = params.outputPath;
-                            result.metadata.imageUrl = imageData;
-                        } else {
-                            await saveBase64ToFile(imageData, params.outputPath, 'image/png');
-                            if (!result.metadata) result.metadata = {};
-                            result.metadata.imageSavedPath = params.outputPath;
-                            log.debug(`Edited image with mask saved to ${params.outputPath}`);
-                        }
-                    } catch (error) {
-                        log.error(`Failed to save edited image with mask to ${params.outputPath}:`, error);
-                    }
-                }
-
-                return result;
-            } catch (error: any) {
-                log.error('Image edit with mask operation failed:', error);
-                throw new OpenAIResponseAdapterError(`Image edit with mask operation failed: ${error.message || String(error)}`);
-            }
-        } else {
-            // Similar to editImage, DALL-E 3, we use generation with an enhanced prompt
-            log.debug('Using generation with enhanced prompt for DALL-E 3 masked editing (fallback method)');
-            const enhancedPrompt = `Edit this image by applying the following changes to the masked area: ${params.prompt}`;
-
-            // Call the generate method as a fallback
-            const result = await this.generateImage(model, {
-                ...params,
-                prompt: enhancedPrompt
+            // Log request parameters for debugging (not including actual image/mask data)
+            log.debug('Image edit with mask parameters:', {
+                model: requestParams.model,
+                prompt: requestParams.prompt,
+                hasImage: !!requestParams.image,
+                hasMask: !!requestParams.mask,
+                options: params.options
             });
 
-            // Update the operation type in the response
-            if (result.image) {
-                result.image.operation = 'edit-masked';
+            // Call the OpenAI API to edit the image with mask
+            const response = await this.client.images.edit(requestParams);
+
+            // Process the response
+            if (!response.data || response.data.length === 0) {
+                throw new OpenAIResponseAdapterError('No image data received from OpenAI API');
+            }
+
+            // Handle image data
+            let imageData: string;
+            let dataSource: 'url' | 'base64' = 'base64';
+
+            if (response.data[0].b64_json) {
+                imageData = response.data[0].b64_json;
+                dataSource = 'base64';
+            } else if (response.data[0].url) {
+                imageData = response.data[0].url;
+                dataSource = 'url';
+            } else {
+                throw new OpenAIResponseAdapterError('No image data or URL received from OpenAI API');
+            }
+
+            // Determine image dimensions from size or default to 1024x1024
+            let size = params.options.size || '1024x1024';
+            const imageWidth = parseInt(size.split('x')[0]);
+            const imageHeight = parseInt(size.split('x')[1]);
+
+            // Create the response object
+            const result: UniversalChatResponse = {
+                content: null,
+                role: 'assistant',
+                image: {
+                    data: imageData,
+                    dataSource: dataSource,
+                    mime: 'image/png',
+                    width: imageWidth,
+                    height: imageHeight,
+                    operation: 'edit-masked'
+                },
+                metadata: {
+                    created: Date.now(),
+                    model
+                }
+            };
+
+            // Save to file if outputPath provided
+            if (params.outputPath) {
+                try {
+                    if (dataSource === 'url') {
+                        log.debug(`Image URL received (${imageData.substring(0, 30)}...), saving to ${params.outputPath} not supported yet`);
+                        if (!result.metadata) result.metadata = {};
+                        result.metadata.imageSavedPath = params.outputPath;
+                        result.metadata.imageUrl = imageData;
+                    } else {
+                        await saveBase64ToFile(imageData, params.outputPath, 'image/png');
+                        if (!result.metadata) result.metadata = {};
+                        result.metadata.imageSavedPath = params.outputPath;
+                        log.debug(`Edited image with mask saved to ${params.outputPath}`);
+                    }
+                } catch (error) {
+                    log.error(`Failed to save edited image with mask to ${params.outputPath}:`, error);
+                }
             }
 
             return result;
+        } catch (error: any) {
+            log.error('Image edit with mask operation failed:', error);
+            throw new OpenAIResponseAdapterError(`Image edit with mask operation failed: ${error.message || String(error)}`);
         }
     }
 
@@ -854,20 +906,20 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             throw new OpenAIResponseValidationError('Image composite operation requires at least two image files');
         }
 
-        // For gpt-image-1, we can use the edit endpoint with multiple images
-        if (model === 'gpt-image-1') {
+        try {
+            // Create request parameters
             const requestParams: any = {
                 model,
                 prompt: params.prompt,
-                image: params.files.map(file => file.value) // Use all provided images
+                image: await Promise.all(params.files.map(file => this.toOpenAIImageArg(file)))
             };
 
-            // Add size parameter
+            // Add size parameter if specified
             if (params.options.size) {
                 requestParams.size = params.options.size;
             }
 
-            // Add quality parameter
+            // Add quality parameter if specified
             if (params.options.quality) {
                 requestParams.quality = params.options.quality;
             }
@@ -877,95 +929,145 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 requestParams.background = params.options.background;
             }
 
-            log.debug('Image composite parameters:', requestParams);
-
-            try {
-                // Call the images.edit endpoint for composite/variation
-                const response = await this.client.images.edit(requestParams);
-
-                // Process the response
-                if (!response.data || response.data.length === 0) {
-                    throw new OpenAIResponseAdapterError('No image data received from OpenAI API');
-                }
-
-                // Handle image data
-                let imageData: string;
-                let dataSource: 'url' | 'base64' = 'base64';
-
-                if (response.data[0].b64_json) {
-                    imageData = response.data[0].b64_json;
-                    dataSource = 'base64';
-                } else if (response.data[0].url) {
-                    imageData = response.data[0].url;
-                    dataSource = 'url';
-                } else {
-                    throw new OpenAIResponseAdapterError('No image data or URL received from OpenAI API');
-                }
-
-                // Determine image dimensions from size or default to 1024x1024
-                let size = params.options.size || '1024x1024';
-                const imageWidth = parseInt(size.split('x')[0]);
-                const imageHeight = parseInt(size.split('x')[1]);
-
-                // Create the response object
-                const result: UniversalChatResponse = {
-                    content: null,
-                    role: 'assistant',
-                    image: {
-                        data: imageData,
-                        dataSource: dataSource,
-                        mime: 'image/png',
-                        width: imageWidth,
-                        height: imageHeight,
-                        operation: 'composite'
-                    },
-                    metadata: {
-                        created: Date.now(),
-                        model
-                    }
-                };
-
-                // Save to file if outputPath provided
-                if (params.outputPath) {
-                    try {
-                        if (dataSource === 'url') {
-                            log.debug(`Image URL received (${imageData.substring(0, 30)}...), saving to ${params.outputPath} not supported yet`);
-                            if (!result.metadata) result.metadata = {};
-                            result.metadata.imageSavedPath = params.outputPath;
-                            result.metadata.imageUrl = imageData;
-                        } else {
-                            await saveBase64ToFile(imageData, params.outputPath, 'image/png');
-                            if (!result.metadata) result.metadata = {};
-                            result.metadata.imageSavedPath = params.outputPath;
-                            log.debug(`Composite image saved to ${params.outputPath}`);
-                        }
-                    } catch (error) {
-                        log.error(`Failed to save composite image to ${params.outputPath}:`, error);
-                    }
-                }
-
-                return result;
-            } catch (error: any) {
-                log.error('Image composite operation failed:', error);
-                throw new OpenAIResponseAdapterError(`Image composite operation failed: ${error.message || String(error)}`);
-            }
-        } else {
-            // Again, DALL-E 3 doesn't support variations directly via the API yet
-            log.debug('Using generation with enhanced prompt for DALL-E 3 composite (fallback method)');
-            const enhancedPrompt = `Create a composite image by combining elements from these images: ${params.prompt}`;
-
-            // Call the generate method as a fallback
-            const result = await this.generateImage(model, {
-                ...params,
-                prompt: enhancedPrompt
+            // Log request parameters for debugging
+            log.debug('Image composite parameters:', {
+                model: requestParams.model,
+                prompt: requestParams.prompt,
+                imageCount: params.files.length,
+                hasOptions: !!params.options
             });
 
-            // Update the operation type in the response
-            if (result.image) {
-                result.image.operation = 'composite';
+            // Call the OpenAI API to create composite image
+            const response = await this.client.images.edit(requestParams);
+
+            // Process the response
+            if (!response.data || response.data.length === 0) {
+                throw new OpenAIResponseAdapterError('No image data received from OpenAI API');
+            }
+
+            // Handle image data
+            let imageData: string;
+            let dataSource: 'url' | 'base64' = 'base64';
+
+            if (response.data[0].b64_json) {
+                imageData = response.data[0].b64_json;
+                dataSource = 'base64';
+            } else if (response.data[0].url) {
+                imageData = response.data[0].url;
+                dataSource = 'url';
+            } else {
+                throw new OpenAIResponseAdapterError('No image data or URL received from OpenAI API');
+            }
+
+            // Determine image dimensions from size or default to 1024x1024
+            let size = params.options.size || '1024x1024';
+            const imageWidth = parseInt(size.split('x')[0]);
+            const imageHeight = parseInt(size.split('x')[1]);
+
+            // Create the response object
+            const result: UniversalChatResponse = {
+                content: null,
+                role: 'assistant',
+                image: {
+                    data: imageData,
+                    dataSource: dataSource,
+                    mime: 'image/png',
+                    width: imageWidth,
+                    height: imageHeight,
+                    operation: 'composite'
+                },
+                metadata: {
+                    created: Date.now(),
+                    model
+                }
+            };
+
+            // Save to file if outputPath provided
+            if (params.outputPath) {
+                try {
+                    if (dataSource === 'url') {
+                        log.debug(`Image URL received (${imageData.substring(0, 30)}...), saving to ${params.outputPath} not supported yet`);
+                        if (!result.metadata) result.metadata = {};
+                        result.metadata.imageSavedPath = params.outputPath;
+                        result.metadata.imageUrl = imageData;
+                    } else {
+                        await saveBase64ToFile(imageData, params.outputPath, 'image/png');
+                        if (!result.metadata) result.metadata = {};
+                        result.metadata.imageSavedPath = params.outputPath;
+                        log.debug(`Composite image saved to ${params.outputPath}`);
+                    }
+                } catch (error) {
+                    log.error(`Failed to save composite image to ${params.outputPath}:`, error);
+                }
             }
 
             return result;
+        } catch (error: any) {
+            log.error('Image composite operation failed:', error);
+            throw new OpenAIResponseAdapterError(`Image composite operation failed: ${error.message || String(error)}`);
+        }
+    }
+
+    /**
+     * Convert various image source types to the format expected by OpenAI's Image API
+     * @param src Source of the image data
+     * @returns Promise resolving to a format appropriate for OpenAI Image API
+     */
+    private async toOpenAIImageArg(src: UrlSource | Base64Source | FilePathSource): Promise<any> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.toOpenAIImageArg' });
+
+        try {
+            if (src.kind === 'filePath') {
+                // For file paths, use toFile with a readable stream
+                log.debug(`Using file path: ${src.value}`);
+                const stream = fs.createReadStream(src.value);
+                return await toFile(stream, path.basename(src.value), {
+                    type: 'image/png'
+                });
+            } else if (src.kind === 'base64') {
+                // For base64 data, convert to Buffer and use toFile
+                log.debug('Converting base64 to file object');
+                // Remove potential data URL prefix
+                const base64Data = src.value.replace(/^data:image\/\w+;base64,/, '');
+                const buffer = Buffer.from(base64Data, 'base64');
+                return await toFile(buffer, 'image.png', {
+                    type: 'image/png'
+                });
+            } else if (src.kind === 'url') {
+                // For URLs, we need to fetch the content and convert to a file object
+                log.debug(`Downloading from URL: ${src.value.substring(0, 30)}...`);
+                try {
+                    // Use node-fetch (which is packaged with the OpenAI SDK)
+                    const { default: fetch } = await import('node-fetch');
+                    const response = await fetch(src.value);
+
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch image from URL: ${response.status} ${response.statusText}`);
+                    }
+
+                    // Get the URL filename or use a default
+                    const urlParts = src.value.split('/');
+                    const filename = urlParts[urlParts.length - 1].split('?')[0] || 'image.png';
+
+                    // Convert the response to a buffer
+                    const buffer = await response.buffer();
+
+                    // Use OpenAI's toFile utility
+                    return await toFile(buffer, filename, {
+                        type: 'image/png' // Assume PNG - could detect from content-type header
+                    });
+                } catch (error: any) {
+                    log.error(`Failed to download image from URL: ${src.value}`, error);
+                    throw new Error(`Failed to download image from URL: ${error.message}`);
+                }
+            }
+
+            throw new Error(`Unsupported image source kind: ${(src as any).kind}`);
+        } catch (error) {
+            log.error('Failed to convert image source:', error);
+            throw new OpenAIResponseValidationError(
+                `Failed to convert image source: ${error instanceof Error ? error.message : String(error)}`
+            );
         }
     }
 }

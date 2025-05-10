@@ -28,22 +28,23 @@ async function runExamples() {
 
     try {
         // Uncomment these examples if you want to generate a new image first
-        //     console.log('\n===========================================');
-        //     console.log('Example 1: Generate an image and save to file');
-        //     console.log('===========================================\n');
+        console.log('\n===========================================');
+        console.log('Example 1: Generate an image and save to file');
+        console.log('===========================================\n');
 
-        //     const result1 = await caller.call({
-        //         text: "A beautiful mountain landscape with a lake and forest",
-        //         output: {
-        //             image: {
-        //                 quality: "high",
-        //                 size: "1024x1024"
-        //             }
-        //         },
-        //         outputPath: path.join(outputDir, 'mountain_landscape.png')
-        //     });
+        const result1 = await caller.call({
+            text: "A beautiful mountain landscape with a lake and forest",
+            output: {
+                image: {
+                    quality: "low",
+                    size: "1024x1024"
+                }
+            },
+            outputPath: path.join(outputDir, 'mountain_landscape.png')
+        });
 
-        //     console.log('Generated image saved to:', result1[0].metadata?.imageSavedPath);
+        console.log('Generated image saved to:', result1[0].metadata?.imageSavedPath);
+        console.log(result1[0].metadata);
 
         //     console.log('\n===========================================');
         //     console.log('Example 2: Generate an image and get as base64');
@@ -62,51 +63,54 @@ async function runExamples() {
         //     console.log('Generated image returned as base64 data. Length:',
         //         result2[0].image?.data ? result2[0].image.data.length : 0);
 
-        console.log('\n===========================================');
-        console.log('Example 3: Edit an existing image');
-        console.log('===========================================\n');
+        // console.log('\n===========================================');
+        // console.log('Example 3: Edit an existing image');
+        // console.log('===========================================\n');
 
-        try {
-            // Use files array instead of file parameter
-            const editResponse = await caller.call({
-                text: "Add a small cabin to this landscape",
-                files: [path.join(outputDir, 'mountain_landscape.png')], // Use files array instead of file
-                output: {
-                    image: {
-                        quality: "high"
-                    }
-                },
-                outputPath: path.join(outputDir, 'mountain_landscape_cabin.png')
-            });
+        // try {
+        //     // Use files array instead of file parameter
+        //     const editResponse = await caller.call({
+        //         text: "Add a small cabin to this landscape",
+        //         files: [path.join(outputDir, 'mountain_landscape.png')], // Use files array instead of file
+        //         output: {
+        //             image: {
+        //                 quality: "low"
+        //             }
+        //         },
+        //         outputPath: path.join(outputDir, 'mountain_landscape_cabin.png')
+        //     });
 
-            console.log('Edited image saved to:', editResponse[0].metadata?.imageSavedPath);
-        } catch (error) {
-            console.log('Editing example skipped or failed:',
-                error instanceof Error ? error.message : String(error));
-        }
+        //     console.log('Edited image saved to:', editResponse[0].metadata?.imageSavedPath);
+        // } catch (error) {
+        //     console.log('Editing example skipped or failed:',
+        //         error instanceof Error ? error.message : String(error));
+        // }
 
-        console.log('\n===========================================');
-        console.log('Example 4: Edit an image with a mask');
-        console.log('===========================================\n');
+        // console.log('\n===========================================');
+        // console.log('Example 4: Edit an image with a mask');
+        // console.log('===========================================\n');
 
-        try {
-            const maskEditResponse = await caller.call({
-                text: "Replace the masked area with a castle",
-                files: [path.join(outputDir, 'mountain_landscape.png')],
-                mask: path.join(__dirname, 'mask_example.png'), // You would need to create this mask
-                output: {
-                    image: {
-                        quality: "high"
-                    }
-                },
-                outputPath: path.join(outputDir, 'masked_mountain_castle.png')
-            });
+        // try {
+        //     const maskEditResponse = await caller.call({
+        //         text: "Replace the masked area with a lion's face",
+        //         files: [path.join(__dirname, 'dogs.jpg')],
+        //         mask: path.join(__dirname, 'mask.png'),
+        //         output: {
+        //             image: {
+        //                 quality: "low"
+        //             }
+        //         },
+        //         outputPath: path.join(outputDir, 'dogs_with_mask.png')
+        //     });
 
-            console.log('Masked edit image saved to:', maskEditResponse[0].metadata?.imageSavedPath);
-        } catch (error) {
-            console.log('Masked editing example skipped or failed:',
-                error instanceof Error ? error.message : String(error));
-        }
+        //     console.log('Masked edit image saved to:', maskEditResponse[0].metadata?.imageSavedPath);
+
+        //     console.log(maskEditResponse[0].metadata?.usage);
+
+        // } catch (error) {
+        //     console.log('Masked editing example skipped or failed:',
+        //         error instanceof Error ? error.message : String(error));
+        // }
 
     } catch (error) {
         console.error('Error in image generation examples:',

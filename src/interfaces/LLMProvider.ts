@@ -1,4 +1,4 @@
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, UrlSource, Base64Source, ImageInputOpts, ImageOutputOpts } from './UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, UrlSource, Base64Source, ImageInputOpts, ImageOutputOpts, FilePathSource } from './UniversalInterfaces';
 
 export interface LLMProvider {
     // Basic chat methods
@@ -21,8 +21,8 @@ export type ImageOp = 'generate' | 'edit' | 'edit-masked' | 'composite';
  */
 export type ImageCallParams = {
     prompt: string;
-    files?: UrlSource[];     // already normalized
-    mask?: UrlSource | Base64Source;
+    files?: (UrlSource | Base64Source | FilePathSource)[];     // Accept multiple source types
+    mask?: UrlSource | Base64Source | FilePathSource;
     options: ImageInputOpts & ImageOutputOpts;
     outputPath?: string;
 };

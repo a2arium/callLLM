@@ -1067,16 +1067,12 @@ export class LLMCaller implements MCPDirectAccess {
                                 } else {
                                     // For file paths, we need to normalize them first
                                     const normalized = await normalizeImageSource(source);
-                                    if (normalized.kind === 'url') {
-                                        imageParams.files.push(normalized);
-                                    }
+                                    imageParams.files.push(normalized);
                                 }
                             } else {
                                 // If it's already a DataSource, normalize it if needed
                                 const normalized = await normalizeImageSource(file as ImageDataSource);
-                                if (normalized.kind === 'url') {
-                                    imageParams.files.push(normalized);
-                                }
+                                imageParams.files.push(normalized);
                             }
                         }
                     } else if (opts.file) {
@@ -1086,9 +1082,7 @@ export class LLMCaller implements MCPDirectAccess {
                             : { kind: 'filePath', value: opts.file };
 
                         const normalized = await normalizeImageSource(source);
-                        if (normalized.kind === 'url') {
-                            imageParams.files = [normalized];
-                        }
+                        imageParams.files = [normalized];
                     }
 
                     // Add mask if present
