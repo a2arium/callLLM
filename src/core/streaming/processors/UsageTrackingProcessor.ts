@@ -40,9 +40,24 @@ export type UsageTrackingOptions = {
     inputCachedTokens?: number;
 
     /**
-     * Number of image tokens (if any)
+     * Number of input image tokens (if any)
      */
-    imageTokens?: number;
+    inputImageTokens?: number;
+
+    /**
+     * Number of output image tokens (if any)
+     */
+    outputImageTokens?: number;
+
+    /**
+     * Price per million tokens for image input (if different from regular input)
+     */
+    imageInputPricePerMillion?: number;
+
+    /**
+     * Price per million tokens for image output (if different from regular output)
+     */
+    imageOutputPricePerMillion?: number;
 
     /**
      * Model information including pricing data
@@ -63,7 +78,10 @@ export class UsageTrackingProcessor implements IStreamProcessor {
     private callerId?: string;
     private inputTokens: number;
     private inputCachedTokens?: number;
-    private imageTokens?: number;
+    private inputImageTokens?: number;
+    private outputImageTokens?: number;
+    private imageInputPricePerMillion?: number;
+    private imageOutputPricePerMillion?: number;
     private modelInfo: ModelInfo;
     private lastOutputTokens = 0;
     private lastCallbackTokens = 0;
@@ -86,7 +104,10 @@ export class UsageTrackingProcessor implements IStreamProcessor {
         this.callerId = options.callerId ?? Date.now().toString();
         this.inputTokens = options.inputTokens;
         this.inputCachedTokens = options.inputCachedTokens;
-        this.imageTokens = options.imageTokens;
+        this.inputImageTokens = options.inputImageTokens;
+        this.outputImageTokens = options.outputImageTokens;
+        this.imageInputPricePerMillion = options.imageInputPricePerMillion;
+        this.imageOutputPricePerMillion = options.imageOutputPricePerMillion;
         this.modelInfo = options.modelInfo;
         this.TOKEN_BATCH_SIZE = options.tokenBatchSize ?? 0;
     }
@@ -133,7 +154,7 @@ export class UsageTrackingProcessor implements IStreamProcessor {
 
             // Update image tokens from adapter
             if (existingUsage?.tokens?.input?.image) {
-                this.imageTokens = existingUsage.tokens.input.image;
+                this.inputImageTokens = existingUsage.tokens.input.image;
             }
 
             // If this is the final chunk with non-incremental data from API, mark it as the source of truth
@@ -172,7 +193,7 @@ export class UsageTrackingProcessor implements IStreamProcessor {
                             input: {
                                 total: this.inputTokens,
                                 cached: this.inputCachedTokens ?? 0,
-                                ...(this.imageTokens ? { image: this.imageTokens } : {})
+                                ...(this.inputImageTokens ? { image: this.inputImageTokens } : {})
                             },
                             output: {
                                 // Output should include reasoning tokens
@@ -253,7 +274,7 @@ export class UsageTrackingProcessor implements IStreamProcessor {
                         if (!this.hasReportedFirst) {
                             this.totalReportedInputTokens = this.inputTokens;
                             this.totalReportedCachedTokens = this.inputCachedTokens || 0;
-                            this.totalReportedImageTokens = this.imageTokens || 0;
+                            this.totalReportedImageTokens = this.inputImageTokens || 0;
                         }
                         this.totalReportedOutputTokens += delta;
                         this.totalReportedReasoningTokens = chunkReasoningTokens; // This is absolute, not incremental
@@ -264,7 +285,7 @@ export class UsageTrackingProcessor implements IStreamProcessor {
                                 input: {
                                     total: !this.hasReportedFirst ? this.inputTokens : 0,
                                     cached: !this.hasReportedFirst ? (this.inputCachedTokens ?? 0) : 0,
-                                    ...(this.imageTokens && !this.hasReportedFirst ? { image: this.imageTokens } : {})
+                                    ...(this.inputImageTokens && !this.hasReportedFirst ? { image: this.inputImageTokens } : {})
                                 },
                                 // For output, only report the delta since last callback plus reasoning on final
                                 output: {

@@ -1,4 +1,5 @@
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, UrlSource, Base64Source, ImageInputOpts, ImageOutputOpts, FilePathSource } from './UniversalInterfaces';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, UrlSource, Base64Source, ImageInputOpts, ImageOutputOpts, FilePathSource, ImageSource } from './UniversalInterfaces';
+import { UsageCallback } from './UsageInterfaces';
 
 export interface LLMProvider {
     // Basic chat methods
@@ -18,13 +19,24 @@ export type ImageOp = 'generate' | 'edit' | 'edit-masked' | 'composite';
 
 /**
  * Parameters for image generation/editing operations
+ * 
+ * @deprecated Use the ImageCallParams from UniversalInterfaces.ts instead
  */
 export type ImageCallParams = {
     prompt: string;
-    files?: (UrlSource | Base64Source | FilePathSource)[];     // Accept multiple source types
-    mask?: UrlSource | Base64Source | FilePathSource;
-    options: ImageInputOpts & ImageOutputOpts;
+    files?: ImageSource[];     // Accept multiple source types
+    mask?: ImageSource;
+    options?: {
+        size?: '256x256' | '512x512' | '1024x1024' | '1024x1792' | '1792x1024';
+        quality?: 'standard' | 'hd';
+        style?: 'vivid' | 'natural';
+        background?: string;
+        [key: string]: any;
+    };
     outputPath?: string;
+    // Add usage tracking parameters
+    callerId?: string;
+    usageCallback?: UsageCallback;
 };
 
 /**

@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import { logger } from '../../utils/logger';
 import { ToolDefinition } from '../../types/tooling';
+import {
+    Usage,
+    ImageCallParams,
+    GeneratedImage,
+    ImageGenerationResult,
+    ImageSource
+} from '../../interfaces/UniversalInterfaces';
 
 export class OpenAIResponseAdapter {
     formatToolsForNative(tools: ToolDefinition[]): any[] {
@@ -56,5 +63,71 @@ export class OpenAIResponseAdapter {
 
             return formattedTool;
         });
+    }
+
+    /**
+     * Estimate image tokens for usage tracking based on resolution
+     * @param size Image size/resolution
+     * @param isInput Whether this is for input (true) or output (false)
+     * @returns Estimated token count
+     */
+    estimateImageTokens(size: string, count: number = 1, isInput: boolean = true): number {
+        // Based on OpenAI's pricing structure for DALL-E model:
+        // https://openai.com/pricing
+        const sizeTokens: Record<string, number> = {
+            '256x256': 500,
+            '512x512': 700,
+            '1024x1024': 1000,
+            '1024x1792': 1300,
+            '1792x1024': 1300,
+        };
+
+        // Use the specified size or default to 1024x1024
+        const tokensPerImage = sizeTokens[size] || 1000;
+
+        // Input images generally cost less than output, adjust accordingly
+        const multiplier = isInput ? 0.8 : 1.0;
+
+        return Math.round(tokensPerImage * count * multiplier);
+    }
+
+    /**
+     * Format usage data from image generation/editing operations
+     * @param size Image size
+     * @param count Number of images
+     * @param operationType Type of operation ('generation', 'edit', or 'variation')
+     * @returns Formatted usage data
+     */
+    formatImageUsage(size: string, count: number = 1, operationType: 'generation' | 'edit' | 'variation'): Usage {
+        const inputTokens = operationType !== 'generation' ? this.estimateImageTokens(size, count, true) : 0;
+        const outputTokens = this.estimateImageTokens(size, count, false);
+
+        return {
+            tokens: {
+                input: {
+                    total: inputTokens,
+                    cached: 0,
+                    ...(inputTokens > 0 ? { image: inputTokens } : {})
+                },
+                output: {
+                    total: outputTokens,
+                    reasoning: 0,
+                    image: outputTokens
+                },
+                total: inputTokens + outputTokens
+            },
+            costs: {
+                input: {
+                    total: 0, // Would need pricing info to calculate accurately
+                    cached: 0
+                },
+                output: {
+                    total: 0, // Would need pricing info to calculate accurately
+                    reasoning: 0,
+                    image: 0  // Would need pricing info to calculate accurately
+                },
+                total: 0 // Would need pricing info to calculate accurately
+            }
+        };
     }
 } 

@@ -233,7 +233,10 @@ export class ChatController {
                         modelInfo,
                         resp.metadata?.usage?.tokens?.input?.cached,
                         resp.metadata?.usage?.tokens?.output?.reasoning,
-                        resp.metadata?.usage?.tokens?.input?.image  // Pass image tokens if present
+                        {
+                            inputImageTokens: resp.metadata?.usage?.tokens?.input?.image,
+                            outputImageTokens: resp.metadata?.usage?.tokens?.output?.image
+                        }
                     );
 
                     resp.metadata.usage = usage;

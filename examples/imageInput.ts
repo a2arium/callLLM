@@ -17,7 +17,7 @@ dotenv.config();
 
 async function runExamples() {
     // Initialize with a multimodal model
-    const caller = new LLMCaller('openai', 'gpt-4-vision-preview', 'You are a helpful assistant.');
+    const caller = new LLMCaller('openai', 'gpt-4.1-nano', 'You are a helpful assistant.');
 
     try {
         console.log('\n\n=========================================');

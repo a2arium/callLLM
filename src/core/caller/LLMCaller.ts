@@ -15,7 +15,7 @@ import {
     toMessageParts,
     MessagePart,
     ImagePart,
-    ImageDataSource,
+    ImageSource,
     UrlSource,
     FilePathSource,
 } from '../../interfaces/UniversalInterfaces';
@@ -51,8 +51,13 @@ import type { McpToolSchema, MCPServersMap } from '../mcp/MCPConfigTypes';
 import { isMCPToolConfig } from '../mcp/MCPConfigTypes';
 import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter';
 import { MCPToolLoader } from '../mcp/MCPToolLoader';
-import { normalizeImageSource, estimateImageTokens, saveBase64ToFile } from '../file-data/fileData';
-import { readFileAsBase64, validateImageFile } from '../file-data/fileData';
+import {
+    normalizeImageSource,
+    filePathToBase64,
+    estimateImageTokens,
+    saveBase64ToFile,
+    validateImageFile
+} from '../file-data/fileData';
 import { BaseAdapter } from '../../adapters/base/baseAdapter';
 import { ImageOp, ImageCallParams } from '../../interfaces/LLMProvider';
 
@@ -573,7 +578,7 @@ export class LLMCaller implements MCPDirectAccess {
         let totalImageTokens = 0;
         let imageOperation: 'generate' | 'edit' | 'edit-masked' | 'composite' = 'generate';
 
-        const allFileSources: (string | ImageDataSource)[] = [];
+        const allFileSources: (string | ImageSource)[] = [];
 
         if (actualOptions.file) {
             allFileSources.push(actualOptions.file);
@@ -595,13 +600,13 @@ export class LLMCaller implements MCPDirectAccess {
         log.debug(`Inferred image operation: ${imageOperation}, processing ${allFileSources.length} sources.`);
 
         for (const source of allFileSources) {
-            log.debug(`Processing source: ${typeof source === 'string' ? source.substring(0, 50) : source.kind}...`);
+            log.debug(`Processing source: ${typeof source === 'string' ? source.substring(0, 50) : source.type}...`);
             try {
-                let fileSourceInput: ImageDataSource;
+                let fileSourceInput: ImageSource;
                 if (typeof source === 'string') {
                     fileSourceInput = source.startsWith('http')
-                        ? { kind: 'url', value: source }
-                        : { kind: 'filePath', value: source };
+                        ? { type: 'url', url: source }
+                        : { type: 'file_path', path: source };
                 } else {
                     fileSourceInput = source;
                 }
@@ -615,9 +620,7 @@ export class LLMCaller implements MCPDirectAccess {
                 };
                 messageParts.push(imagePart);
 
-                const imageTokens = estimateImageTokens(
-                    actualOptions.input?.image?.detail || 'auto'
-                );
+                const imageTokens = estimateImageTokens(1024, 1024);
                 totalImageTokens += imageTokens;
                 log.debug(
                     `Estimated image tokens: ${imageTokens} for source, detail level: ${actualOptions.input?.image?.detail || 'auto'
@@ -632,11 +635,11 @@ export class LLMCaller implements MCPDirectAccess {
         if (actualOptions.mask) {
             log.debug(`Processing mask file: ${actualOptions.mask.substring(0, 50)}...`);
             try {
-                const maskDataSource: ImageDataSource = actualOptions.mask.startsWith('http')
-                    ? { kind: 'url', value: actualOptions.mask }
-                    : { kind: 'filePath', value: actualOptions.mask };
+                const maskSource: ImageSource = actualOptions.mask.startsWith('http')
+                    ? { type: 'url', url: actualOptions.mask }
+                    : { type: 'file_path', path: actualOptions.mask };
 
-                const normalizedMask = await normalizeImageSource(maskDataSource);
+                const normalizedMask = await normalizeImageSource(maskSource);
 
                 const maskPart: ImagePart = {
                     type: 'image',
@@ -645,7 +648,7 @@ export class LLMCaller implements MCPDirectAccess {
                 };
                 messageParts.push(maskPart);
 
-                const maskTokens = estimateImageTokens('low');
+                const maskTokens = estimateImageTokens(1024, 1024);
                 totalImageTokens += maskTokens;
                 log.debug(`Estimated mask tokens: ${maskTokens}`);
             } catch (error) {
@@ -1044,12 +1047,48 @@ export class LLMCaller implements MCPDirectAccess {
                     // Create parameters for the image operation
                     const imageParams: ImageCallParams = {
                         prompt: opts.text || '',
-                        options: {
-                            ...(opts.input?.image || {}),
-                            ...(opts.output?.image || {})
-                        },
-                        outputPath: opts.outputPath
+                        outputPath: opts.outputPath,
+                        // Add callback parameters for usage tracking
+                        callerId: this.callerId,
+                        usageCallback: this.usageCallback
                     };
+
+                    // Process image options
+                    if (opts.output?.image || opts.input?.image) {
+                        // Define the mapped options with correct types
+                        const mappedOptions: ImageCallParams['options'] = {};
+
+                        // Map size if present
+                        if (opts.output?.image?.size) {
+                            const size = opts.output.image.size;
+                            const validSizes = ['256x256', '512x512', '1024x1024', '1024x1792', '1792x1024'];
+                            if (validSizes.includes(size)) {
+                                mappedOptions.size = size as any; // Type assertion to match expected format
+                            } else {
+                                mappedOptions.size = '1024x1024'; // Default size
+                            }
+                        }
+
+                        // Map quality if present
+                        if (opts.output?.image?.quality) {
+                            // Pass quality directly, let the adapter handle model-specific conversions
+                            mappedOptions.quality = opts.output.image.quality as any; // Use type assertion for flexibility
+                            log.debug(`Using quality setting for image: ${opts.output.image.quality}`);
+                        }
+
+                        // Map style if present
+                        if (opts.output?.image?.style === 'vivid' || opts.output?.image?.style === 'natural') {
+                            mappedOptions.style = opts.output.image.style;
+                        }
+
+                        // Map background if present
+                        if (opts.output?.image?.background) {
+                            mappedOptions.background = opts.output.image.background;
+                        }
+
+                        // Set the options on the params object
+                        imageParams.options = mappedOptions;
+                    }
 
                     // Add files if present
                     if (opts.files && opts.files.length > 0) {
@@ -1058,11 +1097,11 @@ export class LLMCaller implements MCPDirectAccess {
                             // Convert string paths to FilePathSource or UrlSource objects
                             if (typeof file === 'string') {
                                 const source: FilePathSource | UrlSource = file.startsWith('http')
-                                    ? { kind: 'url', value: file }
-                                    : { kind: 'filePath', value: file };
+                                    ? { type: 'url', url: file }
+                                    : { type: 'file_path', path: file };
 
                                 // If it's a URL, we can add it directly
-                                if (source.kind === 'url') {
+                                if (source.type === 'url') {
                                     imageParams.files.push(source);
                                 } else {
                                     // For file paths, we need to normalize them first
@@ -1071,15 +1110,15 @@ export class LLMCaller implements MCPDirectAccess {
                                 }
                             } else {
                                 // If it's already a DataSource, normalize it if needed
-                                const normalized = await normalizeImageSource(file as ImageDataSource);
+                                const normalized = await normalizeImageSource(file as ImageSource);
                                 imageParams.files.push(normalized);
                             }
                         }
                     } else if (opts.file) {
                         // Convert string path to FilePathSource or UrlSource
                         const source: FilePathSource | UrlSource = opts.file.startsWith('http')
-                            ? { kind: 'url', value: opts.file }
-                            : { kind: 'filePath', value: opts.file };
+                            ? { type: 'url', url: opts.file }
+                            : { type: 'file_path', path: opts.file };
 
                         const normalized = await normalizeImageSource(source);
                         imageParams.files = [normalized];
@@ -1088,8 +1127,8 @@ export class LLMCaller implements MCPDirectAccess {
                     // Add mask if present
                     if (opts.mask) {
                         const maskSource: FilePathSource | UrlSource = opts.mask.startsWith('http')
-                            ? { kind: 'url', value: opts.mask }
-                            : { kind: 'filePath', value: opts.mask };
+                            ? { type: 'url', url: opts.mask }
+                            : { type: 'file_path', path: opts.mask };
 
                         imageParams.mask = await normalizeImageSource(maskSource);
                     }

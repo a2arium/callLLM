@@ -435,7 +435,7 @@ describe('UsageTrackingProcessor', () => {
                 calculateTokens: jest.fn().mockReturnValue(10)
             } as any,
             inputTokens: 20,
-            imageTokens: 85,
+            inputImageTokens: 85,
             usageCallback: jest.fn(),
             callerId: 'test-processor',
             modelInfo: {
@@ -590,7 +590,7 @@ describe('UsageTrackingProcessor', () => {
             tokenCalculator: mockTokenCalculator,
             inputTokens: 50,
             inputCachedTokens: 20,
-            imageTokens: 30,
+            inputImageTokens: 30,
             modelInfo: mockModelInfo,
             usageCallback: mockCallback,
             callerId: 'test-caller',

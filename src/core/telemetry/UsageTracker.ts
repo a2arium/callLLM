@@ -31,7 +31,12 @@ export class UsageTracker {
         modelInfo: ModelInfo,
         inputCachedTokens: number = 0,
         outputReasoningTokens: number = 0,
-        imageTokens?: number
+        options?: {
+            inputImageTokens?: number;
+            outputImageTokens?: number;
+            imageInputPricePerMillion?: number;
+            imageOutputPricePerMillion?: number;
+        }
     ): Promise<Usage> {
         const log = logger.createLogger({ prefix: 'UsageTracker.trackUsage' });
         const inputTokens = this.tokenCalculator.calculateTokens(input);
@@ -42,13 +47,15 @@ export class UsageTracker {
                 input: {
                     total: inputTokens,
                     cached: inputCachedTokens,
-                    ...(imageTokens ? { image: imageTokens } : {})
+                    ...(options?.inputImageTokens ? { image: options.inputImageTokens } : {})
                 },
                 output: {
                     total: outputTokens,
                     reasoning: outputReasoningTokens,
+                    ...(options?.outputImageTokens ? { image: options.outputImageTokens } : {})
                 },
-                total: inputTokens + outputTokens + outputReasoningTokens
+                total: inputTokens + outputTokens + outputReasoningTokens +
+                    (options?.inputImageTokens || 0) + (options?.outputImageTokens || 0)
             },
             costs: this.tokenCalculator.calculateUsage(
                 inputTokens,
@@ -57,7 +64,11 @@ export class UsageTracker {
                 modelInfo.outputPricePerMillion,
                 inputCachedTokens,
                 modelInfo.inputCachedPricePerMillion,
-                outputReasoningTokens
+                outputReasoningTokens,
+                options?.inputImageTokens,
+                options?.outputImageTokens,
+                options?.imageInputPricePerMillion || modelInfo.inputPricePerMillion,
+                options?.imageOutputPricePerMillion || modelInfo.outputPricePerMillion
             )
         };
 
@@ -92,7 +103,10 @@ export class UsageTracker {
         modelInfo: ModelInfo,
         options?: {
             inputCachedTokens?: number;
-            imageTokens?: number;
+            inputImageTokens?: number;
+            outputImageTokens?: number;
+            imageInputPricePerMillion?: number;
+            imageOutputPricePerMillion?: number;
             tokenBatchSize?: number;
             callerId?: string;
         }
@@ -105,7 +119,10 @@ export class UsageTracker {
             callerId: effectiveCallerId,
             inputTokens,
             inputCachedTokens: options?.inputCachedTokens,
-            imageTokens: options?.imageTokens,
+            inputImageTokens: options?.inputImageTokens,
+            outputImageTokens: options?.outputImageTokens,
+            imageInputPricePerMillion: options?.imageInputPricePerMillion,
+            imageOutputPricePerMillion: options?.imageOutputPricePerMillion,
             modelInfo,
             tokenBatchSize: options?.tokenBatchSize
         });

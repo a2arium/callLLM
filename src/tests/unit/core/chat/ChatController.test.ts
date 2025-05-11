@@ -908,9 +908,12 @@ describe('ChatController', () => {
             expect.stringContaining('System message'),
             'This is a test response',
             expect.any(Object), // ModelInfo is an object
-            undefined, // inputCachedTokens
-            undefined, // outputReasoningTokens
-            undefined  // imageTokens
+            undefined, // cached tokens
+            undefined, // reasoning tokens
+            expect.objectContaining({
+                inputImageTokens: undefined,
+                outputImageTokens: undefined
+            }) // image tokens
         );
 
         // Verify usage was added to response metadata

@@ -47,6 +47,16 @@ export class OpenAIResponseNetworkError extends OpenAIResponseAdapterError {
     }
 }
 
+/**
+ * Error thrown when the OpenAI service fails with a 5xx error
+ */
+export class OpenAIResponseServiceError extends OpenAIResponseAdapterError {
+    constructor(message: string, cause?: Error) {
+        super(message, cause);
+        this.name = 'OpenAIResponseServiceError';
+    }
+}
+
 // Helper function to map provider-specific errors to our custom error types
 export const mapProviderError = (error: unknown): OpenAIResponseAdapterError => {
     // Basic implementation to be expanded in later phases

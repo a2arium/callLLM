@@ -15,10 +15,23 @@ export enum FinishReason {
 }
 
 // Image data source types
-export type UrlSource = { kind: 'url'; value: string }
-export type Base64Source = { kind: 'base64'; value: string; mime: string }
-export type FilePathSource = { kind: 'filePath'; value: string }
-export type ImageDataSource = UrlSource | Base64Source | FilePathSource
+export type UrlSource = {
+    type: 'url';
+    url: string;
+};
+
+export type Base64Source = {
+    type: 'base64';
+    data: string;
+    mime: string;
+};
+
+export type FilePathSource = {
+    type: 'file_path';
+    path: string;
+};
+
+export type ImageSource = UrlSource | Base64Source | FilePathSource;
 
 // A simpler type for image data source in responses
 export type ImageResponseDataSource = 'url' | 'base64' | 'file'
@@ -27,7 +40,7 @@ export type ImageResponseDataSource = 'url' | 'base64' | 'file'
 export type TextPart = { type: 'text'; text: string }
 export type ImagePart = {
     type: 'image';
-    data: ImageDataSource;
+    data: ImageSource;
     _isMask?: boolean; // Optional property to indicate if this image part is a mask
 }
 export type MessagePart = TextPart | ImagePart
@@ -285,6 +298,8 @@ export type Usage = {
         output: {
             total: number;
             reasoning: number;
+            /** Tokens attributable to image generation/editing in output (if any) */
+            image?: number;
         },
         total: number;
     };
@@ -296,6 +311,8 @@ export type Usage = {
         output: {
             total: number;
             reasoning: number;
+            /** Costs attributable to image generation/editing in output (if any) */
+            image?: number;
         },
         total: number;
     };
@@ -581,4 +598,45 @@ export type ModelAlias = 'fast' | 'premium' | 'balanced' | 'cheap';
  * - 'medium': Balanced approach to reasoning depth and token usage
  * - 'high': More thorough reasoning at the cost of more tokens and potentially longer generation time
  */
-export type ReasoningEffort = 'low' | 'medium' | 'high'; 
+export type ReasoningEffort = 'low' | 'medium' | 'high';
+
+// Parameters for image operations
+export type ImageCallParams = {
+    prompt?: string;
+    model?: string;
+    n?: number;
+    quality?: 'standard' | 'hd';
+    response_format?: 'url' | 'b64_json';
+    size?: '256x256' | '512x512' | '1024x1024' | '1024x1792' | '1792x1024';
+    style?: 'vivid' | 'natural';
+    user?: string;
+    files?: ImageSource[];
+    mask?: ImageSource;
+    outputPath?: string;
+    options?: {
+        size?: '256x256' | '512x512' | '1024x1024' | '1024x1792' | '1792x1024';
+        quality?: 'standard' | 'hd';
+        style?: 'vivid' | 'natural';
+        background?: string;
+        [key: string]: any;
+    };
+    // Add usage tracking parameters
+    callerId?: string;
+    usageCallback?: UsageCallback;
+};
+
+export type GeneratedImage = {
+    imageData: string;
+    format: 'b64_json' | 'url';
+    revisedPrompt?: string;
+};
+
+export type ImageGenerationResult = {
+    images: GeneratedImage[];
+    metadata: {
+        created: number;
+        providerResponse?: any;
+        usage?: Usage;
+        callType?: 'image_generation' | 'image_edit' | 'image_variation';
+    };
+}; 
