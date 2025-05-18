@@ -1,6 +1,7 @@
 import { ModelInfo } from '../../interfaces/UniversalInterfaces';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { DataSplitter } from './DataSplitter';
+import { logger } from '../../utils/logger';
 
 export class RequestProcessor {
     private tokenCalculator: TokenCalculator;
@@ -16,14 +17,18 @@ export class RequestProcessor {
         data,
         endingMessage,
         model,
-        maxResponseTokens
+        maxResponseTokens,
+        maxCharsPerChunk
     }: {
         message: string;
         data?: any;
         endingMessage?: string;
         model: ModelInfo;
         maxResponseTokens?: number;
+        maxCharsPerChunk?: number;
     }): Promise<string[]> {
+        const log = logger.createLogger({ prefix: 'RequestProcessor.processRequest' });
+        log.debug('Processing request', { message, dataType: typeof data, maxCharsPerChunk });
         // If no data or null data, return single message
         if (data === undefined || data === null) {
             return [this.createMessage(message, undefined, endingMessage)];
@@ -35,16 +40,20 @@ export class RequestProcessor {
             data,
             endingMessage,
             modelInfo: model,
-            maxResponseTokens: maxResponseTokens || model.maxResponseTokens
+            maxResponseTokens: maxResponseTokens || model.maxResponseTokens,
+            maxCharsPerChunk
         });
+        log.debug('Chunks returned', { chunkCount: chunks.length });
 
         // Convert chunks to messages
-        return chunks.map(chunk => {
+        const messages = chunks.map(chunk => {
             const dataString = typeof chunk.content === 'object'
                 ? JSON.stringify(chunk.content, null, 2)
                 : String(chunk.content);
             return this.createMessage(message, dataString, endingMessage);
         });
+        log.debug('Messages created', { messageCount: messages.length });
+        return messages;
     }
 
     private createMessage(message: string, data: string | undefined, endingMessage?: string): string {

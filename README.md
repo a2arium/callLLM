@@ -628,6 +628,32 @@ In both cases:
 - Token limits are automatically respected
 - Context and instructions are preserved across chunks
 
+### Forcing Input Splitting with maxCharsPerChunk
+
+If you want to force splitting of your input data into smaller pieces—regardless of token limits—you can use the `maxCharsPerChunk` option:
+
+- **Purpose:**
+  - Enforces a maximum number of characters per chunk when processing input data (string, array, or object).
+  - Useful when you want to control chunk size by character count, not by limiting the tokens on the model level.
+- **How it works:**
+  - If `maxCharsPerChunk` is set, the input will be split so that no chunk exceeds this character limit.
+  - The splitting logic still uses intelligent strategies (sentence/word boundaries) when possible, so chunks are as natural as possible.
+  - Both token and character limits are respected: the stricter of the two is always enforced.
+
+**Example:**
+```typescript
+const response = await caller.call({
+    message: "Analyze this text:",
+    data: veryLongText,
+    maxCharsPerChunk: 1000, // Each chunk will be at most 1000 characters});
+// Returns an array of responses, one for each chunk
+```
+
+This is especially useful for:
+- Forcing smaller chunk sizes for downstream processing
+- Working with models or APIs that have additional non-token-based limits
+- Debugging or testing chunking behavior
+
 ## JSON Mode and Schema Validation
 
 The library supports structured outputs with schema validation using either Zod schemas or JSON Schema. You can configure these parameters either at the root level of the options object or within the settings property:

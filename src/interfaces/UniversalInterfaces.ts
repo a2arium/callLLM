@@ -261,6 +261,10 @@ export type LLMCallOptions = {
      * @default 'stateless'
      */
     historyMode?: HistoryMode;
+    /**
+     * Maximum number of characters allowed per chunk (for splitting)
+     */
+    maxCharsPerChunk?: number;
 };
 
 export type UniversalChatParams = {

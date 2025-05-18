@@ -206,5 +206,119 @@ describe('DataSplitter', () => {
             }
         });
     });
+
+    describe('maxCharsPerChunk option', () => {
+        it('should accept maxCharsPerChunk and not throw', async () => {
+            const result = await dataSplitter.splitIfNeeded({
+                message: 'test',
+                data: 'a'.repeat(100),
+                modelInfo: mockModelInfo,
+                maxResponseTokens: 10,
+                maxCharsPerChunk: 10
+            });
+            expect(Array.isArray(result)).toBe(true);
+        });
+    });
+
+    describe('maxCharsPerChunk enforcement', () => {
+        it('should split long string by maxCharsPerChunk', async () => {
+            const longString = 'a'.repeat(100) + 'b'.repeat(100) + 'c'.repeat(100);
+            const result = await dataSplitter.splitIfNeeded({
+                message: 'test',
+                data: longString,
+                modelInfo: mockModelInfo,
+                maxResponseTokens: 10,
+                maxCharsPerChunk: 100
+            });
+            expect(result.length).toBeGreaterThan(2);
+            expect(result.every(chunk => chunk.content.length <= 100)).toBe(true);
+            expect(result.map(chunk => chunk.content).join('')).toBe(longString);
+        });
+        it('should split array by maxCharsPerChunk', async () => {
+            const array = Array.from({ length: 20 }, (_, i) => 'x'.repeat(10));
+            const result = await dataSplitter.splitIfNeeded({
+                message: 'test',
+                data: array,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 1000 },
+                maxResponseTokens: 10,
+                maxCharsPerChunk: 50
+            });
+            expect(result.length).toBeGreaterThan(1);
+            expect(result.every(chunk => JSON.stringify(chunk.content).length <= 50)).toBe(true);
+            expect(result.flatMap(chunk => chunk.content)).toEqual(array);
+        });
+        it('should split object by maxCharsPerChunk', async () => {
+            const obj = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [
+                `k${i}`, 'y'.repeat(20)
+            ]));
+            const result = await dataSplitter.splitIfNeeded({
+                message: 'test',
+                data: obj,
+                modelInfo: { ...mockModelInfo, maxRequestTokens: 1000 },
+                maxResponseTokens: 10,
+                maxCharsPerChunk: 60
+            });
+            expect(result.length).toBeGreaterThan(1);
+            expect(result.every(chunk => JSON.stringify(chunk.content).length <= 60)).toBe(true);
+            // Reconstruct the object
+            const reconstructed = Object.assign({}, ...result.map(chunk => chunk.content));
+            expect(reconstructed).toEqual(obj);
+        });
+    });
+
+    describe('maxCharsPerChunk and token limit interaction', () => {
+        it('should split by the stricter of token or char limit for strings', async () => {
+            // Each 'x' is 1 char and 1 token (mocked)
+            const data = 'x'.repeat(50) + 'y'.repeat(50) + 'z'.repeat(50); // 150 chars/tokens
+            // Set both limits low
+            const modelInfo = { ...mockModelInfo, maxRequestTokens: 40 };
+            const result = await dataSplitter.splitIfNeeded({
+                message: 'test',
+                data,
+                modelInfo,
+                maxResponseTokens: 10,
+                maxCharsPerChunk: 30 // Stricter than tokens in some cases
+            });
+            // All chunks should be <= 30 chars and <= 40 tokens
+            expect(result.length).toBeGreaterThan(1);
+            expect(result.every(chunk => chunk.content.length <= 30)).toBe(true);
+            expect(result.every(chunk => chunk.tokenCount <= 40)).toBe(true);
+            expect(result.map(chunk => chunk.content).join('')).toBe(data);
+        });
+        it('should split arrays by the stricter of token or char limit', async () => {
+            const data = Array.from({ length: 20 }, (_, i) => 'a'.repeat(10));
+            const modelInfo = { ...mockModelInfo, maxRequestTokens: 35 };
+            const result = await dataSplitter.splitIfNeeded({
+                message: 'test',
+                data,
+                modelInfo,
+                maxResponseTokens: 5,
+                maxCharsPerChunk: 40
+            });
+            expect(result.length).toBeGreaterThan(1);
+            expect(result.every(chunk => JSON.stringify(chunk.content).length <= 40)).toBe(true);
+            expect(result.every(chunk => chunk.tokenCount <= 35)).toBe(true);
+            expect(result.flatMap(chunk => chunk.content)).toEqual(data);
+        });
+        it('should split objects by the stricter of token or char limit', async () => {
+            const data = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [
+                `k${i}`, 'b'.repeat(10)
+            ]));
+            const modelInfo = { ...mockModelInfo, maxRequestTokens: 35 };
+            const result = await dataSplitter.splitIfNeeded({
+                message: 'test',
+                data,
+                modelInfo,
+                maxResponseTokens: 5,
+                maxCharsPerChunk: 40
+            });
+            expect(result.length).toBeGreaterThan(1);
+            expect(result.every(chunk => JSON.stringify(chunk.content).length <= 40)).toBe(true);
+            expect(result.every(chunk => chunk.tokenCount <= 35)).toBe(true);
+            // Reconstruct the object
+            const reconstructed = Object.assign({}, ...result.map(chunk => chunk.content));
+            expect(reconstructed).toEqual(data);
+        });
+    });
 });
 

@@ -910,8 +910,10 @@ export class LLMCaller implements MCPDirectAccess {
                 data: actualOptions.data,
                 endingMessage: actualOptions.endingMessage,
                 model: this.modelManager.getModel(this.model) || (() => { throw new Error(`Model ${this.model} not found`); })(),
-                maxResponseTokens: actualOptions.settings?.maxTokens
+                maxResponseTokens: actualOptions.settings?.maxTokens,
+                maxCharsPerChunk: actualOptions.maxCharsPerChunk
             });
+            log.debug('Processed messages', { count: processedMessages.length });
 
             const { chatParams, processedMessages: finalProcessedMessages } =
                 await this.buildChatParams({
@@ -1178,8 +1180,10 @@ export class LLMCaller implements MCPDirectAccess {
                 data: opts.data,
                 endingMessage: opts.endingMessage,
                 model: this.modelManager.getModel(this.model) || (() => { throw new Error(`Model ${this.model} not found`); })(),
-                maxResponseTokens: opts.settings?.maxTokens
+                maxResponseTokens: opts.settings?.maxTokens,
+                maxCharsPerChunk: opts.maxCharsPerChunk
             });
+            log.debug('Processed messages', { count: processedMessages.length });
 
             const { chatParams, processedMessages: finalProcessedMessages } =
                 await this.buildChatParams({
@@ -1190,9 +1194,11 @@ export class LLMCaller implements MCPDirectAccess {
 
             let responses: UniversalChatResponse[];
             if (finalProcessedMessages.length <= 1) {
+                log.debug('Calling internalChatCall (single chunk)');
                 const response = await this.internalChatCall<T>(chatParams);
                 responses = [response];
             } else {
+                log.debug('Calling chunkController.processChunks (multi-chunk)', { chunkCount: finalProcessedMessages.length });
                 responses = await this.chunkController.processChunks(finalProcessedMessages, {
                     ...chatParams,
                     historicalMessages: chatParams.messages

@@ -3,11 +3,13 @@ type JsObject = { [key: string]: any };
 export class RecursiveObjectSplitter {
     private maxChunkSize: number;
     private minChunkSize: number;
+    private maxCharsPerChunk?: number;
     private sizeCache = new WeakMap<object, number>();
 
-    constructor(maxChunkSize: number = 2000, minChunkSize?: number) {
+    constructor(maxChunkSize: number = 2000, minChunkSize?: number, maxCharsPerChunk?: number) {
         this.maxChunkSize = maxChunkSize;
         this.minChunkSize = minChunkSize ?? Math.max(maxChunkSize - 200, 50);
+        this.maxCharsPerChunk = maxCharsPerChunk;
     }
 
     private calculateSize(data: any): number {
@@ -57,12 +59,13 @@ export class RecursiveObjectSplitter {
 
     public split(inputData: JsObject, handleArrays: boolean = false): JsObject[] {
         const totalSize = this.calculateSize(inputData);
-        if (totalSize <= this.maxChunkSize) {
+        if (totalSize <= this.maxChunkSize && (!this.maxCharsPerChunk || totalSize <= this.maxCharsPerChunk)) {
             return [inputData];
         }
 
         const chunks: JsObject[] = [];
         let currentChunk: JsObject = {};
+        let currentChunkChars = 2; // '{}'
 
         const addToChunks = (chunk: JsObject): void => {
             if (Object.keys(chunk).length > 0) {
@@ -75,80 +78,36 @@ export class RecursiveObjectSplitter {
             const [key, value] = entries[i];
             const itemSize = this.calculateSize({ [key]: value });
             const currentSize = this.calculateSize(currentChunk);
-
-            if (Array.isArray(value)) {
-                if (!handleArrays) {
-                    if (currentSize > this.minChunkSize) {
-                        addToChunks(currentChunk);
-                        currentChunk = {};
-                    }
-                    currentChunk[key] = value;
-                    addToChunks(currentChunk);
-                    currentChunk = {};
-                } else {
-                    // Split arrays when handleArrays=true
-                    const arrayChunks: any[][] = [];
-                    let currentArrayChunk: any[] = [];
-                    let currentArrayChunkSize = 2; // []
-
-                    for (const item of value) {
-                        const itemSize = this.calculateSize(item);
-                        if (currentArrayChunkSize + itemSize + (currentArrayChunkSize > 2 ? 1 : 0) > this.maxChunkSize) {
-                            if (currentArrayChunk.length > 0) {
-                                arrayChunks.push([...currentArrayChunk]);
-                                currentArrayChunk = [];
-                                currentArrayChunkSize = 2;
-                            }
-                        }
-                        currentArrayChunk.push(item);
-                        currentArrayChunkSize += itemSize + (currentArrayChunkSize > 2 ? 1 : 0);
-                    }
-
-                    if (currentArrayChunk.length > 0) {
-                        arrayChunks.push(currentArrayChunk);
-                    }
-
-                    for (const arrayChunk of arrayChunks) {
-                        if (currentSize > this.minChunkSize) {
-                            addToChunks(currentChunk);
-                            currentChunk = {};
-                        }
-                        currentChunk[key] = arrayChunk;
-                        addToChunks(currentChunk);
-                        currentChunk = {};
-                    }
-                }
-            } else if (typeof value === 'object' && value !== null) {
-                // Handle nested objects
+            const itemChars = JSON.stringify({ [key]: value }).length;
+            // Check if adding this item would exceed either limit
+            if ((currentSize + itemSize > this.maxChunkSize || (this.maxCharsPerChunk && currentChunkChars + itemChars > this.maxCharsPerChunk)) && Object.keys(currentChunk).length > 0) {
+                addToChunks(currentChunk);
+                currentChunk = {};
+                currentChunkChars = 2;
+            }
+            // If value is a nested object, split it recursively and merge results
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
                 const nestedChunks = this.split(value, handleArrays);
-
-                // If the nested object was split or is too large
-                if (nestedChunks.length > 1 || itemSize > this.maxChunkSize) {
-                    if (currentSize > this.minChunkSize) {
+                if (nestedChunks.length > 1) {
+                    // Add current chunk if not empty
+                    if (Object.keys(currentChunk).length > 0) {
                         addToChunks(currentChunk);
                         currentChunk = {};
+                        currentChunkChars = 2;
                     }
+                    // Each nested chunk becomes a separate chunk with the current key
                     for (const nestedChunk of nestedChunks) {
-                        currentChunk = { [key]: nestedChunk };
-                        addToChunks(currentChunk);
-                        currentChunk = {};
+                        const chunkObj: JsObject = { ...currentChunk, [key]: nestedChunk };
+                        addToChunks(chunkObj);
                     }
+                    continue;
                 } else {
-                    // If the nested object wasn't split but adding it would exceed maxChunkSize
-                    if (currentSize + itemSize > this.maxChunkSize && currentSize > this.minChunkSize) {
-                        addToChunks(currentChunk);
-                        currentChunk = {};
-                    }
                     currentChunk[key] = nestedChunks[0];
                 }
             } else {
-                // Handle primitive values
-                if (currentSize + itemSize > this.maxChunkSize && currentSize > this.minChunkSize) {
-                    addToChunks(currentChunk);
-                    currentChunk = {};
-                }
                 currentChunk[key] = value;
             }
+            currentChunkChars = JSON.stringify(currentChunk).length;
         }
 
         if (Object.keys(currentChunk).length > 0) {
@@ -156,7 +115,7 @@ export class RecursiveObjectSplitter {
         }
 
         // If we still have only one chunk that's too large, force split it
-        if (chunks.length === 1 && this.calculateSize(chunks[0]) > this.maxChunkSize) {
+        if (chunks.length === 1 && (this.calculateSize(chunks[0]) > this.maxChunkSize || (this.maxCharsPerChunk && this.calculateSize(chunks[0]) > this.maxCharsPerChunk))) {
             const entries = Object.entries(chunks[0]);
             const midPoint = Math.ceil(entries.length / 2);
             const firstHalf = Object.fromEntries(entries.slice(0, midPoint));

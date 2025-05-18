@@ -40,6 +40,7 @@ export type ChunkProcessingParams = {
     responseFormat?: ResponseFormat;
     tools?: ToolDefinition[];
     callerId?: string; // Add callerId for usage tracking
+    maxCharsPerChunk?: number; // New: max characters per chunk
 };
 
 /**

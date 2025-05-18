@@ -2,6 +2,7 @@ import { ModelInfo } from '../../interfaces/UniversalInterfaces';
 import { TokenCalculator } from '../models/TokenCalculator';
 import { RecursiveObjectSplitter } from './RecursiveObjectSplitter';
 import { StringSplitter } from './StringSplitter';
+import { logger } from '../../utils/logger';
 
 /**
  * Represents a chunk of data after splitting
@@ -33,14 +34,18 @@ export class DataSplitter {
         data,
         endingMessage,
         modelInfo,
-        maxResponseTokens
+        maxResponseTokens,
+        maxCharsPerChunk
     }: {
         message: string;
         data?: any;
         endingMessage?: string;
         modelInfo: ModelInfo;
         maxResponseTokens: number;
+        maxCharsPerChunk?: number;
     }): Promise<DataChunk[]> {
+        const log = logger.createLogger({ prefix: 'DataSplitter.splitIfNeeded' });
+        log.debug('Called with', { dataType: typeof data, dataLength: typeof data === 'string' ? data.length : Array.isArray(data) ? data.length : typeof data === 'object' && data !== null ? Object.keys(data).length : undefined, maxCharsPerChunk });
         // Handle undefined, null, and primitive types
         if (data === undefined || data === null ||
             typeof data === 'number' ||
@@ -72,7 +77,10 @@ export class DataSplitter {
         const dataString = typeof data === 'object' ? JSON.stringify(data) : data.toString();
         const dataTokens = this.tokenCalculator.calculateTokens(dataString);
 
-        if (dataTokens <= availableTokens) {
+        log.debug('Token and char info', { messageTokens, endingTokens, availableTokens, dataTokens, dataStringLength: dataString.length });
+
+        if (dataTokens <= availableTokens && (!maxCharsPerChunk || dataString.length <= maxCharsPerChunk)) {
+            log.debug('Data fits in one chunk, returning single chunk');
             return [{
                 content: data,
                 tokenCount: dataTokens,
@@ -82,27 +90,29 @@ export class DataSplitter {
         }
 
         // Choose splitting strategy
+        let result: DataChunk[];
         if (typeof data === 'string') {
-            const chunks = this.stringSplitter.split(data, availableTokens);
-            return chunks.map((chunk, index) => ({
+            result = this.stringSplitter.split(data, availableTokens, { maxCharsPerChunk }).map((chunk, index, arr) => ({
                 content: chunk,
                 tokenCount: this.tokenCalculator.calculateTokens(chunk),
                 chunkIndex: index,
-                totalChunks: chunks.length
+                totalChunks: arr.length
             }));
+        } else if (Array.isArray(data)) {
+            result = this.splitArrayData(data, availableTokens, maxCharsPerChunk);
+        } else {
+            result = this.splitObjectData(data, availableTokens, maxCharsPerChunk);
         }
-        if (Array.isArray(data)) {
-            return this.splitArrayData(data, availableTokens);
-        }
-        return this.splitObjectData(data, availableTokens);
+        log.debug('Returning chunks', { chunkCount: result.length, chunkLengths: result.map(c => typeof c.content === 'string' ? c.content.length : undefined) });
+        return result;
     }
 
     /**
      * Splits object data into chunks while maintaining property relationships
      * Ensures each chunk is a valid object with complete key-value pairs
      */
-    private splitObjectData(data: any, maxTokens: number): DataChunk[] {
-        const splitter = new RecursiveObjectSplitter(maxTokens, maxTokens - 50);
+    private splitObjectData(data: any, maxTokens: number, maxCharsPerChunk?: number): DataChunk[] {
+        const splitter = new RecursiveObjectSplitter(maxTokens, maxTokens - 50, maxCharsPerChunk);
         const splitObjects = splitter.split(data);
 
         return splitObjects.map((obj, index) => ({
@@ -113,16 +123,18 @@ export class DataSplitter {
         }));
     }
 
-    private splitArrayData(data: any[], maxTokens: number): DataChunk[] {
+    private splitArrayData(data: any[], maxTokens: number, maxCharsPerChunk?: number): DataChunk[] {
         const chunks: DataChunk[] = [];
         let currentChunk: any[] = [];
         let currentTokens = this.tokenCalculator.calculateTokens('[]');
+        let currentChars = 2; // '[]'
 
         for (const item of data) {
             const itemString = JSON.stringify(item);
             const itemTokens = this.tokenCalculator.calculateTokens(itemString);
+            const itemChars = itemString.length + (currentChunk.length > 0 ? 1 : 0); // comma if not first
 
-            if (currentTokens + itemTokens > maxTokens && currentChunk.length > 0) {
+            if ((currentTokens + itemTokens > maxTokens || (maxCharsPerChunk && currentChars + itemChars > maxCharsPerChunk)) && currentChunk.length > 0) {
                 chunks.push({
                     content: currentChunk,
                     tokenCount: currentTokens,
@@ -131,10 +143,12 @@ export class DataSplitter {
                 });
                 currentChunk = [];
                 currentTokens = this.tokenCalculator.calculateTokens('[]');
+                currentChars = 2;
             }
 
             currentChunk.push(item);
             currentTokens = this.tokenCalculator.calculateTokens(JSON.stringify(currentChunk));
+            currentChars = JSON.stringify(currentChunk).length;
         }
 
         if (currentChunk.length > 0) {
