@@ -1,0 +1,160 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Token Counting Best Practices
+
+## Core Principles
+
+1. **Source of Truth**
+   - **ALWAYS use API-provided token counts when available**
+   - Local token counts are estimates only
+   - API counts determine actual billing
+   - API counts are the authoritative record
+
+2. **Estimation Hierarchy**
+   - API-provided counts (highest priority)
+   - Model-specific tokenizers (tiktoken, etc.)
+   - Generic approximation methods (lowest priority)
+
+3. **When to Estimate**
+   - Pre-API call planning and budgeting
+   - Message truncation before sending
+   - Fallback when API doesn't return counts
+   - Local testing without API calls
+
+4. **When NOT to Estimate**
+   - When API response includes token counts
+   - For billing or usage reports
+   - For analytics that affect business decisions
+   - In any scenario where accuracy is critical
+
+## Implementation Guidelines
+
+### API Response Usage
+
+```typescript
+// ✅ CORRECT: Use API-provided counts
+if (response.usage?.total_tokens) {
+    usage.tokens.total = response.usage.total_tokens;
+    usage.tokens.input.total = response.usage.prompt_tokens;
+    usage.tokens.output.total = response.usage.completion_tokens;
+    
+    // Recalculate costs based on actual usage
+    // [cost calculation code]
+}
+```
+
+```typescript
+// ❌ INCORRECT: Ignoring API counts
+const promptTokens = tokenCalculator.calculateTokens(prompt);
+const responseTokens = tokenCalculator.calculateTokens(responseText);
+usage.tokens.total = promptTokens + responseTokens;
+```
+
+### Pre-Call Estimation
+
+```typescript
+// ✅ CORRECT: Estimation for planning
+const estimatedTokens = tokenCalculator.calculateTokens(prompt);
+if (estimatedTokens > model.maxTokens * 0.8) {
+    // Take action to reduce token count before sending
+}
+```
+
+### Fallback Mechanism
+
+```typescript
+// ✅ CORRECT: Fallback pattern
+let inputTokens;
+if (response.usage?.prompt_tokens) {
+    inputTokens = response.usage.prompt_tokens;
+} else {
+    // Only estimate if API doesn't provide counts
+    inputTokens = tokenCalculator.calculateTokens(prompt);
+    console.warn('Using estimated token count as fallback');
+}
+```
+
+## Common Pitfalls
+
+### Mixing Sources
+
+```typescript
+// ❌ INCORRECT: Mixing actual and estimated counts
+usage.tokens.input.total = response.usage.prompt_tokens;
+usage.tokens.output.total = tokenCalculator.calculateTokens(responseText); // Should use response.usage.completion_tokens
+```
+
+### Inconsistent Billing
+
+```typescript
+// ❌ INCORRECT: Using estimates for billing
+const cost = estimatedTokens * pricePerToken;
+billing.chargeCustomer(cost); // Should be based on API-provided counts
+```
+
+### Ignoring API Updates
+
+```typescript
+// ❌ INCORRECT: Assuming stable tokenization
+// Tokenization rules may change in API updates
+// Always rely on API-provided counts when available
+```
+
+## Best Practices
+
+### Token Logging
+
+```typescript
+// ✅ CORRECT: Clear logging of token sources
+if (response.usage) {
+    logger.info('Token usage (API-reported):', response.usage);
+} else {
+    const estimated = tokenCalculator.calculateTokens(text);
+    logger.info('Token usage (ESTIMATED):', estimated);
+    logger.warn('Using estimated token counts - may differ from actual billing');
+}
+```
+
+### Documentation
+
+- Clearly document token counting methods
+- Indicate when estimates are used
+- Explain fallback mechanisms
+- Note potential discrepancies
+
+### Testing
+
+- Test with API responses that include token counts
+- Test fallback mechanisms
+- Compare estimated vs. actual counts
+- Document error ranges
+
+## Technical Implementation
+
+### Adapter Layer
+
+- Extract token counts from API responses
+- Map provider-specific formats to universal format
+- Apply fallback only when necessary
+
+### Model-Specific Tokenizers
+
+- Use tiktoken for OpenAI models
+- Use sentencepiece for Google models
+- Track tokenizer version with model version
+- Update tokenizers when models update
+
+### Debugging
+
+- Log both estimated and actual counts in debug mode
+- Track estimation accuracy over time
+- Alert on significant discrepancies
+
+## References
+
+- See @src/core/models/TokenCalculator.ts for implementation
+- See @src/adapters/openai/adapter.ts for OpenAI adapter usage
+- See @src/adapters/base/baseAdapter.ts for generic adapter patterns
