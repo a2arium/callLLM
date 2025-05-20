@@ -1,8 +1,8 @@
-import { LLMCaller } from '../src/core/caller/LLMCaller';
-import { UsageData } from '../src/interfaces/UsageInterfaces';
-import { StreamPipeline } from '../src/core/streaming/StreamPipeline';
-import { ContentAccumulator } from '../src/core/streaming/processors/ContentAccumulator';
-import { ReasoningProcessor } from '../src/core/streaming/processors/ReasoningProcessor';
+import { LLMCaller } from '../src/core/caller/LLMCaller.js';
+import { UsageData } from '../src/interfaces/UsageInterfaces.js';
+import { StreamPipeline } from '../src/core/streaming/StreamPipeline.js';
+import { ContentAccumulator } from '../src/core/streaming/processors/ContentAccumulator.js';
+import { ReasoningProcessor } from '../src/core/streaming/processors/ReasoningProcessor.js';
 
 /**
  * Demonstration of the ReasoningProcessor with OpenAI's o-series models

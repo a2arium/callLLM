@@ -1,5 +1,5 @@
-import { LLMCaller } from '../src/core/caller/LLMCaller';
-import { RegisteredProviders } from '../src/adapters';
+import { LLMCaller } from '../src/core/caller/LLMCaller.js';
+import { RegisteredProviders } from '../src/adapters/index.js';
 
 /**
  * This example demonstrates the different history modes available in the LLMCaller:

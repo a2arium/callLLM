@@ -1,5 +1,9 @@
-import { LLMCaller } from '../src';
+import { LLMCaller } from '../src/index.js';
 import * as path from 'path';
+import { getDirname } from '../src/utils/paths.js';
+
+// Get the directory name using the utility function
+const __dirname = getDirname();
 
 const toolsDir = path.resolve(__dirname, './functions');
 

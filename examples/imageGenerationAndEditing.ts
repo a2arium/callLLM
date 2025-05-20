@@ -8,12 +8,15 @@
  * 4. Save generated images to file
  * 5. Get images as base64 data
  */
-import { LLMCaller } from '../src';
+import { LLMCaller } from '../src/index.js';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import { UsageData } from '../src/interfaces/UsageInterfaces';
+import { UsageData } from '../src/interfaces/UsageInterfaces.js';
+import { getDirname } from '../src/utils/paths.js';
 
+// Get the directory name using the utility function
+const __dirname = getDirname();
 
 // Load environment variables
 dotenv.config();

@@ -1,6 +1,6 @@
-import { LLMCaller } from '../src';
-import type { ToolDefinition } from '../src/types/tooling';
-import { HistoryManager } from '../src/core/history/HistoryManager';
+import { LLMCaller } from '../src.js';
+import type { ToolDefinition } from '../src/types/tooling.js';
+import { HistoryManager } from '../src/core/history/HistoryManager.js';
 
 async function main() {
 

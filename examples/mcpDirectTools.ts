@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { MCPServerConfig, MCPServersMap, McpToolSchema } from '../src/core/mcp/MCPConfigTypes';
-import { MCPServiceAdapter } from '../src/core/mcp/MCPServiceAdapter';
+import type { MCPServerConfig, MCPServersMap, McpToolSchema } from '../src/core/mcp/MCPConfigTypes.js';
+import { MCPServiceAdapter } from '../src/core/mcp/MCPServiceAdapter.js';
 
 /**
  * Example: Directly using MCP tools without an LLM

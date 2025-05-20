@@ -3,12 +3,26 @@ import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter.js';
 import { normalizeImageSource } from '../../../../core/file-data/fileData.js';
 import { ModelManager } from '../../../../core/models/ModelManager.js';
 
+// Define types for the mocks
+type MockOpenAIImageResponse = {
+    created: number;
+    data: Array<{
+        b64_json?: string;
+        url?: string | null;
+    }>;
+    usage?: {
+        input_tokens: number;
+        output_tokens: number;
+        total_tokens: number;
+    };
+};
+
 // Mock the dependencies
 jest.mock('openai', () => {
     return {
         OpenAI: jest.fn().mockImplementation(() => ({
             images: {
-                generate: jest.fn().mockResolvedValue({
+                generate: jest.fn().mockResolvedValue<MockOpenAIImageResponse>({
                     created: Date.now(),
                     data: [
                         {
@@ -22,7 +36,7 @@ jest.mock('openai', () => {
                         total_tokens: 1071
                     }
                 }),
-                edit: jest.fn().mockResolvedValue({
+                edit: jest.fn().mockResolvedValue<MockOpenAIImageResponse>({
                     created: Date.now(),
                     data: [
                         {
@@ -36,14 +50,20 @@ jest.mock('openai', () => {
     };
 });
 
+type NormalizedImageSource = {
+    type: string;
+    data: string;
+    mime: string;
+};
+
 jest.mock('../../../../core/file-data/fileData', () => {
     return {
-        normalizeImageSource: jest.fn().mockResolvedValue({
+        normalizeImageSource: jest.fn().mockResolvedValue<NormalizedImageSource>({
             type: 'base64',
             data: 'mock-normalized-base64',
             mime: 'image/png'
         }),
-        saveBase64ToFile: jest.fn().mockResolvedValue('/path/to/saved/image.png')
+        saveBase64ToFile: jest.fn().mockResolvedValue<string>('/path/to/saved/image.png')
     };
 });
 
@@ -69,8 +89,8 @@ jest.mock('../../../../core/models/ModelManager', () => {
 // Mock fs module
 jest.mock('fs', () => ({
     promises: {
-        readFile: jest.fn().mockResolvedValue(Buffer.from('mock-file-content')),
-        writeFile: jest.fn().mockResolvedValue(undefined)
+        readFile: jest.fn().mockResolvedValue<Buffer>(Buffer.from('mock-file-content')),
+        writeFile: jest.fn().mockResolvedValue<void>(undefined)
     }
 }));
 

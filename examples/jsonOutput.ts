@@ -1,4 +1,4 @@
-import { LLMCaller } from '../src/core/caller/LLMCaller';
+import { LLMCaller } from '../src/core/caller/LLMCaller.js';
 import { z } from 'zod';
 import dotenv from 'dotenv';
 

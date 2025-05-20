@@ -18,8 +18,7 @@ import { StreamHandler } from './stream.js';
 import { Validator } from './validator.js';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { getDirname } from '../../utils/paths.js';
 import { logger } from '../../utils/logger.js';
 import type { ToolDefinition } from '../../types/tooling.js';
 import {
@@ -42,9 +41,8 @@ import { RetryManager } from '../../core/retry/RetryManager.js';
 import { UsageTracker } from '../../core/telemetry/UsageTracker.js';
 import { UsageCallback } from '../../interfaces/UsageInterfaces.js';
 
-// Create ESM-compatible __dirname
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Use the paths utility to get the directory name
+const __dirname = getDirname();
 
 // Load environment variables
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });

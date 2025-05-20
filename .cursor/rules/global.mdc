@@ -28,6 +28,11 @@ This is a universal LLM caller library designed to provide a unified interface f
 - Maintain clear separation of concerns
 - Preserve existing functionality unless explicitly required to change
 
+## Dual ESM/CJS Packaging
+- The project supports dual ESM and CommonJS packaging to ensure broad compatibility.
+- Detailed guidelines for development, including handling of `import.meta.url`, `__dirname`, specific build steps, and troubleshooting, are documented in a dedicated rule.
+- See @.cursor/rules/esm-cjs.mdc for comprehensive information.
+
 ## Prompt Enhancement
 - NEVER hardcode prompts in the codebase
 - Use prompt templates for consistent formatting

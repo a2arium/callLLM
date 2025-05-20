@@ -1,5 +1,5 @@
-import { LLMCaller } from '../src/core/caller/LLMCaller';
-import { UsageData } from '../src/interfaces/UsageInterfaces';
+import { LLMCaller } from '../src/core/caller/LLMCaller.js';
+import { UsageData } from '../src/interfaces/UsageInterfaces.js';
 
 async function main() {
     // Example usage callback

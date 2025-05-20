@@ -1,14 +1,10 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { resolveFromFile } from './paths.js';
 
-// Create ESM-compatible __dirname
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Load environment variables
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+// Load environment variables using cross-platform path resolution
+// Use resolveFromFile without parameter - it will use getImportMetaUrl internally
+dotenv.config({ path: resolveFromFile(undefined, '../../.env') });
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
