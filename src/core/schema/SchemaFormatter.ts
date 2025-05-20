@@ -1,6 +1,6 @@
-import { JSONSchemaDefinition } from '../../interfaces/UniversalInterfaces';
+import { JSONSchemaDefinition } from '../../interfaces/UniversalInterfaces.js';
 import { z } from 'zod';
-import { SchemaValidator } from './SchemaValidator';
+import { SchemaValidator } from './SchemaValidator.js';
 
 export type JSONSchemaObject = {
     type?: string;

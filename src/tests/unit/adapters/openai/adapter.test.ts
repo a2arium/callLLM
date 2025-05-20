@@ -1,12 +1,12 @@
 import { OpenAI } from 'openai';
-import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter';
-import { Converter } from '../../../../adapters/openai/converter';
-import { StreamHandler } from '../../../../adapters/openai/stream';
-import { Validator } from '../../../../adapters/openai/validator';
-import { UniversalChatParams, FinishReason } from '../../../../interfaces/UniversalInterfaces';
+import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter.js';
+import { Converter } from '../../../../adapters/openai/converter.js';
+import { StreamHandler } from '../../../../adapters/openai/stream.js';
+import { Validator } from '../../../../adapters/openai/validator.js';
+import { UniversalChatParams, FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
 import {
     OpenAIResponseAdapterError
-} from '../../../../adapters/openai/errors';
+} from '../../../../adapters/openai/errors.js';
 
 // Mock functions
 const mockCreate = jest.fn();

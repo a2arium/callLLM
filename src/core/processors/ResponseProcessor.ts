@@ -1,8 +1,8 @@
-import { UniversalChatResponse, UniversalChatParams, FinishReason, JSONSchemaDefinition, ModelInfo } from '../../interfaces/UniversalInterfaces';
-import { SchemaValidator, SchemaValidationError } from '../schema/SchemaValidator';
+import { UniversalChatResponse, UniversalChatParams, FinishReason, JSONSchemaDefinition, ModelInfo } from '../../interfaces/UniversalInterfaces.js';
+import { SchemaValidator, SchemaValidationError } from '../schema/SchemaValidator.js';
 import { z } from 'zod';
 import { jsonrepair } from 'jsonrepair';
-import { logger } from '../../utils/logger';
+import { logger } from '../../utils/logger.js';
 
 export class ResponseProcessor {
     constructor() { }

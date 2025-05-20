@@ -7,12 +7,12 @@
  * response is properly formatted and validated.
  */
 import { z } from 'zod';
-import { LLMCaller } from '../../../../core/caller/LLMCaller';
-import { LLMProvider } from '../../../../interfaces/LLMProvider';
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason } from '../../../../interfaces/UniversalInterfaces';
-import { ToolDefinition } from '../../../../types/tooling';
-import { ModelManager } from '../../../../core/models/ModelManager';
-import { ProviderManager } from '../../../../core/caller/ProviderManager';
+import { LLMCaller } from '../../../../core/caller/LLMCaller.js';
+import { LLMProvider } from '../../../../interfaces/LLMProvider.js';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
+import { ToolDefinition } from '../../../../types/tooling.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
+import { ProviderManager } from '../../../../core/caller/ProviderManager.js';
 
 // Mock Provider using the LLMProvider interface
 const mockProviderAdapter: jest.Mocked<LLMProvider> = {

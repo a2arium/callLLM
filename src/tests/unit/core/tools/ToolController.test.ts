@@ -1,8 +1,8 @@
-import { ToolController } from '../../../../core/tools/ToolController';
-import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../../../types/tooling';
-import { ToolsManager } from '../../../../core/tools/ToolsManager';
-import type { UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces';
-import type { ToolDefinition } from '../../../../types/tooling';
+import { ToolController } from '../../../../core/tools/ToolController.js';
+import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../../../types/tooling.js';
+import { ToolsManager } from '../../../../core/tools/ToolsManager.js';
+import type { UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces.js';
+import type { ToolDefinition } from '../../../../types/tooling.js';
 
 // Define a FakeToolsManager that extends the real ToolsManager
 class FakeToolsManager extends ToolsManager {

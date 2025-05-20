@@ -1,7 +1,7 @@
-import { TokenCalculator } from '../models/TokenCalculator';
-import { logger } from '../../utils/logger';
+import { TokenCalculator } from '../models/TokenCalculator.js';
+import { logger } from '../../utils/logger.js';
 // DataSplitter might not be used if RequestProcessor handles splitting
-// import { DataSplitter } from '../processors/DataSplitter';
+// import { DataSplitter } from '../processors/DataSplitter.js';
 import {
     JSONSchemaDefinition,
     ResponseFormat,
@@ -10,13 +10,13 @@ import {
     UniversalChatSettings,
     UniversalMessage,
     UniversalStreamResponse
-} from '../../interfaces/UniversalInterfaces';
-import { ChatController } from '../chat/ChatController';
+} from '../../interfaces/UniversalInterfaces.js';
+import { ChatController } from '../chat/ChatController.js';
 // Use StreamControllerInterface or StreamController based on what's passed
-import { StreamController } from '../streaming/StreamController';
-import { HistoryManager } from '../history/HistoryManager';
-import { toMessageParts } from '../../interfaces/UniversalInterfaces';
-import type { ToolDefinition } from '../../types/tooling';
+import { StreamController } from '../streaming/StreamController.js';
+import { HistoryManager } from '../history/HistoryManager.js';
+import { toMessageParts } from '../../interfaces/UniversalInterfaces.js';
+import type { ToolDefinition } from '../../types/tooling.js';
 
 /**
  * Error thrown when chunk iteration limit is exceeded

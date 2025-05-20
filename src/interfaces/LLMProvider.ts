@@ -1,5 +1,5 @@
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, UrlSource, Base64Source, ImageInputOpts, ImageOutputOpts, FilePathSource, ImageSource } from './UniversalInterfaces';
-import { UsageCallback } from './UsageInterfaces';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, UrlSource, Base64Source, ImageInputOpts, ImageOutputOpts, FilePathSource, ImageSource } from './UniversalInterfaces.js';
+import { UsageCallback } from './UsageInterfaces.js';
 
 export interface LLMProvider {
     // Basic chat methods

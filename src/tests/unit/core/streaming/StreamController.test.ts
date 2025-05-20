@@ -1,9 +1,9 @@
-import { StreamController } from '../../../../core/streaming/StreamController';
-import { UniversalChatParams, UniversalStreamResponse, FinishReason } from '../../../../interfaces/UniversalInterfaces';
-import type { ProviderManager } from '../../../../core/caller/ProviderManager';
-import type { ModelManager } from '../../../../core/models/ModelManager';
-import type { StreamHandler } from '../../../../core/streaming/StreamHandler';
-import type { RetryManager } from '../../../../core/retry/RetryManager';
+import { StreamController } from '../../../../core/streaming/StreamController.js';
+import { UniversalChatParams, UniversalStreamResponse, FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
+import type { ProviderManager } from '../../../../core/caller/ProviderManager.js';
+import type { ModelManager } from '../../../../core/models/ModelManager.js';
+import type { StreamHandler } from '../../../../core/streaming/StreamHandler.js';
+import type { RetryManager } from '../../../../core/retry/RetryManager.js';
 
 // Define stub types for dependencies
 type ProviderStub = {

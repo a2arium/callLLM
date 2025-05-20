@@ -1,5 +1,5 @@
-import type { ToolDefinition, ToolsManager, ToolChoice } from '../../../types/tooling';
-import { UniversalChatParams } from '../../../interfaces/UniversalInterfaces';
+import type { ToolDefinition, ToolsManager, ToolChoice } from '../../../types/tooling.js';
+import { UniversalChatParams } from '../../../interfaces/UniversalInterfaces.js';
 
 describe('Tool Interfaces', () => {
     describe('ToolDefinition', () => {

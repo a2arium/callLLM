@@ -1,13 +1,13 @@
-import { StreamingService } from '../../../../core/streaming/StreamingService';
-import { ProviderManager } from '../../../../core/caller/ProviderManager';
-import { ModelManager } from '../../../../core/models/ModelManager';
-import { TokenCalculator } from '../../../../core/models/TokenCalculator';
-import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
-import { RetryManager } from '../../../../core/retry/RetryManager';
-import { StreamHandler } from '../../../../core/streaming/StreamHandler';
-import { UniversalChatParams, UniversalStreamResponse, ModelInfo, UniversalMessage, HistoryMode } from '../../../../interfaces/UniversalInterfaces';
-import { UsageCallback } from '../../../../interfaces/UsageInterfaces';
-import { HistoryManager } from '../../../../core/history/HistoryManager';
+import { StreamingService } from '../../../../core/streaming/StreamingService.js';
+import { ProviderManager } from '../../../../core/caller/ProviderManager.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
+import { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
+import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.js';
+import { RetryManager } from '../../../../core/retry/RetryManager.js';
+import { StreamHandler } from '../../../../core/streaming/StreamHandler.js';
+import { UniversalChatParams, UniversalStreamResponse, ModelInfo, UniversalMessage, HistoryMode } from '../../../../interfaces/UniversalInterfaces.js';
+import { UsageCallback } from '../../../../interfaces/UsageInterfaces.js';
+import { HistoryManager } from '../../../../core/history/HistoryManager.js';
 
 // Create mock dependencies
 jest.mock('../../../../core/caller/ProviderManager');

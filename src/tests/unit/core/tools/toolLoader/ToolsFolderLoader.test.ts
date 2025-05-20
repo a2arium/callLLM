@@ -1,6 +1,6 @@
-import { ToolsFolderLoader } from '../../../../../core/tools/toolLoader/ToolsFolderLoader';
-import { FunctionFileParser } from '../../../../../core/tools/toolLoader/FunctionFileParser';
-import { ToolParsingError, ParsedFunctionMeta } from '../../../../../core/tools/toolLoader/types';
+import { ToolsFolderLoader } from '../../../../../core/tools/toolLoader/ToolsFolderLoader.js';
+import { FunctionFileParser } from '../../../../../core/tools/toolLoader/FunctionFileParser.js';
+import { ToolParsingError, ParsedFunctionMeta } from '../../../../../core/tools/toolLoader/types.js';
 import * as fs from 'fs';
 import * as path from 'path';
 

@@ -1,5 +1,5 @@
-import { SchemaFormatter } from '../../../../core/schema/SchemaFormatter';
-import type { JSONSchemaObject } from '../../../../core/schema/SchemaFormatter';
+import { SchemaFormatter } from '../../../../core/schema/SchemaFormatter.js';
+import type { JSONSchemaObject } from '../../../../core/schema/SchemaFormatter.js';
 import { z } from 'zod';
 
 describe('SchemaFormatter', () => {

@@ -1,10 +1,10 @@
-import { ProviderManager } from '../caller/ProviderManager';
-import { ModelManager } from '../models/ModelManager';
-import { StreamHandler } from './StreamHandler';
-import { UniversalChatParams, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
-import { RetryManager } from '../retry/RetryManager';
-import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent";
-import { logger } from '../../utils/logger';
+import { ProviderManager } from '../caller/ProviderManager.js';
+import { ModelManager } from '../models/ModelManager.js';
+import { StreamHandler } from './StreamHandler.js';
+import { UniversalChatParams, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces.js';
+import { RetryManager } from '../retry/RetryManager.js';
+import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent.js";
+import { logger } from '../../utils/logger.js';
 
 /**
  * StreamController is responsible for managing the creation and processing of streaming LLM responses.

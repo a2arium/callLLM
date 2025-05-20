@@ -1,7 +1,7 @@
-import { Converter } from '../../../../adapters/openai/converter';
-import { ModelManager } from '../../../../core/models/ModelManager';
-import { Usage } from '../../../../interfaces/UniversalInterfaces';
-import { estimateImageTokens } from '../../../../core/file-data/fileData';
+import { Converter } from '../../../../adapters/openai/converter.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
+import { Usage } from '../../../../interfaces/UniversalInterfaces.js';
+import { estimateImageTokens } from '../../../../core/file-data/fileData.js';
 
 // Mock the file-data module
 jest.mock('../../../../core/file-data/fileData', () => ({

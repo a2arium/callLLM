@@ -1,5 +1,5 @@
-import { FunctionFileParser } from '../../../../../../src/core/tools/toolLoader/FunctionFileParser';
-import { ToolParsingError } from '../../../../../../src/core/tools/toolLoader/types';
+import { FunctionFileParser } from '../../../../../../src/core/tools/toolLoader/FunctionFileParser.js';
+import { ToolParsingError } from '../../../../../../src/core/tools/toolLoader/types.js';
 import * as path from 'path';
 import * as fsPromises from 'fs/promises';
 import * as fsSync from 'fs';

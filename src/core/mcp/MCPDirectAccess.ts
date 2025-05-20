@@ -5,7 +5,7 @@
  * For implementation, see LLMCaller.getMcpServerToolSchemas and LLMCaller.callMcpTool.
  */
 
-import type { McpToolSchema } from './MCPConfigTypes';
+import type { McpToolSchema } from './MCPConfigTypes.js';
 
 /**
  * Interface for direct MCP tool access provided by LLMCaller

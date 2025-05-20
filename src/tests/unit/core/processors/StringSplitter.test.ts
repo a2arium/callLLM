@@ -1,5 +1,5 @@
-import { StringSplitter, type SplitOptions } from '../../../../core/processors/StringSplitter';
-import { TokenCalculator } from '../../../../core/models/TokenCalculator';
+import { StringSplitter, type SplitOptions } from '../../../../core/processors/StringSplitter.js';
+import { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
 
 type MockTokenCalculator = {
     calculateTokens: jest.Mock;

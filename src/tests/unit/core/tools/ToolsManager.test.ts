@@ -1,5 +1,5 @@
-import { ToolsManager } from '../../../../core/tools/ToolsManager';
-import type { ToolDefinition } from '../../../../types/tooling';
+import { ToolsManager } from '../../../../core/tools/ToolsManager.js';
+import type { ToolDefinition } from '../../../../types/tooling.js';
 
 describe('ToolsManager', () => {
     let toolsManager: ToolsManager;

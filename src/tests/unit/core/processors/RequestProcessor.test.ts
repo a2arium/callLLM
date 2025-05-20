@@ -1,5 +1,5 @@
-import { RequestProcessor } from '../../../../core/processors/RequestProcessor';
-import { ModelInfo } from '../../../../interfaces/UniversalInterfaces';
+import { RequestProcessor } from '../../../../core/processors/RequestProcessor.js';
+import { ModelInfo } from '../../../../interfaces/UniversalInterfaces.js';
 
 describe('RequestProcessor', () => {
     let processor: RequestProcessor;

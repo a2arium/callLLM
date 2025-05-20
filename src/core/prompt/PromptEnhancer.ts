@@ -1,5 +1,5 @@
-import { JSONSchemaDefinition, UniversalMessage } from '../../interfaces/UniversalInterfaces';
-import { SchemaFormatter } from '../schema/SchemaFormatter';
+import { JSONSchemaDefinition, UniversalMessage } from '../../interfaces/UniversalInterfaces.js';
+import { SchemaFormatter } from '../schema/SchemaFormatter.js';
 
 export type PromptEnhancementOptions = {
     jsonSchema?: {

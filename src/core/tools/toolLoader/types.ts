@@ -1,5 +1,5 @@
-import type { ToolDefinition } from '../../../types/tooling';
-import type { MCPServersMap } from '../../mcp/MCPConfigTypes';
+import type { ToolDefinition } from '../../../types/tooling.js';
+import type { MCPServersMap } from '../../mcp/MCPConfigTypes.js';
 
 export type ExtractedJsonSchema = {
     type: 'object';

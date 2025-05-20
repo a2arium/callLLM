@@ -1,5 +1,5 @@
-import { HistoryManager } from '../../../../core/history/HistoryManager';
-import { UniversalMessage } from '../../../../interfaces/UniversalInterfaces';
+import { HistoryManager } from '../../../../core/history/HistoryManager.js';
+import { UniversalMessage } from '../../../../interfaces/UniversalInterfaces.js';
 
 describe('HistoryManager', () => {
     let historyManager: HistoryManager;

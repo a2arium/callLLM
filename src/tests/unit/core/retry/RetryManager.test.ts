@@ -1,4 +1,4 @@
-import { RetryManager, RetryConfig } from '../../../../../src/core/retry/RetryManager';
+import { RetryManager, RetryConfig } from '../../../../../src/core/retry/RetryManager.js';
 
 describe('RetryManager', () => {
     beforeAll(() => {

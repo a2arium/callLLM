@@ -1,5 +1,5 @@
-import { TokenCalculator } from '../../../../core/models/TokenCalculator';
-import { Usage } from '../../../../interfaces/UniversalInterfaces';
+import { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
+import { Usage } from '../../../../interfaces/UniversalInterfaces.js';
 import { encoding_for_model } from '@dqbd/tiktoken';
 
 jest.mock('@dqbd/tiktoken', () => ({

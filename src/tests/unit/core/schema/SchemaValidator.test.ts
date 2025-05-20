@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SchemaValidator, SchemaValidationError } from '../../../../core/schema/SchemaValidator';
+import { SchemaValidator, SchemaValidationError } from '../../../../core/schema/SchemaValidator.js';
 
 describe('SchemaValidator', () => {
     describe('validate', () => {

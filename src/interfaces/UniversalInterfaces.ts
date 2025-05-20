@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import type { ToolCallChunk } from '../core/streaming/types';
-import type { ToolDefinition, ToolCall } from '../types/tooling';
-import type { UsageCallback } from './UsageInterfaces';
-import type { MCPServersMap } from '../core/mcp/MCPConfigTypes';
+import type { ToolCallChunk } from '../core/streaming/types.js';
+import type { ToolDefinition, ToolCall } from '../types/tooling.js';
+import type { UsageCallback } from './UsageInterfaces.js';
+import type { MCPServersMap } from '../core/mcp/MCPConfigTypes.js';
 
 // Finish reason enum based on OpenAI's finish reasons
 export enum FinishReason {

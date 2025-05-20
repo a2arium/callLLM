@@ -1,1 +1,1 @@
-export * from './baseAdapter';
+export * from './baseAdapter.js';

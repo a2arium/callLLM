@@ -1,22 +1,22 @@
 // src/core/caller/chat/ChatController.ts
 
-import { ProviderManager } from '../caller/ProviderManager';
-import { ModelManager } from '../models/ModelManager';
-import { ResponseProcessor } from '../processors/ResponseProcessor';
-import { RetryManager } from '../retry/RetryManager';
-import { UsageTracker } from '../telemetry/UsageTracker';
-import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage, UniversalChatSettings, JSONSchemaDefinition, HistoryMode, JsonModeType, ResponseFormat, toMessageParts } from '../../interfaces/UniversalInterfaces';
+import { ProviderManager } from '../caller/ProviderManager.js';
+import { ModelManager } from '../models/ModelManager.js';
+import { ResponseProcessor } from '../processors/ResponseProcessor.js';
+import { RetryManager } from '../retry/RetryManager.js';
+import { UsageTracker } from '../telemetry/UsageTracker.js';
+import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage, UniversalChatSettings, JSONSchemaDefinition, HistoryMode, JsonModeType, ResponseFormat, toMessageParts } from '../../interfaces/UniversalInterfaces.js';
 import { z } from 'zod';
-import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent";
-import { shouldRetryDueToLLMError } from "../retry/utils/ShouldRetryDueToLLMError";
-import { logger } from '../../utils/logger';
-import { ToolController } from '../tools/ToolController';
-import { ToolOrchestrator } from '../tools/ToolOrchestrator';
-import { HistoryManager } from '../history/HistoryManager';
-import { HistoryTruncator } from '../history/HistoryTruncator';
-import { TokenCalculator } from '../models/TokenCalculator';
-import { PromptEnhancer } from '../prompt/PromptEnhancer';
-import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter';
+import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent.js";
+import { shouldRetryDueToLLMError } from "../retry/utils/ShouldRetryDueToLLMError.js";
+import { logger } from '../../utils/logger.js';
+import { ToolController } from '../tools/ToolController.js';
+import { ToolOrchestrator } from '../tools/ToolOrchestrator.js';
+import { HistoryManager } from '../history/HistoryManager.js';
+import { HistoryTruncator } from '../history/HistoryTruncator.js';
+import { TokenCalculator } from '../models/TokenCalculator.js';
+import { PromptEnhancer } from '../prompt/PromptEnhancer.js';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.js';
 
 export class ChatController {
     // Keep track of the orchestrator - needed for recursive calls

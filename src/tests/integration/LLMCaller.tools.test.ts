@@ -1,6 +1,6 @@
-import { LLMCaller } from '../../../src/core/caller/LLMCaller';
-import type { ToolDefinition } from '../../../src/types/tooling';
-import type { UniversalStreamResponse, UniversalMessage } from '../../../src/interfaces/UniversalInterfaces';
+import { LLMCaller } from '../../../src/core/caller/LLMCaller.js';
+import type { ToolDefinition } from '../../../src/types/tooling.js';
+import type { UniversalStreamResponse, UniversalMessage } from '../../../src/interfaces/UniversalInterfaces.js';
 
 // Mock Provider Adapter for testing purposes
 const mockProviderAdapter = {

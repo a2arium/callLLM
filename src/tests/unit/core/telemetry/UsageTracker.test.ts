@@ -1,7 +1,7 @@
-import { UsageTracker } from '../../../../../src/core/telemetry/UsageTracker';
-import { ModelInfo } from '../../../../../src/interfaces/UniversalInterfaces';
-import { UsageCallback } from '../../../../../src/interfaces/UsageInterfaces';
-import { UsageTrackingProcessor } from '../../../../../src/core/streaming/processors/UsageTrackingProcessor';
+import { UsageTracker } from '../../../../../src/core/telemetry/UsageTracker.js';
+import { ModelInfo } from '../../../../../src/interfaces/UniversalInterfaces.js';
+import { UsageCallback } from '../../../../../src/interfaces/UsageInterfaces.js';
+import { UsageTrackingProcessor } from '../../../../../src/core/streaming/processors/UsageTrackingProcessor.js';
 
 type DummyTokenCalculator = {
     calculateTokens: (text: string) => number;

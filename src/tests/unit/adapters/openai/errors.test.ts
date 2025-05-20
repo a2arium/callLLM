@@ -5,7 +5,7 @@ import {
     OpenAIResponseAuthError,
     OpenAIResponseNetworkError,
     mapProviderError
-} from '../../../../adapters/openai/errors';
+} from '../../../../adapters/openai/errors.js';
 
 describe('OpenAI Errors', () => {
     describe('OpenAIResponseAdapterError', () => {

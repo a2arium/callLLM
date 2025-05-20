@@ -13,7 +13,7 @@ import type {
     OAuthTokens
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import { logger } from '../../utils/logger';
+import { logger } from '../../utils/logger.js';
 
 /**
  * Options for the OAuthProvider

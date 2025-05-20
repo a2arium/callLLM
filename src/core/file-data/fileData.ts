@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { UrlSource, Base64Source, ImageSource, FilePathSource } from '../../interfaces/UniversalInterfaces';
-import { logger } from '../../utils/logger';
+import { UrlSource, Base64Source, ImageSource, FilePathSource } from '../../interfaces/UniversalInterfaces.js';
+import { logger } from '../../utils/logger.js';
 import sharp from 'sharp';
 
 const log = logger.createLogger({ prefix: 'fileData' });

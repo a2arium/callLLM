@@ -1,10 +1,10 @@
 import type { Stream } from 'openai/streaming';
-import { FinishReason, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
-import type { ToolCall, ToolDefinition } from '../../types/tooling';
-import { logger } from '../../utils/logger';
-import * as types from './types';
-import type { StreamChunk, ToolCallChunk } from '../../core/streaming/types'; // Import core types
-import { TokenCalculator } from '../../core/models/TokenCalculator';
+import { FinishReason, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces.js';
+import type { ToolCall, ToolDefinition } from '../../types/tooling.js';
+import { logger } from '../../utils/logger.js';
+import * as types from './types.js';
+import type { StreamChunk, ToolCallChunk } from '../../core/streaming/types.js'; // Import core types
+import { TokenCalculator } from '../../core/models/TokenCalculator.js';
 
 export class StreamHandler {
     private tools?: ToolDefinition[];
@@ -250,7 +250,7 @@ export class StreamHandler {
                         }
 
                         // Determine final finish reason based on the API response
-                        if (finalResponse.status === 'completed' && finalResponse.output && finalResponse.output.some(item => item.type === 'function_call')) {
+                        if (finalResponse.status === 'completed' && finalResponse.output && finalResponse.output.some((item: any) => item.type === 'function_call')) {
                             finishReason = FinishReason.TOOL_CALLS;
                         } else if (finalResponse.status === 'completed') {
                             finishReason = FinishReason.STOP;

@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
-import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter';
-import { normalizeImageSource } from '../../../../core/file-data/fileData';
-import { ModelManager } from '../../../../core/models/ModelManager';
+import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter.js';
+import { normalizeImageSource } from '../../../../core/file-data/fileData.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
 
 // Mock the dependencies
 jest.mock('openai', () => {

@@ -1,4 +1,4 @@
-import { MessagePart, toMessageParts, UniversalMessage } from "../../interfaces/UniversalInterfaces";
+import { MessagePart, toMessageParts, UniversalMessage } from "../../interfaces/UniversalInterfaces.js";
 
 /**
  * Helper function to work with UniversalMessage content

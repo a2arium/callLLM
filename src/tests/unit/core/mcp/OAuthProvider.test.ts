@@ -1,9 +1,9 @@
 /**
  * Unit tests for OAuthProvider
  */
-import { OAuthProvider, OAuthStorage } from '../../../../core/mcp/OAuthProvider';
+import { OAuthProvider, OAuthStorage } from '../../../../core/mcp/OAuthProvider.js';
 import { OAuthClientInformation, OAuthClientInformationFull, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { logger } from '../../../../utils/logger';
+import { logger } from '../../../../utils/logger.js';
 
 // Add a mock at the top of the file to mock logger
 jest.mock('../../../../utils/logger', () => {

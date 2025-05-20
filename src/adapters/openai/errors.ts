@@ -1,4 +1,4 @@
-import { AdapterError } from '../base/baseAdapter';
+import { AdapterError } from '../base/baseAdapter.js';
 
 export class OpenAIResponseAdapterError extends AdapterError {
     cause?: Error;

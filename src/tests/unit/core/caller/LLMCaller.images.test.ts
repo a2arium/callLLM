@@ -1,10 +1,10 @@
 import { jest } from '@jest/globals';
-import { LLMCaller } from '../../../../core/caller/LLMCaller';
-import { ProviderManager } from '../../../../core/caller/ProviderManager';
-import { ModelManager } from '../../../../core/models/ModelManager';
-import { RetryManager } from '../../../../core/retry/RetryManager';
-import { CapabilityError } from '../../../../core/models/CapabilityError';
-import { RegisteredProviders } from '../../../../adapters';
+import { LLMCaller } from '../../../../core/caller/LLMCaller.js';
+import { ProviderManager } from '../../../../core/caller/ProviderManager.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
+import { RetryManager } from '../../../../core/retry/RetryManager.js';
+import { CapabilityError } from '../../../../core/models/CapabilityError.js';
+import { RegisteredProviders } from '../../../../adapters/index.js';
 import type {
     UniversalMessage,
     UniversalStreamResponse,
@@ -25,13 +25,13 @@ import type {
     Base64Source,
     UrlSource,
     FilePathSource
-} from '../../../../interfaces/UniversalInterfaces';
-import * as fileDataTypes from '../../../../core/file-data/fileData';
+} from '../../../../interfaces/UniversalInterfaces.js';
+import * as fileDataTypes from '../../../../core/file-data/fileData.js';
 
-import type { StreamingService } from '../../../../core/streaming/StreamingService';
-import type { HistoryManager } from '../../../../core/history/HistoryManager';
-import type { ChatController } from '../../../../core/chat/ChatController';
-import type { TokenCalculator } from '../../../../core/models/TokenCalculator';
+import type { StreamingService } from '../../../../core/streaming/StreamingService.js';
+import type { HistoryManager } from '../../../../core/history/HistoryManager.js';
+import type { ChatController } from '../../../../core/chat/ChatController.js';
+import type { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
 
 // Mock dependencies before importing the actual code
 jest.mock('../../../../core/models/ModelManager', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
-import { RecursiveObjectSplitter } from '../../../../core/processors/RecursiveObjectSplitter';
+import { RecursiveObjectSplitter } from '../../../../core/processors/RecursiveObjectSplitter.js';
 
 describe('RecursiveObjectSplitter', () => {
     let splitter: RecursiveObjectSplitter;

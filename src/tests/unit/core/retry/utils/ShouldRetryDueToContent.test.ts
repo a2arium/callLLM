@@ -1,4 +1,4 @@
-import { shouldRetryDueToContent, FORBIDDEN_PHRASES } from "../../../../../core/retry/utils/ShouldRetryDueToContent";
+import { shouldRetryDueToContent, FORBIDDEN_PHRASES } from "../../../../../core/retry/utils/ShouldRetryDueToContent.js";
 
 describe("shouldRetryDueToContent", () => {
     // Testing string inputs

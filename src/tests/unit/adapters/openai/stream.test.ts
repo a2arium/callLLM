@@ -1,18 +1,18 @@
 // @ts-nocheck
-import { StreamHandler } from '../../../../adapters/openai/stream';
-import { FinishReason } from '../../../../interfaces/UniversalInterfaces';
-import { logger } from '../../../../utils/logger';
-import type { ToolDefinition } from '../../../../types/tooling';
-import type { ResponseStreamEvent } from '../../../../adapters/openai/types';
+import { StreamHandler } from '../../../../adapters/openai/stream.js';
+import { FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
+import { logger } from '../../../../utils/logger.js';
+import type { ToolDefinition } from '../../../../types/tooling.js';
+import type { ResponseStreamEvent } from '../../../../adapters/openai/types.js';
 import type { Stream } from 'openai/streaming';
 import { OpenAI } from 'openai';
-import { UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces';
-import { UsageData } from '../../../../interfaces/UsageInterfaces';
+import { UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces.js';
+import { UsageData } from '../../../../interfaces/UsageInterfaces.js';
 import {
     ChatCompletionChunk,
     ChatCompletionChunkChoice
-} from '../../../../interfaces/openai/OpenAIChatInterfaces';
-import { OpenAIStreamHandler } from '../../../../adapters/openai/stream';
+} from '../../../../interfaces/openai/OpenAIChatInterfaces.js';
+import { OpenAIStreamHandler } from '../../../../adapters/openai/stream.js';
 
 // Mock the logger
 jest.mock('../../../../utils/logger', () => {

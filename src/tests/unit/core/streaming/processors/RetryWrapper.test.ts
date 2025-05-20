@@ -1,6 +1,6 @@
-import { RetryWrapper } from '../../../../../core/streaming/processors/RetryWrapper';
-import { StreamChunk, IStreamProcessor, IRetryPolicy } from '../../../../../core/streaming/types';
-import { logger } from '../../../../../utils/logger';
+import { RetryWrapper } from '../../../../../core/streaming/processors/RetryWrapper.js';
+import { StreamChunk, IStreamProcessor, IRetryPolicy } from '../../../../../core/streaming/types.js';
+import { logger } from '../../../../../utils/logger.js';
 
 // Mock dependencies
 jest.mock('../../../../../utils/logger', () => ({

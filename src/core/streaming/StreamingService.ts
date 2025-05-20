@@ -1,18 +1,18 @@
-import { UniversalChatParams, UniversalStreamResponse, ModelInfo, HistoryMode } from '../../interfaces/UniversalInterfaces';
-import { ProviderManager } from '../caller/ProviderManager';
-import { ModelManager } from '../models/ModelManager';
-import { TokenCalculator } from '../models/TokenCalculator';
-import { ResponseProcessor } from '../processors/ResponseProcessor';
-import { RetryManager } from '../retry/RetryManager';
-import { UsageCallback } from '../../interfaces/UsageInterfaces';
-import { StreamHandler } from './StreamHandler';
-import { logger } from '../../utils/logger';
-import { UsageTracker } from '../telemetry/UsageTracker';
-import { ToolController } from '../tools/ToolController';
-import { ToolOrchestrator } from '../tools/ToolOrchestrator';
-import { HistoryManager } from '../history/HistoryManager';
-import { HistoryTruncator } from '../history/HistoryTruncator';
-import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter';
+import { UniversalChatParams, UniversalStreamResponse, ModelInfo, HistoryMode } from '../../interfaces/UniversalInterfaces.js';
+import { ProviderManager } from '../caller/ProviderManager.js';
+import { ModelManager } from '../models/ModelManager.js';
+import { TokenCalculator } from '../models/TokenCalculator.js';
+import { ResponseProcessor } from '../processors/ResponseProcessor.js';
+import { RetryManager } from '../retry/RetryManager.js';
+import { UsageCallback } from '../../interfaces/UsageInterfaces.js';
+import { StreamHandler } from './StreamHandler.js';
+import { logger } from '../../utils/logger.js';
+import { UsageTracker } from '../telemetry/UsageTracker.js';
+import { ToolController } from '../tools/ToolController.js';
+import { ToolOrchestrator } from '../tools/ToolOrchestrator.js';
+import { HistoryManager } from '../history/HistoryManager.js';
+import { HistoryTruncator } from '../history/HistoryTruncator.js';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.js';
 
 /**
  * StreamingService

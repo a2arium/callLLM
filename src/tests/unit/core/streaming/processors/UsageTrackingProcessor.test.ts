@@ -1,7 +1,7 @@
-import { UsageTrackingProcessor, UsageTrackingOptions } from '../../../../../core/streaming/processors/UsageTrackingProcessor';
-import { StreamChunk } from '../../../../../core/streaming/types';
-import { ModelInfo } from '../../../../../interfaces/UniversalInterfaces';
-import { UsageCallback } from '../../../../../interfaces/UsageInterfaces';
+import { UsageTrackingProcessor, UsageTrackingOptions } from '../../../../../core/streaming/processors/UsageTrackingProcessor.js';
+import { StreamChunk } from '../../../../../core/streaming/types.js';
+import { ModelInfo } from '../../../../../interfaces/UniversalInterfaces.js';
+import { UsageCallback } from '../../../../../interfaces/UsageInterfaces.js';
 
 // Define a type for the usage metadata structure to help with type checking
 type UsageMetadata = {

@@ -1,6 +1,6 @@
-import { ReasoningProcessor } from '../../../../../core/streaming/processors/ReasoningProcessor';
-import { StreamChunk } from '../../../../../core/streaming/types';
-import { UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces';
+import { ReasoningProcessor } from '../../../../../core/streaming/processors/ReasoningProcessor.js';
+import { StreamChunk } from '../../../../../core/streaming/types.js';
+import { UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces.js';
 
 describe('ReasoningProcessor', () => {
     let reasoningProcessor: ReasoningProcessor;

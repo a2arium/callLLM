@@ -1,23 +1,23 @@
-import { StreamHandler } from '../../../../core/streaming/StreamHandler';
-import { TokenCalculator } from '../../../../core/models/TokenCalculator';
-import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
-import { UsageTracker } from '../../../../core/telemetry/UsageTracker';
-import { HistoryManager } from '../../../../core/history/HistoryManager';
-import { ToolOrchestrator } from '../../../../core/tools/ToolOrchestrator';
-import { IStreamProcessor } from '../../../../core/streaming/types.d';
-import { UniversalMessage, UniversalStreamResponse, Usage } from '../../../../interfaces/UniversalInterfaces';
-import { logger } from '../../../../utils/logger';
-import { FinishReason, ModelInfo, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
-import { StreamHistoryProcessor } from '../../../../core/streaming/processors/StreamHistoryProcessor';
-import { ContentAccumulator } from '../../../../core/streaming/processors/ContentAccumulator';
-import { UsageTrackingProcessor } from '../../../../core/streaming/processors/UsageTrackingProcessor';
+import { StreamHandler } from '../../../../core/streaming/StreamHandler.js';
+import { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
+import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.js';
+import { UsageTracker } from '../../../../core/telemetry/UsageTracker.js';
+import { HistoryManager } from '../../../../core/history/HistoryManager.js';
+import { ToolOrchestrator } from '../../../../core/tools/ToolOrchestrator.js';
+import { IStreamProcessor } from '../../../../core/streaming/types.d.js';
+import { UniversalMessage, UniversalStreamResponse, Usage } from '../../../../interfaces/UniversalInterfaces.js';
+import { logger } from '../../../../utils/logger.js';
+import { FinishReason, ModelInfo, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces.js';
+import { StreamHistoryProcessor } from '../../../../core/streaming/processors/StreamHistoryProcessor.js';
+import { ContentAccumulator } from '../../../../core/streaming/processors/ContentAccumulator.js';
+import { UsageTrackingProcessor } from '../../../../core/streaming/processors/UsageTrackingProcessor.js';
 import { z } from 'zod';
-import { ToolCall } from '../../../../types/tooling';
-import { StreamingService } from '../../../../core/streaming/StreamingService';
-import { StreamPipeline } from '../../../../core/streaming/StreamPipeline';
-import { SchemaValidationError } from '../../../../core/schema/SchemaValidator';
-import { SchemaValidator } from '../../../../core/schema/SchemaValidator';
-import { ToolController } from '../../../../core/tools/ToolController';
+import { ToolCall } from '../../../../types/tooling.js';
+import { StreamingService } from '../../../../core/streaming/StreamingService.js';
+import { StreamPipeline } from '../../../../core/streaming/StreamPipeline.js';
+import { SchemaValidationError } from '../../../../core/schema/SchemaValidator.js';
+import { SchemaValidator } from '../../../../core/schema/SchemaValidator.js';
+import { ToolController } from '../../../../core/tools/ToolController.js';
 
 // Directly mock StreamPipeline without using a separate variable
 jest.mock('../../../../core/streaming/StreamPipeline', () => {

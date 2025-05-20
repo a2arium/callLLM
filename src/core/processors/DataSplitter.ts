@@ -1,8 +1,8 @@
-import { ModelInfo } from '../../interfaces/UniversalInterfaces';
-import { TokenCalculator } from '../models/TokenCalculator';
-import { RecursiveObjectSplitter } from './RecursiveObjectSplitter';
-import { StringSplitter } from './StringSplitter';
-import { logger } from '../../utils/logger';
+import { ModelInfo } from '../../interfaces/UniversalInterfaces.js';
+import { TokenCalculator } from '../models/TokenCalculator.js';
+import { RecursiveObjectSplitter } from './RecursiveObjectSplitter.js';
+import { StringSplitter } from './StringSplitter.js';
+import { logger } from '../../utils/logger.js';
 
 /**
  * Represents a chunk of data after splitting

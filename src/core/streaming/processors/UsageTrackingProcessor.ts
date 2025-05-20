@@ -1,7 +1,7 @@
-import type { StreamChunk, IStreamProcessor } from "../types";
-import type { ModelInfo, Usage } from "../../../interfaces/UniversalInterfaces";
-import type { UsageCallback } from "../../../interfaces/UsageInterfaces";
-import type { TokenCalculator } from "../../models/TokenCalculator";
+import type { StreamChunk, IStreamProcessor } from "../types.js";
+import type { ModelInfo, Usage } from "../../../interfaces/UniversalInterfaces.js";
+import type { UsageCallback } from "../../../interfaces/UsageInterfaces.js";
+import type { TokenCalculator } from "../../models/TokenCalculator.js";
 
 /**
  * UsageTrackingProcessor

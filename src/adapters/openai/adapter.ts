@@ -1,7 +1,7 @@
 import { OpenAI } from 'openai';
 import { toFile } from 'openai/uploads';
 import type { Stream } from 'openai/streaming';
-import { BaseAdapter, AdapterConfig } from '../base/baseAdapter';
+import { BaseAdapter, AdapterConfig } from '../base/baseAdapter.js';
 import {
     UniversalChatParams,
     UniversalChatResponse,
@@ -11,15 +11,17 @@ import {
     ImageSource,
     ImageCallParams as BaseImageCallParams,
     Usage
-} from '../../interfaces/UniversalInterfaces';
-import { OpenAIResponseAdapterError, OpenAIResponseValidationError, OpenAIResponseAuthError, OpenAIResponseRateLimitError, OpenAIResponseNetworkError, OpenAIResponseServiceError } from './errors';
-import { Converter } from './converter';
-import { StreamHandler } from './stream';
-import { Validator } from './validator';
+} from '../../interfaces/UniversalInterfaces.js';
+import { OpenAIResponseAdapterError, OpenAIResponseValidationError, OpenAIResponseAuthError, OpenAIResponseRateLimitError, OpenAIResponseNetworkError, OpenAIResponseServiceError } from './errors.js';
+import { Converter } from './converter.js';
+import { StreamHandler } from './stream.js';
+import { Validator } from './validator.js';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
-import { logger } from '../../utils/logger';
-import type { ToolDefinition } from '../../types/tooling';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import { logger } from '../../utils/logger.js';
+import type { ToolDefinition } from '../../types/tooling.js';
 import {
     ResponseCreateParamsNonStreaming,
     ResponseCreateParamsStreaming,
@@ -27,18 +29,22 @@ import {
     ResponseStreamEvent,
     Tool,
     ResponseContentPartAddedEvent
-} from './types';
-import { ModelManager } from '../../core/models/ModelManager';
-import { defaultModels } from './models';
-import { RegisteredProviders } from '../index';
-import { TokenCalculator } from '../../core/models/TokenCalculator';
-import { LLMProviderImage, ImageOp } from '../../interfaces/LLMProvider';
-import { saveBase64ToFile } from '../../core/file-data/fileData';
+} from './types.js';
+import { ModelManager } from '../../core/models/ModelManager.js';
+import { defaultModels } from './models.js';
+import { RegisteredProviders } from '../index.js';
+import { TokenCalculator } from '../../core/models/TokenCalculator.js';
+import { LLMProviderImage, ImageOp } from '../../interfaces/LLMProvider.js';
+import { saveBase64ToFile } from '../../core/file-data/fileData.js';
 import * as fs from 'fs';
-import { UrlSource, Base64Source, FilePathSource } from '../../interfaces/UniversalInterfaces';
-import { RetryManager } from '../../core/retry/RetryManager';
-import { UsageTracker } from '../../core/telemetry/UsageTracker';
-import { UsageCallback } from '../../interfaces/UsageInterfaces';
+import { UrlSource, Base64Source, FilePathSource } from '../../interfaces/UniversalInterfaces.js';
+import { RetryManager } from '../../core/retry/RetryManager.js';
+import { UsageTracker } from '../../core/telemetry/UsageTracker.js';
+import { UsageCallback } from '../../interfaces/UsageInterfaces.js';
+
+// Create ESM-compatible __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Load environment variables
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });

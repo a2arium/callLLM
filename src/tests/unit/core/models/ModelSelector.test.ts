@@ -1,5 +1,5 @@
-import { ModelSelector } from '../../../../core/models/ModelSelector';
-import { ModelInfo, ModelAlias } from '../../../../interfaces/UniversalInterfaces';
+import { ModelSelector } from '../../../../core/models/ModelSelector.js';
+import { ModelInfo, ModelAlias } from '../../../../interfaces/UniversalInterfaces.js';
 
 describe('ModelSelector', () => {
     // Test models with various characteristics

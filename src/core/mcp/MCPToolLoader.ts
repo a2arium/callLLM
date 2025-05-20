@@ -2,11 +2,11 @@
  * Loader for converting MCP server configurations to tool definitions.
  */
 
-import type { MCPServersMap } from './MCPConfigTypes';
-import { MCPConnectionError } from './MCPConfigTypes';
-import type { ToolDefinition } from '../../types/tooling';
-import { MCPServiceAdapter } from './MCPServiceAdapter';
-import { logger } from '../../utils/logger';
+import type { MCPServersMap } from './MCPConfigTypes.js';
+import { MCPConnectionError } from './MCPConfigTypes.js';
+import type { ToolDefinition } from '../../types/tooling.js';
+import { MCPServiceAdapter } from './MCPServiceAdapter.js';
+import { logger } from '../../utils/logger.js';
 
 /**
  * Interface for MCP Tool Loader.

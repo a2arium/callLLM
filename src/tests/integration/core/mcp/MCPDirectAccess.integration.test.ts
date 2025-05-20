@@ -1,14 +1,14 @@
-import { LLMCaller } from '../../../../core/caller/LLMCaller';
-import { MCPServiceAdapter } from '../../../../core/mcp/MCPServiceAdapter';
+import { LLMCaller } from '../../../../core/caller/LLMCaller.js';
+import { MCPServiceAdapter } from '../../../../core/mcp/MCPServiceAdapter.js';
 import {
     MCPConnectionError,
     MCPToolCallError,
     MCPToolConfig,
     MCPServerConfig,
     MCPServersMap
-} from '../../../../core/mcp/MCPConfigTypes';
-import type { McpToolSchema } from '../../../../core/mcp/MCPConfigTypes';
-import type { FinishReason } from '../../../../interfaces/UniversalInterfaces';
+} from '../../../../core/mcp/MCPConfigTypes.js';
+import type { McpToolSchema } from '../../../../core/mcp/MCPConfigTypes.js';
+import type { FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
 
 type SimplifiedToolSchema = {
     name: string;

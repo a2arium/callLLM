@@ -1,16 +1,16 @@
-import { ToolOrchestrator } from '../../../../core/tools/ToolOrchestrator';
-import { ToolController } from '../../../../core/tools/ToolController';
-import { ChatController } from '../../../../core/chat/ChatController';
-import { ToolsManager } from '../../../../core/tools/ToolsManager';
-import type { UniversalChatResponse, UniversalMessage, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
-import type { ProviderManager } from '../../../../core/caller/ProviderManager';
-import type { ModelManager } from '../../../../core/models/ModelManager';
-import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
-import type { RetryManager } from '../../../../core/retry/RetryManager';
-import type { UsageTracker } from '../../../../core/telemetry/UsageTracker';
-import { StreamController } from '../../../../core/streaming/StreamController';
-import { HistoryManager } from '../../../../core/history/HistoryManager';
-import { ToolCall } from '../../../../types/tooling';
+import { ToolOrchestrator } from '../../../../core/tools/ToolOrchestrator.js';
+import { ToolController } from '../../../../core/tools/ToolController.js';
+import { ChatController } from '../../../../core/chat/ChatController.js';
+import { ToolsManager } from '../../../../core/tools/ToolsManager.js';
+import type { UniversalChatResponse, UniversalMessage, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces.js';
+import type { ProviderManager } from '../../../../core/caller/ProviderManager.js';
+import type { ModelManager } from '../../../../core/models/ModelManager.js';
+import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.js';
+import type { RetryManager } from '../../../../core/retry/RetryManager.js';
+import type { UsageTracker } from '../../../../core/telemetry/UsageTracker.js';
+import { StreamController } from '../../../../core/streaming/StreamController.js';
+import { HistoryManager } from '../../../../core/history/HistoryManager.js';
+import { ToolCall } from '../../../../types/tooling.js';
 
 const dummyStreamController: StreamController = {
     // Provide minimal stub implementations if any methods are required

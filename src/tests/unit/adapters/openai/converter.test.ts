@@ -1,8 +1,8 @@
-import { Converter, extractPathFromPlaceholder, parseFileReferences } from '../../../../adapters/openai/converter';
-import { ToolDefinition } from '../../../../types/tooling';
-import { UniversalChatParams, UniversalMessage, FinishReason, ModelInfo, ReasoningEffort } from '../../../../interfaces/UniversalInterfaces';
-import { ModelManager } from '../../../../core/models/ModelManager';
-import { OpenAIResponseValidationError } from '../../../../adapters/openai/errors';
+import { Converter, extractPathFromPlaceholder, parseFileReferences } from '../../../../adapters/openai/converter.js';
+import { ToolDefinition } from '../../../../types/tooling.js';
+import { UniversalChatParams, UniversalMessage, FinishReason, ModelInfo, ReasoningEffort } from '../../../../interfaces/UniversalInterfaces.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
+import { OpenAIResponseValidationError } from '../../../../adapters/openai/errors.js';
 import { z } from 'zod';
 
 // Mock ModelManager

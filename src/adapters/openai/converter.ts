@@ -1,10 +1,10 @@
 import { OpenAI } from 'openai'; // Import OpenAI namespace
-import { UniversalChatParams, UniversalChatResponse, UniversalMessage, FinishReason, Usage, ModelCapabilities, ReasoningEffort, ImageSource, UrlSource, Base64Source } from '../../interfaces/UniversalInterfaces';
-import { OpenAIResponseValidationError } from './errors';
-import { ToolDefinition, ToolParameters, ToolCall } from '../../types/tooling';
-import { logger } from '../../utils/logger';
-import { SchemaValidator } from '../../core/schema/SchemaValidator';
-import { SchemaFormatter, isZodSchema } from '../../core/schema/SchemaFormatter';
+import { UniversalChatParams, UniversalChatResponse, UniversalMessage, FinishReason, Usage, ModelCapabilities, ReasoningEffort, ImageSource, UrlSource, Base64Source } from '../../interfaces/UniversalInterfaces.js';
+import { OpenAIResponseValidationError } from './errors.js';
+import { ToolDefinition, ToolParameters, ToolCall } from '../../types/tooling.js';
+import { logger } from '../../utils/logger.js';
+import { SchemaValidator } from '../../core/schema/SchemaValidator.js';
+import { SchemaFormatter, isZodSchema } from '../../core/schema/SchemaFormatter.js';
 import { z } from 'zod';
 import {
     ResponseCreateParams,
@@ -16,9 +16,9 @@ import {
     ResponseFunctionToolCall,
     Response,
     EasyInputMessage
-} from './types';
-import { ModelManager } from '../../core/models/ModelManager';
-import { TokenCalculator } from '../../core/models/TokenCalculator';
+} from './types.js';
+import { ModelManager } from '../../core/models/ModelManager.js';
+import { TokenCalculator } from '../../core/models/TokenCalculator.js';
 import fs from 'fs';
 import path from 'path';
 

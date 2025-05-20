@@ -1,5 +1,5 @@
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces';
-import { LLMProvider } from '../../interfaces/LLMProvider';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces.js';
+import { LLMProvider } from '../../interfaces/LLMProvider.js';
 
 export class AdapterError extends Error {
     constructor(message: string) {

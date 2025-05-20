@@ -1,9 +1,9 @@
-import { Validator } from '../../../../adapters/openai/validator';
-import { OpenAIResponseValidationError } from '../../../../adapters/openai/errors';
-import type { UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
-import type { ToolDefinition } from '../../../../types/tooling';
-import { ModelManager } from '../../../../core/models/ModelManager';
-import { ModelInfo, ReasoningEffort } from '../../../../interfaces/UniversalInterfaces';
+import { Validator } from '../../../../adapters/openai/validator.js';
+import { OpenAIResponseValidationError } from '../../../../adapters/openai/errors.js';
+import type { UniversalChatParams } from '../../../../interfaces/UniversalInterfaces.js';
+import type { ToolDefinition } from '../../../../types/tooling.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
+import { ModelInfo, ReasoningEffort } from '../../../../interfaces/UniversalInterfaces.js';
 
 // Mock the ModelManager
 jest.mock('../../../../core/models/ModelManager');

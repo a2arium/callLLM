@@ -12,7 +12,7 @@ import {
     ts
 } from 'ts-morph';
 import path from 'path';
-import { ParsedFunctionMeta, ExtractedJsonSchema, ToolParsingError } from './types';
+import { ParsedFunctionMeta, ExtractedJsonSchema, ToolParsingError } from './types.js';
 
 /**
  * Information about a function parameter

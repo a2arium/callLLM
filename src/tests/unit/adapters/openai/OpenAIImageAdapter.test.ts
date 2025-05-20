@@ -1,8 +1,8 @@
-import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter';
-import * as fileData from '../../../../core/file-data/fileData';
+import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter.js';
+import * as fileData from '../../../../core/file-data/fileData.js';
 import * as fs from 'fs';
-import { ImageCallParams } from '../../../../interfaces/UniversalInterfaces';
-import { ImageOp } from '../../../../interfaces/LLMProvider';
+import { ImageCallParams } from '../../../../interfaces/UniversalInterfaces.js';
+import { ImageOp } from '../../../../interfaces/LLMProvider.js';
 
 // Mock the OpenAI client
 jest.mock('openai', () => {

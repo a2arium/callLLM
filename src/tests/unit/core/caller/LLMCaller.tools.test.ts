@@ -1,11 +1,11 @@
 import { jest } from '@jest/globals';
 import path from 'path';
 import fs from 'fs';
-import { LLMCaller } from '../../../../core/caller/LLMCaller';
-import { ModelManager } from '../../../../core/models/ModelManager';
-import { ToolDefinition } from '../../../../types/tooling';
-import { ToolsFolderLoader } from '../../../../core/tools/toolLoader/ToolsFolderLoader';
-import { ModelCapabilities, UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces';
+import { LLMCaller } from '../../../../core/caller/LLMCaller.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
+import { ToolDefinition } from '../../../../types/tooling.js';
+import { ToolsFolderLoader } from '../../../../core/tools/toolLoader/ToolsFolderLoader.js';
+import { ModelCapabilities, UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces.js';
 
 // Mock dependencies
 jest.mock('../../../../core/caller/ProviderManager');

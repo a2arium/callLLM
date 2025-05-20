@@ -1,6 +1,6 @@
-import { IStreamProcessor, StreamChunk } from '../types';
-import { HistoryManager } from '../../history/HistoryManager';
-import { logger } from '../../../utils/logger';
+import { IStreamProcessor, StreamChunk } from '../types.js';
+import { HistoryManager } from '../../history/HistoryManager.js';
+import { logger } from '../../../utils/logger.js';
 
 /**
  * Stream processor that captures response history

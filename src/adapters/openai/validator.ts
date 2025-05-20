@@ -1,8 +1,8 @@
 import { OpenAI } from 'openai';
-import { UniversalChatParams, ReasoningEffort } from '../../interfaces/UniversalInterfaces';
-import { OpenAIResponseValidationError } from './errors';
-import type { ToolDefinition } from '../../types/tooling';
-import { ModelManager } from '../../core/models/ModelManager';
+import { UniversalChatParams, ReasoningEffort } from '../../interfaces/UniversalInterfaces.js';
+import { OpenAIResponseValidationError } from './errors.js';
+import type { ToolDefinition } from '../../types/tooling.js';
+import { ModelManager } from '../../core/models/ModelManager.js';
 
 // Import necessary native types from the Responses namespace
 type Tool = OpenAI.Responses.Tool;

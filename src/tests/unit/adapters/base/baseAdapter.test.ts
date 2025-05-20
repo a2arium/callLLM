@@ -1,5 +1,5 @@
-import { AdapterError, BaseAdapter, type AdapterConfig } from '../../../../adapters/base/baseAdapter';
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces';
+import { AdapterError, BaseAdapter, type AdapterConfig } from '../../../../adapters/base/baseAdapter.js';
+import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces.js';
 
 // Concrete implementation for testing
 class TestAdapter extends BaseAdapter {

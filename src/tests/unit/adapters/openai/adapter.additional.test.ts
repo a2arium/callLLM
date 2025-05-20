@@ -1,11 +1,11 @@
 import { OpenAI } from 'openai';
-import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter';
+import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter.js';
 import {
     OpenAIResponseAdapterError,
     OpenAIResponseValidationError
-} from '../../../../adapters/openai/errors';
-import { UniversalChatParams } from '../../../../interfaces/UniversalInterfaces';
-import { ResponseContentPartAddedEvent, ResponseStreamEvent } from '../../../../adapters/openai/types';
+} from '../../../../adapters/openai/errors.js';
+import { UniversalChatParams } from '../../../../interfaces/UniversalInterfaces.js';
+import { ResponseContentPartAddedEvent, ResponseStreamEvent } from '../../../../adapters/openai/types.js';
 
 // Create a more accurate type for our mocks
 type MockOpenAI = {

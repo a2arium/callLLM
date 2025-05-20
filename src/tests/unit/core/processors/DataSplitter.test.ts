@@ -1,6 +1,6 @@
-import { TokenCalculator } from '../../../../core/models/TokenCalculator';
-import { DataSplitter } from '../../../../core/processors/DataSplitter';
-import { ModelInfo } from '../../../../interfaces/UniversalInterfaces';
+import { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
+import { DataSplitter } from '../../../../core/processors/DataSplitter.js';
+import { ModelInfo } from '../../../../interfaces/UniversalInterfaces.js';
 import { describe, expect, test } from '@jest/globals';
 
 jest.mock('../../../../core/models/TokenCalculator');

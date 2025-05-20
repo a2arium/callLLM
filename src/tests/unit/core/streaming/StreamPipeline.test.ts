@@ -1,6 +1,6 @@
-import { StreamPipeline } from '../../../../core/streaming/StreamPipeline';
-import type { StreamChunk, IStreamProcessor } from '../../../../core/streaming/types';
-import type { ToolCall } from '../../../../types/tooling';
+import { StreamPipeline } from '../../../../core/streaming/StreamPipeline.js';
+import type { StreamChunk, IStreamProcessor } from '../../../../core/streaming/types.js';
+import type { ToolCall } from '../../../../types/tooling.js';
 
 // Mock logger
 jest.mock('../../../../utils/logger', () => ({

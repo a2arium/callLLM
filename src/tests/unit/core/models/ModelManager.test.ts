@@ -1,6 +1,6 @@
-import { ModelManager } from '../../../../core/models/ModelManager';
-import { ModelInfo, ModelAlias, ModelCapabilities, ImageOutputOpts } from '../../../../interfaces/UniversalInterfaces';
-import { RegisteredProviders } from '../../../../adapters';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
+import { ModelInfo, ModelAlias, ModelCapabilities, ImageOutputOpts } from '../../../../interfaces/UniversalInterfaces.js';
+import { RegisteredProviders } from '../../../../adapters/index.js';
 
 // Mock the ModelSelector
 const mockSelectModel = jest.fn();

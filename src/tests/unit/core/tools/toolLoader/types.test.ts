@@ -1,4 +1,4 @@
-import { ToolParsingError } from '../../../../../core/tools/toolLoader/types';
+import { ToolParsingError } from '../../../../../core/tools/toolLoader/types.js';
 
 describe('toolLoader Types', () => {
     describe('ToolParsingError', () => {

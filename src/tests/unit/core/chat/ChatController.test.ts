@@ -1,13 +1,13 @@
 import { jest } from '@jest/globals';
-import { ChatController } from '../../../../core/chat/ChatController';
-import { ProviderManager } from '../../../../core/caller/ProviderManager';
-import { ModelManager } from '../../../../core/models/ModelManager';
-import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
-import { UsageTracker } from '../../../../core/telemetry/UsageTracker';
-import { ToolController } from '../../../../core/tools/ToolController';
-import { ToolOrchestrator } from '../../../../core/tools/ToolOrchestrator';
-import { HistoryManager } from '../../../../core/history/HistoryManager';
-import { RetryManager } from '../../../../core/retry/RetryManager';
+import { ChatController } from '../../../../core/chat/ChatController.js';
+import { ProviderManager } from '../../../../core/caller/ProviderManager.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
+import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.js';
+import { UsageTracker } from '../../../../core/telemetry/UsageTracker.js';
+import { ToolController } from '../../../../core/tools/ToolController.js';
+import { ToolOrchestrator } from '../../../../core/tools/ToolOrchestrator.js';
+import { HistoryManager } from '../../../../core/history/HistoryManager.js';
+import { RetryManager } from '../../../../core/retry/RetryManager.js';
 import {
     UniversalChatResponse,
     FinishReason,
@@ -15,11 +15,11 @@ import {
     HistoryMode,
     UniversalChatParams,
     JSONSchemaDefinition
-} from '../../../../interfaces/UniversalInterfaces';
-import { shouldRetryDueToContent } from '../../../../core/retry/utils/ShouldRetryDueToContent';
+} from '../../../../interfaces/UniversalInterfaces.js';
+import { shouldRetryDueToContent } from '../../../../core/retry/utils/ShouldRetryDueToContent.js';
 import { Mock } from 'jest-mock';
-import { PromptEnhancer } from '../../../../core/prompt/PromptEnhancer';
-import { ToolDefinition } from '../../../../types/tooling';
+import { PromptEnhancer } from '../../../../core/prompt/PromptEnhancer.js';
+import { ToolDefinition } from '../../../../types/tooling.js';
 
 type MockProvider = {
     chatCall: jest.Mock;

@@ -1,18 +1,18 @@
-import { LLMCaller } from '../../../../core/caller/LLMCaller';
-import type { StreamingService } from '../../../../core/streaming/StreamingService';
-import type { ProviderManager } from '../../../../core/caller/ProviderManager';
-import { ModelManager } from '../../../../core/models/ModelManager';
-import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
-import { RetryManager } from '../../../../core/retry/RetryManager';
-import type { HistoryManager } from '../../../../core/history/HistoryManager';
-import type { TokenCalculator } from '../../../../core/models/TokenCalculator';
-import type { UniversalMessage, UniversalStreamResponse, ModelInfo, Usage, UniversalChatResponse, HistoryMode, JSONSchemaDefinition } from '../../../../interfaces/UniversalInterfaces';
-import { RegisteredProviders } from '../../../../adapters';
-import type { ToolsManager } from '../../../../core/tools/ToolsManager';
-import type { ChatController } from '../../../../core/chat/ChatController';
-import { UsageTracker } from '../../../../core/telemetry/UsageTracker';
-import { RequestProcessor } from '../../../../core/processors/RequestProcessor';
-import type { ToolDefinition } from '../../../../types/tooling';
+import { LLMCaller } from '../../../../core/caller/LLMCaller.js';
+import type { StreamingService } from '../../../../core/streaming/StreamingService.js';
+import type { ProviderManager } from '../../../../core/caller/ProviderManager.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
+import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.js';
+import { RetryManager } from '../../../../core/retry/RetryManager.js';
+import type { HistoryManager } from '../../../../core/history/HistoryManager.js';
+import type { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
+import type { UniversalMessage, UniversalStreamResponse, ModelInfo, Usage, UniversalChatResponse, HistoryMode, JSONSchemaDefinition } from '../../../../interfaces/UniversalInterfaces.js';
+import { RegisteredProviders } from '../../../../adapters/index.js';
+import type { ToolsManager } from '../../../../core/tools/ToolsManager.js';
+import type { ChatController } from '../../../../core/chat/ChatController.js';
+import { UsageTracker } from '../../../../core/telemetry/UsageTracker.js';
+import { RequestProcessor } from '../../../../core/processors/RequestProcessor.js';
+import type { ToolDefinition } from '../../../../types/tooling.js';
 
 describe('LLMCaller Settings & Configuration', () => {
     let llmCaller: LLMCaller;

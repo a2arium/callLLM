@@ -1,20 +1,20 @@
 import { jest } from '@jest/globals';
-import { LLMCaller } from '../../../../core/caller/LLMCaller';
-import type { StreamingService } from '../../../../core/streaming/StreamingService';
-import { ProviderManager } from '../../../../core/caller/ProviderManager';
-import { ModelManager } from '../../../../core/models/ModelManager';
-import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
-import { RetryManager } from '../../../../core/retry/RetryManager';
-import type { HistoryManager } from '../../../../core/history/HistoryManager';
-import type { TokenCalculator } from '../../../../core/models/TokenCalculator';
-import type { UniversalMessage, UniversalStreamResponse, ModelInfo, Usage, UniversalChatResponse, ModelCapabilities } from '../../../../interfaces/UniversalInterfaces';
-import { RegisteredProviders } from '../../../../adapters';
-import type { ToolController } from '../../../../core/tools/ToolController';
-import type { ChatController } from '../../../../core/chat/ChatController';
-import type { UniversalChatParams, UniversalChatSettings, LLMCallOptions, HistoryMode } from '../../../../interfaces/UniversalInterfaces';
-import type { ToolsManager } from '../../../../core/tools/ToolsManager';
-import type { ToolDefinition, ToolCall } from '../../../../types/tooling';
-import { CapabilityError } from '../../../../core/models/CapabilityError';
+import { LLMCaller } from '../../../../core/caller/LLMCaller.js';
+import type { StreamingService } from '../../../../core/streaming/StreamingService.js';
+import { ProviderManager } from '../../../../core/caller/ProviderManager.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
+import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.js';
+import { RetryManager } from '../../../../core/retry/RetryManager.js';
+import type { HistoryManager } from '../../../../core/history/HistoryManager.js';
+import type { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
+import type { UniversalMessage, UniversalStreamResponse, ModelInfo, Usage, UniversalChatResponse, ModelCapabilities } from '../../../../interfaces/UniversalInterfaces.js';
+import { RegisteredProviders } from '../../../../adapters/index.js';
+import type { ToolController } from '../../../../core/tools/ToolController.js';
+import type { ChatController } from '../../../../core/chat/ChatController.js';
+import type { UniversalChatParams, UniversalChatSettings, LLMCallOptions, HistoryMode } from '../../../../interfaces/UniversalInterfaces.js';
+import type { ToolsManager } from '../../../../core/tools/ToolsManager.js';
+import type { ToolDefinition, ToolCall } from '../../../../types/tooling.js';
+import { CapabilityError } from '../../../../core/models/CapabilityError.js';
 
 // Define RequestProcessor interface type
 type RequestProcessor = {

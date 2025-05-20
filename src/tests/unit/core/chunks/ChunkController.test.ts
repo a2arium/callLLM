@@ -1,10 +1,10 @@
-import { ChunkController, ChunkIterationLimitError } from '../../../../core/chunks/ChunkController';
-import { TokenCalculator } from '../../../../core/models/TokenCalculator';
-import { ChatController } from '../../../../core/chat/ChatController';
-import { StreamController } from '../../../../core/streaming/StreamController';
-import { HistoryManager } from '../../../../core/history/HistoryManager';
-import type { UniversalChatResponse, UniversalStreamResponse, UniversalMessage } from '../../../../interfaces/UniversalInterfaces';
-import { FinishReason } from '../../../../interfaces/UniversalInterfaces';
+import { ChunkController, ChunkIterationLimitError } from '../../../../core/chunks/ChunkController.js';
+import { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
+import { ChatController } from '../../../../core/chat/ChatController.js';
+import { StreamController } from '../../../../core/streaming/StreamController.js';
+import { HistoryManager } from '../../../../core/history/HistoryManager.js';
+import type { UniversalChatResponse, UniversalStreamResponse, UniversalMessage } from '../../../../interfaces/UniversalInterfaces.js';
+import { FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
 
 jest.mock('../../../../core/models/TokenCalculator');
 jest.mock('../../../../core/chat/ChatController');

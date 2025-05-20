@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import * as fileData from '../../../../core/file-data/fileData';
+import * as fileData from '../../../../core/file-data/fileData.js';
 import { jest, expect } from '@jest/globals';
 import {
     validateImageFile,
@@ -12,8 +12,8 @@ import {
     getMimeTypeFromExtension,
     validateMaskFile,
     MaskValidationError
-} from '../../../../core/file-data/fileData';
-import { FilePathSource, UrlSource, Base64Source } from '../../../../interfaces/UniversalInterfaces';
+} from '../../../../core/file-data/fileData.js';
+import { FilePathSource, UrlSource, Base64Source } from '../../../../interfaces/UniversalInterfaces.js';
 import sharp from 'sharp';
 
 // Mock fs and path modules

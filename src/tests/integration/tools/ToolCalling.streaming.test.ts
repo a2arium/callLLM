@@ -1,14 +1,14 @@
-import { StreamingService } from '../../../core/streaming/StreamingService';
-import { HistoryManager } from '../../../core/history/HistoryManager';
-import { TokenCalculator } from '../../../core/models/TokenCalculator';
-import { ToolController } from '../../../core/tools/ToolController';
-import { ToolsManager } from '../../../core/tools/ToolsManager';
-import { ToolOrchestrator } from '../../../core/tools/ToolOrchestrator';
-import { StreamHandler } from '../../../core/streaming/StreamHandler';
-import { ModelManager } from '../../../core/models/ModelManager';
-import { RetryManager } from '../../../core/retry/RetryManager';
-import type { ToolDefinition, ToolCall } from '../../../types/tooling';
-import type { UniversalStreamResponse, UniversalChatParams, UniversalMessage, FinishReason } from '../../../interfaces/UniversalInterfaces';
+import { StreamingService } from '../../../core/streaming/StreamingService.js';
+import { HistoryManager } from '../../../core/history/HistoryManager.js';
+import { TokenCalculator } from '../../../core/models/TokenCalculator.js';
+import { ToolController } from '../../../core/tools/ToolController.js';
+import { ToolsManager } from '../../../core/tools/ToolsManager.js';
+import { ToolOrchestrator } from '../../../core/tools/ToolOrchestrator.js';
+import { StreamHandler } from '../../../core/streaming/StreamHandler.js';
+import { ModelManager } from '../../../core/models/ModelManager.js';
+import { RetryManager } from '../../../core/retry/RetryManager.js';
+import type { ToolDefinition, ToolCall } from '../../../types/tooling.js';
+import type { UniversalStreamResponse, UniversalChatParams, UniversalMessage, FinishReason } from '../../../interfaces/UniversalInterfaces.js';
 
 // Mock TokenCalculator implementation
 jest.mock('../../../core/models/TokenCalculator', () => {

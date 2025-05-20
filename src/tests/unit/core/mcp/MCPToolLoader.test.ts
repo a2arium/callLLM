@@ -1,10 +1,10 @@
 /**
  * Unit tests for MCPToolLoader
  */
-import { MCPToolLoader } from '../../../../core/mcp/MCPToolLoader';
-import { MCPServiceAdapter } from '../../../../core/mcp/MCPServiceAdapter';
-import { MCPConnectionError } from '../../../../core/mcp/MCPConfigTypes';
-import type { ToolDefinition } from '../../../../types/tooling';
+import { MCPToolLoader } from '../../../../core/mcp/MCPToolLoader.js';
+import { MCPServiceAdapter } from '../../../../core/mcp/MCPServiceAdapter.js';
+import { MCPConnectionError } from '../../../../core/mcp/MCPConfigTypes.js';
+import type { ToolDefinition } from '../../../../types/tooling.js';
 
 // Mock the MCPServiceAdapter class
 jest.mock('../../../../core/mcp/MCPServiceAdapter', () => {

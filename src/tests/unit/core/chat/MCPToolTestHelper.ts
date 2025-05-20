@@ -1,5 +1,5 @@
-import type { ToolDefinition } from '../../../../types/tooling';
-import type { MCPServerConfig } from '../../../../core/mcp/MCPConfigTypes';
+import type { ToolDefinition } from '../../../../types/tooling.js';
+import type { MCPServerConfig } from '../../../../core/mcp/MCPConfigTypes.js';
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 // Define minimal transport interface for testing

@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals';
-import { ContentAccumulator } from '../../../../../core/streaming/processors/ContentAccumulator';
-import { StreamChunk, ToolCallChunk } from '../../../../../core/streaming/types';
-import { FinishReason, UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces';
-import { ToolCall } from '../../../../../types/tooling';
+import { ContentAccumulator } from '../../../../../core/streaming/processors/ContentAccumulator.js';
+import { StreamChunk, ToolCallChunk } from '../../../../../core/streaming/types.js';
+import { FinishReason, UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces.js';
+import { ToolCall } from '../../../../../types/tooling.js';
 
 describe('ContentAccumulator', () => {
     let contentAccumulator: ContentAccumulator;

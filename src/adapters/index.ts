@@ -1,6 +1,6 @@
-import { OpenAIResponseAdapter } from './openai/adapter';
-import type { AdapterConstructor } from './types';
-import { ProviderNotFoundError } from './types';
+import { OpenAIResponseAdapter } from './openai/adapter.js';
+import type { AdapterConstructor } from './types.js';
+import { ProviderNotFoundError } from './types.js';
 
 /**
  * Central registry of all available adapters

@@ -1,9 +1,9 @@
-import { ProviderManager } from '../../../../core/caller/ProviderManager';
-import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter';
-import { adapterRegistry } from '../../../../adapters/index';
-import { ProviderNotFoundError } from '../../../../adapters/types';
-import type { AdapterConstructor } from '../../../../adapters/types';
-import type { RegisteredProviders } from '../../../../adapters/index';
+import { ProviderManager } from '../../../../core/caller/ProviderManager.js';
+import { OpenAIResponseAdapter } from '../../../../adapters/openai/adapter.js';
+import { adapterRegistry } from '../../../../adapters/index.js';
+import { ProviderNotFoundError } from '../../../../adapters/types.js';
+import type { AdapterConstructor } from '../../../../adapters/types.js';
+import type { RegisteredProviders } from '../../../../adapters/index.js';
 
 // Mock the adapter registry
 jest.mock('../../../../adapters/index', () => {

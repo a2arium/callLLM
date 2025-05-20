@@ -10,14 +10,14 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import type { MCPServerConfig, MCPServersMap } from './MCPConfigTypes';
-import { MCPConnectionError, MCPToolCallError, McpToolSchema, MCPAuthenticationError, MCPTimeoutError } from './MCPConfigTypes';
-import { logger } from '../../utils/logger';
-import type { ToolDefinition, ToolParameters, ToolParameterSchema } from '../../types/tooling';
+import type { MCPServerConfig, MCPServersMap } from './MCPConfigTypes.js';
+import { MCPConnectionError, MCPToolCallError, McpToolSchema, MCPAuthenticationError, MCPTimeoutError } from './MCPConfigTypes.js';
+import { logger } from '../../utils/logger.js';
+import type { ToolDefinition, ToolParameters, ToolParameterSchema } from '../../types/tooling.js';
 import { z } from 'zod';
-import { OAuthProvider, type OAuthProviderOptions } from './OAuthProvider';
+import { OAuthProvider, type OAuthProviderOptions } from './OAuthProvider.js';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { RetryManager } from '../retry/RetryManager';
+import { RetryManager } from '../retry/RetryManager.js';
 import type { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import treeKill from 'tree-kill';
 import { promisify } from 'util';
@@ -48,7 +48,7 @@ import type {
     Prompt,
     GetPromptParams,
     GetPromptResult
-} from './MCPInterfaces';
+} from './MCPInterfaces.js';
 
 /**
  * Client information for MCP SDK connection

@@ -1,5 +1,5 @@
 import { OpenAI } from 'openai';
-import { ReasoningEffort } from '../../interfaces/UniversalInterfaces';
+import { ReasoningEffort } from '../../interfaces/UniversalInterfaces.js';
 
 // Type aliases for OpenAI Response API
 export type ResponseCreateParams = OpenAI.Responses.ResponseCreateParams;

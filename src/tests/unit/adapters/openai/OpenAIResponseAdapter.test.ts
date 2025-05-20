@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals';
-import { OpenAIResponseAdapter } from '../../../../adapters/openai/OpenAIResponseAdapter';
-import { FinishReason } from '../../../../interfaces/UniversalInterfaces';
-import type { ToolCall, ToolDefinition } from '../../../../types/tooling';
-import { logger } from '../../../../utils/logger';
+import { OpenAIResponseAdapter } from '../../../../adapters/openai/OpenAIResponseAdapter.js';
+import { FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
+import type { ToolCall, ToolDefinition } from '../../../../types/tooling.js';
+import { logger } from '../../../../utils/logger.js';
 
 // Mock the logger to prevent actual logging during tests
 jest.mock('../../../../utils/logger', () => ({

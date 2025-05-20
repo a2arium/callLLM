@@ -1,10 +1,10 @@
-import { StreamHistoryProcessor } from '../../../../../core/streaming/processors/StreamHistoryProcessor';
-import { HistoryManager } from '../../../../../core/history/HistoryManager';
-import { StreamChunk } from '../../../../../core/streaming/types';
-import { UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces';
+import { StreamHistoryProcessor } from '../../../../../core/streaming/processors/StreamHistoryProcessor.js';
+import { HistoryManager } from '../../../../../core/history/HistoryManager.js';
+import { StreamChunk } from '../../../../../core/streaming/types.js';
+import { UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces.js';
 
 // Import logger to mock it
-import { logger } from '../../../../../utils/logger';
+import { logger } from '../../../../../utils/logger.js';
 
 // Create a mock for HistoryManager
 jest.mock('../../../../../core/history/HistoryManager', () => {

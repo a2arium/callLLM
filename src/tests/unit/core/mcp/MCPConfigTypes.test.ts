@@ -3,7 +3,7 @@ import {
     MCPToolCallError,
     MCPHttpMode,
     MCPTransportType
-} from '../../../../core/mcp/MCPConfigTypes';
+} from '../../../../core/mcp/MCPConfigTypes.js';
 
 describe('MCPConfigTypes', () => {
     describe('MCPConnectionError', () => {

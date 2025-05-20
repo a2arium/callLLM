@@ -1,5 +1,5 @@
-import type { StreamChunk, IStreamProcessor } from "./types";
-import { logger } from '../../utils/logger';
+import type { StreamChunk, IStreamProcessor } from "./types.js";
+import { logger } from '../../utils/logger.js';
 
 export class StreamPipeline implements IStreamProcessor {
     private processors: IStreamProcessor[];

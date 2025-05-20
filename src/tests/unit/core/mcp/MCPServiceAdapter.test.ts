@@ -1,7 +1,7 @@
 /**
  * Unit tests for MCPServiceAdapter
  */
-import { MCPServiceAdapter } from '../../../../core/mcp/MCPServiceAdapter';
+import { MCPServiceAdapter } from '../../../../core/mcp/MCPServiceAdapter.js';
 import {
     MCPConnectionError,
     MCPToolCallError,
@@ -10,13 +10,13 @@ import {
     MCPServersMap,
     MCPAuthenticationError,
     MCPTimeoutError
-} from '../../../../core/mcp/MCPConfigTypes';
+} from '../../../../core/mcp/MCPConfigTypes.js';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import { OAuthProvider } from '../../../../core/mcp/OAuthProvider';
+import { OAuthProvider } from '../../../../core/mcp/OAuthProvider.js';
 import { fail } from 'assert';
 
 // Mock all the SDK components

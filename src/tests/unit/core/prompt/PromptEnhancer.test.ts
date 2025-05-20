@@ -1,5 +1,5 @@
-import { PromptEnhancer, PromptEnhancementOptions } from '../../../../core/prompt/PromptEnhancer';
-import { JSONSchemaDefinition, UniversalMessage } from '../../../../interfaces/UniversalInterfaces';
+import { PromptEnhancer, PromptEnhancementOptions } from '../../../../core/prompt/PromptEnhancer.js';
+import { JSONSchemaDefinition, UniversalMessage } from '../../../../interfaces/UniversalInterfaces.js';
 
 describe('PromptEnhancer', () => {
     const simpleMessages: UniversalMessage[] = [

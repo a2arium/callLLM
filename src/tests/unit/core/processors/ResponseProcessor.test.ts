@@ -1,5 +1,5 @@
-import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor';
-import { UniversalChatResponse, UniversalChatParams, FinishReason, ResponseFormat, ModelInfo } from '../../../../interfaces/UniversalInterfaces';
+import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.js';
+import { UniversalChatResponse, UniversalChatParams, FinishReason, ResponseFormat, ModelInfo } from '../../../../interfaces/UniversalInterfaces.js';
 import { z } from 'zod';
 
 // Mock SchemaValidator
@@ -23,7 +23,7 @@ jest.mock('../../../../core/schema/SchemaValidator', () => {
 });
 
 // Import after mocks are set up
-import { SchemaValidator, SchemaValidationError } from '../../../../core/schema/SchemaValidator';
+import { SchemaValidator, SchemaValidationError } from '../../../../core/schema/SchemaValidator.js';
 
 describe('ResponseProcessor', () => {
     let processor: ResponseProcessor;

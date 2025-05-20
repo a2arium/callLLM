@@ -1,8 +1,8 @@
-import { LLMCaller } from '../../../../core/caller/LLMCaller';
-import { MCPServiceAdapter } from '../../../../core/mcp/MCPServiceAdapter';
-import { MCPConnectionError, MCPToolCallError } from '../../../../core/mcp/MCPConfigTypes';
-import type { McpToolSchema } from '../../../../core/mcp/MCPConfigTypes';
-import { ModelManager } from '../../../../core/models/ModelManager';
+import { LLMCaller } from '../../../../core/caller/LLMCaller.js';
+import { MCPServiceAdapter } from '../../../../core/mcp/MCPServiceAdapter.js';
+import { MCPConnectionError, MCPToolCallError } from '../../../../core/mcp/MCPConfigTypes.js';
+import type { McpToolSchema } from '../../../../core/mcp/MCPConfigTypes.js';
+import { ModelManager } from '../../../../core/models/ModelManager.js';
 
 // Mock the MCPServiceAdapter
 jest.mock('../../../../core/mcp/MCPServiceAdapter', () => {
@@ -196,7 +196,7 @@ describe('LLMCaller - MCP Direct Access', () => {
     describe('isMCPToolConfig helper', () => {
         it('should correctly identify MCP tool configs', async () => {
             // Import the helper function to test
-            const { isMCPToolConfig } = await import('../../../../core/mcp/MCPConfigTypes');
+            const { isMCPToolConfig } = await import('../../../../core/mcp/MCPConfigTypes.js');
 
             // Valid MCP tool config
             const validConfig = {

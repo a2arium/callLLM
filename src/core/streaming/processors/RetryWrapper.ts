@@ -1,5 +1,5 @@
-import type { StreamChunk, IStreamProcessor, IRetryPolicy } from "../types";
-import { logger } from "../../../utils/logger";
+import type { StreamChunk, IStreamProcessor, IRetryPolicy } from "../types.js";
+import { logger } from "../../../utils/logger.js";
 
 
 // TODO: CURRENTLY NOT IN USE. Either use or remove

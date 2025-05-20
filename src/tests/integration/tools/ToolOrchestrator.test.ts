@@ -1,11 +1,11 @@
-import { ToolOrchestrator } from '../../../core/tools/ToolOrchestrator';
-import { ToolController } from '../../../core/tools/ToolController';
-import { ChatController } from '../../../core/chat/ChatController';
-import { ToolsManager } from '../../../core/tools/ToolsManager';
-import type { ToolDefinition } from '../../../types/tooling';
-import type { UniversalChatResponse, UniversalMessage } from '../../../interfaces/UniversalInterfaces';
-import { StreamController } from '../../../core/streaming/StreamController';
-import { HistoryManager } from '../../../core/history/HistoryManager';
+import { ToolOrchestrator } from '../../../core/tools/ToolOrchestrator.js';
+import { ToolController } from '../../../core/tools/ToolController.js';
+import { ChatController } from '../../../core/chat/ChatController.js';
+import { ToolsManager } from '../../../core/tools/ToolsManager.js';
+import type { ToolDefinition } from '../../../types/tooling.js';
+import type { UniversalChatResponse, UniversalMessage } from '../../../interfaces/UniversalInterfaces.js';
+import { StreamController } from '../../../core/streaming/StreamController.js';
+import { HistoryManager } from '../../../core/history/HistoryManager.js';
 
 // Mock ChatController
 class MockChatController {
