@@ -1,4 +1,4 @@
-import { LLMCaller } from '../src.js';
+import { LLMCaller } from '../src/index.js';
 
 async function processRegularExample(caller: LLMCaller, message: string, data: any) {
     console.log('\nInput:', message);
