@@ -38,6 +38,9 @@
     "example:image": "ts-node examples/imageInput.ts",
     "example:imageGenerate": "ts-node examples/imageGenerationAndEditing.ts"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "author": "",
   "license": "MIT",
   "repository": {
