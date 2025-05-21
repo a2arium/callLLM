@@ -1,15 +1,47 @@
 ---
-description: 
+description: Testing standards and requirements that should be followed when writing or modifying tests
 globs: 
 alwaysApply: false
 ---
----
-description: Testing standards and requirements that should be followed when writing or modifying tests
-globs: ["tests/**/*.test.ts", "tests/**/*.spec.ts"]
-alwaysApply: false
----
-
 # Testing Standards
+
+## ESM Testing Strategies (2024)
+
+### ESM Export Immutability
+- ESM module exports are immutable by design; you cannot reassign or spy on them after the module is loaded.
+- Attempting to reassign or spy on an ESM export (e.g., with jest.spyOn or direct assignment) will throw a TypeError.
+
+### ESM-Safe Mocking
+- Use `jest.unstable_mockModule` to mock ESM modules before importing them. This is the official Jest approach for ESM-safe mocking.
+- For partial mocks, forward all real exports using `...real` and override only the needed functions.
+- If your Jest environment supports it, use `jest.importActual` (or `import.meta.jest.importActual`) to get the real module for partial mocks. If not, prefer integration-style testing.
+- If neither `jest.importActual` nor `jest.requireActual` work (due to ESM restrictions), use dependency or error simulation at the integration level.
+
+### Integration-Style Error Simulation
+- When you cannot partially mock an ESM export, simulate errors by mocking the underlying dependency (e.g., mock `fs.promises.readFile` to reject, causing the higher-level function to throw).
+- This approach is robust, portable, and works across all ESM environments.
+- See `fileData.propagate-validation.test.ts` for an example of this pattern.
+
+### Module-Level Isolation
+- Use `jest.isolateModulesAsync` or separate test files to ensure that per-test mocks do not leak into unrelated tests.
+- Always register mocks before importing the module under test.
+
+### Dependency Injection for Testability
+- For long-term maintainability, consider refactoring helpers to be injectable or wrapped in objects, so you can mock them without touching ESM exports.
+- Exporting helpers as properties of an object allows property reassignment, since only the top-level binding is frozen.
+
+### Known Limitations and Workarounds
+- `jest.requireActual` does not work for ESM modules; use `jest.importActual` if available.
+- If neither is available, use integration-style error simulation.
+- Avoid direct assignment or spying on ESM exports.
+- For CJS modules, traditional mocking and spying still work.
+
+### Best Practices for ESM Tests
+- Always mock before importing the module under test.
+- Prefer integration-style error simulation for error propagation tests.
+- Use module-level isolation to prevent mock leakage.
+- Document ESM-specific test strategies in test headers.
+- Reference real-world examples in the codebase.
 
 ## Test Structure
 - Tests are organized in three levels:
@@ -127,3 +159,4 @@ IMPORTANT: `tests` folder is in `src` directory, not in the root directory
 - See @tests/jest.setup.ts for test configuration
 - See @tests/unit/core/retry/RetryManager.test.ts for example test patterns
 - See @tests/__mocks__/@dqbd/tiktoken.ts for mock examples
+- See @src/tests/unit/core/file-data/fileData.propagate-validation.test.ts for ESM error propagation example

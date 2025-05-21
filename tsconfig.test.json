@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noImplicitAny": false,
+    "strictFunctionTypes": false,
+    "strictNullChecks": false,
+    "strict": false,
+    "useUnknownInCatchVariables": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.test.ts"],
+  "exclude": ["node_modules"]
+} 

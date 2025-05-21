@@ -41,11 +41,11 @@ import { RetryManager } from '../../core/retry/RetryManager.js';
 import { UsageTracker } from '../../core/telemetry/UsageTracker.js';
 import { UsageCallback } from '../../interfaces/UsageInterfaces.js';
 
-// Use the paths utility to get the directory name
-const __dirname = getDirname();
+// Use the paths utility to get the directory name for resolving .env
+const adapterProjectRootForEnv = getDirname();
 
 // Load environment variables
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(adapterProjectRootForEnv, '../../../.env') });
 
 // Set debug level
 const DEBUG_LEVEL = process.env.DEBUG_LEVEL || 'info'; // 'debug', 'info', 'error'

@@ -1,6 +1,6 @@
 // Core exports
 export { LLMCaller } from './core/caller/LLMCaller.js';
-export { RegisteredProviders } from './adapters/index.js';
+export type { RegisteredProviders } from './adapters/index.js';
 export type { LLMCallerOptions } from './core/caller/LLMCaller.js';
 
 // Universal Types

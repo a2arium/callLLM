@@ -9,5 +9,11 @@
     "target": "ES2020"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "**/*.test.ts"]
+  "exclude": [
+    "node_modules", 
+    "**/*.test.ts", 
+    "src/tests", 
+    "src/**/*.test.ts", 
+    "src/**/__mocks__"
+  ]
 } 

@@ -31,16 +31,15 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE",
-    "ADAPTERS.md"
+    "LICENSE"
   ],
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "tsc",
+    "build": "tsc && yarn build:cjs",
     "build:cjs": "node scripts/build-cjs.mjs",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
+    "test": "NODE_OPTIONS=--experimental-vm-modules TS_CONFIG=tsconfig.test.json jest",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules TS_CONFIG=tsconfig.test.json jest --watch",
+    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules TS_CONFIG=tsconfig.test.json jest --coverage",
     "example:simple": "ts-node --esm examples/simpleChat.ts",
     "example:dataSplitting": "ts-node --esm examples/dataSplitting.ts",
     "example:usage": "ts-node --esm examples/usageTracking.ts",
@@ -93,6 +92,8 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@babel/core": "^7.27.1",
+    "@babel/preset-typescript": "^7.27.1",
     "@types/node": "^22.10.5",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.31.0",
