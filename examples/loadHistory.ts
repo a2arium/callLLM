@@ -1,4 +1,5 @@
-import { LLMCaller, UniversalMessage, UniversalChatResponse } from '../src.ts'; // Adjust path based on your project structure
+import { LLMCaller } from '../src/index.ts';
+import type { UniversalMessage, UniversalChatResponse } from '../src/index.ts'; // Adjust path based on your project structure
 
 /**
  * Demonstrates how to preload a conversation history into the LLMCaller

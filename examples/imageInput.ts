@@ -14,7 +14,7 @@ import path from 'path';
 import { getDirname } from '../src/utils/paths.ts';
 
 // Get the directory name using the utility function
-const __dirname = getDirname();
+const __dirname = getDirname(import.meta.url);
 
 // Load environment variables
 dotenv.config();

@@ -2,8 +2,8 @@ import { LLMCaller } from '../src/index.ts';
 import * as path from 'path';
 import { getDirname } from '../src/utils/paths.ts';
 
-// Get the directory name using the utility function
-const __dirname = getDirname();
+// Get the directory name using the utility function - pass import.meta.url to get THIS file's directory
+const __dirname = getDirname(import.meta.url);
 
 const toolsDir = path.resolve(__dirname, './functions');
 

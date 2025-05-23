@@ -139,7 +139,7 @@ export class MCPServiceAdapter {
                 this.serverConfigs.set(key, config);
             });
 
-        log.info(`Initialized with ${this.serverConfigs.size} MCP server configurations.`);
+        log.debug(`Initialized with ${this.serverConfigs.size} MCP server configurations.`);
     }
 
     /**

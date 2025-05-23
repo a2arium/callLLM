@@ -388,7 +388,7 @@ async function main(): Promise<void> {
 }
 
 // Entry point with error handling
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
     main().catch(error => {
         console.error('Error in example:', error);
         process.exit(1);

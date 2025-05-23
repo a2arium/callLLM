@@ -1,5 +1,5 @@
 import { LLMCaller } from '../src/core/caller/LLMCaller.ts';
-import { UsageData } from '../src/interfaces/UsageInterfaces.ts';
+import type { UsageData } from '../src/interfaces/UsageInterfaces.ts';
 
 async function main() {
     // Example usage callback

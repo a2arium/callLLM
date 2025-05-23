@@ -1,5 +1,5 @@
 import { LLMCaller } from '../src/core/caller/LLMCaller.ts';
-import { RegisteredProviders } from '../src/adapters/index.ts';
+import type { RegisteredProviders } from '../src/adapters/index.ts';
 
 /**
  * This example demonstrates the different history modes available in the LLMCaller:

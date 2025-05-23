@@ -12,11 +12,11 @@ import { LLMCaller } from '../src/index.ts';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import { UsageData } from '../src/interfaces/UsageInterfaces.ts';
+import type { UsageData } from '../src/interfaces/UsageInterfaces.ts';
 import { getDirname } from '../src/utils/paths.ts';
 
 // Get the directory name using the utility function
-const __dirname = getDirname();
+const __dirname = getDirname(import.meta.url);
 
 // Load environment variables
 dotenv.config();
@@ -37,71 +37,70 @@ async function runExamples() {
     const caller = new LLMCaller('openai', 'gpt-image-1', '', { usageCallback });
 
     try {
-        // Uncomment these examples if you want to generate a new image first
-        // console.log('\n===========================================');
-        // console.log('Example 1: Generate an image and save to file');
-        // console.log('===========================================\n');
+        console.log('\n===========================================');
+        console.log('Example 1: Generate an image and save to file');
+        console.log('===========================================\n');
 
-        // const result1 = await caller.call({
-        //     text: "A surreal mountain landscape image featuring floating islands, upside-down mountains, and unconventional flora. Include a dreamlike quality, pushing the boundaries of reality. Conjure a scene that has imaginative and otherworldly elements.",
-        //     output: {
-        //         image: {
-        //             quality: "low",
-        //             size: "1024x1024"
-        //         }
-        //     },
-        //     outputPath: path.join(outputDir, 'mountain_landscape.png')
-        // });
-
-
-        // console.log('\nUsage data:');
-        // console.log(JSON.stringify(result1[0].metadata?.usage, null, 2));
+        const result1 = await caller.call({
+            text: "A surreal mountain landscape image featuring floating islands, upside-down mountains, and unconventional flora. Include a dreamlike quality, pushing the boundaries of reality. Conjure a scene that has imaginative and otherworldly elements.",
+            output: {
+                image: {
+                    quality: "low",
+                    size: "1024x1024"
+                }
+            },
+            outputPath: path.join(outputDir, 'mountain_landscape.png')
+        });
 
 
-        // console.log('\n===========================================');
-        // console.log('Example 2: Generate an image and get as base64');
-        // console.log('===========================================\n');
-
-        // const result2 = await caller.call({
-        //     text: "A peaceful mountain landscape with a lake and forest",
-        //     output: {
-        //         image: {
-        //             quality: "medium",
-        //             size: "1024x1024"
-        //         }
-        //     }
-        // });
-
-        // console.log('Generated image returned as base64 data. Length:',
-        //     result2[0].image?.data ? result2[0].image.data.length : 0);
-
-        // console.log('\nUsage data:');
-        // console.log(JSON.stringify(result2[0].metadata?.usage, null, 2));
+        console.log('\nUsage data:');
+        console.log(JSON.stringify(result1[0].metadata?.usage, null, 2));
 
 
+        console.log('\n===========================================');
+        console.log('Example 2: Generate an image and get as base64');
+        console.log('===========================================\n');
 
-        // console.log('\n===========================================');
-        // console.log('Example 3: Edit an existing image');
-        // console.log('===========================================\n');
+        const result2 = await caller.call({
+            text: "A peaceful mountain landscape with a lake and forest",
+            output: {
+                image: {
+                    quality: "medium",
+                    size: "1024x1024"
+                }
+            }
+        });
 
-        // try {
-        //     // Use files array instead of file parameter
-        //     const editResponse = await caller.call({
-        //         text: "Add a small cabin to this landscape",
-        //         files: [path.join(outputDir, 'mountain_landscape.png')], // Use files array instead of file
-        //         output: {
-        //             image: {
-        //                 quality: "low"
-        //             }
-        //         },
-        //         outputPath: path.join(outputDir, 'mountain_landscape_cabin.png')
-        //     });
+        console.log('Generated image returned as base64 data. Length:',
+            result2[0].image?.data ? result2[0].image.data.length : 0);
 
-        //     console.log('Edited image saved to:', editResponse[0].metadata?.imageSavedPath);
-        // } catch (error) {
-        //     console.log('Editing example skipped or failed:',
-        //         error instanceof Error ? error.message : String(error));
-        // }
+        console.log('\nUsage data:');
+        console.log(JSON.stringify(result2[0].metadata?.usage, null, 2));
+
+
+
+        console.log('\n===========================================');
+        console.log('Example 3: Edit an existing image');
+        console.log('===========================================\n');
+
+        try {
+            // Use files array instead of file parameter
+            const editResponse = await caller.call({
+                text: "Add a small cabin to this landscape",
+                files: [path.join(outputDir, 'mountain_landscape.png')], // Use files array instead of file
+                output: {
+                    image: {
+                        quality: "low"
+                    }
+                },
+                outputPath: path.join(outputDir, 'mountain_landscape_cabin.png')
+            });
+
+            console.log('Edited image saved to:', editResponse[0].metadata?.imageSavedPath);
+        } catch (error) {
+            console.log('Editing example skipped or failed:',
+                error instanceof Error ? error.message : String(error));
+        }
 
         console.log('\n===========================================');
         console.log('Example 4: Edit an image with a mask');
@@ -114,7 +113,7 @@ async function runExamples() {
                 mask: path.join(__dirname, 'mask.png'),
                 output: {
                     image: {
-                        quality: "high"
+                        quality: "low"
                     }
                 },
                 outputPath: path.join(outputDir, 'dogs_with_mask.png')
