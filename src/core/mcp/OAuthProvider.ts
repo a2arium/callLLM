@@ -11,9 +11,9 @@ import type {
     OAuthClientInformationFull,
     OAuthClientMetadata,
     OAuthTokens
-} from '@modelcontextprotocol/sdk/shared/auth.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import { logger } from '../../utils/logger.js';
+} from '@modelcontextprotocol/sdk/shared/auth.d.ts';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.d.ts';
+import { logger } from '../../utils/logger.ts';
 
 /**
  * Options for the OAuthProvider

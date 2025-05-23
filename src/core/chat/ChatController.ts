@@ -1,22 +1,24 @@
 // src/core/caller/chat/ChatController.ts
 
-import { ProviderManager } from '../caller/ProviderManager.js';
-import { ModelManager } from '../models/ModelManager.js';
-import { ResponseProcessor } from '../processors/ResponseProcessor.js';
-import { RetryManager } from '../retry/RetryManager.js';
-import { UsageTracker } from '../telemetry/UsageTracker.js';
-import { UniversalChatParams, UniversalChatResponse, FinishReason, UniversalMessage, UniversalChatSettings, JSONSchemaDefinition, HistoryMode, JsonModeType, ResponseFormat, toMessageParts } from '../../interfaces/UniversalInterfaces.js';
+import { ProviderManager } from '../caller/ProviderManager.ts';
+import { ModelManager } from '../models/ModelManager.ts';
+import { ResponseProcessor } from '../processors/ResponseProcessor.ts';
+import { RetryManager } from '../retry/RetryManager.ts';
+import { UsageTracker } from '../telemetry/UsageTracker.ts';
+import type { UniversalChatParams, UniversalChatResponse, UniversalMessage, UniversalChatSettings, JSONSchemaDefinition, HistoryMode, JsonModeType, ResponseFormat } from '../../interfaces/UniversalInterfaces.ts';
+import { toMessageParts } from '../../interfaces/UniversalInterfaces.ts';
+import { FinishReason } from '../../interfaces/UniversalInterfaces.ts';
 import { z } from 'zod';
-import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent.js";
-import { shouldRetryDueToLLMError } from "../retry/utils/ShouldRetryDueToLLMError.js";
-import { logger } from '../../utils/logger.js';
-import { ToolController } from '../tools/ToolController.js';
-import { ToolOrchestrator } from '../tools/ToolOrchestrator.js';
-import { HistoryManager } from '../history/HistoryManager.js';
-import { HistoryTruncator } from '../history/HistoryTruncator.js';
-import { TokenCalculator } from '../models/TokenCalculator.js';
-import { PromptEnhancer } from '../prompt/PromptEnhancer.js';
-import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.js';
+import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent.ts";
+import { shouldRetryDueToLLMError } from "../retry/utils/ShouldRetryDueToLLMError.ts";
+import { logger } from '../../utils/logger.ts';
+import { ToolController } from '../tools/ToolController.ts';
+import { ToolOrchestrator } from '../tools/ToolOrchestrator.ts';
+import { HistoryManager } from '../history/HistoryManager.ts';
+import { HistoryTruncator } from '../history/HistoryTruncator.ts';
+import { TokenCalculator } from '../models/TokenCalculator.ts';
+import { PromptEnhancer } from '../prompt/PromptEnhancer.ts';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
 
 export class ChatController {
     // Keep track of the orchestrator - needed for recursive calls

@@ -1,82 +1,75 @@
 import { jest, beforeAll } from '@jest/globals';
-import { StreamingService } from '../../../../core/streaming/StreamingService.js';
+import { StreamingService } from '../../../../core/streaming/StreamingService.ts';
 // Declare variables for modules to be dynamically imported
 let ProviderManager;
 // Declare variables for modules to be dynamically imported
 let ModelManager;
 // Declare variables for modules to be dynamically imported
 let TokenCalculator;
-import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.js';
+import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.ts';
 // Declare variables for modules to be dynamically imported
 let RetryManager;
-// Declare variables for modules to be dynamically imported
-let StreamHandler;
-import { UniversalChatParams, UniversalStreamResponse, ModelInfo, UniversalMessage, HistoryMode } from '../../../../interfaces/UniversalInterfaces.js';
-import { UsageCallback } from '../../../../interfaces/UsageInterfaces.js';
+import { type UniversalChatParams, type UniversalStreamResponse, type ModelInfo, type UniversalMessage, type HistoryMode } from '../../../../interfaces/UniversalInterfaces.ts';
+import { type UsageCallback } from '../../../../interfaces/UsageInterfaces.ts';
 // Declare variables for modules to be dynamically imported
 let HistoryManager;
 
 // Mock function declarations
-const mockStreamHandler = jest.fn();
 const mockTokenCalculator = jest.fn();
 const mockGetMessages = jest.fn();
-const mockGetMessages_1 = jest.fn();
-const mockGetMessages_2 = jest.fn();
-const mockGetMessages_3 = jest.fn()
+let mockGetMessages_1 = jest.fn();
+let mockGetMessages_2 = jest.fn();
+let mockGetMessages_3 = jest.fn();
 
 // Create mock dependencies
-jest.unstable_mockModule('../../../../core/caller/ProviderManager.js', () => ({
-  __esModule: true
+jest.unstable_mockModule('@/core/caller/ProviderManager.ts', () => ({
+  __esModule: true,
 }));
-jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => ({
-  __esModule: true
+jest.unstable_mockModule('@/core/models/ModelManager.ts', () => ({
+  __esModule: true,
 }));
-jest.unstable_mockModule('../../../../core/models/TokenCalculator.js', () => ({
-  __esModule: true
+jest.unstable_mockModule('@/core/models/TokenCalculator.ts', () => ({
+  __esModule: true,
+  TokenCalculator: jest.fn().mockImplementation(() => mockTokenCalculator)
 }));
-jest.unstable_mockModule('../../../../core/streaming/StreamHandler.js', () => ({
-  __esModule: true
+jest.unstable_mockModule('@/core/retry/RetryManager.ts', () => ({
+  __esModule: true,
 }));
-jest.unstable_mockModule('../../../../core/retry/RetryManager.js', () => ({
-  __esModule: true
-}));
-jest.unstable_mockModule('../../../../core/history/HistoryManager.js', () => ({
-  __esModule: true
+jest.unstable_mockModule('@/core/history/HistoryManager.ts', () => ({
+  __esModule: true,
 }));
 
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const ProviderManagerModule = await import('../../../../core/caller/ProviderManager.js');
+  const ProviderManagerModule = await import('../../../../core/caller/ProviderManager.ts');
   ProviderManager = ProviderManagerModule.ProviderManager;
 
-  const ModelManagerModule = await import('../../../../core/models/ModelManager.js');
+  const ModelManagerModule = await import('../../../../core/models/ModelManager.ts');
   ModelManager = ModelManagerModule.ModelManager;
 
-  const TokenCalculatorModule = await import('../../../../core/models/TokenCalculator.js');
+  const TokenCalculatorModule = await import('../../../../core/models/TokenCalculator.ts');
   TokenCalculator = TokenCalculatorModule.TokenCalculator;
 
-  const StreamHandlerModule = await import('../../../../core/streaming/StreamHandler.js');
-  StreamHandler = StreamHandlerModule.StreamHandler;
-
-  const RetryManagerModule = await import('../../../../core/retry/RetryManager.js');
+  const RetryManagerModule = await import('../../../../core/retry/RetryManager.ts');
   RetryManager = RetryManagerModule.RetryManager;
 
-  const HistoryManagerModule = await import('../../../../core/history/HistoryManager.js');
+  const HistoryManagerModule = await import('../../../../core/history/HistoryManager.ts');
   HistoryManager = HistoryManagerModule.HistoryManager;
 });
 
+jest.mock('@dqbd/tiktoken');
 
 describe('StreamingService', () => {
   // Mock dependencies
-  let mockProviderManager: jest.Mocked<ProviderManager>;
-  let mockModelManager: jest.Mocked<ModelManager>;
-  let mockRetryManager: jest.Mocked<RetryManager>;
-  let mockStreamHandler: jest.Mocked<StreamHandler>;
-  let mockHistoryManager: jest.Mocked<HistoryManager>;
-  let mockTokenCalculator: jest.Mocked<TokenCalculator>;
+  let mockProviderManager: jest.Mocked<typeof ProviderManager>;
+  let mockModelManager: jest.Mocked<typeof ModelManager>;
+  let mockRetryManager: jest.Mocked<typeof RetryManager>;
+  let mockHistoryManager: jest.Mocked<typeof HistoryManager>;
+  let mockTokenCalculator: jest.Mocked<typeof TokenCalculator>;
   let mockProvider: { streamCall: jest.Mock; };
-  let mockUsageCallback: jest.Mock;
+  let mockUsageCallback: jest.Mock<UsageCallback>;
   let streamingService: StreamingService;
+  let processStreamSpy: any;
 
   // Test data
   const testModel = 'test-model';
@@ -113,22 +106,32 @@ describe('StreamingService', () => {
     // Reset mocks
     jest.clearAllMocks();
 
+    // Patch: Ensure mockGetMessages_1 returns a system and user message
+    mockGetMessages_1.mockReset();
+    mockGetMessages_1.mockReturnValue([
+      { role: 'system', content: 'System instructions' },
+      { role: 'user', content: 'test message' }
+    ]);
+
     // Setup mocks
-    mockProvider = { streamCall: jest.fn() };
+    mockProvider = { streamCall: (jest.fn() as any).mockResolvedValue(mockStreamResponse()) } as any;
     mockProviderManager = {
       getProvider: jest.fn().mockReturnValue(mockProvider)
-    } as unknown as jest.Mocked<ProviderManager>;
+    } as unknown as jest.Mocked<typeof ProviderManager>;
 
     mockModelManager = {
       getModel: jest.fn().mockReturnValue(modelInfo)
-    } as unknown as jest.Mocked<ModelManager>;
+    } as unknown as jest.Mocked<typeof ModelManager>;
 
     mockHistoryManager = {
       getHistoricalMessages: jest.fn().mockReturnValue([]),
       getLastMessageByRole: jest.fn(),
+      getMessages: jest.fn().mockReturnValue([]),
       addMessage: jest.fn(),
-      getMessages: jest.fn().mockReturnValue([])
-    } as unknown as jest.Mocked<HistoryManager>;
+      captureStreamResponse: jest.fn(),
+      initializeWithSystemMessage: jest.fn(),
+      getSystemMessage: jest.fn().mockReturnValue(undefined),
+    } as unknown as jest.Mocked<typeof HistoryManager>;
 
     mockTokenCalculator = {
       countInputTokens: jest.fn().mockReturnValue(10),
@@ -136,34 +139,18 @@ describe('StreamingService', () => {
       calculateTotalTokens: jest.fn().mockReturnValue(30),
       calculateTokens: jest.fn().mockReturnValue(10),
       calculateUsage: jest.fn()
-    } as unknown as jest.Mocked<TokenCalculator>;
-
-    mockStreamHandler = {
-      processStream: jest.fn()
-    } as unknown as jest.Mocked<StreamHandler>;
+    } as unknown as jest.Mocked<typeof TokenCalculator>;
 
     mockRetryManager = {
       executeWithRetry: jest.fn()
-    } as unknown as jest.Mocked<RetryManager>;
+    } as unknown as jest.Mocked<typeof RetryManager>;
 
-    mockUsageCallback = jest.fn()
+    mockUsageCallback = jest.fn() as jest.Mock<UsageCallback>;
 
-    // Setup provider stream mock
-    mockProvider.streamCall.mockResolvedValue(mockStreamResponse());
-
-    // Setup stream handler mock
-    mockStreamHandler.processStream.mockReturnValue(mockProcessedStream());
-
-    // Setup retry manager mock
     mockRetryManager.executeWithRetry.mockImplementation(async (fn) => {
       return fn();
     });
 
-    // Override the StreamHandler constructor
-    mockStreamHandler.mockImplementation(() => mockStreamHandler);
-    mockTokenCalculator.mockImplementation(() => mockTokenCalculator);
-
-    // Create the StreamingService instance
     streamingService = new StreamingService(
       mockProviderManager,
       mockModelManager,
@@ -172,6 +159,9 @@ describe('StreamingService', () => {
       mockUsageCallback,
       callerId
     );
+
+    // Spy on the processStream method
+    processStreamSpy = jest.spyOn((streamingService as any).streamHandler, 'processStream').mockImplementation(() => mockProcessedStream());
   });
 
   const createTestParams = (overrides = {}): UniversalChatParams => {
@@ -183,34 +173,28 @@ describe('StreamingService', () => {
   };
 
   it('should create a stream with system message', async () => {
-    // Arrange
+    mockHistoryManager.getMessages = mockGetMessages_1;
     const systemMessage = 'You are a helpful assistant';
     const params = createTestParams();
-
-    // Act
-    await streamingService.createStream(params, 'test-model', systemMessage);
-
-    // Assert
+    params.historyMode = 'dynamic';
+    const processed = await streamingService.createStream(params, 'test-model', systemMessage);
+    for await (const _ of processed) { /* drain */ }
     expect(mockModelManager.getModel).toHaveBeenCalledWith('test-model');
-    expect(mockStreamHandler.processStream).toHaveBeenCalled();
+    expect(processStreamSpy).toHaveBeenCalled();
   });
 
   it('should not prepend system message if one already exists', async () => {
-    // Arrange
+    mockHistoryManager.getMessages = mockGetMessages_1;
     const systemMessage = 'You are a helpful assistant';
     const params = createTestParams({
       messages: [
         { role: 'system', content: 'Existing system message' },
         { role: 'user', content: 'test message' }]
-
     });
-
-    // Act
+    params.historyMode = 'dynamic';
     await streamingService.createStream(params, 'test-model', systemMessage);
-
-    // Assert
     expect(mockModelManager.getModel).toHaveBeenCalledWith('test-model');
-    expect(mockStreamHandler.processStream).toHaveBeenCalled();
+    expect(processStreamSpy).toHaveBeenCalled();
   });
 
   it('should handle retries correctly', async () => {
@@ -232,23 +216,19 @@ describe('StreamingService', () => {
   });
 
   it('should update the callerId correctly', async () => {
-    // Arrange
+    mockHistoryManager.getMessages = mockGetMessages_1;
     const systemMessage = 'You are a helpful assistant';
     const params = createTestParams({ callerId: 'test-caller-id' });
-
-    // Act
+    params.historyMode = 'dynamic';
     await streamingService.createStream(params, 'test-model', systemMessage);
-
-    // Assert
-    expect(mockStreamHandler.processStream).toHaveBeenCalled();
-    // Verify that callerId is being used correctly
+    expect(processStreamSpy).toHaveBeenCalled();
     expect(params.callerId).toBe('test-caller-id');
   });
 
   it('should update the usage callback correctly', async () => {
-    // Arrange
+    mockHistoryManager.getMessages = mockGetMessages_1;
     const systemMessage = 'You are a helpful assistant';
-    const usageCallback = jest.fn()
+    const usageCallback = jest.fn() as jest.Mock<UsageCallback>;
     streamingService = new StreamingService(
       mockProviderManager,
       mockModelManager,
@@ -257,13 +237,12 @@ describe('StreamingService', () => {
       usageCallback,
       'default-caller-id'
     );
+    // Reset the spy for the new instance
+    processStreamSpy = jest.spyOn((streamingService as any).streamHandler, 'processStream').mockImplementation(() => mockProcessedStream());
     const params = createTestParams();
-
-    // Act
+    params.historyMode = 'dynamic';
     await streamingService.createStream(params, 'test-model', systemMessage);
-
-    // Assert
-    expect(mockStreamHandler.processStream).toHaveBeenCalled();
+    expect(processStreamSpy).toHaveBeenCalled();
     // We can't directly test that usageCallback is passed, but we can ensure no errors
   });
 
@@ -344,13 +323,6 @@ describe('StreamingService', () => {
     const previousAssistantMessage: UniversalMessage = { role: 'assistant', content: 'Previous response' };
     const currentUserMessage: UniversalMessage = { role: 'user', content: 'Current message' };
 
-    // Mock the history manager to return a conversation history
-    mockGetMessages_1 = jest.fn().mockReturnValue([
-      systemMessage,
-      previousUserMessage,
-      previousAssistantMessage]
-    );
-
     // Create params with stateless mode
     const params = createTestParams({
       messages: [currentUserMessage],
@@ -366,21 +338,10 @@ describe('StreamingService', () => {
 
     // Assert
     expect(mockProvider.streamCall).toHaveBeenCalled();
-
-    // Check that only system and current user messages were passed
-    // Verify message filtering for stateless mode
-    expect(messages.length).toBeLessThan(4);
-
-    // System message and current user message should always be included
-    const hasSystemMessage = messages.some(
-      (msg: UniversalMessage) => msg.role === 'system' && msg.content === 'System instructions'
-    );
-    const hasCurrentUserMessage = messages.some(
-      (msg: UniversalMessage) => msg.role === 'user' && msg.content === 'Current message'
-    );
-
-    expect(hasSystemMessage).toBe(false);
-    expect(hasCurrentUserMessage).toBe(true);
+    // In stateless mode, only the current user message should be included
+    expect(messages.length).toBe(1);
+    expect(messages[0].role).toBe('user');
+    expect(messages[0].content).toBe('Current message');
   });
 
   it('should use truncate history mode when specified', async () => {
@@ -393,7 +354,7 @@ describe('StreamingService', () => {
     const currentUserMessage: UniversalMessage = { role: 'user', content: 'Current message' };
 
     // Create a history long enough to trigger truncation
-    mockGetMessages_1 = jest.fn().mockReturnValue([
+    mockGetMessages_1.mockReturnValue([
       systemMessage,
       userMessage1,
       assistantMessage1,
@@ -420,7 +381,7 @@ describe('StreamingService', () => {
     const currentUserMessage: UniversalMessage = { role: 'user', content: 'Current message' };
 
     // Mock history manager to return only system message
-    mockGetMessages_1 = jest.fn().mockReturnValue([systemMessage]);
+    mockGetMessages_1.mockReturnValue([systemMessage]);
 
     // Create params without system message but with stateless mode
     const params = createTestParams({

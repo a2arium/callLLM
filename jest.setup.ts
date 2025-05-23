@@ -5,41 +5,24 @@
 
 import { jest } from '@jest/globals';
 
-// Mock @dqbd/tiktoken to resolve WebAssembly issues
-jest.mock('@dqbd/tiktoken', () => ({
-    encoding_for_model: jest.fn().mockReturnValue({
-        encode: jest.fn().mockReturnValue(Array(10).fill(0)),
-        decode: jest.fn().mockReturnValue([]),
-        free: jest.fn()
-    }),
-    get_encoding: jest.fn().mockReturnValue({
-        encode: jest.fn().mockReturnValue(Array(10).fill(0)),
-        decode: jest.fn().mockReturnValue([]),
-        free: jest.fn()
-    })
-}));
-
 // Core Node.js modules (never auto-mocked)
 jest.mock('fs');
 jest.mock('path');
 jest.mock('sharp');
 
-// Absolute paths for src/ modules
-// Removed: jest.mock('./src/core/models/ModelManager.js');
-jest.mock('./src/core/caller/ProviderManager.js');
-jest.mock('./src/utils/logger.js');
-jest.mock('./src/core/file-data/fileData.js');
-jest.mock('./src/core/history/HistoryManager.js');
-jest.mock('./src/core/streaming/StreamController.js');
-jest.mock('./src/core/models/TokenCalculator.js');
-jest.mock('./src/core/chat/ChatController.js');
-jest.mock('./src/core/streaming/StreamingService.js');
-jest.mock('./src/core/schema/SchemaValidator.js');
-jest.mock('./src/core/mcp/MCPServiceAdapter.js');
+// Absolute paths for src/ modules using @/ alias
+// Removed: jest.mock('@/core/models/ModelManager'); // Example if it were here
+jest.mock('@/core/caller/ProviderManager');
+jest.mock('@/utils/logger');
+jest.mock('@/core/file-data/fileData');
+jest.mock('@/core/history/HistoryManager');
+jest.mock('@/core/streaming/StreamController');
+jest.mock('@/core/models/TokenCalculator');
+jest.mock('@/core/chat/ChatController');
+jest.mock('@/core/streaming/StreamingService');
+jest.mock('@/core/schema/SchemaValidator');
+jest.mock('@/core/mcp/MCPServiceAdapter');
 
-// Additional relative path variations to avoid duplicate modules
-// Removed all jest.mock calls for ModelManager.js
-// Removed: jest.mock('../../../../core/caller/ProviderManager.js', () => { ... });
 
 // Global Jest setup file
 

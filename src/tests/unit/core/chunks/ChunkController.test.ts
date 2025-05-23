@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
-import type { UniversalChatResponse, UniversalStreamResponse, UniversalMessage } from '../../../../interfaces/UniversalInterfaces.js';
-import { FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
+import type { UniversalChatResponse, UniversalStreamResponse, UniversalMessage } from '../../../../interfaces/UniversalInterfaces.ts';
+import { FinishReason } from '../../../../interfaces/UniversalInterfaces.ts';
 
 // Mock functions
 const mockCalculateTokens = jest.fn();
@@ -17,7 +17,7 @@ const mockSetHistoricalMessages = jest.fn();
 const mockClearHistory = jest.fn()
 
 // Create mock dependencies with factory functions
-jest.unstable_mockModule('../../../../core/models/TokenCalculator.js', () => ({
+jest.unstable_mockModule('@/core/models/TokenCalculator', () => ({
   __esModule: true,
   TokenCalculator: jest.fn().mockImplementation(() => ({
     calculateTokens: mockCalculateTokens,
@@ -26,21 +26,21 @@ jest.unstable_mockModule('../../../../core/models/TokenCalculator.js', () => ({
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/chat/ChatController.js', () => ({
+jest.unstable_mockModule('@/core/chat/ChatController', () => ({
   __esModule: true,
   ChatController: jest.fn().mockImplementation(() => ({
     execute: mockChatExecute
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/streaming/StreamController.js', () => ({
+jest.unstable_mockModule('@/core/streaming/StreamController', () => ({
   __esModule: true,
   StreamController: jest.fn().mockImplementation(() => ({
     createStream: mockCreateStream
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/history/HistoryManager.js', () => ({
+jest.unstable_mockModule('@/core/history/HistoryManager', () => ({
   __esModule: true,
   HistoryManager: jest.fn().mockImplementation(() => ({
     addMessage: mockAddMessage,
@@ -50,7 +50,7 @@ jest.unstable_mockModule('../../../../core/history/HistoryManager.js', () => ({
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/processors/DataSplitter.js', () => ({
+jest.unstable_mockModule('@/core/processors/DataSplitter', () => ({
   __esModule: true,
   DataSplitter: jest.fn().mockImplementation(() => ({
     splitData: jest.fn()
@@ -68,21 +68,21 @@ let HistoryManager: any;
 // Import the modules after mocking
 beforeAll(async () => {
   // Import the module under test
-  const controllerModule = await import('../../../../core/chunks/ChunkController.js');
+  const controllerModule = await import('@/core/chunks/ChunkController');
   ChunkController = controllerModule.ChunkController;
   ChunkIterationLimitError = controllerModule.ChunkIterationLimitError;
 
   // Import mocked modules
-  const tokenCalculatorModule = await import('../../../../core/models/TokenCalculator.js');
+  const tokenCalculatorModule = await import('@/core/models/TokenCalculator');
   TokenCalculator = tokenCalculatorModule.TokenCalculator;
 
-  const chatControllerModule = await import('../../../../core/chat/ChatController.js');
+  const chatControllerModule = await import('@/core/chat/ChatController');
   ChatController = chatControllerModule.ChatController;
 
-  const streamControllerModule = await import('../../../../core/streaming/StreamController.js');
+  const streamControllerModule = await import('@/core/streaming/StreamController');
   StreamController = streamControllerModule.StreamController;
 
-  const historyManagerModule = await import('../../../../core/history/HistoryManager.js');
+  const historyManagerModule = await import('@/core/history/HistoryManager');
   HistoryManager = historyManagerModule.HistoryManager;
 });
 

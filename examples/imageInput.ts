@@ -7,11 +7,11 @@
  * 3. Stream responses with image inputs
  * 4. Use JSON output format with image inputs
  */
-import { LLMCaller } from '../src/index.js';
+import { LLMCaller } from '../src/index.ts';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 import path from 'path';
-import { getDirname } from '../src/utils/paths.js';
+import { getDirname } from '../src/utils/paths.ts';
 
 // Get the directory name using the utility function
 const __dirname = getDirname();

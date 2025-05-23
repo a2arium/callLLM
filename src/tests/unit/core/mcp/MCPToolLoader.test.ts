@@ -1,42 +1,40 @@
-import { jest , beforeAll} from '@jest/globals';
+import { jest, beforeAll } from '@jest/globals';
 /**
  * Unit tests for MCPToolLoader
  */
-import { MCPToolLoader } from '../../../../core/mcp/MCPToolLoader.js';
+import { MCPToolLoader } from '../../../../core/mcp/MCPToolLoader.ts';
 // Declare variables for modules to be dynamically imported
 let MCPServiceAdapter;
-import { MCPConnectionError } from '../../../../core/mcp/MCPConfigTypes.js';
-import type { ToolDefinition } from '../../../../types/tooling.js';
-
-// Mock function declarations
-const mockConnectToServer = jest.fn();
-const mockGetServerTools = jest.fn()
+import { MCPConnectionError } from '../../../../core/mcp/MCPConfigTypes.ts';
+import type { ToolDefinition } from '../../../../types/tooling.ts';
+import type { MCPServiceAdapter as ActualMCPServiceAdapterType } from '../../../../core/mcp/MCPServiceAdapter.ts';
 
 // Mock the MCPServiceAdapter class
-jest.unstable_mockModule('../../../../core/mcp/MCPServiceAdapter.js', () => {
-  return { __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true,
+jest.unstable_mockModule('@/core/mcp/MCPServiceAdapter.ts', () => {
+  return {
+    __esModule: true,
     MCPServiceAdapter: jest.fn().mockImplementation(() => ({
-      connectToServer: jest.fn().mockResolvedValue(undefined),
-      getServerTools: jest.fn().mockResolvedValue([]),
-      disconnectAll: jest.fn().mockResolvedValue(undefined)
+      connectToServer: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      getServerTools: jest.fn<() => Promise<ToolDefinition[]>>().mockResolvedValue([]),
+      disconnectAll: jest.fn<() => Promise<void>>().mockResolvedValue(undefined)
     }))
   };
 });
 
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const MCPServiceAdapterModule = await import('../../../../core/mcp/MCPServiceAdapter.js');
+  const MCPServiceAdapterModule = await import('../../../../core/mcp/MCPServiceAdapter.ts');
   MCPServiceAdapter = MCPServiceAdapterModule.MCPServiceAdapter;
 });
 
 
 describe('MCPToolLoader', () => {
   let loader: MCPToolLoader;
-  let mockAdapter: MCPServiceAdapter;
+  let mockAdapter: jest.Mocked<ActualMCPServiceAdapterType>;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockAdapter = new MCPServiceAdapter({});
+    mockAdapter = new MCPServiceAdapter({}) as jest.Mocked<ActualMCPServiceAdapterType>;
     loader = new MCPToolLoader(mockAdapter);
   });
 
@@ -79,11 +77,11 @@ describe('MCPToolLoader', () => {
     };
 
     // Make server1 fail on connectToServer
-    mockConnectToServer.mockImplementation((key) => {
+    mockAdapter.connectToServer.mockImplementation(async (key: string) => {
       if (key === 'server1') {
-        return Promise.reject(new MCPConnectionError('server1', 'Connection failed'));
+        throw new MCPConnectionError('server1', 'Connection failed');
       }
-      return Promise.resolve();
+      // Implicitly returns Promise.resolve(undefined) for other keys
     });
 
     await loader.loadTools(mcpServers);
@@ -104,45 +102,46 @@ describe('MCPToolLoader', () => {
 
     // Define mock tools with duplicate names
     const server1Tools: ToolDefinition[] = [
-    {
-      name: 'duplicate_tool',
-      description: 'Tool from server1',
-      parameters: { type: 'object', properties: {} },
-      origin: 'mcp',
-      metadata: { serverKey: 'server1' }
-    },
-    {
-      name: 'unique_tool1',
-      description: 'Unique tool from server1',
-      parameters: { type: 'object', properties: {} },
-      origin: 'mcp',
-      metadata: { serverKey: 'server1' }
-    }];
+      {
+        name: 'duplicate_tool',
+        description: 'Tool from server1',
+        parameters: { type: 'object', properties: {} },
+        origin: 'mcp',
+        metadata: { serverKey: 'server1' }
+      },
+      {
+        name: 'unique_tool1',
+        description: 'Unique tool from server1',
+        parameters: { type: 'object', properties: {} },
+        origin: 'mcp',
+        metadata: { serverKey: 'server1' }
+      }];
 
 
     const server2Tools: ToolDefinition[] = [
-    {
-      name: 'duplicate_tool', // Same name as a tool from server1
-      description: 'Tool from server2',
-      parameters: { type: 'object', properties: {} },
-      origin: 'mcp',
-      metadata: { serverKey: 'server2' }
-    },
-    {
-      name: 'unique_tool2',
-      description: 'Unique tool from server2',
-      parameters: { type: 'object', properties: {} },
-      origin: 'mcp',
-      metadata: { serverKey: 'server2' }
-    }];
+      {
+        name: 'duplicate_tool', // Same name as a tool from server1
+        description: 'Tool from server2',
+        parameters: { type: 'object', properties: {} },
+        origin: 'mcp',
+        metadata: { serverKey: 'server2' }
+      },
+      {
+        name: 'unique_tool2',
+        description: 'Unique tool from server2',
+        parameters: { type: 'object', properties: {} },
+        origin: 'mcp',
+        metadata: { serverKey: 'server2' }
+      }];
 
 
     // Set up mock responses
-    mockGetServerTools.mockImplementation((key) => {
-      if (key === 'server1') return Promise.resolve(server1Tools);
-      if (key === 'server2') return Promise.resolve(server2Tools);
-      return Promise.resolve([]);
+    mockAdapter.getServerTools.mockImplementation(async (key: string) => {
+      if (key === 'server1') return server1Tools;
+      if (key === 'server2') return server2Tools;
+      return [];
     });
+    // connectToServer will use its default mockResolvedValue(undefined) from the module mock, which is fine here.
 
     const tools = await loader.loadTools(mcpServers);
 

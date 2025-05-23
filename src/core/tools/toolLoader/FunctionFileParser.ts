@@ -12,8 +12,8 @@ import {
     ts
 } from 'ts-morph';
 import path from 'path';
-import { ParsedFunctionMeta, ExtractedJsonSchema, ToolParsingError } from './types.js';
-
+import type { ParsedFunctionMeta, ExtractedJsonSchema } from './types.ts';
+import { ToolParsingError } from './types.ts';
 /**
  * Information about a function parameter
  */

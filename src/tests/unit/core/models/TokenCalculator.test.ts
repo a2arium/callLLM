@@ -1,5 +1,4 @@
 import { jest } from '@jest/globals';
-import { Usage } from '../../../../interfaces/UniversalInterfaces.js';
 
 // Define our mock functions
 const mockEncodingForModel = jest.fn()
@@ -16,7 +15,7 @@ let TokenCalculator: any;
 // Now import the modules after mocking
 beforeAll(async () => {
   // Import the module under test
-  const tokenCalculatorModule = await import('../../../../core/models/TokenCalculator.js');
+  const tokenCalculatorModule = await import('../../../../core/models/TokenCalculator.ts');
   TokenCalculator = tokenCalculatorModule.TokenCalculator;
 });
 

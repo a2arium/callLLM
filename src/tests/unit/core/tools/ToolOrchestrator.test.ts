@@ -1,17 +1,16 @@
 import { jest } from '@jest/globals';
-import { ToolOrchestrator } from '../../../../core/tools/ToolOrchestrator.js';
-import { ToolController } from '../../../../core/tools/ToolController.js';
-import { ChatController } from '../../../../core/chat/ChatController.js';
-import { ToolsManager } from '../../../../core/tools/ToolsManager.js';
-import type { UniversalChatResponse, UniversalMessage, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces.js';
-import type { ProviderManager } from '../../../../core/caller/ProviderManager.js';
-import type { ModelManager } from '../../../../core/models/ModelManager.js';
-import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.js';
-import type { RetryManager } from '../../../../core/retry/RetryManager.js';
-import type { UsageTracker } from '../../../../core/telemetry/UsageTracker.js';
-import { StreamController } from '../../../../core/streaming/StreamController.js';
-import { HistoryManager } from '../../../../core/history/HistoryManager.js';
-import { ToolCall } from '../../../../types/tooling.js';
+import { ToolOrchestrator } from '../../../../core/tools/ToolOrchestrator.ts';
+import { ToolController } from '../../../../core/tools/ToolController.ts';
+import { ChatController } from '../../../../core/chat/ChatController.ts';
+import { ToolsManager } from '../../../../core/tools/ToolsManager.ts';
+import type { UniversalChatResponse, UniversalMessage, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces.ts';
+import type { ProviderManager } from '../../../../core/caller/ProviderManager.ts';
+import type { ModelManager } from '../../../../core/models/ModelManager.ts';
+import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.ts';
+import type { RetryManager } from '../../../../core/retry/RetryManager.ts';
+import type { UsageTracker } from '../../../../core/telemetry/UsageTracker.ts';
+import { StreamController } from '../../../../core/streaming/StreamController.ts';
+import { HistoryManager } from '../../../../core/history/HistoryManager.ts';
 
 const dummyStreamController: StreamController = {
   // Provide minimal stub implementations if any methods are required

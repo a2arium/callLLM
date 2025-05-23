@@ -1,4 +1,4 @@
-import { jest } from "@jest/globals";import { ToolParsingError } from '../../../../../core/tools/toolLoader/types.js';
+import { jest } from "@jest/globals"; import { ToolParsingError } from '../../../../../core/tools/toolLoader/types.ts';
 
 describe('toolLoader Types', () => {
   describe('ToolParsingError', () => {

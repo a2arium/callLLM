@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { jest, beforeEach, describe, it, expect } from '@jest/globals';
-import { HistoryManager } from '../../../../core/history/HistoryManager.js';
-import { UniversalMessage } from '../../../../interfaces/UniversalInterfaces.js';
+import { HistoryManager } from '../../../../core/history/HistoryManager.ts';
+import { type UniversalMessage } from '../../../../interfaces/UniversalInterfaces.ts';
 
 describe('HistoryManager', () => {
   let historyManager: HistoryManager;

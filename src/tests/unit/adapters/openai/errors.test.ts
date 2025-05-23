@@ -1,11 +1,12 @@
-import { jest } from "@jest/globals";import {
+import { jest } from "@jest/globals"; import {
   OpenAIResponseAdapterError,
   OpenAIResponseValidationError,
   OpenAIResponseRateLimitError,
   OpenAIResponseAuthError,
   OpenAIResponseNetworkError,
-  mapProviderError } from
-'../../../../adapters/openai/errors.js';
+  mapProviderError
+} from
+  '../../../../adapters/openai/errors.ts';
 
 describe('OpenAI Errors', () => {
   describe('OpenAIResponseAdapterError', () => {
@@ -88,9 +89,9 @@ describe('OpenAI Errors', () => {
 
     it('should map network errors correctly', () => {
       const networkErrors = [
-      new Error('network error occurred'),
-      new Error('ECONNREFUSED'),
-      new Error('timeout exceeded')];
+        new Error('network error occurred'),
+        new Error('ECONNREFUSED'),
+        new Error('timeout exceeded')];
 
 
       networkErrors.forEach((err) => {
@@ -102,8 +103,8 @@ describe('OpenAI Errors', () => {
 
     it('should map validation errors correctly', () => {
       const validationErrors = [
-      new Error('validation failed'),
-      new Error('invalid parameter')];
+        new Error('validation failed'),
+        new Error('invalid parameter')];
 
 
       validationErrors.forEach((err) => {
@@ -122,11 +123,11 @@ describe('OpenAI Errors', () => {
 
     it('should handle non-Error values', () => {
       const nonErrors = [
-      undefined,
-      null,
-      'string error',
-      123,
-      { message: 'error object' }];
+        undefined,
+        null,
+        'string error',
+        123,
+        { message: 'error object' }];
 
 
       nonErrors.forEach((val) => {

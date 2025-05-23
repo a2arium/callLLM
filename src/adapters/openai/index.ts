@@ -1,4 +1,4 @@
-export { OpenAIResponseAdapter } from './adapter.js';
-export { OpenAIResponseAdapterError, mapProviderError } from './errors.js';
-export { defaultModels } from './models.js';
-export * from './types.js'; 
+export { OpenAIResponseAdapter } from './adapter.ts';
+export { OpenAIResponseAdapterError, mapProviderError } from './errors.ts';
+export { defaultModels } from './models.ts';
+export * from './types.ts'; 

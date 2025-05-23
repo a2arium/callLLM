@@ -1,18 +1,18 @@
-import { UniversalChatParams, UniversalStreamResponse, ModelInfo, HistoryMode } from '../../interfaces/UniversalInterfaces.js';
-import { ProviderManager } from '../caller/ProviderManager.js';
-import { ModelManager } from '../models/ModelManager.js';
-import { TokenCalculator } from '../models/TokenCalculator.js';
-import { ResponseProcessor } from '../processors/ResponseProcessor.js';
-import { RetryManager } from '../retry/RetryManager.js';
-import { UsageCallback } from '../../interfaces/UsageInterfaces.js';
-import { StreamHandler } from './StreamHandler.js';
-import { logger } from '../../utils/logger.js';
-import { UsageTracker } from '../telemetry/UsageTracker.js';
-import { ToolController } from '../tools/ToolController.js';
-import { ToolOrchestrator } from '../tools/ToolOrchestrator.js';
-import { HistoryManager } from '../history/HistoryManager.js';
-import { HistoryTruncator } from '../history/HistoryTruncator.js';
-import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.js';
+import type { UniversalChatParams, UniversalStreamResponse, ModelInfo, HistoryMode } from '../../interfaces/UniversalInterfaces.ts';
+import { ProviderManager } from '../caller/ProviderManager.ts';
+import { ModelManager } from '../models/ModelManager.ts';
+import { TokenCalculator } from '../models/TokenCalculator.ts';
+import { ResponseProcessor } from '../processors/ResponseProcessor.ts';
+import { RetryManager } from '../retry/RetryManager.ts';
+import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
+import { StreamHandler } from './StreamHandler.ts';
+import { logger } from '../../utils/logger.ts';
+import { UsageTracker } from '../telemetry/UsageTracker.ts';
+import { ToolController } from '../tools/ToolController.ts';
+import { ToolOrchestrator } from '../tools/ToolOrchestrator.ts';
+import { HistoryManager } from '../history/HistoryManager.ts';
+import { HistoryTruncator } from '../history/HistoryTruncator.ts';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
 
 /**
  * StreamingService

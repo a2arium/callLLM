@@ -1,9 +1,10 @@
-import { jest } from "@jest/globals";import {
+import { jest } from "@jest/globals"; import {
   MCPConnectionError,
   MCPToolCallError,
-  MCPHttpMode,
-  MCPTransportType } from
-'../../../../core/mcp/MCPConfigTypes.js';
+  type MCPHttpMode,
+  type MCPTransportType
+} from
+  '../../../../core/mcp/MCPConfigTypes.ts';
 
 describe('MCPConfigTypes', () => {
   describe('MCPConnectionError', () => {

@@ -1,35 +1,35 @@
 import { jest } from '@jest/globals';
-import { UsageTracker } from '../../../../../src/core/telemetry/UsageTracker.js';
-import { ModelInfo } from '../../../../../src/interfaces/UniversalInterfaces.js';
-import { UsageCallback } from '../../../../../src/interfaces/UsageInterfaces.js';
-import { UsageTrackingProcessor } from '../../../../../src/core/streaming/processors/UsageTrackingProcessor.js';
+import { UsageTracker } from '@/core/telemetry/UsageTracker.ts';
+import type { ModelInfo } from '@/interfaces/UniversalInterfaces.ts';
+import type { UsageCallback } from '@/interfaces/UsageInterfaces.ts';
+import { UsageTrackingProcessor } from '@/core/streaming/processors/UsageTrackingProcessor.ts';
 
 type DummyTokenCalculator = {
   calculateTokens: (text: string) => number;
   calculateUsage: (
-  inputTokens: number,
-  outputTokens: number,
-  inputPricePerMillion: number,
-  outputPricePerMillion: number,
-  cachedTokens?: number,
-  cachedPricePerMillion?: number,
-  outputReasoningTokens?: number,
-  imageInputTokens?: number,
-  imageOutputTokens?: number,
-  imageInputPricePerMillion?: number,
-  imageOutputPricePerMillion?: number)
-  => {
-    input: {
+    inputTokens: number,
+    outputTokens: number,
+    inputPricePerMillion: number,
+    outputPricePerMillion: number,
+    cachedTokens?: number,
+    cachedPricePerMillion?: number,
+    outputReasoningTokens?: number,
+    imageInputTokens?: number,
+    imageOutputTokens?: number,
+    imageInputPricePerMillion?: number,
+    imageOutputPricePerMillion?: number)
+    => {
+      input: {
+        total: number;
+        cached: number;
+      };
+      output: {
+        total: number;
+        reasoning: number;
+      };
       total: number;
-      cached: number;
     };
-    output: {
-      total: number;
-      reasoning: number;
-    };
-    total: number;
-  };
-  calculateTotalTokens: (messages: {role: string;content: string;}[]) => number;
+  calculateTotalTokens: (messages: { role: string; content: string; }[]) => number;
 };
 
 describe('UsageTracker', () => {
@@ -46,19 +46,18 @@ describe('UsageTracker', () => {
       }),
       calculateUsage: jest.fn(
         (
-        inputTokens: number,
-        outputTokens: number,
-        inputPrice: number,
-        outputPrice: number,
-        cachedTokens: number = 0,
-        cachedPrice: number = 0,
-        outputReasoningTokens: number = 0,
+          inputTokens: number,
+          outputTokens: number,
+          inputPrice: number,
+          outputPrice: number,
+          cachedTokens: number = 0,
+          cachedPrice: number = 0,
+          outputReasoningTokens: number = 0,
 
-        _imageInputTokens?: number,
-        _imageOutputTokens?: number,
-        _imageInputPrice?: number,
-        _imageOutputPrice?: number) =>
-        {
+          _imageInputTokens?: number,
+          _imageOutputTokens?: number,
+          _imageInputPrice?: number,
+          _imageOutputPrice?: number) => {
           // For the purposes of our tests, we'll ignore the image tokens
           // to keep the expected values consistent with older test cases
           const inputCost = (inputTokens - cachedTokens) * inputPrice / 1_000_000;
@@ -78,16 +77,16 @@ describe('UsageTracker', () => {
           };
         }
       ),
-      calculateTotalTokens: jest.fn((messages: {role: string;content: string;}[]) => {
+      calculateTotalTokens: jest.fn((messages: { role: string; content: string; }[]) => {
         if (!messages || messages.length === 0) return 0;
         return messages.reduce(
           (sum, message) =>
-          sum + (
-          message.content === 'input' ?
-          10 :
-          message.content === 'output' ?
-          20 :
-          0),
+            sum + (
+              message.content === 'input' ?
+                10 :
+                message.content === 'output' ?
+                  20 :
+                  0),
           0
         );
       })
@@ -339,8 +338,8 @@ describe('UsageTracker', () => {
     it('should call tokenCalculator.calculateTotalTokens with the provided messages', () => {
       const tracker = new UsageTracker(dummyTokenCalculator);
       const messages = [
-      { role: 'user', content: 'input' },
-      { role: 'assistant', content: 'output' }];
+        { role: 'user', content: 'input' },
+        { role: 'assistant', content: 'output' }];
 
 
       const result = tracker.calculateTotalTokens(messages);

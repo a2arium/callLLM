@@ -1,9 +1,9 @@
-import type { ToolDefinition, ToolsManager } from '../../types/tooling.js';
-import type { UniversalMessage, UniversalChatResponse } from '../../interfaces/UniversalInterfaces.js';
-import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../types/tooling.js';
-import { logger } from '../../utils/logger.js';
-import type { ToolCall } from '../../types/tooling.js';
-import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.js';
+import type { ToolDefinition, ToolsManager } from '../../types/tooling.ts';
+import type { UniversalMessage, UniversalChatResponse } from '../../interfaces/UniversalInterfaces.ts';
+import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../types/tooling.ts';
+import { logger } from '../../utils/logger.ts';
+import type { ToolCall } from '../../types/tooling.ts';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
 
 export class ToolController {
     private toolsManager: ToolsManager;

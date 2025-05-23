@@ -1,5 +1,6 @@
-import { jest } from "@jest/globals";import { ToolsManager } from '../../../../core/tools/ToolsManager.js';
-import type { ToolDefinition } from '../../../../types/tooling.js';
+import { jest } from "@jest/globals";
+import { ToolsManager } from '../../../../core/tools/ToolsManager.ts';
+import type { ToolDefinition } from '../../../../types/tooling.ts';
 
 describe('ToolsManager', () => {
   let toolsManager: ToolsManager;
@@ -124,23 +125,23 @@ describe('ToolsManager', () => {
   describe('addTools', () => {
     it('should add multiple tools successfully', () => {
       const mockTools = [
-      {
-        name: 'tool1',
-        description: 'First tool',
-        parameters: {
-          type: 'object',
-          properties: {}
-        }
-      },
-      {
-        name: 'tool2',
-        description: 'Second tool',
-        parameters: {
-          type: 'object',
-          properties: {}
-        }
-      }] as
-      ToolDefinition[];
+        {
+          name: 'tool1',
+          description: 'First tool',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        },
+        {
+          name: 'tool2',
+          description: 'Second tool',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        }] as
+        ToolDefinition[];
 
       toolsManager.addTools(mockTools);
       expect(toolsManager.getTool('tool1')).toEqual(mockTools[0]);
@@ -149,43 +150,43 @@ describe('ToolsManager', () => {
 
     it('should throw error when adding tools with duplicate names within array', () => {
       const mockTools = [
-      {
-        name: 'tool1',
-        description: 'First tool',
-        parameters: {
-          type: 'object',
-          properties: {}
-        }
-      },
-      {
-        name: 'tool1',
-        description: 'Duplicate tool',
-        parameters: {
-          type: 'object',
-          properties: {}
-        }
-      }] as
-      ToolDefinition[];
+        {
+          name: 'tool1',
+          description: 'First tool',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        },
+        {
+          name: 'tool1',
+          description: 'Duplicate tool',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        }] as
+        ToolDefinition[];
 
       expect(() => toolsManager.addTools(mockTools)).
-      toThrow('Duplicate tool names found in the tools array');
+        toThrow('Duplicate tool names found in the tools array');
     });
 
     it('should throw error when adding tools with existing names', () => {
       toolsManager.addTool(mockTool);
       const mockTools = [
-      {
-        name: mockTool.name,
-        description: 'Conflicting tool',
-        parameters: {
-          type: 'object',
-          properties: {}
-        }
-      }] as
-      ToolDefinition[];
+        {
+          name: mockTool.name,
+          description: 'Conflicting tool',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        }] as
+        ToolDefinition[];
 
       expect(() => toolsManager.addTools(mockTools)).
-      toThrow(`Tool with name '${mockTool.name}' already exists`);
+        toThrow(`Tool with name '${mockTool.name}' already exists`);
     });
   });
 });

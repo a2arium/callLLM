@@ -44,7 +44,7 @@ jest.unstable_mockModule('openai', () => ({
   OpenAI: MockOpenAI
 }));
 
-jest.unstable_mockModule('../../../../adapters/openai/converter.js', () => ({
+jest.unstable_mockModule('@/adapters/openai/converter.ts', () => ({
   __esModule: true,
   Converter: jest.fn().mockImplementation(() => ({
     convertToOpenAIResponseParams: mockConvertToParams,
@@ -52,7 +52,7 @@ jest.unstable_mockModule('../../../../adapters/openai/converter.js', () => ({
   }))
 }));
 
-jest.unstable_mockModule('../../../../adapters/openai/validator.js', () => ({
+jest.unstable_mockModule('@/adapters/openai/validator.ts', () => ({
   __esModule: true,
   Validator: jest.fn().mockImplementation(() => ({
     validateParams: mockValidateParams,
@@ -66,12 +66,12 @@ const mockStreamHandlerConstructor = jest.fn().mockImplementation(() => ({
   updateTools: jest.fn()
 }));
 
-jest.unstable_mockModule('../../../../adapters/openai/stream.js', () => ({
+jest.unstable_mockModule('@/adapters/openai/stream.ts', () => ({
   __esModule: true,
   StreamHandler: mockStreamHandlerConstructor
 }));
 
-jest.unstable_mockModule('../../../../utils/logger.js', () => ({
+jest.unstable_mockModule('@/utils/logger.ts', () => ({
   __esModule: true,
   logger: {
     debug: jest.fn(),
@@ -104,15 +104,15 @@ beforeAll(async () => {
   OpenAI.APIError = MockAPIError;
 
   // Import the module under test
-  const adapterModule = await import('../../../../adapters/openai/adapter.js');
+  const adapterModule = await import('@/adapters/openai/adapter.ts');
   OpenAIResponseAdapter = adapterModule.OpenAIResponseAdapter;
 
   // Import other needed modules
-  const interfacesModule = await import('../../../../interfaces/UniversalInterfaces.js');
+  const interfacesModule = await import('@/interfaces/UniversalInterfaces.ts');
   FinishReason = interfacesModule.FinishReason;
 
   // Import error types
-  const errorsModule = await import('../../../../adapters/openai/errors.js');
+  const errorsModule = await import('@/adapters/openai/errors.ts');
   OpenAIResponseAdapterError = errorsModule.OpenAIResponseAdapterError;
 });
 

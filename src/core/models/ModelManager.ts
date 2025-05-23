@@ -1,7 +1,7 @@
-import { ModelInfo, ModelAlias, ModelCapabilities } from '../../interfaces/UniversalInterfaces.js';
-import { ModelSelector } from './ModelSelector.js';
-import { defaultModels as openAIResponseModels } from '../../adapters/openai/models.js';
-import { RegisteredProviders } from '../../adapters/index.js';
+import type { ModelInfo, ModelAlias, ModelCapabilities } from '../../interfaces/UniversalInterfaces.ts';
+import { ModelSelector } from './ModelSelector.ts';
+import { defaultModels as openAIResponseModels } from '../../adapters/openai/models.ts';
+import type { RegisteredProviders } from '../../adapters/index.ts';
 
 export class ModelManager {
     private static instance: ModelManager;

@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
-import { OpenAIResponseAdapter } from '../../../../adapters/openai/OpenAIResponseAdapter.js';
-import { FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
-import type { ToolCall, ToolDefinition } from '../../../../types/tooling.js';
+import { OpenAIResponseAdapter } from '@/adapters/openai/OpenAIResponseAdapter.ts';
+import { FinishReason } from '@/interfaces/UniversalInterfaces.ts';
+import type { ToolCall, ToolDefinition } from '@/types/tooling.ts';
 
 // Create a mock logger object to be used in tests
 const mockLogger = {
@@ -12,12 +12,12 @@ const mockLogger = {
 };
 
 // Mock the logger using jest.unstable_mockModule
-jest.unstable_mockModule('../../../../utils/logger.js', () => ({
+jest.unstable_mockModule('@/utils/logger.ts', () => ({
   logger: {
     createLogger: jest.fn().mockReturnValue(mockLogger),
     setConfig: jest.fn()
   },
-  __esModule: true // ESM mocks require __esModule: true
+  __esModule: true // ESM mocks require __esModule: true,
 }));
 
 // Define test constants since they're not exported from UniversalInterfaces
@@ -95,7 +95,7 @@ describe('OpenAIResponseAdapter', () => {
 
   beforeAll(async () => {
     // Dynamically import after mocking
-    const loggerModule = await import('../../../../utils/logger.js');
+    const loggerModule = await import('@/utils/logger.ts');
     logger = loggerModule.logger;
   });
 

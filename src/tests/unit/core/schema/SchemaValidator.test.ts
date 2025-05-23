@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { z } from 'zod';
-import { SchemaValidator, SchemaValidationError } from '../../../../core/schema/SchemaValidator.js';
+import { SchemaValidator, SchemaValidationError } from '../../../../core/schema/SchemaValidator.ts';
 
 describe('SchemaValidator', () => {
   describe('validate', () => {
@@ -23,7 +23,7 @@ describe('SchemaValidator', () => {
       const invalidData = { name: 'test' };
 
       expect(() => SchemaValidator.validate(invalidData, schema)).
-      toThrow(SchemaValidationError);
+        toThrow(SchemaValidationError);
     });
 
     it('should include validation error details', () => {
@@ -77,7 +77,7 @@ describe('SchemaValidator', () => {
       const data = { name: 'test' };
 
       expect(() => SchemaValidator.validate(data, invalidSchema as any)).
-      toThrow('Invalid schema type');
+        toThrow('Invalid schema type');
     });
 
     it('should wrap unknown errors in SchemaValidationError', () => {

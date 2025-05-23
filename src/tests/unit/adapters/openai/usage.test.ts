@@ -1,13 +1,13 @@
 import { jest, beforeAll } from '@jest/globals';
-import { Converter } from '../../../../adapters/openai/converter.js';
+import { Converter } from '@/adapters/openai/converter.ts';
 // Declare variables for modules to be dynamically imported
 let ModelManager;
-import { Usage } from '../../../../interfaces/UniversalInterfaces.js';
+import { type Usage } from '@/interfaces/UniversalInterfaces.ts';
 // Declare variables for modules to be dynamically imported
 let estimateImageTokens;
 
 // Mock the file-data module
-jest.unstable_mockModule('../../../../core/file-data/fileData.js', () => ({
+jest.unstable_mockModule('@/core/file-data/fileData.ts', () => ({
   __esModule: true,
   normalizeImageSource: jest.fn(),
   estimateImageTokens: jest.fn().mockImplementation((detail: 'low' | 'high' | 'auto') => {
@@ -21,7 +21,7 @@ jest.unstable_mockModule('../../../../core/file-data/fileData.js', () => ({
 }));
 
 // Mock ModelManager
-jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => ({
+jest.unstable_mockModule('@/core/models/ModelManager.ts', () => ({
   __esModule: true,
   ModelManager: jest.fn().mockImplementation(() => ({
     getModel: jest.fn(), // Mock getModel, as Converter likely uses it
@@ -31,20 +31,20 @@ jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => ({
 
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const fileDataModule = await import('../../../../core/file-data/fileData.js');
+  const fileDataModule = await import('@/core/file-data/fileData.ts');
   estimateImageTokens = fileDataModule.estimateImageTokens;
 
-  const ModelManagerModule = await import('../../../../core/models/ModelManager.js');
+  const ModelManagerModule = await import('@/core/models/ModelManager.ts');
   ModelManager = ModelManagerModule.ModelManager;
 });
 
 
 describe('OpenAI Adapter - Usage Tracking', () => {
   let converter: Converter;
-  let mockModelManager: jest.Mocked<ModelManager>;
+  let mockModelManager: jest.Mocked<typeof ModelManager>;
 
   beforeEach(() => {
-    mockModelManager = new ModelManager('openai') as jest.Mocked<ModelManager>;
+    mockModelManager = new ModelManager('openai') as jest.Mocked<typeof ModelManager>;
     converter = new Converter(mockModelManager);
     // Reset all mocks before each test
     jest.clearAllMocks();

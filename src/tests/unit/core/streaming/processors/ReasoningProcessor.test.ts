@@ -1,6 +1,6 @@
-import { jest } from "@jest/globals";import { ReasoningProcessor } from '../../../../../core/streaming/processors/ReasoningProcessor.js';
-import { StreamChunk } from '../../../../../core/streaming/types.js';
-import { UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces.js';
+import { jest } from "@jest/globals"; import { ReasoningProcessor } from '../../../../../core/streaming/processors/ReasoningProcessor.ts';
+import type { StreamChunk } from '../../../../../core/streaming/types.d.ts';
+import type { UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces.ts';
 
 describe('ReasoningProcessor', () => {
   let reasoningProcessor: ReasoningProcessor;
@@ -20,9 +20,9 @@ describe('ReasoningProcessor', () => {
   describe('processStream', () => {
     it('should accumulate reasoning from chunks', async () => {
       const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-      { content: 'Hello', reasoning: 'Let me think about this.', role: 'assistant', isComplete: false },
-      { content: ' world', reasoning: ' After analyzing the query', role: 'assistant', isComplete: false },
-      { content: '!', reasoning: ', I can respond.', role: 'assistant', isComplete: true }];
+        { content: 'Hello', reasoning: 'Let me think about this.', role: 'assistant', isComplete: false },
+        { content: ' world', reasoning: ' After analyzing the query', role: 'assistant', isComplete: false },
+        { content: '!', reasoning: ', I can respond.', role: 'assistant', isComplete: true }];
 
 
       // Create async iterable of chunks
@@ -57,9 +57,9 @@ describe('ReasoningProcessor', () => {
 
     it('should handle stream with no reasoning content', async () => {
       const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-      { content: 'Hello', role: 'assistant', isComplete: false },
-      { content: ' world', role: 'assistant', isComplete: false },
-      { content: '!', role: 'assistant', isComplete: true }];
+        { content: 'Hello', role: 'assistant', isComplete: false },
+        { content: ' world', role: 'assistant', isComplete: false },
+        { content: '!', role: 'assistant', isComplete: true }];
 
 
       // Create async iterable of chunks
@@ -93,13 +93,13 @@ describe('ReasoningProcessor', () => {
       };
 
       const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-      {
-        content: 'Hello',
-        reasoning: 'Reasoning content',
-        role: 'assistant',
-        isComplete: false,
-        metadata: existingMetadata
-      }];
+        {
+          content: 'Hello',
+          reasoning: 'Reasoning content',
+          role: 'assistant',
+          isComplete: false,
+          metadata: existingMetadata
+        }];
 
 
       // Create async iterable of chunks
@@ -153,8 +153,8 @@ describe('ReasoningProcessor', () => {
   describe('getAccumulatedReasoning', () => {
     it('should return the current accumulated reasoning', async () => {
       const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-      { content: 'Hello', reasoning: 'First reasoning part', role: 'assistant', isComplete: false },
-      { content: ' world', reasoning: ' Second reasoning part', role: 'assistant', isComplete: true }];
+        { content: 'Hello', reasoning: 'First reasoning part', role: 'assistant', isComplete: false },
+        { content: ' world', reasoning: ' Second reasoning part', role: 'assistant', isComplete: true }];
 
 
       // Create async iterable of chunks
@@ -183,8 +183,8 @@ describe('ReasoningProcessor', () => {
   describe('hasReasoning', () => {
     it('should return true if reasoning content was received', async () => {
       const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-      { content: 'Hello', role: 'assistant', isComplete: false },
-      { content: ' world', reasoning: 'Some reasoning', role: 'assistant', isComplete: true }];
+        { content: 'Hello', role: 'assistant', isComplete: false },
+        { content: ' world', reasoning: 'Some reasoning', role: 'assistant', isComplete: true }];
 
 
       // Create async iterable of chunks
@@ -203,12 +203,13 @@ describe('ReasoningProcessor', () => {
 
         // We don't need the chunks for this test
       } // Verify reasoning detection
-      expect(reasoningProcessor.hasReasoning()).toBe(true);});
+      expect(reasoningProcessor.hasReasoning()).toBe(true);
+    });
 
     it('should return false if no reasoning content was received', async () => {
       const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-      { content: 'Hello', role: 'assistant', isComplete: false },
-      { content: ' world', role: 'assistant', isComplete: true }];
+        { content: 'Hello', role: 'assistant', isComplete: false },
+        { content: ' world', role: 'assistant', isComplete: true }];
 
 
       // Create async iterable of chunks
@@ -227,13 +228,14 @@ describe('ReasoningProcessor', () => {
 
         // We don't need the chunks for this test
       } // Verify reasoning detection
-      expect(reasoningProcessor.hasReasoning()).toBe(false);});
+      expect(reasoningProcessor.hasReasoning()).toBe(false);
+    });
   });
 
   describe('reset', () => {
     it('should clear accumulated reasoning', async () => {
       const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-      { content: 'Hello', reasoning: 'Some reasoning', role: 'assistant', isComplete: true }];
+        { content: 'Hello', reasoning: 'Some reasoning', role: 'assistant', isComplete: true }];
 
 
       // Create async iterable of chunks
@@ -252,7 +254,7 @@ describe('ReasoningProcessor', () => {
 
         // We don't need the chunks for this test
       } // Verify we have reasoning content
-      expect(reasoningProcessor.getAccumulatedReasoning()).toBe('Some reasoning');expect(reasoningProcessor.hasReasoning()).toBe(true);
+      expect(reasoningProcessor.getAccumulatedReasoning()).toBe('Some reasoning'); expect(reasoningProcessor.hasReasoning()).toBe(true);
 
       // Reset the processor
       reasoningProcessor.reset();

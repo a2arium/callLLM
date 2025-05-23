@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals';
-import { UsageTrackingProcessor, UsageTrackingOptions } from '../../../../../core/streaming/processors/UsageTrackingProcessor.js';
-import { StreamChunk } from '../../../../../core/streaming/types.js';
-import { ModelInfo } from '../../../../../interfaces/UniversalInterfaces.js';
-import { UsageCallback } from '../../../../../interfaces/UsageInterfaces.js';
+import { UsageTrackingProcessor } from '../../../../../core/streaming/processors/UsageTrackingProcessor.ts';
+import type { StreamChunk } from '../../../../../core/streaming/types.ts';
+import { type ModelInfo } from '../../../../../interfaces/UniversalInterfaces.ts';
+import { type UsageCallback } from '../../../../../interfaces/UsageInterfaces.ts';
 
 // Mock function declarations
 const mockUsageCallback = jest.fn();
@@ -41,11 +41,30 @@ type UsageMetadata = {
   };
 };
 
+// Locally define UsageTrackingOptions type for test compatibility
+type UsageTrackingOptions = {
+  tokenCalculator: any;
+  usageCallback?: any;
+  callerId?: string;
+  inputTokens: number;
+  inputCachedTokens?: number;
+  inputImageTokens?: number;
+  outputImageTokens?: number;
+  imageInputPricePerMillion?: number;
+  imageOutputPricePerMillion?: number;
+  modelInfo: any;
+  tokenBatchSize?: number;
+};
+
 describe('UsageTrackingProcessor', () => {
   // Mock TokenCalculator
-  const mockTokenCalculator = {
+  const mockTokenCalculator: any = {
     calculateTokens: jest.fn(),
-    calculateUsage: jest.fn(),
+    calculateUsage: jest.fn().mockReturnValue({
+      input: { total: 0, cached: 0 },
+      output: { total: 0, reasoning: 0, image: 0 },
+      total: 0
+    }),
     calculateTotalTokens: jest.fn()
   };
 
@@ -170,7 +189,7 @@ describe('UsageTrackingProcessor', () => {
 
   it('should trigger usage callback after batch size is reached', async () => {
     // Create mock callback
-    const mockCallback: UsageCallback = jest.fn()
+    const mockCallback = jest.fn() as UsageCallback;
 
     // Set up token calculation mock with exact values
     mockTokenCalculator.calculateTokens.
@@ -240,7 +259,7 @@ describe('UsageTrackingProcessor', () => {
 
   it('should not trigger callback if callerId is not provided', async () => {
     // Create mock callback
-    const mockCallback: UsageCallback = jest.fn()
+    const mockCallback = jest.fn() as UsageCallback;
 
     // Set up token calculation mock
     mockTokenCalculator.calculateTokens.mockReturnValue(4); // 'Test' -> 4 tokens
@@ -403,7 +422,7 @@ describe('UsageTrackingProcessor', () => {
 
   it('should directly trigger the callback when token increase exactly matches batch size', async () => {
     // Create mock callback
-    const mockCallback: UsageCallback = jest.fn()
+    const mockCallback = jest.fn() as UsageCallback;
 
     // Set up token calculation mock with exact batch size increases
     mockTokenCalculator.calculateTokens.
@@ -485,13 +504,13 @@ describe('UsageTrackingProcessor', () => {
 
     // Check callback was called with image tokens
     expect(options.usageCallback).toHaveBeenCalled();
-    const callbackArgs = mockUsageCallback.mock.calls[0][0];
+    const callbackArgs = options.usageCallback.mock.calls[0][0];
     expect(callbackArgs.usage.tokens.input.image).toBe(85);
   });
 
   it('should respect existing usage data from adapter in the final chunk', async () => {
     // Create mock callback
-    const mockCallback: UsageCallback = jest.fn()
+    const mockCallback = jest.fn() as UsageCallback;
 
     // Setup token calculation mock
     mockTokenCalculator.calculateTokens.mockReturnValue(10);
@@ -575,7 +594,7 @@ describe('UsageTrackingProcessor', () => {
     expect(mockCallback).toHaveBeenCalledTimes(2); // First for intermediate, second for final
 
     // Get the final callback args
-    const finalCallbackArgs = mockMockCallback_1.mock.calls[1][0];
+    const finalCallbackArgs = mockCallback.mock.calls[1][0];
 
     // Verify the tokens in final callback include unreported tokens from adapter
     expect(finalCallbackArgs.usage.tokens.input.total).toBeGreaterThan(0);
@@ -588,7 +607,7 @@ describe('UsageTrackingProcessor', () => {
 
   it('should properly track reported tokens to avoid double-counting', async () => {
     // Create mock callback
-    const mockCallback: UsageCallback = jest.fn()
+    const mockCallback = jest.fn() as UsageCallback;
 
     // Setup token calculation mock for multiple chunks
     mockTokenCalculator.calculateTokens.
@@ -646,14 +665,14 @@ describe('UsageTrackingProcessor', () => {
     } // Verify callback was called twice (once at batch size, once at completion)
     expect(mockCallback).toHaveBeenCalledTimes(2);
     // First callback should include initial token values
-    const firstCallbackArgs = mockMockCallback_1.mock.calls[0][0];
+    const firstCallbackArgs = mockCallback.mock.calls[0][0];
     expect(firstCallbackArgs.usage.tokens.input.total).toBe(50);
     expect(firstCallbackArgs.usage.tokens.input.cached).toBe(20);
     expect(firstCallbackArgs.usage.tokens.input.image).toBe(30);
     expect(firstCallbackArgs.usage.tokens.output.total).toBe(5);
 
     // Second callback should include only unreported tokens
-    const secondCallbackArgs = mockMockCallback_1.mock.calls[1][0];
+    const secondCallbackArgs = mockCallback.mock.calls[1][0];
 
     // Verify unreported input tokens (1000 - 50)
     expect(secondCallbackArgs.usage.tokens.input.total).toBe(950);
@@ -673,7 +692,7 @@ describe('UsageTrackingProcessor', () => {
 
   it('should handle reasoning tokens from adapter', async () => {
     // Create mock callback
-    const mockCallback: UsageCallback = jest.fn()
+    const mockCallback = jest.fn() as UsageCallback;
 
     // Setup token calculation mock
     mockTokenCalculator.calculateTokens.mockReturnValue(10);
@@ -717,7 +736,7 @@ describe('UsageTrackingProcessor', () => {
 
     // Verify callback included reasoning tokens
     expect(mockCallback).toHaveBeenCalledTimes(1);
-    const callbackArgs = mockMockCallback_1.mock.calls[0][0];
+    const callbackArgs = mockCallback.mock.calls[0][0];
     expect(callbackArgs.usage.tokens.output.reasoning).toBe(150);
   });
 

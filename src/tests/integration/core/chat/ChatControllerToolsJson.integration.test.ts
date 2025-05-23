@@ -8,12 +8,12 @@ import { jest } from '@jest/globals';
  * response is properly formatted and validated.
  */
 import { z } from 'zod';
-import { LLMCaller } from '../../../../core/caller/LLMCaller.js';
-import { LLMProvider } from '../../../../interfaces/LLMProvider.js';
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
-import { ToolDefinition } from '../../../../types/tooling.js';
-import { ModelManager } from '../../../../core/models/ModelManager.js';
-import { ProviderManager } from '../../../../core/caller/ProviderManager.js';
+import { LLMCaller } from '../../../../core/caller/LLMCaller.ts';
+import { type LLMProvider } from '../../../../interfaces/LLMProvider.ts';
+import { FinishReason } from '../../../../interfaces/UniversalInterfaces.ts';
+import { type ToolDefinition } from '../../../../types/tooling.ts';
+import { ModelManager } from '../../../../core/models/ModelManager.ts';
+import { ProviderManager } from '../../../../core/caller/ProviderManager.ts';
 
 // Mock Provider using the LLMProvider interface
 const mockProviderAdapter: jest.Mocked<LLMProvider> = {
@@ -76,8 +76,8 @@ const simpleTool: ToolDefinition = {
       value: `Data for ${params.key}`
     };
   }) as unknown as <TParams extends Record<string, unknown>, TResponse = unknown>(
-  params: TParams)
-  => Promise<TResponse>
+    params: TParams)
+      => Promise<TResponse>
 };
 
 // Zod schema for expected JSON output
@@ -114,24 +114,24 @@ describe('Integration: ChatController - Tools with JSON Schema', () => {
 
     // Mock the two-step response from the provider adapter
     mockProviderAdapter.chatCall
-    // 1. First call: LLM responds with a tool call request
-    .mockResolvedValueOnce({
-      content: '',
-      role: 'assistant',
-      toolCalls: [{
-        id: 'tool_call_123',
-        name: 'get_simple_data',
-        arguments: { key: 'testKey' }
-      }],
-      metadata: { finishReason: FinishReason.TOOL_CALLS, usage: mockUsage }
-    })
-    // 2. Second call (after tool result): LLM responds with the final JSON content
-    .mockResolvedValueOnce({
-      content: JSON.stringify({ resultValue: 'Data for testKey', sourceKey: 'testKey' }),
-      role: 'assistant',
-      contentObject: { resultValue: 'Data for testKey', sourceKey: 'testKey' },
-      metadata: { finishReason: FinishReason.STOP, usage: mockUsage }
-    });
+      // 1. First call: LLM responds with a tool call request
+      .mockResolvedValueOnce({
+        content: '',
+        role: 'assistant',
+        toolCalls: [{
+          id: 'tool_call_123',
+          name: 'get_simple_data',
+          arguments: { key: 'testKey' }
+        }],
+        metadata: { finishReason: FinishReason.TOOL_CALLS, usage: mockUsage }
+      })
+      // 2. Second call (after tool result): LLM responds with the final JSON content
+      .mockResolvedValueOnce({
+        content: JSON.stringify({ resultValue: 'Data for testKey', sourceKey: 'testKey' }),
+        role: 'assistant',
+        contentObject: { resultValue: 'Data for testKey', sourceKey: 'testKey' },
+        metadata: { finishReason: FinishReason.STOP, usage: mockUsage }
+      });
 
     // Initialize LLMCaller, injecting the mock ProviderManager and ModelManager
     caller = new LLMCaller('openai', 'mock-model', 'System Prompt', {
@@ -172,10 +172,10 @@ describe('Integration: ChatController - Tools with JSON Schema', () => {
     // Check second call parameters (request after tool result);
     const secondCallParams = mockProviderAdapter.chatCall.mock.calls[1][1];
     expect(secondCallParams.messages).toEqual(expect.arrayContaining([
-    expect.objectContaining({ role: 'system', content: 'System Prompt' }),
-    expect.objectContaining({ role: 'user', content: 'Get simple data for key "testKey" and format as JSON.' }),
-    expect.objectContaining({ role: 'assistant', toolCalls: expect.any(Array) }),
-    expect.objectContaining({ role: 'tool', toolCallId: 'tool_call_123', content: JSON.stringify({ success: true, value: 'Data for testKey' }) })]
+      expect.objectContaining({ role: 'system', content: 'System Prompt' }),
+      expect.objectContaining({ role: 'user', content: 'Get simple data for key "testKey" and format as JSON.' }),
+      expect.objectContaining({ role: 'assistant', toolCalls: expect.any(Array) }),
+      expect.objectContaining({ role: 'tool', toolCallId: 'tool_call_123', content: JSON.stringify({ success: true, value: 'Data for testKey' }) })]
     ));
     expect(secondCallParams.responseFormat).toBe('json');
     expect(secondCallParams.jsonSchema?.name).toEqual('SimpleDataResponse');

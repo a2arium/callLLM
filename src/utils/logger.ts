@@ -1,6 +1,6 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
-import { resolveFromFile } from './paths.js';
+import { resolveFromFile } from './paths.ts';
 
 // Load environment variables using cross-platform path resolution
 // Use resolveFromFile without parameter - it will use getImportMetaUrl internally

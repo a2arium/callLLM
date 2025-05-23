@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
-import { FunctionFileParser } from './FunctionFileParser.js';
-import { ParsedFunctionMeta, ToolParsingError } from './types.js';
-import type { ToolDefinition } from '../../../types/tooling.js';
-import { logger } from '../../../utils/logger.js';
+import { FunctionFileParser } from './FunctionFileParser.ts';
+import { type ParsedFunctionMeta, ToolParsingError } from './types.ts';
+import type { ToolDefinition } from '../../../types/tooling.ts';
+import { logger } from '../../../utils/logger.ts';
 
 /**
  * Manages a folder of tool function files

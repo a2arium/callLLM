@@ -1,4 +1,4 @@
-import { LLMCaller } from '../src/core/caller/LLMCaller.js';
+import { LLMCaller } from '../src/core/caller/LLMCaller.ts';
 
 async function runAliasExample() {
     // Initialize LLMCaller with different aliases

@@ -1,4 +1,4 @@
-import { ModelInfo, ModelAlias } from '../../interfaces/UniversalInterfaces.js';
+import type { ModelInfo, ModelAlias } from '../../interfaces/UniversalInterfaces.ts';
 
 export class ModelSelector {
     public static selectModel(models: ModelInfo[], alias: ModelAlias): string {

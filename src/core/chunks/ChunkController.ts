@@ -1,8 +1,8 @@
-import { TokenCalculator } from '../models/TokenCalculator.js';
-import { logger } from '../../utils/logger.js';
+import { TokenCalculator } from '../models/TokenCalculator.ts';
+import { logger } from '../../utils/logger.ts';
 // DataSplitter might not be used if RequestProcessor handles splitting
-// import { DataSplitter } from '../processors/DataSplitter.js';
-import {
+// import { DataSplitter } from '../processors/DataSplitter.ts';
+import type {
     JSONSchemaDefinition,
     ResponseFormat,
     UniversalChatParams,
@@ -10,13 +10,13 @@ import {
     UniversalChatSettings,
     UniversalMessage,
     UniversalStreamResponse
-} from '../../interfaces/UniversalInterfaces.js';
-import { ChatController } from '../chat/ChatController.js';
+} from '../../interfaces/UniversalInterfaces.ts';
+import { ChatController } from '../chat/ChatController.ts';
 // Use StreamControllerInterface or StreamController based on what's passed
-import { StreamController } from '../streaming/StreamController.js';
-import { HistoryManager } from '../history/HistoryManager.js';
-import { toMessageParts } from '../../interfaces/UniversalInterfaces.js';
-import type { ToolDefinition } from '../../types/tooling.js';
+import { StreamController } from '../streaming/StreamController.ts';
+import { HistoryManager } from '../history/HistoryManager.ts';
+import { toMessageParts } from '../../interfaces/UniversalInterfaces.ts';
+import type { ToolDefinition } from '../../types/tooling.ts';
 
 /**
  * Error thrown when chunk iteration limit is exceeded

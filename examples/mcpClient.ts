@@ -11,8 +11,8 @@ import { z } from 'zod';
  * 
  * For direct tool calls without LLM involvement, see examples/mcpDirectTools.ts
  */
-import { LLMCaller } from '../src.js';
-import type { MCPServersMap } from '../src/core/mcp/MCPConfigTypes.js';
+import { LLMCaller } from '../src.ts';
+import type { MCPServersMap } from '../src/core/mcp/MCPConfigTypes.ts';
 
 async function main() {
 

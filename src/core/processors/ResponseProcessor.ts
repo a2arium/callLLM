@@ -1,8 +1,9 @@
-import { UniversalChatResponse, UniversalChatParams, FinishReason, JSONSchemaDefinition, ModelInfo } from '../../interfaces/UniversalInterfaces.js';
-import { SchemaValidator, SchemaValidationError } from '../schema/SchemaValidator.js';
+import type { UniversalChatResponse, UniversalChatParams, JSONSchemaDefinition, ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
+import { FinishReason } from '../../interfaces/UniversalInterfaces.ts';
+import { SchemaValidator, SchemaValidationError } from '../schema/SchemaValidator.ts';
 import { z } from 'zod';
 import { jsonrepair } from 'jsonrepair';
-import { logger } from '../../utils/logger.js';
+import { logger } from '../../utils/logger.ts';
 
 export class ResponseProcessor {
     constructor() { }
@@ -48,7 +49,7 @@ export class ResponseProcessor {
 
                 // Validate against schema
                 try {
-                    await SchemaValidator.validate(contentToValidate, params.jsonSchema.schema);
+                    SchemaValidator.validate(contentToValidate, params.jsonSchema.schema);
                 } catch (validationError) {
                     if (validationError instanceof SchemaValidationError) {
                         return {
@@ -138,64 +139,87 @@ export class ResponseProcessor {
     }
 
     private async parseJson<T>(
-        response: UniversalChatResponse
+        response: UniversalChatResponse & { contentText?: string }
     ): Promise<UniversalChatResponse<T>> {
-        const log = logger.createLogger({ prefix: 'ResponseProcessor.parseJson' });
-        const content = response.content?.trim() || '';
+        let sourceContent = response.content; // Keep original response.content for originalContent metadata
+        let contentToParse = response.content?.trim() || '';
+
+        // Prioritize contentText if it's a streaming response and contentText is available
+        if (response.metadata?.stream && typeof response.contentText === 'string') {
+            // Use contentText as the primary content to parse
+            // but keep the original response.content (if any) for the originalContent metadata field
+            sourceContent = response.contentText; // The "original" source becomes contentText
+            contentToParse = response.contentText.trim();
+        }
+
         let parsedContent: T;
         let jsonRepaired = false;
-        let originalContent = content;
+        // originalContent should reflect what was initially attempted for parsing, before repair
+        const initialContentForParsing = contentToParse;
 
         try {
-            parsedContent = JSON.parse(content) as T;
+            parsedContent = JSON.parse(contentToParse) as T;
         } catch (parseError) {
-            // If the error is not a standard Error instance, throw with a generic message
             if (!(parseError instanceof Error)) {
                 throw new Error('Failed to parse JSON response: Unknown error');
             }
 
-            // Try to repair JSON
-            if (!this.isLikelyRepairable(content)) {
+            if (!this.isLikelyRepairable(contentToParse)) {
                 throw new Error('Failed to parse JSON response: Invalid JSON structure');
             }
 
-            const repairedJson = this.repairJson(content);
+            const repairedJson = this.repairJson(contentToParse);
             if (!repairedJson) {
-                throw new Error('Failed to parse JSON response: Unable to repair JSON');
+                // If repairJson returns undefined, and the contentToParse was not empty and looked like JSON
+                if (contentToParse && (contentToParse.includes('{') || contentToParse.includes('['))) {
+                    throw new Error('Failed to parse JSON response: Unable to repair JSON');
+                } else {
+                    // If it was empty or didn't look like JSON, the original parseError is more relevant
+                    throw parseError;
+                }
             }
 
             try {
                 parsedContent = JSON.parse(repairedJson) as T;
                 jsonRepaired = true;
-                originalContent = content;
+                // sourceContent here will be the original string (either response.content or response.contentText)
+                // that led to the successful (repaired) parsing.
             } catch (repairError) {
-                throw new Error('Failed to parse JSON response: Invalid JSON after repair');
+                // If repair fails, use the original parseError's message if it's more specific, or a generic repair failure.
+                const originalParseMessage = (parseError as Error).message || 'Invalid JSON';
+                throw new Error(`Failed to parse JSON response: Invalid JSON after repair (original error: ${originalParseMessage})`);
             }
         }
 
         return {
             ...response,
+            // content field in response should be the stringified version of the final contentObject
             content: JSON.stringify(parsedContent),
             contentObject: parsedContent,
             metadata: {
                 ...response.metadata,
                 jsonRepaired,
-                originalContent,
-                finishReason: FinishReason.STOP
+                // originalContent should be what was initially fed to the parser before any repair attempt
+                // which is sourceContent (the chosen one between response.content and response.contentText)
+                originalContent: sourceContent === null ? undefined : sourceContent,
+                finishReason: response.metadata?.finishReason || FinishReason.STOP // Preserve existing finishReason if any
             }
         };
     }
 
     private async validateWithSchema<T extends z.ZodType | undefined = undefined>(
         response: UniversalChatResponse,
-        schema: JSONSchemaDefinition,
+        schemaDefinition: { schema: JSONSchemaDefinition },
         params: UniversalChatParams
     ): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
-        const log = logger.createLogger({ prefix: 'ResponseProcessor.validateWithSchema' });
         // Use contentText if available (for StreamResponse), otherwise use content
         const contentToUse = 'contentText' in response ?
-            (response as any).contentText || response.content :
+            (response as UniversalChatResponse & { contentText?: string }).contentText || response.content :
             response.content;
+
+        if (contentToUse === null || contentToUse === undefined) {
+            throw new Error('Failed to parse JSON response: Content is null or undefined');
+        }
 
         let contentToParse: Record<string, unknown>;
         let wasRepaired = false;
@@ -211,15 +235,15 @@ export class ResponseProcessor {
             }
 
             // Try to repair
+            let repairedContent: string | undefined;
             try {
-                log.debug('Attempting to repair malformed JSON during schema validation');
-                const repairedJson = this.repairJson(contentToUse);
-                if (!repairedJson) {
+                repairedContent = this.repairJson(contentToUse);
+                if (!repairedContent) {
                     throw new Error('Failed to parse JSON response: Unable to repair JSON');
                 }
-                contentToParse = JSON.parse(repairedJson);
+                contentToParse = JSON.parse(repairedContent);
                 wasRepaired = true;
-                originalContent = contentToUse;
+                originalContent = contentToUse === null ? undefined : contentToUse;
             } catch (repairError) {
                 throw new Error('Failed to parse JSON response: Invalid JSON after repair');
             }
@@ -243,7 +267,7 @@ export class ResponseProcessor {
         }
 
         try {
-            const validatedContent = SchemaValidator.validate(contentToParse, schema);
+            const validatedContent = SchemaValidator.validate(contentToParse, schemaDefinition.schema);
             return {
                 ...response,
                 content: JSON.stringify(validatedContent),
@@ -288,7 +312,6 @@ export class ResponseProcessor {
         modelInfo: ModelInfo,
         params: UniversalChatParams
     ): { usePromptInjection: boolean } {
-        const log = logger.createLogger({ prefix: 'ResponseProcessor.validateJsonMode' });
         const isJsonRequested = params.responseFormat === 'json' || params.jsonSchema ||
             (params.responseFormat && typeof params.responseFormat === 'object' && params.responseFormat.type === 'json_object');
 
@@ -301,8 +324,6 @@ export class ResponseProcessor {
         if (!isJsonRequested) {
             return { usePromptInjection: false };
         }
-
-        log.debug(`Using JSON mode: { mode: '${jsonMode}', hasNativeSupport: ${hasNativeJsonSupport}, modelName: '${modelInfo.name}' }`);
 
         if (jsonMode === 'native-only' && !hasNativeJsonSupport) {
             throw new Error('Selected model does not support native JSON mode and native-only mode is required');

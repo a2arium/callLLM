@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { SchemaFormatter, isZodSchema } from './SchemaFormatter.js';
-import { JSONSchemaDefinition } from '../../interfaces/UniversalInterfaces.js';
+import { SchemaFormatter, isZodSchema } from './SchemaFormatter.ts';
+import type { JSONSchemaDefinition } from '../../interfaces/UniversalInterfaces.ts';
 
 export class SchemaValidationError extends Error {
     constructor(

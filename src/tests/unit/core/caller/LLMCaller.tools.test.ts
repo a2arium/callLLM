@@ -3,7 +3,7 @@
  */
 
 import { jest, beforeEach, afterEach, describe, it, expect, afterAll } from '@jest/globals';
-import { ToolDefinition } from '../../../../types/tooling.js';
+import type { ToolDefinition } from '../../../../types/tooling.ts';
 
 // Define a type for the mock tool call result for clarity
 type MockToolCallResult = { result: string };
@@ -35,7 +35,7 @@ const mockLoaderInstance = {
 };
 
 // Use unstable_mockModule to mock the entire module instead of trying to modify read-only exports
-jest.unstable_mockModule('../../../../core/tools/toolLoader/ToolsFolderLoader.js', () => {
+jest.unstable_mockModule('@/core/tools/toolLoader/ToolsFolderLoader.ts', () => {
   return {
     __esModule: true,
     ToolsFolderLoader: jest.fn().mockImplementation(() => mockLoaderInstance)
@@ -43,7 +43,7 @@ jest.unstable_mockModule('../../../../core/tools/toolLoader/ToolsFolderLoader.js
 });
 
 // Mock the ModelManager
-jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => {
+jest.unstable_mockModule('@/core/models/ModelManager.ts', () => {
   return {
     __esModule: true,
     ModelManager: jest.fn().mockImplementation(() => ({
@@ -70,7 +70,7 @@ jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => {
 });
 
 // Mock the logger to avoid console noise
-jest.unstable_mockModule('../../../../utils/logger.js', () => ({
+jest.unstable_mockModule('@/utils/logger.ts', () => ({
   __esModule: true,
   logger: {
     debug: jest.fn(),
@@ -92,10 +92,10 @@ let ToolsFolderLoader: jest.Mock;
 
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const LLMCallerModule = await import('../../../../core/caller/LLMCaller.js');
+  const LLMCallerModule = await import('@/core/caller/LLMCaller.ts');
   LLMCaller = LLMCallerModule.LLMCaller;
 
-  const ToolsFolderLoaderModule = await import('../../../../core/tools/toolLoader/ToolsFolderLoader.js');
+  const ToolsFolderLoaderModule = await import('@/core/tools/toolLoader/ToolsFolderLoader.ts');
   ToolsFolderLoader = ToolsFolderLoaderModule.ToolsFolderLoader as jest.Mock;
 });
 

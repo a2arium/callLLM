@@ -1,37 +1,54 @@
 import { jest } from '@jest/globals';
-import { LLMCaller } from '../../../../core/caller/LLMCaller.js';
-import type { StreamingService } from '../../../../core/streaming/StreamingService.js';
-import { ProviderManager } from '../../../../core/caller/ProviderManager.js';
-import { ModelManager } from '../../../../core/models/ModelManager.js';
-import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.js';
-import { RetryManager } from '../../../../core/retry/RetryManager.js';
-import type { HistoryManager } from '../../../../core/history/HistoryManager.js';
-import type { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
-import type { UniversalMessage, UniversalStreamResponse, ModelInfo, Usage, UniversalChatResponse, ModelCapabilities, UrlSource, Base64Source } from '../../../../interfaces/UniversalInterfaces.js';
-import { RegisteredProviders } from '../../../../adapters/index.js';
-import type { ToolController } from '../../../../core/tools/ToolController.js';
-import type { ChatController } from '../../../../core/chat/ChatController.js';
-import type { UniversalChatParams, UniversalChatSettings, LLMCallOptions, HistoryMode } from '../../../../interfaces/UniversalInterfaces.js';
-import type { ToolsManager } from '../../../../core/tools/ToolsManager.js';
-import type { ToolDefinition, ToolCall } from '../../../../types/tooling.js';
-import { CapabilityError } from '../../../../core/models/CapabilityError.js';
+import { LLMCaller } from '../../../../core/caller/LLMCaller.ts';
+import type { StreamingService } from '../../../../core/streaming/StreamingService.ts';
+import { ProviderManager } from '../../../../core/caller/ProviderManager.ts';
+import { ModelManager } from '../../../../core/models/ModelManager.ts';
+import type { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.ts';
+import { RetryManager } from '../../../../core/retry/RetryManager.ts';
+import type { HistoryManager } from '../../../../core/history/HistoryManager.ts';
+import type { TokenCalculator } from '../../../../core/models/TokenCalculator.ts';
+import type { UniversalMessage, UniversalStreamResponse, ModelInfo, Usage, UniversalChatResponse, ModelCapabilities, UrlSource, Base64Source } from '../../../../interfaces/UniversalInterfaces.ts';
+import type { RegisteredProviders } from '../../../../adapters/index.ts';
+import type { ToolController } from '../../../../core/tools/ToolController.ts';
+import type { ChatController } from '../../../../core/chat/ChatController.ts';
+import type { UniversalChatParams, UniversalChatSettings, LLMCallOptions, HistoryMode } from '../../../../interfaces/UniversalInterfaces.ts';
+import type { ToolsManager } from '../../../../core/tools/ToolsManager.ts';
+import type { ToolDefinition, ToolCall } from '../../../../types/tooling.ts';
+import { CapabilityError } from '../../../../core/models/CapabilityError.ts';
+
+jest.mock('@dqbd/tiktoken');
 
 // Define NormalizedImageSource type alias if not already available through imports
 type NormalizedImageSource = UrlSource | Base64Source;
 
-// Mock functions for fileData.js exports
-const mockNormalizeImageSource = jest.fn<() => Promise<NormalizedImageSource>>();
-const mockEstimateImageTokens = jest.fn<() => number>(); // Assuming estimateImageTokens returns a number
+// ---- mocks for @/core/file-data/fileData.ts ----
+const mockValidateImageFile = jest.fn((p: string) =>
+  p === './image.png' ? Promise.resolve(true) : Promise.resolve(false)
+);
+const mockNormalizeImageSource = jest
+  .fn<() => Promise<Base64Source>>()
+  .mockResolvedValue({ type: 'base64', data: 'test-base64', mime: 'image/png' });
+const mockEstimateImageTokens = jest.fn().mockReturnValue(1000);
+const mockValidateMaskFile = jest.fn<() => Promise<boolean>>().mockResolvedValue(true);
+const mockSaveBase64ToFile = jest.fn<() => Promise<string>>().mockResolvedValue('/tmp/out.png');
+const mockFilePathToBase64 = jest.fn<() => Promise<string>>().mockResolvedValue('test-base64');
 
-// Mock the fileData module
-jest.unstable_mockModule('../../../../core/file-data/fileData.js', () => ({
-  __esModule: true,
+const mockFileDataModule = {
+  __esModule: true as const,
+  validateImageFile: mockValidateImageFile,
   normalizeImageSource: mockNormalizeImageSource,
   estimateImageTokens: mockEstimateImageTokens,
-  // Add other exports from fileData.js here if they are used and not mocked,
-  // otherwise, this mock might break tests that rely on unmocked functions from fileData.
-  // For now, keeping it simple with only the functions being actively spied on.
-}));
+  validateMaskFile: mockValidateMaskFile,
+  saveBase64ToFile: mockSaveBase64ToFile,
+  filePathToBase64: mockFilePathToBase64
+};
+
+jest.unstable_mockModule('@/core/file-data/fileData.ts', () => mockFileDataModule);
+
+beforeEach(() => {
+  jest.resetModules();
+  jest.clearAllMocks();
+});
 
 // Define RequestProcessor interface type
 type RequestProcessor = {
@@ -701,18 +718,27 @@ describe('LLMCaller', () => {
       }).rejects.toThrow(CapabilityError);
     });
     test('call with file on image-capable model succeeds', async () => {
-      // Mock ModelManager.getCapabilities to return image capability
-      (ModelManager.getCapabilities as jest.Mock).mockReturnValue({
-        streaming: true,
-        input: { text: true, image: true },
-        output: { text: true }
-      } as ModelCapabilities);
+      const imageModel = {
+        name: 'image-model',
+        inputPricePerMillion: 0,
+        outputPricePerMillion: 0,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          input: { text: true },
+          output: { text: true }
+        },
+        characteristics: {
+          qualityIndex: 1,
+          outputSpeed: 1,
+          firstTokenLatency: 1
+        }
+      };
 
-      // Use the top-level mock functions
-      mockNormalizeImageSource.mockResolvedValue({ type: 'base64', data: 'test-base64', mime: 'image/png' });
-      mockEstimateImageTokens.mockReturnValue(1000);
+      // Make the mocked ModelManager return an image‑capable model
+      mockModelManager.getModel.mockReturnValue(imageModel);
 
-      const callerWithImageCap = new LLMCaller('openai', 'image-model', undefined, {
+      const imageCaller = new LLMCaller('openai' as RegisteredProviders, 'image-model', 'You are a helpful assistant.', {
         providerManager: mockProviderManager,
         modelManager: mockModelManager,
         historyManager: mockHistoryManager,
@@ -724,10 +750,10 @@ describe('LLMCaller', () => {
         responseProcessor: mockResponseProcessor
       });
 
-      // Test that using a file succeeds
-      await expect(callerWithImageCap.call("Hi", { file: "./image.png" })).
-        resolves.
-        not.toThrow();
+      // Stub image processing so it doesn't hit the real filesystem
+      jest.spyOn(imageCaller as any, 'processImageFiles').mockResolvedValue([]);
+
+      await expect(imageCaller.call('Hi', { file: './image.png' })).resolves.not.toThrow();
     });
 
     test('call without file succeeds on any model', async () => {

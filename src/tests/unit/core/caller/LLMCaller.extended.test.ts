@@ -1,23 +1,24 @@
 import { jest } from '@jest/globals';
-import { ChatController } from '../../../../core/chat/ChatController.js';
-import { StreamingService } from '../../../../core/streaming/StreamingService.js';
-import { type UniversalChatParams, type UniversalStreamResponse, type ModelInfo, type Usage } from '../../../../interfaces/UniversalInterfaces.js';
-import { type ToolDefinition, type ToolCall } from '../../../../types/tooling.js';
-import { type RegisteredProviders } from '../../../../adapters/index.js';
-import { UsageTracker } from '../../../../core/telemetry/UsageTracker.js';
-import { RequestProcessor } from '../../../../core/processors/RequestProcessor.js';
-import { ProviderManager } from '../../../../core/caller/ProviderManager.js';
-import { ModelManager } from '../../../../core/models/ModelManager.js';
-import { LLMCaller } from '../../../../core/caller/LLMCaller.js';
-import { HistoryManager } from '../../../../core/history/HistoryManager.js';
-import { ProviderNotFoundError } from '../../../../adapters/types.js';
-import { UniversalChatResponse, UniversalMessage, FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
-import { ContentAccumulator } from '../../../../core/streaming/processors/ContentAccumulator.js';
-import { StreamHandler } from '../../../../core/streaming/StreamHandler.js';
-import { ToolsManager } from '../../../../core/tools/ToolsManager.js';
-import { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
-import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.js';
-import { RetryManager } from '../../../../core/retry/RetryManager.js';
+import { ChatController } from '../../../../core/chat/ChatController.ts';
+import { StreamingService } from '../../../../core/streaming/StreamingService.ts';
+import { type UniversalChatParams, type UniversalStreamResponse, type ModelInfo, type Usage, type UniversalMessage, FinishReason } from '../../../../interfaces/UniversalInterfaces.ts';
+import { type ToolDefinition, type ToolCall } from '../../../../types/tooling.ts';
+import { type RegisteredProviders } from '../../../../adapters/index.ts';
+import { UsageTracker } from '../../../../core/telemetry/UsageTracker.ts';
+import { RequestProcessor } from '../../../../core/processors/RequestProcessor.ts';
+import { ProviderManager } from '../../../../core/caller/ProviderManager.ts';
+import { ModelManager } from '../../../../core/models/ModelManager.ts';
+import { LLMCaller } from '../../../../core/caller/LLMCaller.ts';
+import { HistoryManager } from '../../../../core/history/HistoryManager.ts';
+import { ProviderNotFoundError } from '../../../../adapters/types.ts';
+import { ContentAccumulator } from '../../../../core/streaming/processors/ContentAccumulator.ts';
+import { StreamHandler } from '../../../../core/streaming/StreamHandler.ts';
+import { ToolsManager } from '../../../../core/tools/ToolsManager.ts';
+import { TokenCalculator } from '../../../../core/models/TokenCalculator.ts';
+import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.ts';
+import { RetryManager } from '../../../../core/retry/RetryManager.ts';
+
+jest.mock('@dqbd/tiktoken');
 
 describe('LLMCaller - Model Management', () => {
   let mockProviderManager: jest.Mocked<ProviderManager>;
@@ -42,7 +43,7 @@ describe('LLMCaller - Model Management', () => {
     } as unknown as jest.Mocked<ModelManager>;
 
     mockTokenCalculator = {
-      calculateTotalTokens: jest.fn().mockResolvedValue(100)
+      calculateTotalTokens: jest.fn().mockReturnValue(100)
     } as unknown as jest.Mocked<TokenCalculator>;
 
     mockResponseProcessor = {
@@ -122,8 +123,8 @@ describe('LLMCaller - Model Management', () => {
     it('should stream responses without chunking', async () => {
       const message = 'test message';
       const mockStream = [
-      { content: 'partial', role: 'assistant', isComplete: false },
-      { content: 'complete', role: 'assistant', isComplete: true }];
+        { content: 'partial', role: 'assistant', isComplete: false },
+        { content: 'complete', role: 'assistant', isComplete: true }];
 
       mockStreamingService.createStream.mockResolvedValue(async function* () {
         for (const chunk of mockStream) {

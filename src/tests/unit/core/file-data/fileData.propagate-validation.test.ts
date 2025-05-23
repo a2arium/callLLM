@@ -19,7 +19,7 @@ jest.unstable_mockModule('fs', () => {
 let fileData: any;
 
 beforeAll(async () => {
-    fileData = await import('../../../../core/file-data/fileData.js');
+    fileData = await import('../../../../core/file-data/fileData.ts');
 });
 
 describe('normalizeImageSource – error propagation (integration style)', () => {

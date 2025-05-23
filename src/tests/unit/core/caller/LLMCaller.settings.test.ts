@@ -1,8 +1,7 @@
 import { jest, describe, expect, test, beforeEach, beforeAll, it } from '@jest/globals';
-import { RetryManager } from '../../../../core/retry/RetryManager.js';
-import { RegisteredProviders, ModelInfo, HistoryMode } from '../../../../core/types.js';
-import { JSONSchemaDefinition } from '../../../../interfaces/UniversalInterfaces.js';
-import { UniversalChatResponse, UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces.js';
+import { RetryManager } from '../../../../core/retry/RetryManager.ts';
+import type { RegisteredProviders } from '../../../../adapters/index.ts';
+import type { ModelInfo, HistoryMode, JSONSchemaDefinition, UniversalChatResponse, UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces.ts';
 
 // Declare variables for dynamic imports
 let LLMCaller;
@@ -22,14 +21,14 @@ const mockTokenCalculatorCalculateTokens = jest.fn();
 const mockStreamingServiceCreateStream = jest.fn()
 
 // Set up all module mocks before importing actual modules
-jest.unstable_mockModule('../../../../core/telemetry/UsageTracker.js', () => ({
+jest.unstable_mockModule('@/core/telemetry/UsageTracker.ts', () => ({
   __esModule: true,
   UsageTracker: jest.fn().mockImplementation(() => ({
     trackTokens: mockUsageTrackerTrackTokens
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/streaming/StreamingService.js', () => ({
+jest.unstable_mockModule('@/core/streaming/StreamingService.ts', () => ({
   __esModule: true,
   StreamingService: jest.fn().mockImplementation(() => ({
     createStream: mockStreamingServiceCreateStream,
@@ -37,7 +36,7 @@ jest.unstable_mockModule('../../../../core/streaming/StreamingService.js', () =>
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/caller/ProviderManager.js', () => ({
+jest.unstable_mockModule('@/core/caller/ProviderManager.ts', () => ({
   __esModule: true,
   ProviderManager: jest.fn().mockImplementation(() => ({
     getCurrentProviderName: mockProviderManagerGetCurrentProviderName,
@@ -46,7 +45,7 @@ jest.unstable_mockModule('../../../../core/caller/ProviderManager.js', () => ({
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => ({
+jest.unstable_mockModule('@/core/models/ModelManager.ts', () => ({
   __esModule: true,
   ModelManager: jest.fn().mockImplementation(() => ({
     getModel: mockModelManagerGetModel,
@@ -56,7 +55,7 @@ jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => ({
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/history/HistoryManager.js', () => ({
+jest.unstable_mockModule('@/core/history/HistoryManager.ts', () => ({
   __esModule: true,
   HistoryManager: jest.fn().mockImplementation(() => ({
     getMessages: mockHistoryManagerGetMessages,
@@ -67,7 +66,7 @@ jest.unstable_mockModule('../../../../core/history/HistoryManager.js', () => ({
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/tools/ToolsManager.js', () => ({
+jest.unstable_mockModule('@/core/tools/ToolsManager.ts', () => ({
   __esModule: true,
   ToolsManager: jest.fn().mockImplementation(() => ({
     registerTools: mockToolsManagerRegisterTools,
@@ -75,28 +74,28 @@ jest.unstable_mockModule('../../../../core/tools/ToolsManager.js', () => ({
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/chat/ChatController.js', () => ({
+jest.unstable_mockModule('@/core/chat/ChatController.ts', () => ({
   __esModule: true,
   ChatController: jest.fn().mockImplementation(() => ({
     chatRequest: mockChatControllerChatRequest
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/processors/ResponseProcessor.js', () => ({
+jest.unstable_mockModule('@/core/processors/ResponseProcessor.ts', () => ({
   __esModule: true,
   ResponseProcessor: jest.fn().mockImplementation(() => ({
     processResponse: mockResponseProcessorProcessResponse
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/processors/RequestProcessor.js', () => ({
+jest.unstable_mockModule('@/core/processors/RequestProcessor.ts', () => ({
   __esModule: true,
   RequestProcessor: jest.fn().mockImplementation(() => ({
     processRequest: jest.fn().mockResolvedValue(['test message'] as string[])
   }))
 }));
 
-jest.unstable_mockModule('../../../../core/models/TokenCalculator.js', () => ({
+jest.unstable_mockModule('@/core/models/TokenCalculator.ts', () => ({
   __esModule: true,
   TokenCalculator: jest.fn().mockImplementation(() => ({
     calculateTokens: mockTokenCalculatorCalculateTokens,
@@ -104,15 +103,31 @@ jest.unstable_mockModule('../../../../core/models/TokenCalculator.js', () => ({
   }))
 }));
 
+jest.unstable_mockModule('@/utils/logger.ts', () => ({
+  __esModule: true,
+  logger: {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    createLogger: jest.fn().mockReturnValue({
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn()
+    })
+  }
+}));
+
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const UsageTrackerModule = await import('../../../../core/telemetry/UsageTracker.js');
+  const UsageTrackerModule = await import('@/core/telemetry/UsageTracker.ts');
   UsageTracker = UsageTrackerModule.UsageTracker;
 
-  const LLMCallerModule = await import('../../../../core/caller/LLMCaller.js');
+  const LLMCallerModule = await import('@/core/caller/LLMCaller.ts');
   LLMCaller = LLMCallerModule.LLMCaller;
 
-  const ModelManagerModule = await import('../../../../core/models/ModelManager.js');
+  const ModelManagerModule = await import('@/core/models/ModelManager.ts');
   ModelManager = ModelManagerModule.ModelManager;
 });
 

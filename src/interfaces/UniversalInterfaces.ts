@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import type { ToolCallChunk } from '../core/streaming/types.js';
-import type { ToolDefinition, ToolCall } from '../types/tooling.js';
-import type { UsageCallback } from './UsageInterfaces.js';
-import type { MCPServersMap } from '../core/mcp/MCPConfigTypes.js';
+import type { ToolCallChunk } from '../core/streaming/types.ts';
+import type { ToolDefinition, ToolCall } from '../types/tooling.ts';
+import type { UsageCallback } from './UsageInterfaces.ts';
+import type { MCPServersMap } from '../core/mcp/MCPConfigTypes.ts';
 
 // Finish reason enum based on OpenAI's finish reasons
 export enum FinishReason {
@@ -350,6 +350,7 @@ export type Metadata = {
     toolId?: string;
     toolResult?: string;
     toolError?: string;
+    stream?: boolean; // Added to support stream indication in metadata
 };
 
 export interface UniversalChatResponse<T = unknown> {

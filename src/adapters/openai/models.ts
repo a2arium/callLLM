@@ -1,4 +1,4 @@
-import { ModelInfo } from '../../interfaces/UniversalInterfaces.js';
+import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
 
 export const defaultModels: ModelInfo[] = [
     {

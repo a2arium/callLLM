@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import type { AdapterConstructor } from '../../../../adapters/types.js';
+import type { AdapterConstructor } from '../../../../adapters/types.ts';
 
 // Mock function declarations
 const mockGetRegisteredProviders = jest.fn();
@@ -14,7 +14,7 @@ let ProviderNotFoundError: any;
 
 beforeAll(async () => {
   console.log('[PM Test] beforeAll: Setting up mocks...');
-  jest.unstable_mockModule('../../../../adapters/index.js', () => {
+  jest.unstable_mockModule('@/adapters/index.ts', () => {
     console.log('[PM Test] MOCK FACTORY FOR adapters/index EXECUTING');
     return {
       __esModule: true,
@@ -22,17 +22,16 @@ beforeAll(async () => {
       getRegisteredProviders: jest.fn(() => {
         console.log('[PM Test] Mocked getRegisteredProviders called from SIMPLIFIED mock');
         return ['openai'];
-      }),
-      __esModule: true
+      })
     };
   });
 
-  jest.unstable_mockModule('../../../../adapters/openai/adapter.js', () => ({
+  jest.unstable_mockModule('@/adapters/openai/adapter.ts', () => ({
     OpenAIResponseAdapter: jest.fn().mockImplementation(() => {
       console.log('[PM Test] Mocked OpenAIResponseAdapter constructor called');
       return {};
     }),
-    __esModule: true
+    __esModule: true,
   }));
 
   console.log('[PM Test] beforeAll: Importing SUT and mocked modules...');

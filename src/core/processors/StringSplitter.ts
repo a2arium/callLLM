@@ -1,5 +1,5 @@
-import { TokenCalculator } from '../models/TokenCalculator.js';
-import { logger } from '../../utils/logger.js';
+import { TokenCalculator } from '../models/TokenCalculator.ts';
+import { logger } from '../../utils/logger.ts';
 
 /**
  * Options for controlling the string splitting behavior

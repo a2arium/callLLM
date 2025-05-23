@@ -1,8 +1,8 @@
-import { TokenCalculator } from '../models/TokenCalculator.js';
-import { ModelInfo, Usage } from '../../interfaces/UniversalInterfaces.js';
-import { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces.js';
-import { UsageTrackingProcessor } from '../streaming/processors/UsageTrackingProcessor.js';
-import { logger } from '../../utils/logger.js';
+import { TokenCalculator } from '../models/TokenCalculator.ts';
+import type { ModelInfo, Usage } from '../../interfaces/UniversalInterfaces.ts';
+import type { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces.ts';
+import { UsageTrackingProcessor } from '../streaming/processors/UsageTrackingProcessor.ts';
+import { logger } from '../../utils/logger.ts';
 
 /**
  * UsageTracker

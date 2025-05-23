@@ -1,6 +1,6 @@
-import { UniversalMessage, ModelInfo } from '../../interfaces/UniversalInterfaces.js';
-import { TokenCalculator } from '../models/TokenCalculator.js';
-import { logger } from '../../utils/logger.js';
+import type { UniversalMessage, ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
+import { TokenCalculator } from '../models/TokenCalculator.ts';
+import { logger } from '../../utils/logger.ts';
 
 /**
  * A utility class for intelligently truncating conversation history

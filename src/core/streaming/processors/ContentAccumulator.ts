@@ -1,7 +1,7 @@
-import type { StreamChunk, IStreamProcessor, ToolCallChunk } from "../types.js";
-import type { ToolCall } from "../../../types/tooling.js";
-import { logger } from "../../../utils/logger.js";
-import { FinishReason } from "../../../interfaces/UniversalInterfaces.js";
+import type { StreamChunk, IStreamProcessor, ToolCallChunk } from "../types.ts";
+import type { ToolCall } from "../../../types/tooling.ts";
+import { logger } from "../../../utils/logger.ts";
+import { FinishReason } from "../../../interfaces/UniversalInterfaces.ts";
 
 // Track the accumulation state of a tool call
 type ToolCallAccumulator = {

@@ -5,7 +5,12 @@
     "strictFunctionTypes": false,
     "strictNullChecks": false,
     "strict": false,
-    "useUnknownInCatchVariables": false
+    "useUnknownInCatchVariables": false,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": false,
+    "paths": {
+      "~/*": ["./*"],
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.test.ts"],
   "exclude": ["node_modules"]

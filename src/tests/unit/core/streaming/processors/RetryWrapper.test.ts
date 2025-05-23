@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { StreamChunk, IStreamProcessor, IRetryPolicy } from '../../../../../core/streaming/types.js';
+import type { StreamChunk, IStreamProcessor, IRetryPolicy } from '../../../../../core/streaming/types.d.ts';
 
 // Mocked logger methods
 const mockLoggerSetConfig = jest.fn();
@@ -7,7 +7,7 @@ const mockLoggerWarn = jest.fn();
 const mockLoggerError = jest.fn()
 
 // Mock dependencies
-jest.unstable_mockModule('../../../../../utils/logger.js', () => ({
+jest.unstable_mockModule('@/utils/logger.ts', () => ({
   __esModule: true,
   logger: {
     setConfig: mockLoggerSetConfig,
@@ -25,11 +25,11 @@ let RetryWrapper: any;
 let logger: any; // To hold the dynamically imported mocked logger
 
 beforeAll(async () => {
-  const retryWrapperModule = await import('../../../../../core/streaming/processors/RetryWrapper.js');
+  const retryWrapperModule = await import('../../../../../core/streaming/processors/RetryWrapper.ts');
   RetryWrapper = retryWrapperModule.RetryWrapper;
 
   // Dynamically import the mocked logger
-  const loggerModule = await import('../../../../../utils/logger.js');
+  const loggerModule = await import('@/utils/logger.ts');
   logger = loggerModule.logger;
 });
 

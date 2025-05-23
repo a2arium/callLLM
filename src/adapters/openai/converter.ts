@@ -1,12 +1,13 @@
 import { OpenAI } from 'openai'; // Import OpenAI namespace
-import { UniversalChatParams, UniversalChatResponse, UniversalMessage, FinishReason, Usage, ModelCapabilities, ReasoningEffort, ImageSource, UrlSource, Base64Source } from '../../interfaces/UniversalInterfaces.js';
-import { OpenAIResponseValidationError } from './errors.js';
-import { ToolDefinition, ToolParameters, ToolCall } from '../../types/tooling.js';
-import { logger } from '../../utils/logger.js';
-import { SchemaValidator } from '../../core/schema/SchemaValidator.js';
-import { SchemaFormatter, isZodSchema } from '../../core/schema/SchemaFormatter.js';
+import type { UniversalChatParams, UniversalChatResponse, UniversalMessage, Usage, ModelCapabilities, ReasoningEffort, ImageSource, UrlSource, Base64Source } from '../../interfaces/UniversalInterfaces.ts';
+import { FinishReason } from '../../interfaces/UniversalInterfaces.ts';
+import { OpenAIResponseValidationError } from './errors.ts';
+import type { ToolDefinition, ToolParameters, ToolCall } from '../../types/tooling.ts';
+import { logger } from '../../utils/logger.ts';
+import { SchemaValidator } from '../../core/schema/SchemaValidator.ts';
+import { SchemaFormatter, isZodSchema } from '../../core/schema/SchemaFormatter.ts';
 import { z } from 'zod';
-import {
+import type {
     ResponseCreateParams,
     FunctionTool,
     ResponseInputItem,
@@ -16,9 +17,9 @@ import {
     ResponseFunctionToolCall,
     Response,
     EasyInputMessage
-} from './types.js';
-import { ModelManager } from '../../core/models/ModelManager.js';
-import { TokenCalculator } from '../../core/models/TokenCalculator.js';
+} from './types.ts';
+import { ModelManager } from '../../core/models/ModelManager.ts';
+import { TokenCalculator } from '../../core/models/TokenCalculator.ts';
 import fs from 'fs';
 import path from 'path';
 

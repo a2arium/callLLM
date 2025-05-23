@@ -1,7 +1,7 @@
 // Core exports
-export { LLMCaller } from './core/caller/LLMCaller.js';
-export type { RegisteredProviders } from './adapters/index.js';
-export type { LLMCallerOptions } from './core/caller/LLMCaller.js';
+export { LLMCaller } from './core/caller/LLMCaller.ts';
+export type { RegisteredProviders } from './adapters/index.ts';
+export type { LLMCallerOptions } from './core/caller/LLMCaller.ts';
 
 // Universal Types
 export type {
@@ -17,13 +17,13 @@ export type {
     ModelAlias,
     JSONSchemaDefinition,
     ResponseFormat
-} from './interfaces/UniversalInterfaces.js';
+} from './interfaces/UniversalInterfaces.ts';
 
 // Usage and Telemetry
 export type {
     UsageCallback,
     UsageData
-} from './interfaces/UsageInterfaces.js';
+} from './interfaces/UsageInterfaces.ts';
 
 // Tool-related types
 export type {
@@ -33,10 +33,10 @@ export type {
     ToolChoice,
     ToolCall,
     ToolCallResponse
-} from './types/tooling.js';
+} from './types/tooling.ts';
 
 // Re-export key entities
-export { ModelManager } from './core/models/ModelManager.js';
-export { TokenCalculator } from './core/models/TokenCalculator.js';
-export { ToolsManager } from './core/tools/ToolsManager.js';
-export { HistoryManager } from './core/history/HistoryManager.js';
+export { ModelManager } from './core/models/ModelManager.ts';
+export { TokenCalculator } from './core/models/TokenCalculator.ts';
+export { ToolsManager } from './core/tools/ToolsManager.ts';
+export { HistoryManager } from './core/history/HistoryManager.ts';

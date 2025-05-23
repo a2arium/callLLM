@@ -1,5 +1,5 @@
-import { UniversalMessage } from '../../interfaces/UniversalInterfaces.js';
-import { logger } from '../../utils/logger.js';
+import type { UniversalMessage } from '../../interfaces/UniversalInterfaces.ts';
+import { logger } from '../../utils/logger.ts';
 
 /**
  * Manages conversation history with different modes of operation

@@ -1,6 +1,6 @@
-import { LLMCaller } from '../src/core/caller/LLMCaller.js';
-import { Usage } from '../src/interfaces/UniversalInterfaces.js';
-import { UsageData } from '../src/interfaces/UsageInterfaces.js';
+import { LLMCaller } from '../src/core/caller/LLMCaller.ts';
+import { Usage } from '../src/interfaces/UniversalInterfaces.ts';
+import { UsageData } from '../src/interfaces/UsageInterfaces.ts';
 
 /**
  * Demonstration of reasoning capability in OpenAI's o-series models

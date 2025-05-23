@@ -1,5 +1,5 @@
 import { jest, expect, beforeAll, beforeEach } from '@jest/globals';
-import type { FilePathSource, UrlSource, Base64Source } from '../../../../interfaces/UniversalInterfaces.js';
+import type { FilePathSource, UrlSource, Base64Source } from '../../../../interfaces/UniversalInterfaces.ts';
 import type { Metadata } from 'sharp';
 
 // Declare mock function types
@@ -7,7 +7,7 @@ const mockSharpMetadata = jest.fn<() => Promise<Metadata>>();
 const mockWriteFile = jest.fn();
 
 // Mock the logger first since it's imported by fileData
-jest.unstable_mockModule('../../../../utils/logger.js', () => {
+jest.unstable_mockModule('@/utils/logger', () => {
   const mockLoggerInstance = {
     debug: jest.fn(),
     info: jest.fn(),
@@ -79,7 +79,7 @@ let pathModule: any;
 
 // Import modules after mocking
 beforeAll(async () => {
-  fileData = await import('../../../../core/file-data/fileData.js');
+  fileData = await import('../../../../core/file-data/fileData.ts');
   fsModule = await import('fs');
   sharpModule = await import('sharp');
   pathModule = await import('path');

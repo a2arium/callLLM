@@ -1,4 +1,4 @@
-import { logger } from '../../../utils/logger.js';
+import { logger } from '../../../utils/logger.ts';
 
 /**
  * List of HTTP status codes that should trigger a retry

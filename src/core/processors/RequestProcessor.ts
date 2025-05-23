@@ -1,7 +1,7 @@
-import { ModelInfo } from '../../interfaces/UniversalInterfaces.js';
-import { TokenCalculator } from '../models/TokenCalculator.js';
-import { DataSplitter } from './DataSplitter.js';
-import { logger } from '../../utils/logger.js';
+import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
+import { TokenCalculator } from '../models/TokenCalculator.ts';
+import { DataSplitter } from './DataSplitter.ts';
+import { logger } from '../../utils/logger.ts';
 
 export class RequestProcessor {
     private tokenCalculator: TokenCalculator;

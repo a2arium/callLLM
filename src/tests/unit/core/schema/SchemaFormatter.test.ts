@@ -1,5 +1,5 @@
-import { jest } from "@jest/globals";import { SchemaFormatter } from '../../../../core/schema/SchemaFormatter.js';
-import type { JSONSchemaObject } from '../../../../core/schema/SchemaFormatter.js';
+import { jest } from "@jest/globals"; import { SchemaFormatter } from '../../../../core/schema/SchemaFormatter.ts';
+import type { JSONSchemaObject } from '../../../../core/schema/SchemaFormatter.ts';
 import { z } from 'zod';
 
 describe('SchemaFormatter', () => {
@@ -192,7 +192,7 @@ describe('SchemaFormatter', () => {
     it('should throw error for unsupported schema type', () => {
       const invalidSchema = { type: 'object' };
       expect(() => SchemaFormatter.schemaToString(invalidSchema as any)).
-      toThrow('Unsupported schema type');
+        toThrow('Unsupported schema type');
     });
   });
 

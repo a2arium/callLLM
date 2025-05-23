@@ -1,10 +1,10 @@
 import type { Stream } from 'openai/streaming';
-import { FinishReason, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces.js';
-import type { ToolCall, ToolDefinition } from '../../types/tooling.js';
-import { logger } from '../../utils/logger.js';
-import * as types from './types.js';
-import type { StreamChunk, ToolCallChunk } from '../../core/streaming/types.js'; // Import core types
-import { TokenCalculator } from '../../core/models/TokenCalculator.js';
+import { FinishReason, type UniversalStreamResponse } from '../../interfaces/UniversalInterfaces.ts';
+import type { ToolCall, ToolDefinition } from '../../types/tooling.ts';
+import { logger } from '../../utils/logger.ts';
+import * as types from './types.ts';
+import type { StreamChunk, ToolCallChunk } from '../../core/streaming/types.ts'; // Import core types
+import { TokenCalculator } from '../../core/models/TokenCalculator.ts';
 
 export class StreamHandler {
     private tools?: ToolDefinition[];

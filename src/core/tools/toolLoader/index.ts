@@ -1,4 +1,4 @@
-export { FunctionFileParser } from './FunctionFileParser.js';
-export { ToolsFolderLoader } from './ToolsFolderLoader.js';
-export { ToolParsingError } from './types.js';
-export type { StringOrDefinition } from './types.js'; 
+export { FunctionFileParser } from './FunctionFileParser.ts';
+export { ToolsFolderLoader } from './ToolsFolderLoader.ts';
+export { ToolParsingError } from './types.ts';
+export type { StringOrDefinition } from './types.ts'; 

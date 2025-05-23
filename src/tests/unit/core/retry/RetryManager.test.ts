@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
-import { RetryManager, RetryConfig } from '../../../../../src/core/retry/RetryManager.js';
+import { RetryManager } from '../../../../../src/core/retry/RetryManager.ts';
+import type { RetryConfig } from '../../../../../src/core/retry/RetryManager.ts';
 
 describe('RetryManager', () => {
   beforeAll(() => {
@@ -13,9 +14,9 @@ describe('RetryManager', () => {
   it('should succeed without retry if the operation resolves on the first attempt', async () => {
     const config: RetryConfig = { baseDelay: 100, maxRetries: 3 };
     const retryManager = new RetryManager(config);
-    const operation = jest.fn().mockResolvedValue('success');
+    const operation = jest.fn().mockResolvedValue('success' as unknown as never);
 
-    const result = await retryManager.executeWithRetry(operation, () => true);
+    const result = await retryManager.executeWithRetry(operation as any, () => true);
 
     expect(result).toBe('success');
     expect(operation).toHaveBeenCalledTimes(1);
@@ -26,13 +27,13 @@ describe('RetryManager', () => {
     const retryManager = new RetryManager(config);
     const operation = jest.fn()
     operation.
-    mockRejectedValueOnce(new Error('fail 1')).
-    mockRejectedValueOnce(new Error('fail 2')).
-    mockResolvedValue('success');
+      mockRejectedValueOnce(new Error('fail 1') as unknown as never).
+      mockRejectedValueOnce(new Error('fail 2') as unknown as never).
+      mockResolvedValue('success' as unknown as never);
 
     jest.useFakeTimers({ legacyFakeTimers: false });
 
-    const promise = retryManager.executeWithRetry(operation, () => true);
+    const promise = retryManager.executeWithRetry(operation as any, () => true);
 
     // Expected delays: 200ms for first retry and 400ms for second retry.
     await jest.advanceTimersByTimeAsync(600);
@@ -48,11 +49,11 @@ describe('RetryManager', () => {
   it('should throw an error after exhausting all retries', async () => {
     const config: RetryConfig = { baseDelay: 100, maxRetries: 2 };
     const retryManager = new RetryManager(config);
-    const operation = jest.fn().mockRejectedValue(new Error('persistent error'));
+    const operation = jest.fn().mockRejectedValue(new Error('persistent error') as unknown as never);
     // (No fake timers are used; in test, baseDelay is overridden to 1, so delays are minimal)
     // Log NODE_ENV to verify we are in test mode
     console.log('NODE_ENV in test:', process.env.NODE_ENV);
-    const promise = retryManager.executeWithRetry(operation, () => true);
+    const promise = retryManager.executeWithRetry(operation as any, () => true);
     // Optionally, wait a little longer than the expected total delay (e.g. 10ms)
     await new Promise((resolve) => setTimeout(resolve, 10));
     await expect(promise).rejects.toThrow('Failed after 2 retries. Last error: persistent error');
@@ -62,10 +63,10 @@ describe('RetryManager', () => {
   it('should not retry if the provided shouldRetry returns false', async () => {
     const config: RetryConfig = { baseDelay: 100, maxRetries: 3 };
     const retryManager = new RetryManager(config);
-    const operation = jest.fn().mockRejectedValue(new Error('non-retry error'));
+    const operation = jest.fn().mockRejectedValue(new Error('non-retry error') as unknown as never);
 
     await expect(
-      retryManager.executeWithRetry(operation, (): boolean => false)
+      retryManager.executeWithRetry(operation as any, (): boolean => false)
     ).rejects.toThrow('non-retry error');
 
     expect(operation).toHaveBeenCalledTimes(1);
@@ -78,13 +79,13 @@ describe('RetryManager', () => {
     const config: RetryConfig = { baseDelay: 100, maxRetries: 1 };
     const retryManager = new RetryManager(config);
     const operation = jest.fn().
-    mockRejectedValueOnce(new Error('oops')).
-    mockResolvedValue('success');
+      mockRejectedValueOnce(new Error('oops') as unknown as never).
+      mockResolvedValue('success' as unknown as never);
 
     jest.useFakeTimers({ legacyFakeTimers: false });
     const timeoutSpy = jest.spyOn(global, 'setTimeout');
 
-    const promise = retryManager.executeWithRetry(operation, () => true);
+    const promise = retryManager.executeWithRetry(operation as any, () => true);
 
     // Advance through first retry delay (100 * 2^1 = 200ms)
     await jest.advanceTimersByTimeAsync(200);
@@ -103,11 +104,11 @@ describe('RetryManager', () => {
     const config: RetryConfig = { baseDelay: 100, maxRetries: 2 };
     const retryManager = new RetryManager(config);
     // Throw a primitive error (a string);
-    const operation = jest.fn().mockRejectedValue("primitive error");
+    const operation = jest.fn().mockRejectedValue("primitive error" as unknown as never);
     const shouldRetry = () => true;
 
     try {
-      await retryManager.executeWithRetry(operation, shouldRetry);
+      await retryManager.executeWithRetry(operation as any, shouldRetry);
     } catch (err) {
       expect(err).toEqual(new Error("Failed after 2 retries. Last error: primitive error"));
     }
@@ -116,10 +117,10 @@ describe('RetryManager', () => {
   it('should exit when attempts exceed maxRetries', async () => {
     const config: RetryConfig = { maxRetries: 0 }; // Allow only 1 attempt
     const retryManager = new RetryManager(config);
-    const operation = jest.fn().mockRejectedValue(new Error('error'));
+    const operation = jest.fn().mockRejectedValue(new Error('error') as unknown as never);
 
-    await expect(retryManager.executeWithRetry(operation, () => true)).
-    rejects.toThrow('Failed after 0 retries');
+    await expect(retryManager.executeWithRetry(operation as any, () => true)).
+      rejects.toThrow('Failed after 0 retries');
     expect(operation).toHaveBeenCalledTimes(1);
   }, 10000); // Increase timeout to 10 seconds
 });
@@ -135,19 +136,19 @@ describe('RetryManager Logging', () => {
 
   it('should log each retry attempt', async () => {
     // Create a spy to monitor calls to console.log.
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => { });
 
     const config: RetryConfig = { baseDelay: 100, maxRetries: 3 };
     const retryManager = new RetryManager(config);
     const operation = jest.fn()
     operation.
-    mockRejectedValueOnce(new Error('fail 1')).
-    mockRejectedValueOnce(new Error('fail 2')).
-    mockResolvedValue('success');
+      mockRejectedValueOnce(new Error('fail 1') as unknown as never).
+      mockRejectedValueOnce(new Error('fail 2') as unknown as never).
+      mockResolvedValue('success' as unknown as never);
 
     jest.useFakeTimers({ legacyFakeTimers: false });
 
-    const promise = retryManager.executeWithRetry(operation, () => true);
+    const promise = retryManager.executeWithRetry(operation as any, () => true);
 
     // In test environment, baseDelay is overridden to 1.
     // Expected delays: first retry: 2ms, second retry: 4ms ~ total 6ms.

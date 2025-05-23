@@ -1,5 +1,5 @@
-import { jest } from "@jest/globals";import { AdapterError, BaseAdapter, type AdapterConfig } from '../../../../adapters/base/baseAdapter.js';
-import { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces.js';
+import { jest } from "@jest/globals"; import { AdapterError, BaseAdapter, type AdapterConfig } from '../../../../adapters/base/baseAdapter.ts';
+import type { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces.ts';
 
 // Concrete implementation for testing
 class TestAdapter extends BaseAdapter {

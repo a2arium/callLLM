@@ -1,10 +1,11 @@
-import { jest } from "@jest/globals";import { PromptEnhancer, PromptEnhancementOptions } from '../../../../core/prompt/PromptEnhancer.js';
-import { JSONSchemaDefinition, UniversalMessage } from '../../../../interfaces/UniversalInterfaces.js';
+import { jest } from "@jest/globals";
+import { PromptEnhancer, type PromptEnhancementOptions } from '@/core/prompt/PromptEnhancer.ts';
+import type { JSONSchemaDefinition, UniversalMessage } from '@/interfaces/UniversalInterfaces.ts';
 
 describe('PromptEnhancer', () => {
   const simpleMessages: UniversalMessage[] = [
-  { role: 'system', content: 'You are a helpful assistant.' },
-  { role: 'user', content: 'Hello, how are you?' }];
+    { role: 'system', content: 'You are a helpful assistant.' },
+    { role: 'user', content: 'Hello, how are you?' }];
 
 
   describe('enhanceMessages', () => {
@@ -36,10 +37,10 @@ describe('PromptEnhancer', () => {
 
     it('should add instruction after system message when present', () => {
       const messagesWithSystem: UniversalMessage[] = [
-      { role: 'system', content: 'System message' },
-      { role: 'user', content: 'User message 1' },
-      { role: 'assistant', content: 'Assistant message' },
-      { role: 'user', content: 'User message 2' }];
+        { role: 'system', content: 'System message' },
+        { role: 'user', content: 'User message 1' },
+        { role: 'assistant', content: 'Assistant message' },
+        { role: 'user', content: 'User message 2' }];
 
 
       const options: PromptEnhancementOptions = {
@@ -60,8 +61,8 @@ describe('PromptEnhancer', () => {
 
     it('should add instruction at beginning when no system message is present', () => {
       const messagesWithoutSystem: UniversalMessage[] = [
-      { role: 'user', content: 'User message 1' },
-      { role: 'assistant', content: 'Assistant message' }];
+        { role: 'user', content: 'User message 1' },
+        { role: 'assistant', content: 'Assistant message' }];
 
 
       const options: PromptEnhancementOptions = {

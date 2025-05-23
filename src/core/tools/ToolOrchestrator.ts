@@ -1,12 +1,12 @@
-import { ToolController } from './ToolController.js';
-import { ChatController } from '../chat/ChatController.js';
-import type { UniversalChatResponse, UniversalMessage, UniversalChatParams, UniversalStreamResponse, UniversalChatSettings } from '../../interfaces/UniversalInterfaces.js';
-import { ToolError, ToolIterationLimitError } from '../../types/tooling.js';
-import { StreamController } from '../streaming/StreamController.js';
-import { logger } from '../../utils/logger.js';
-import { ToolCall, ToolDefinition, ToolNotFoundError } from '../../types/tooling.js';
-import { HistoryManager } from '../history/HistoryManager.js';
-import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.js';
+import { ToolController } from './ToolController.ts';
+import { ChatController } from '../chat/ChatController.ts';
+import type { UniversalChatResponse, UniversalMessage, UniversalChatParams, UniversalStreamResponse, UniversalChatSettings } from '../../interfaces/UniversalInterfaces.ts';
+import { ToolError, ToolIterationLimitError } from '../../types/tooling.ts';
+import { StreamController } from '../streaming/StreamController.ts';
+import { logger } from '../../utils/logger.ts';
+import { type ToolCall, type ToolDefinition, ToolNotFoundError } from '../../types/tooling.ts';
+import { HistoryManager } from '../history/HistoryManager.ts';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
 
 // Type to track called tools with their arguments
 type CalledTool = {

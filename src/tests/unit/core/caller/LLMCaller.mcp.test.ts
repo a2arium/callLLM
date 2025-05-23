@@ -1,15 +1,15 @@
 import { jest, beforeAll } from '@jest/globals';
-import { MCPConnectionError, MCPToolCallError, MCPServersMap, MCPServerConfig } from '../../../../core/mcp/MCPConfigTypes.js';
-import type { McpToolSchema } from '../../../../core/mcp/MCPConfigTypes.js';
-import { ToolDefinition, ToolCall, ToolParameters } from '../../../../types/tooling.js';
-import type { ModelInfo, UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces.js';
+import { MCPConnectionError, MCPToolCallError, type MCPServersMap, type MCPServerConfig } from '../../../../core/mcp/MCPConfigTypes.ts';
+import type { McpToolSchema } from '../../../../core/mcp/MCPConfigTypes.ts';
+import { type ToolDefinition, type ToolParameters } from '../../../../types/tooling.ts';
+import type { ModelInfo, UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces.ts';
 
 // Declare variables for modules to be dynamically imported
 let MCPServiceAdapter: jest.Mock;
 let LLMCaller: any;
 
 // Mock the ModelManager
-jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => {
+jest.unstable_mockModule('@/core/models/ModelManager.ts', () => {
   return {
     __esModule: true,
     ModelManager: jest.fn().mockImplementation(() => ({
@@ -36,7 +36,7 @@ jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => {
 });
 
 // Mock the MCPServiceAdapter
-jest.unstable_mockModule('../../../../core/mcp/MCPServiceAdapter.js', () => {
+jest.unstable_mockModule('@/core/mcp/MCPServiceAdapter.ts', () => {
   return {
     __esModule: true,
     MCPServiceAdapter: jest.fn()
@@ -44,7 +44,7 @@ jest.unstable_mockModule('../../../../core/mcp/MCPServiceAdapter.js', () => {
 });
 
 // Mock the logger
-jest.unstable_mockModule('../../../../utils/logger.js', () => ({
+jest.unstable_mockModule('@/utils/logger.ts', () => ({
   __esModule: true,
   logger: {
     debug: jest.fn(),
@@ -61,18 +61,19 @@ jest.unstable_mockModule('../../../../utils/logger.js', () => ({
 }));
 
 // Mock the MCPConfigTypes module for isMCPToolConfig
-jest.unstable_mockModule('../../../../core/mcp/MCPConfigTypes.js', () => {
+jest.unstable_mockModule('@/core/mcp/MCPConfigTypes.ts', () => {
   // Return a simple mock with just what we need
   return {
     __esModule: true,
-    // A simple mocked isMCPToolConfig function
+    // Use the real isMCPToolConfig logic
     isMCPToolConfig: jest.fn().mockImplementation((config) => {
-      // Simple implementation that returns true for valid test case objects
-      if (config && typeof config === 'object' && Object.keys(config).length > 0) {
-        // Shortcut for simple test cases
-        return true;
-      }
-      return false;
+      return (
+        typeof config === 'object' &&
+        config !== null &&
+        'mcpServers' in config &&
+        typeof config.mcpServers === 'object' &&
+        config.mcpServers !== null
+      );
     }),
     // Mock the errors we need
     MCPConnectionError: class MCPConnectionError extends Error {
@@ -92,15 +93,15 @@ jest.unstable_mockModule('../../../../core/mcp/MCPConfigTypes.js', () => {
 
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const MCPServiceAdapterModule = await import('../../../../core/mcp/MCPServiceAdapter.js');
+  const MCPServiceAdapterModule = await import('@/core/mcp/MCPServiceAdapter.ts');
   MCPServiceAdapter = MCPServiceAdapterModule.MCPServiceAdapter as jest.Mock;
 
-  const LLMCallerModule = await import('../../../../core/caller/LLMCaller.js');
+  const LLMCallerModule = await import('@/core/caller/LLMCaller.ts');
   LLMCaller = LLMCallerModule.LLMCaller;
 });
 
 describe('LLMCaller - MCP Direct Access', () => {
-  let caller: LLMCaller;
+  let caller: typeof LLMCaller;
   let mockMcpAdapterInstance: {
     getMcpServerToolSchemas: jest.Mock<() => Promise<McpToolSchema[]>>;
     executeMcpTool: jest.Mock<() => Promise<any>>;
@@ -212,8 +213,8 @@ describe('LLMCaller - MCP Direct Access', () => {
   });
 
   describe('isMCPToolConfig helper', () => {
-    it.skip('should correctly identify MCP tool configs', async () => {
-      const { isMCPToolConfig } = await import('../../../../core/mcp/MCPConfigTypes.js');
+    it('should correctly identify MCP tool configs', async () => {
+      const { isMCPToolConfig } = await import('../../../../core/mcp/MCPConfigTypes.ts');
       const validConfig: MCPServersMap = {
         filesystem: {
           command: 'npx',
@@ -223,7 +224,8 @@ describe('LLMCaller - MCP Direct Access', () => {
       const invalidConfig1 = { name: 'tool', function: {} };
       const invalidConfig2 = { mcpServers: 'not-an-object' };
       const invalidConfig3 = null;
-      expect(isMCPToolConfig(validConfig)).toBe(true);
+
+      expect(isMCPToolConfig({ mcpServers: validConfig })).toBe(true);
       expect(isMCPToolConfig(invalidConfig1)).toBe(false);
       expect(isMCPToolConfig(invalidConfig2 as any)).toBe(false);
       expect(isMCPToolConfig(invalidConfig3 as any)).toBe(false);
@@ -231,8 +233,50 @@ describe('LLMCaller - MCP Direct Access', () => {
   });
 
   describe('tool resolution with MCP', () => {
-    it.skip('should resolve MCP tools when provided in tools array', async () => {
-      // Test implementation would go here
+    it('should resolve MCP tools when provided in tools array', async () => {
+      // Mock resolveToolDefinitions to return expected standard tools
+      const mockStandardTools: ToolDefinition[] = [{
+        name: 'calculator',
+        description: 'Calculator tool',
+        parameters: { type: 'object', properties: {} },
+        callFunction: jest.fn() as any
+      }];
+      jest.spyOn(caller as any, 'resolveToolDefinitions').mockResolvedValue(mockStandardTools);
+
+      // Mock internalChatCall to prevent actual API calls
+      jest.spyOn(caller as any, 'internalChatCall').mockResolvedValue({
+        messages: [{ role: 'assistant', content: 'Response' }],
+        usage: {}
+      });
+
+      // Create MCP config
+      const mcpServersMap: MCPServersMap = {
+        filesystem: {
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
+        }
+      };
+
+      const standardTool: ToolDefinition = {
+        name: 'weather',
+        description: 'Get weather info',
+        parameters: { type: 'object', properties: {} },
+        callFunction: jest.fn() as any
+      };
+
+      // First register the MCP config using addTools (this should trigger registerServerConfig)
+      await caller.addTools([mcpServersMap]);
+
+      // Then call with both MCP config and standard tools
+      await caller.call('test message', {
+        tools: [mcpServersMap, standardTool, 'calculator'] // Mix of MCP config, ToolDefinition, and string
+      });
+
+      // Verify the MCP configuration was registered during addTools call
+      expect(mockMcpAdapterInstance.registerServerConfig).toHaveBeenCalledWith('filesystem', mcpServersMap.filesystem);
+
+      // Verify resolveToolDefinitions was called (for standard tools)
+      expect(jest.spyOn(caller as any, 'resolveToolDefinitions')).toHaveBeenCalled();
     });
   });
 
@@ -390,6 +434,59 @@ describe('LLMCaller - MCP Direct Access', () => {
 
       // (caller as any).isMCPToolConfig = originalIsMCPToolConfig;
     });
+
+    it('should use resolved tools and call internalChatCall in LLMCaller.call', async () => {
+      // Mock standard tools that will be resolved
+      const mockResolvedTools: ToolDefinition[] = [
+        {
+          name: 'calculator',
+          description: 'Calculator tool',
+          parameters: { type: 'object', properties: {} },
+          callFunction: jest.fn() as any
+        },
+        {
+          name: 'weather',
+          description: 'Weather tool',
+          parameters: { type: 'object', properties: {} },
+          callFunction: jest.fn() as any
+        }
+      ];
+
+      // Mock resolveToolDefinitions to return our mock tools
+      const resolveToolsSpy = jest.spyOn(caller as any, 'resolveToolDefinitions').mockResolvedValue(mockResolvedTools);
+
+      // Mock internalChatCall to capture its input and return a response
+      const mockResponse = {
+        messages: [{ role: 'assistant' as const, content: 'Mock response' }],
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }
+      };
+      const internalChatCallSpy = jest.spyOn(caller as any, 'internalChatCall').mockResolvedValue(mockResponse);
+
+      // Create MCP config and register it
+      const mcpConfig = { filesystem: { command: 'test-command', args: [] } };
+      await caller.addTools([mcpConfig as any]);
+
+      // Call with both string tools and MCP config
+      const result = await caller.call('Test message', {
+        tools: ['calculator', 'weather', mcpConfig]
+      });
+
+      // Verify resolveToolDefinitions was called with string tools only (MCP filtered out)
+      expect(resolveToolsSpy).toHaveBeenCalledWith(['calculator', 'weather'], undefined);
+
+      // Verify internalChatCall was called with the resolved tools
+      expect(internalChatCallSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tools: mockResolvedTools
+        })
+      );
+
+      // Verify the response was returned correctly
+      expect(result).toEqual([mockResponse]);
+
+      // Verify MCP registration happened
+      expect(mockMcpAdapterInstance.registerServerConfig).toHaveBeenCalledWith('filesystem', mcpConfig.filesystem);
+    });
   });
 
   describe('addTools and MCP server connection', () => {
@@ -410,10 +507,6 @@ describe('LLMCaller - MCP Direct Access', () => {
 
       await caller.connectToMcpServer('filesystem');
       expect(mockMcpAdapterInstance.connectToServer).toHaveBeenCalledWith('filesystem');
-    });
-
-    it.skip('should use resolved tools and call internalChatCall in LLMCaller.call', async () => {
-      // Test implementation would go here
     });
   });
 });

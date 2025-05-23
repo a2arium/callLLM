@@ -1,7 +1,7 @@
-import type { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse } from '../interfaces/UniversalInterfaces.js';
-import type { StreamChunk } from '../core/streaming/types.js';
-import { BaseAdapter } from './base/baseAdapter.js';
-import type { AdapterConfig } from './base/baseAdapter.js';
+import type { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse } from '../interfaces/UniversalInterfaces.ts';
+import type { StreamChunk } from '../core/streaming/types.ts';
+import { BaseAdapter } from './base/baseAdapter.ts';
+import type { AdapterConfig } from './base/baseAdapter.ts';
 
 /**
  * Base type for provider-specific parameters

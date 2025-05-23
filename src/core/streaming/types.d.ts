@@ -1,4 +1,4 @@
-import type { ToolCall } from '../../types/tooling.js';
+import type { ToolCall } from '../../types/tooling.ts';
 
 /**
  * Represents a partial tool call chunk as received from provider

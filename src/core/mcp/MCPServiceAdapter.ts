@@ -10,17 +10,15 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import type { MCPServerConfig, MCPServersMap } from './MCPConfigTypes.js';
-import { MCPConnectionError, MCPToolCallError, McpToolSchema, MCPAuthenticationError, MCPTimeoutError } from './MCPConfigTypes.js';
-import { logger } from '../../utils/logger.js';
-import type { ToolDefinition, ToolParameters, ToolParameterSchema } from '../../types/tooling.js';
+import type { MCPServerConfig, MCPServersMap } from './MCPConfigTypes.ts';
+import { MCPConnectionError, MCPToolCallError, type McpToolSchema, MCPAuthenticationError, MCPTimeoutError } from './MCPConfigTypes.ts';
+import { logger } from '../../utils/logger.ts';
+import type { ToolDefinition, ToolParameters, ToolParameterSchema } from '../../types/tooling.ts';
 import { z } from 'zod';
-import { OAuthProvider, type OAuthProviderOptions } from './OAuthProvider.js';
-import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { RetryManager } from '../retry/RetryManager.js';
-import type { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
+import { OAuthProvider, type OAuthProviderOptions } from './OAuthProvider.ts';
+import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.d.ts';
+import { RetryManager } from '../retry/RetryManager.ts';
 import treeKill from 'tree-kill';
-import { promisify } from 'util';
 import { ChildProcess } from 'child_process';
 
 // Promisify tree-kill to make it easier to use with async/await
@@ -48,7 +46,7 @@ import type {
     Prompt,
     GetPromptParams,
     GetPromptResult
-} from './MCPInterfaces.js';
+} from './MCPInterfaces.ts';
 
 /**
  * Client information for MCP SDK connection

@@ -1,62 +1,70 @@
 import { jest } from '@jest/globals';
-import { ModelManager } from '../../../../core/models/ModelManager.js';
-import { ModelInfo, ModelAlias, ModelCapabilities, ImageOutputOpts } from '../../../../interfaces/UniversalInterfaces.js';
-import { RegisteredProviders } from '../../../../adapters/index.js';
+import type { ModelInfo, ModelAlias, ModelCapabilities, ImageOutputOpts } from '../../../../interfaces/UniversalInterfaces.ts';
+import type { RegisteredProviders } from '../../../../adapters/index.ts';
 
 // Mock the ModelSelector
 const mockSelectModel = jest.fn()
-jest.unstable_mockModule('../../../../core/models/ModelSelector.js', () => ({ __esModule: true,
+jest.unstable_mockModule('@/core/models/ModelSelector.ts', () => ({
+  __esModule: true,
   ModelSelector: {
     selectModel: (...args: any[]) => mockSelectModel(...args)
   }
 }));
 
 // Mock OpenAI Response models
-jest.unstable_mockModule('../../../../adapters/openai/models.js', () => ({ __esModule: true,
+jest.unstable_mockModule('@/adapters/openai/models.ts', () => ({
+  __esModule: true,
   defaultModels: [
-  {
-    name: "mock-response-model-1",
-    inputPricePerMillion: 1.5,
-    outputPricePerMillion: 2.5,
-    maxRequestTokens: 2000,
-    maxResponseTokens: 2000,
-    characteristics: {
-      qualityIndex: 80,
-      outputSpeed: 200,
-      firstTokenLatency: 500
-    }
-  },
-  {
-    name: "mock-image-model",
-    inputPricePerMillion: 5.0,
-    outputPricePerMillion: 40.0,
-    maxRequestTokens: 2000,
-    maxResponseTokens: 0,
-    capabilities: {
-      streaming: false,
-      input: {
-        text: true
-      },
-      output: {
-        text: false,
-        image: {
-          generate: true,
-          edit: true,
-          editWithMask: true
-        }
+    {
+      name: "mock-response-model-1",
+      inputPricePerMillion: 1.5,
+      outputPricePerMillion: 2.5,
+      maxRequestTokens: 2000,
+      maxResponseTokens: 2000,
+      characteristics: {
+        qualityIndex: 80,
+        outputSpeed: 200,
+        firstTokenLatency: 500
       }
     },
-    characteristics: {
-      qualityIndex: 85,
-      outputSpeed: 0,
-      firstTokenLatency: 2000
-    }
-  }]
-
+    {
+      name: "mock-image-model",
+      inputPricePerMillion: 5.0,
+      outputPricePerMillion: 40.0,
+      maxRequestTokens: 2000,
+      maxResponseTokens: 2000,
+      capabilities: {
+        streaming: false,
+        input: {
+          text: true
+        },
+        output: {
+          text: false,
+          image: {
+            generate: true,
+            edit: true,
+            editWithMask: true
+          }
+        }
+      },
+      characteristics: {
+        qualityIndex: 85,
+        outputSpeed: 0,
+        firstTokenLatency: 2000
+      }
+    }]
 }));
 
 describe('ModelManager', () => {
-  let manager: ModelManager;
+  let ModelManager: any;
+  let manager: any;
+
+  beforeAll(async () => {
+    // Dynamic import of ModelManager after mocks are set up
+    const managerModule = await import('../../../../core/models/ModelManager.ts');
+    ModelManager = managerModule.ModelManager;
+  });
+
   const validModel: ModelInfo = {
     name: 'test-model',
     inputPricePerMillion: 1,
@@ -91,9 +99,8 @@ describe('ModelManager', () => {
     });
 
     it('should throw error for unsupported provider', () => {
-      // @ts-expect-error Testing invalid provider
-      expect(() => new ModelManager('unsupported')).
-      toThrow('Unsupported provider: unsupported');
+      expect(() => new ModelManager('unsupported' as any)).
+        toThrow('Unsupported provider: unsupported');
     });
   });
 
@@ -109,49 +116,49 @@ describe('ModelManager', () => {
     it('should throw error for invalid model configuration with negative input price', () => {
       const invalidModel = { ...validModel, inputPricePerMillion: -1 };
       expect(() => manager.addModel(invalidModel)).
-      toThrow('Invalid model configuration');
+        toThrow('Invalid model configuration');
     });
 
     it('should throw error for invalid model configuration with negative output price', () => {
       const invalidModel = { ...validModel, outputPricePerMillion: -2 };
       expect(() => manager.addModel(invalidModel)).
-      toThrow('Invalid model configuration');
+        toThrow('Invalid model configuration');
     });
 
     it('should throw error when model name is missing', () => {
       const invalidModel = { ...validModel, name: "" };
       expect(() => manager.addModel(invalidModel)).
-      toThrow('Model name is required');
+        toThrow('Model name is required');
     });
 
     it('should throw error when input price is undefined', () => {
       const invalidModel = { ...validModel, inputPricePerMillion: undefined } as any;
       expect(() => manager.addModel(invalidModel)).
-      toThrow('Input price is required');
+        toThrow('Input price is required');
     });
 
     it('should throw error when output price is undefined', () => {
       const invalidModel = { ...validModel, outputPricePerMillion: undefined } as any;
       expect(() => manager.addModel(invalidModel)).
-      toThrow('Output price is required');
+        toThrow('Output price is required');
     });
 
     it('should throw error when maxRequestTokens is missing', () => {
       const invalidModel = { ...validModel, maxRequestTokens: 0 };
       expect(() => manager.addModel(invalidModel)).
-      toThrow('Max request tokens is required');
+        toThrow('Max request tokens is required');
     });
 
     it('should throw error when maxResponseTokens is missing', () => {
       const invalidModel = { ...validModel, maxResponseTokens: 0 };
       expect(() => manager.addModel(invalidModel)).
-      toThrow('Max response tokens is required');
+        toThrow('Max response tokens is required');
     });
 
     it('should throw error when characteristics is missing', () => {
       const invalidModel = { ...validModel, characteristics: undefined } as any;
       expect(() => manager.addModel(invalidModel)).
-      toThrow('Model characteristics are required');
+        toThrow('Model characteristics are required');
     });
 
     it('should override existing model', () => {
@@ -178,7 +185,7 @@ describe('ModelManager', () => {
 
     it('should throw error for non-existent model', () => {
       expect(() => manager.updateModel('non-existent', { inputPricePerMillion: 1 })).
-      toThrow('Model non-existent not found');
+        toThrow('Model non-existent not found');
     });
 
     it('should preserve unmodified fields', () => {
@@ -220,6 +227,7 @@ describe('ModelManager', () => {
     it('should fall back to exact match if alias resolution fails', () => {
       const model = manager.getModel('test-model');
       expect(model).toEqual(validModel);
+      // ModelSelector should be called first, then fall back to exact match
       expect(mockSelectModel).toHaveBeenCalled();
     });
   });
@@ -233,12 +241,13 @@ describe('ModelManager', () => {
     it('should resolve exact model name', () => {
       const modelName = manager.resolveModel('test-model');
       expect(modelName).toBe('test-model');
+      // ModelSelector should be called first, then fall back to exact match
       expect(mockSelectModel).toHaveBeenCalled();
     });
 
     it('should throw error for non-existent model', () => {
       expect(() => manager.resolveModel('non-existent')).
-      toThrow('Model non-existent not found');
+        toThrow('Model non-existent not found');
     });
 
     it('should resolve model alias', () => {
@@ -310,6 +319,7 @@ describe('ModelManager', () => {
     it('should return image generation capabilities for image model', () => {
       // Create a new instance to ensure the static instance is properly set
       new ModelManager('openai' as RegisteredProviders);
+      // Use the mock image model
       const capabilities = ModelManager.getCapabilities('mock-image-model');
 
       expect(capabilities.output.image).toBeDefined();

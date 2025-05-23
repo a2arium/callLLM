@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
-import { LLMCaller } from '../../../src/core/caller/LLMCaller.js';
-import type { ToolDefinition } from '../../../src/types/tooling.js';
-import type { UniversalStreamResponse, UniversalMessage } from '../../../src/interfaces/UniversalInterfaces.js';
+import { LLMCaller } from '../../../src/core/caller/LLMCaller.ts';
+import type { ToolDefinition } from '../../../src/types/tooling.ts';
+import type { UniversalStreamResponse, UniversalMessage } from '../../../src/interfaces/UniversalInterfaces.ts';
 
 // Mock Provider Adapter for testing purposes
 const mockProviderAdapter = {
@@ -11,40 +11,37 @@ const mockProviderAdapter = {
   validateConfig: jest.fn()
 };
 
-// Mock ProviderManager to return the mock adapter
-jest.unstable_mockModule('../../../src/core/caller/ProviderManager.js', () => {
-  return { __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true,
-    ProviderManager: jest.fn().mockImplementation(() => {
-      return {
-        getAdapter: () => mockProviderAdapter,
-        getProvider: () => mockProviderAdapter,
-        switchProvider: jest.fn(),
-        getCurrentProviderName: () => 'mock-provider'
-      };
-    })
-  };
-});
+// Plain mock for ProviderManager (implements public interface only)
+const mockProviderManager = {
+  getAdapter: () => mockProviderAdapter,
+  getProvider: () => mockProviderAdapter,
+  switchProvider: jest.fn(),
+  getCurrentProviderName: () => 'mock-provider',
+  supportsImageGeneration: jest.fn().mockReturnValue(false),
+  getImageProvider: jest.fn().mockReturnValue(null),
+  callImageOperation: jest.fn()
+};
 
-// Mock ModelManager to return a basic model info
-jest.unstable_mockModule('../../../src/core/models/ModelManager.js', () => {
-  return { __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true,
-    ModelManager: jest.fn().mockImplementation(() => {
-      return {
-        getModel: jest.fn().mockReturnValue({
-          name: 'mock-model',
-          inputPricePerMillion: 0,
-          outputPricePerMillion: 0,
-          maxRequestTokens: 4000,
-          maxResponseTokens: 1000,
-          capabilities: { toolCalls: true, streaming: true, input: { text: true }, output: { text: { textOutputFormats: ['text'] } } },
-          characteristics: { qualityIndex: 50, outputSpeed: 50, firstTokenLatency: 100 }
-        }),
-        getAvailableModels: jest.fn().mockReturnValue([])
-      };
-    })
-  };
-});
-
+// Plain mock for ModelManager (implements public interface only)
+const mockModelManager = {
+  getModel: jest.fn().mockReturnValue({
+    name: 'mock-model',
+    inputPricePerMillion: 0,
+    outputPricePerMillion: 0,
+    maxRequestTokens: 4000,
+    maxResponseTokens: 1000,
+    capabilities: { toolCalls: true, streaming: true, input: { text: true }, output: { text: { textOutputFormats: ['text'] } } },
+    characteristics: { qualityIndex: 50, outputSpeed: 50, firstTokenLatency: 100 }
+  }),
+  getAvailableModels: jest.fn().mockReturnValue([]),
+  addModel: jest.fn(),
+  updateModel: jest.fn(),
+  clearModels: jest.fn(),
+  hasModel: jest.fn().mockReturnValue(true),
+  resolveModel: jest.fn(),
+  initializeModels: jest.fn(),
+  validateModelConfiguration: jest.fn()
+};
 
 describe("LLMCaller.tools integration", () => {
   // Reset mocks before each test
@@ -71,7 +68,9 @@ describe("LLMCaller.tools integration", () => {
 
     // 2. Initialize LLMCaller with the tool in constructor options
     const caller = new LLMCaller('mock-provider' as any, 'mock-model', 'System message', {
-      tools: [testTool]
+      tools: [testTool],
+      providerManager: mockProviderManager as any,
+      modelManager: mockModelManager as any
     });
 
     // Allow time for async addTools in constructor to potentially run (though not awaited)
@@ -145,9 +144,9 @@ describe("LLMCaller.tools integration", () => {
 
     // Find assistant message with tool calls
     const assistantWithToolCalls = history.find((msg) =>
-    msg.role === 'assistant' &&
-    msg.toolCalls &&
-    msg.toolCalls.length > 0);
+      msg.role === 'assistant' &&
+      msg.toolCalls &&
+      msg.toolCalls.length > 0);
 
     expect(assistantWithToolCalls).toBeDefined();
     expect(assistantWithToolCalls?.toolCalls).toEqual([{
@@ -163,8 +162,8 @@ describe("LLMCaller.tools integration", () => {
 
     // Find the tool message
     const toolMessage = history.find((msg) =>
-    msg.role === 'tool' &&
-    msg.toolCallId === 'call_123');
+      msg.role === 'tool' &&
+      msg.toolCallId === 'call_123');
 
     expect(toolMessage).toBeDefined();
     expect(toolMessage?.content).toBe(JSON.stringify({ result: 'Tool executed successfully' }));
@@ -196,7 +195,9 @@ describe("LLMCaller.tools integration", () => {
 
     // 2. Initialize LLMCaller 
     const caller = new LLMCaller('mock-provider' as any, 'mock-model', 'System message', {
-      tools: [streamTestTool]
+      tools: [streamTestTool],
+      providerManager: mockProviderManager as any,
+      modelManager: mockModelManager as any
     });
     await new Promise((resolve) => setImmediate(resolve)); // Allow addTools to potentially finish
 
@@ -262,7 +263,9 @@ describe("LLMCaller.tools integration", () => {
 
     // 2. Initialize LLMCaller with tool
     const caller = new LLMCaller('mock-provider' as any, 'mock-model', 'System message', {
-      tools: [streamTestTool]
+      tools: [streamTestTool],
+      providerManager: mockProviderManager as any,
+      modelManager: mockModelManager as any
     });
     await new Promise((resolve) => setImmediate(resolve)); // Allow addTools to potentially finish
 
@@ -311,7 +314,7 @@ describe("LLMCaller.tools integration", () => {
 
       // Check if the final response contains references to the tool results
       if (chunk.isComplete && accumulatedContent.includes('42') &&
-      accumulatedContent.includes('Ultimate answer')) {
+        accumulatedContent.includes('Ultimate answer')) {
         toolResultsReflected = true;
       }
     }

@@ -1,7 +1,8 @@
 import { jest } from '@jest/globals';
-import { HistoryTruncator } from '../../../../core/history/HistoryTruncator.js';
-import { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
-import { ModelInfo, UniversalMessage } from '../../../../interfaces/UniversalInterfaces.js';
+import { HistoryTruncator } from '@/core/history/HistoryTruncator.ts';
+import { TokenCalculator } from '@/core/models/TokenCalculator.ts';
+import { type UniversalMessage } from '@/interfaces/UniversalInterfaces.ts';
+import { type ModelInfo } from '@/interfaces/LLMProvider.ts';
 
 // Mock function declarations
 // const mockCalculateTokens = jest.fn(); // Unused

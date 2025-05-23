@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { logger } from '../../utils/logger.js';
-import { ToolDefinition } from '../../types/tooling.js';
-import {
+import { logger } from '../../utils/logger.ts';
+import type { ToolDefinition } from '../../types/tooling.ts';
+import type {
     Usage,
     ImageCallParams,
     GeneratedImage,
     ImageGenerationResult,
     ImageSource
-} from '../../interfaces/UniversalInterfaces.js';
+} from '../../interfaces/UniversalInterfaces.ts';
 
 export class OpenAIResponseAdapter {
     formatToolsForNative(tools: ToolDefinition[]): any[] {

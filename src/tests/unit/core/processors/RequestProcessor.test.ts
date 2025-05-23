@@ -1,5 +1,8 @@
-import { jest } from "@jest/globals";import { RequestProcessor } from '../../../../core/processors/RequestProcessor.js';
-import { ModelInfo } from '../../../../interfaces/UniversalInterfaces.js';
+import { jest } from "@jest/globals";
+import { RequestProcessor } from '../../../../core/processors/RequestProcessor.ts';
+import { type ModelInfo } from '../../../../interfaces/UniversalInterfaces.ts';
+
+jest.mock('@dqbd/tiktoken');
 
 describe('RequestProcessor', () => {
   let processor: RequestProcessor;

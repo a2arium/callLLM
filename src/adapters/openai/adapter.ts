@@ -1,45 +1,45 @@
 import { OpenAI } from 'openai';
 import { toFile } from 'openai/uploads';
 import type { Stream } from 'openai/streaming';
-import { BaseAdapter, AdapterConfig } from '../base/baseAdapter.js';
-import {
+import { BaseAdapter, type AdapterConfig } from '../base/baseAdapter.ts';
+import type {
     UniversalChatParams,
     UniversalChatResponse,
     UniversalStreamResponse,
-    FinishReason,
     ModelInfo,
     ImageSource,
     ImageCallParams as BaseImageCallParams,
     Usage
-} from '../../interfaces/UniversalInterfaces.js';
-import { OpenAIResponseAdapterError, OpenAIResponseValidationError, OpenAIResponseAuthError, OpenAIResponseRateLimitError, OpenAIResponseNetworkError, OpenAIResponseServiceError } from './errors.js';
-import { Converter } from './converter.js';
-import { StreamHandler } from './stream.js';
-import { Validator } from './validator.js';
+} from '../../interfaces/UniversalInterfaces.ts';
+import { FinishReason } from '../../interfaces/UniversalInterfaces.ts';
+import { OpenAIResponseAdapterError, OpenAIResponseValidationError, OpenAIResponseAuthError, OpenAIResponseRateLimitError, OpenAIResponseNetworkError, OpenAIResponseServiceError } from './errors.ts';
+import { Converter } from './converter.ts';
+import { StreamHandler } from './stream.ts';
+import { Validator } from './validator.ts';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
-import { getDirname } from '../../utils/paths.js';
-import { logger } from '../../utils/logger.js';
-import type { ToolDefinition } from '../../types/tooling.js';
-import {
+import { getDirname } from '../../utils/paths.ts';
+import { logger } from '../../utils/logger.ts';
+import type { ToolDefinition } from '../../types/tooling.ts';
+import type {
     ResponseCreateParamsNonStreaming,
     ResponseCreateParamsStreaming,
     Response,
     ResponseStreamEvent,
     Tool,
     ResponseContentPartAddedEvent
-} from './types.js';
-import { ModelManager } from '../../core/models/ModelManager.js';
-import { defaultModels } from './models.js';
-import { RegisteredProviders } from '../index.js';
-import { TokenCalculator } from '../../core/models/TokenCalculator.js';
-import { LLMProviderImage, ImageOp } from '../../interfaces/LLMProvider.js';
-import { saveBase64ToFile } from '../../core/file-data/fileData.js';
+} from './types.ts';
+import { ModelManager } from '../../core/models/ModelManager.ts';
+import { defaultModels } from './models.ts';
+import type { RegisteredProviders } from '../index.ts';
+import { TokenCalculator } from '../../core/models/TokenCalculator.ts';
+import type { LLMProviderImage, ImageOp } from '../../interfaces/LLMProvider.ts';
+import { saveBase64ToFile } from '../../core/file-data/fileData.ts';
 import * as fs from 'fs';
-import { UrlSource, Base64Source, FilePathSource } from '../../interfaces/UniversalInterfaces.js';
-import { RetryManager } from '../../core/retry/RetryManager.js';
-import { UsageTracker } from '../../core/telemetry/UsageTracker.js';
-import { UsageCallback } from '../../interfaces/UsageInterfaces.js';
+import type { UrlSource, Base64Source, FilePathSource } from '../../interfaces/UniversalInterfaces.ts';
+import { RetryManager } from '../../core/retry/RetryManager.ts';
+import { UsageTracker } from '../../core/telemetry/UsageTracker.ts';
+import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
 
 // Use the paths utility to get the directory name for resolving .env
 const adapterProjectRootForEnv = getDirname();

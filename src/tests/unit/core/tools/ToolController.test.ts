@@ -1,9 +1,9 @@
 import { jest } from '@jest/globals';
-import { ToolController } from '../../../../core/tools/ToolController.js';
-import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../../../types/tooling.js';
-import { ToolsManager } from '../../../../core/tools/ToolsManager.js';
-import type { UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces.js';
-import type { ToolDefinition } from '../../../../types/tooling.js';
+import { ToolController } from '../../../../core/tools/ToolController.ts'
+import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '../../../../types/tooling.ts'
+import { ToolsManager } from '../../../../core/tools/ToolsManager.ts'
+import type { UniversalChatResponse } from '../../../../interfaces/UniversalInterfaces.ts'
+import type { ToolDefinition } from '../../../../types/tooling.ts'
 
 // Mock function declarations
 const mockGetTool = jest.fn();
@@ -24,11 +24,7 @@ const mockGetTool_12 = jest.fn()
 class FakeToolsManager extends ToolsManager {
   constructor() {
     super();
-    this.getTool = jest.fn()
-    this.addTool = jest.fn()
-    this.removeTool = jest.fn()
-    this.updateTool = jest.fn()
-    this.listTools = jest.fn()
+    // Do not override methods here; assign mocks in each test
   }
 }
 
@@ -38,8 +34,13 @@ describe('ToolController', () => {
   const dummyContent = 'dummyContent';
   const dummyResponse: UniversalChatResponse = { content: '', role: 'assistant' };
 
+  beforeEach(() => {
+    mockGetTool_1.mockReset();
+  });
+
   test('should throw ToolIterationLimitError when iteration limit is exceeded', async () => {
     const fakeToolsManager = createFakeToolsManager();
+    fakeToolsManager.getTool = mockGetTool_1 as any;
     const controller = new ToolController(fakeToolsManager, 1); // maxIterations = 1
     // First call: iterationCount becomes 1
     await controller.processToolCalls(dummyResponse); // Updated call signature
@@ -51,6 +52,7 @@ describe('ToolController', () => {
     const fakeToolsManager = createFakeToolsManager();
     // getTool returns undefined for any tool
     mockGetTool_1.mockReturnValue(undefined);
+    fakeToolsManager.getTool = mockGetTool_1 as any;
     const controller = new ToolController(fakeToolsManager);
     const response: UniversalChatResponse = {
       content: '',
@@ -77,12 +79,13 @@ describe('ToolController', () => {
       name: 'dummyTool',
       description: '',
       parameters: { type: 'object', properties: {} },
-      callFunction: jest.fn().mockResolvedValue(toolResultValue)
+      callFunction: (jest.fn().mockResolvedValue(toolResultValue as unknown as never) as any)
       // no postCallLogic provided
     };
-    mockGetTool_1.mockImplementation((name: string) => {
+    mockGetTool_1.mockImplementation(((name: string) => {
       return name === 'dummyTool' ? dummyTool : undefined;
-    });
+    }) as any);
+    fakeToolsManager.getTool = mockGetTool_1 as any;
     const controller = new ToolController(fakeToolsManager);
     const response: UniversalChatResponse = {
       content: '',
@@ -119,12 +122,13 @@ describe('ToolController', () => {
       name: 'dummyToolWithPost',
       description: '',
       parameters: { type: 'object', properties: {} },
-      callFunction: jest.fn().mockResolvedValue(rawResultValue)
+      callFunction: (jest.fn().mockResolvedValue(rawResultValue as unknown as never) as any)
       // postCallLogic: jest.fn().mockResolvedValue(['processedMessage']) // postCallLogic is no longer used by ToolController
     };
-    mockGetTool_1.mockImplementation((name: string) => {
+    mockGetTool_1.mockImplementation(((name: string) => {
       return name === 'dummyToolWithPost' ? dummyTool : undefined;
-    });
+    }) as any);
+    fakeToolsManager.getTool = mockGetTool_1 as any;
     const controller = new ToolController(fakeToolsManager);
     const response: UniversalChatResponse = {
       content: '',
@@ -147,11 +151,12 @@ describe('ToolController', () => {
       name: 'failingTool',
       description: '',
       parameters: { type: 'object', properties: {} },
-      callFunction: jest.fn().mockRejectedValue(dummyError)
+      callFunction: (jest.fn().mockRejectedValue(dummyError as unknown as never) as any)
     };
-    mockGetTool_1.mockImplementation((name: string) => {
+    mockGetTool_1.mockImplementation(((name: string) => {
       return name === 'failingTool' ? dummyTool : undefined;
-    });
+    }) as any);
+    fakeToolsManager.getTool = mockGetTool_1 as any;
     const controller = new ToolController(fakeToolsManager);
     const response: UniversalChatResponse = {
       content: '',
@@ -172,6 +177,7 @@ describe('ToolController', () => {
 
   test('should return requiresResubmission=false when response is missing toolCalls', async () => {
     const fakeToolsManager = createFakeToolsManager();
+    fakeToolsManager.getTool = mockGetTool_1 as any;
     const controller = new ToolController(fakeToolsManager);
     const response: UniversalChatResponse = { content: 'some content', role: 'assistant', toolCalls: [] }; // Empty toolCalls
 
@@ -182,6 +188,7 @@ describe('ToolController', () => {
 
   test('resetIterationCount should reset the iteration count', async () => {
     const fakeToolsManager = createFakeToolsManager();
+    fakeToolsManager.getTool = mockGetTool_1 as any;
     const controller = new ToolController(fakeToolsManager, 2);
     // First call to increment iterationCount
     await controller.processToolCalls(dummyResponse); // Updated call signature
@@ -195,8 +202,9 @@ describe('ToolController', () => {
   describe('getToolByName', () => {
     test('should return tool when it exists in manager', () => {
       const fakeToolsManager = createFakeToolsManager();
-      const mockTool: ToolDefinition = { name: 'existingTool', description: 'Test tool', parameters: { type: 'object', properties: {} }, callFunction: jest.fn() };
+      const mockTool: ToolDefinition = { name: 'existingTool', description: 'Test tool', parameters: { type: 'object', properties: {} }, callFunction: jest.fn() as any };
       mockGetTool_1.mockReturnValue(mockTool);
+      fakeToolsManager.getTool = mockGetTool_1 as any;
 
       const controller = new ToolController(fakeToolsManager);
       // No call-specific tools provided
@@ -208,9 +216,10 @@ describe('ToolController', () => {
 
     test('should return tool from callSpecificTools first', () => {
       const fakeToolsManager = createFakeToolsManager();
-      const managerTool: ToolDefinition = { name: 'specificTool', description: 'Manager version', parameters: { type: 'object', properties: {} }, callFunction: jest.fn() };
-      const specificTool: ToolDefinition = { name: 'specificTool', description: 'Call-specific version', parameters: { type: 'object', properties: {} }, callFunction: jest.fn() };
+      const managerTool: ToolDefinition = { name: 'specificTool', description: 'Manager version', parameters: { type: 'object', properties: {} }, callFunction: jest.fn() as any };
+      const specificTool: ToolDefinition = { name: 'specificTool', description: 'Call-specific version', parameters: { type: 'object', properties: {} }, callFunction: jest.fn() as any };
       mockGetTool_1.mockReturnValue(managerTool);
+      fakeToolsManager.getTool = mockGetTool_1 as any;
 
       const controller = new ToolController(fakeToolsManager);
       const result = controller.getToolByName('specificTool', [specificTool]);
@@ -222,9 +231,10 @@ describe('ToolController', () => {
 
     test('should fall back to manager if not found in callSpecificTools', () => {
       const fakeToolsManager = createFakeToolsManager();
-      const managerTool: ToolDefinition = { name: 'managerOnlyTool', description: 'Manager version', parameters: { type: 'object', properties: {} }, callFunction: jest.fn() };
-      const specificTool: ToolDefinition = { name: 'specificTool', description: 'Call-specific version', parameters: { type: 'object', properties: {} }, callFunction: jest.fn() };
+      const managerTool: ToolDefinition = { name: 'managerOnlyTool', description: 'Manager version', parameters: { type: 'object', properties: {} }, callFunction: jest.fn() as any };
+      const specificTool: ToolDefinition = { name: 'specificTool', description: 'Call-specific version', parameters: { type: 'object', properties: {} }, callFunction: jest.fn() as any };
       mockGetTool_1.mockReturnValue(managerTool);
+      fakeToolsManager.getTool = mockGetTool_1 as any;
 
       const controller = new ToolController(fakeToolsManager);
       // Looking for managerOnlyTool, which is not in the specific list
@@ -238,6 +248,7 @@ describe('ToolController', () => {
     test('should return undefined when tool does not exist anywhere', () => {
       const fakeToolsManager = createFakeToolsManager();
       mockGetTool_1.mockReturnValue(undefined);
+      fakeToolsManager.getTool = mockGetTool_1 as any;
 
       const controller = new ToolController(fakeToolsManager);
       const result = controller.getToolByName('nonExistentTool', []);
@@ -255,9 +266,10 @@ describe('ToolController', () => {
         name: 'stringTool',
         description: 'Tool that returns a string',
         parameters: { type: 'object', properties: {} },
-        callFunction: jest.fn().mockResolvedValue('string result')
+        callFunction: (jest.fn().mockResolvedValue('string result' as unknown as never) as any)
       };
       mockGetTool_1.mockReturnValue(mockTool);
+      fakeToolsManager.getTool = mockGetTool_1 as any;
 
       const controller = new ToolController(fakeToolsManager);
       const toolCall = {
@@ -275,9 +287,10 @@ describe('ToolController', () => {
 
     test('should execute tool successfully using callSpecificTools', async () => {
       const fakeToolsManager = createFakeToolsManager();
-      const managerTool: ToolDefinition = { name: 'specificTool', description: '', parameters: { type: 'object', properties: {} }, callFunction: jest.fn().mockResolvedValue('manager result') };
-      const specificTool: ToolDefinition = { name: 'specificTool', description: '', parameters: { type: 'object', properties: {} }, callFunction: jest.fn().mockResolvedValue('specific result') };
+      const managerTool: ToolDefinition = { name: 'specificTool', description: '', parameters: { type: 'object', properties: {} }, callFunction: (jest.fn().mockResolvedValue('manager result' as unknown as never) as any) };
+      const specificTool: ToolDefinition = { name: 'specificTool', description: '', parameters: { type: 'object', properties: {} }, callFunction: (jest.fn().mockResolvedValue('specific result' as unknown as never) as any) };
       mockGetTool_1.mockReturnValue(managerTool);
+      fakeToolsManager.getTool = mockGetTool_1 as any;
 
       const controller = new ToolController(fakeToolsManager);
       const toolCall = {
@@ -297,6 +310,7 @@ describe('ToolController', () => {
     test('should throw ToolNotFoundError when tool does not exist anywhere', async () => {
       const fakeToolsManager = createFakeToolsManager();
       mockGetTool_1.mockReturnValue(undefined);
+      fakeToolsManager.getTool = mockGetTool_1 as any;
 
       const controller = new ToolController(fakeToolsManager);
       const toolCall = {
@@ -315,9 +329,10 @@ describe('ToolController', () => {
         name: 'failingTool',
         description: '',
         parameters: { type: 'object', properties: {} },
-        callFunction: jest.fn().mockRejectedValue(new Error('Execution failed'))
+        callFunction: (jest.fn().mockRejectedValue(new Error('Execution failed') as unknown as never) as any)
       };
       mockGetTool_1.mockReturnValue(mockTool);
+      fakeToolsManager.getTool = mockGetTool_1 as any;
 
       const controller = new ToolController(fakeToolsManager);
       const toolCall = {
@@ -326,6 +341,7 @@ describe('ToolController', () => {
         arguments: {}
       };
 
+      // The ToolController will throw ToolExecutionError only if the tool is found, so we must ensure getTool returns the mockTool
       await expect(controller.executeToolCall(toolCall)).rejects.toThrow(ToolExecutionError);
     });
 
@@ -338,6 +354,7 @@ describe('ToolController', () => {
         // No callFunction provided
       };
       mockGetTool_1.mockReturnValue(mockTool);
+      fakeToolsManager.getTool = mockGetTool_1 as any;
 
       const controller = new ToolController(fakeToolsManager);
       const toolCall = {
@@ -346,7 +363,7 @@ describe('ToolController', () => {
         arguments: {}
       };
 
-      // Update expected error message to match implementation
+      // The ToolController will throw 'Tool function not defined' if the tool is found but has no callFunction
       await expect(controller.executeToolCall(toolCall)).rejects.toThrow('Tool function not defined');
     });
   });

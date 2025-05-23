@@ -1,17 +1,17 @@
-import { jest , beforeAll} from '@jest/globals';
-import { StreamHistoryProcessor } from '../../../../../core/streaming/processors/StreamHistoryProcessor.js';
+import { jest, beforeAll } from '@jest/globals';
 // Declare variables for modules to be dynamically imported
 let HistoryManager;
-import { StreamChunk } from '../../../../../core/streaming/types.js';
-import { UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces.js';
+import type { StreamChunk } from '../../../../../core/streaming/types.d.ts';
+import type { UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces.ts';
 
 // Import logger to mock it
 // Declare variables for modules to be dynamically imported
 let logger;
 
 // Create a mock for HistoryManager
-jest.unstable_mockModule('../../../../../core/history/HistoryManager.js', () => {
-  return { __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true,
+jest.unstable_mockModule('@/core/history/HistoryManager.ts', () => {
+  return {
+    __esModule: true,
     HistoryManager: jest.fn().mockImplementation(() => ({
       captureStreamResponse: jest.fn()
     }))
@@ -19,8 +19,9 @@ jest.unstable_mockModule('../../../../../core/history/HistoryManager.js', () => 
 });
 
 // Mock the logger
-jest.unstable_mockModule('../../../../../utils/logger.js', () => {
-  return { __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true,
+jest.unstable_mockModule('@/utils/logger.ts', () => {
+  return {
+    __esModule: true,
     logger: {
       createLogger: jest.fn().mockReturnValue({
         debug: jest.fn(),
@@ -34,17 +35,21 @@ jest.unstable_mockModule('../../../../../utils/logger.js', () => {
 
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const HistoryManagerModule = await import('../../../../../core/history/HistoryManager.js');
+  const HistoryManagerModule = await import('@/core/history/HistoryManager.ts');
   HistoryManager = HistoryManagerModule.HistoryManager;
 
-  const loggerModule = await import('../../../../../utils/logger.js');
+  const loggerModule = await import('@/utils/logger.ts');
   logger = loggerModule.logger;
+
+  const StreamHistoryProcessorModule = await import('../../../../../core/streaming/processors/StreamHistoryProcessor.ts');
+  StreamHistoryProcessor = StreamHistoryProcessorModule.StreamHistoryProcessor;
 });
 
+let StreamHistoryProcessor: any;
 
 describe('StreamHistoryProcessor', () => {
-  let streamHistoryProcessor: StreamHistoryProcessor;
-  let mockHistoryManager: jest.Mocked<HistoryManager>;
+  let streamHistoryProcessor: any;
+  let mockHistoryManager: ReturnType<typeof HistoryManager>;
   const originalEnv = process.env;
 
   beforeEach(() => {
@@ -54,7 +59,7 @@ describe('StreamHistoryProcessor', () => {
     process.env = { ...originalEnv };
 
     // Create a new HistoryManager mock
-    mockHistoryManager = new HistoryManager() as jest.Mocked<HistoryManager>;
+    mockHistoryManager = new HistoryManager() as ReturnType<typeof HistoryManager>;
 
     // Create StreamHistoryProcessor with mock HistoryManager
     streamHistoryProcessor = new StreamHistoryProcessor(mockHistoryManager);
@@ -140,9 +145,9 @@ describe('StreamHistoryProcessor', () => {
     it('should process a stream with multiple chunks', async () => {
       // Create chunks with content
       const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-      { content: 'This is ', role: 'assistant', isComplete: false },
-      { content: 'a multi-chunk ', role: 'assistant', isComplete: false },
-      { content: 'response', role: 'assistant', isComplete: true }];
+        { content: 'This is ', role: 'assistant', isComplete: false },
+        { content: 'a multi-chunk ', role: 'assistant', isComplete: false },
+        { content: 'response', role: 'assistant', isComplete: true }];
 
 
       // Create stream
@@ -175,9 +180,9 @@ describe('StreamHistoryProcessor', () => {
     it('should handle empty content in chunks', async () => {
       // Create chunks with some empty content
       const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-      { content: '', role: 'assistant', isComplete: false },
-      { content: 'Some content', role: 'assistant', isComplete: false },
-      { content: '', role: 'assistant', isComplete: true }];
+        { content: '', role: 'assistant', isComplete: false },
+        { content: 'Some content', role: 'assistant', isComplete: false },
+        { content: '', role: 'assistant', isComplete: true }];
 
 
       // Create stream
@@ -210,8 +215,8 @@ describe('StreamHistoryProcessor', () => {
     it('should handle chunks with undefined content', async () => {
       // Create chunks with undefined content
       const chunks: StreamChunk[] = [
-      { isComplete: false },
-      { isComplete: true }];
+        { isComplete: false },
+        { isComplete: true }];
 
 
       // Create stream
@@ -244,8 +249,8 @@ describe('StreamHistoryProcessor', () => {
     it('should not call captureStreamResponse for non-complete chunks', async () => {
       // Create non-complete chunks
       const chunks: (StreamChunk & Partial<UniversalStreamResponse>)[] = [
-      { content: 'This is ', role: 'assistant', isComplete: false },
-      { content: 'a multi-chunk response', role: 'assistant', isComplete: false }];
+        { content: 'This is ', role: 'assistant', isComplete: false },
+        { content: 'a multi-chunk response', role: 'assistant', isComplete: false }];
 
 
       // Create stream

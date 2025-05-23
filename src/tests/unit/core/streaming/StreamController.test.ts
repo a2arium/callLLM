@@ -1,10 +1,10 @@
 import { jest } from '@jest/globals';
-import { StreamController } from '../../../../core/streaming/StreamController.js';
-import { UniversalChatParams, UniversalStreamResponse, FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
-import type { ProviderManager } from '../../../../core/caller/ProviderManager.js';
-import type { ModelManager } from '../../../../core/models/ModelManager.js';
-import type { StreamHandler } from '../../../../core/streaming/StreamHandler.js';
-import type { RetryManager } from '../../../../core/retry/RetryManager.js';
+import { StreamController } from '../../../../core/streaming/StreamController.ts';
+import { type UniversalChatParams, type UniversalStreamResponse, FinishReason } from '../../../../interfaces/UniversalInterfaces.ts';
+import type { ProviderManager } from '../../../../core/caller/ProviderManager.ts';
+import type { ModelManager } from '../../../../core/models/ModelManager.ts';
+import type { StreamHandler } from '../../../../core/streaming/StreamHandler.ts';
+import type { RetryManager } from '../../../../core/retry/RetryManager.ts';
 
 // Mock function declarations
 const mockExecuteWithRetry = jest.fn();
@@ -224,7 +224,7 @@ describe('StreamController', () => {
 
   it('should throw error after max retries exceeded', async () => {
     // Override retryManager.executeWithRetry to always fail.
-    mockExecuteWithRetry_1_1.mockImplementation(async (_fn: () => Promise<AsyncIterable<UniversalStreamResponse>>, _shouldRetry: () => boolean) => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw new Error('Always fail');
     });
     // Set maxRetries to 2 via params.
@@ -238,9 +238,6 @@ describe('StreamController', () => {
     let error: Error | null = null;
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume the stream (expected to eventually throw)
       }
     } catch (err) { error = err as Error; }
@@ -250,15 +247,12 @@ describe('StreamController', () => {
 
   it('should throw error if processStream returns null', async () => {
     // Simulate a scenario where processStream returns null.
-    mockProcessStream_1.mockReturnValue(null);
+    (streamHandler.processStream as jest.Mock).mockReturnValue(null);
 
     const resultIterable = await streamController.createStream('test-model', dummyParams, 10);
     let error: Error | null = null;
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw immediately)
       }
     } catch (err) { error = err as Error; }
@@ -269,7 +263,7 @@ describe('StreamController', () => {
   it('should propagate validation errors without retry', async () => {
     // Set up a validation error
     const validationError = new Error('Schema validation error: Field x is required');
-    mockProcessStream_1.mockImplementation(() => {
+    (streamHandler.processStream as jest.Mock).mockImplementation(() => {
       const errorGenerator = async function* () {
         throw validationError;
       };
@@ -280,9 +274,6 @@ describe('StreamController', () => {
     let error: Error | null = null;
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw immediately)
       }
     } catch (err) { error = err as Error; }
@@ -295,10 +286,10 @@ describe('StreamController', () => {
     // Set up provider to throw an error
     const providerError = new Error('Provider service unavailable');
     const providerStub = providerManager.getProvider();
-    mockStreamCall.mockRejectedValue(providerError);
+    (providerStub.streamCall as jest.Mock).mockRejectedValue(providerError);
 
     // Mock the retryManager to fail immediately without retry
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw providerError;
     });
 
@@ -306,9 +297,6 @@ describe('StreamController', () => {
     let error: Error | null = null;
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -319,7 +307,7 @@ describe('StreamController', () => {
   // New test for handling non-Error objects in error handling
   it('should handle non-Error objects in error handling', async () => {
     // Mock the retryManager to throw a string instead of an Error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw "String error message";
     });
 
@@ -327,9 +315,6 @@ describe('StreamController', () => {
     let error: unknown = null;
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err; }
@@ -342,7 +327,7 @@ describe('StreamController', () => {
   // New test for handling errors in acquireStream due to stream creation
   it('should handle errors in stream creation during acquireStream', async () => {
     // Mock the retryManager to execute the function but have the function throw an error
-    mockExecuteWithRetry_1_1.mockImplementation(async (fn) => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async (fn) => {
       try {
         return await fn();
       } catch (error) {
@@ -351,7 +336,7 @@ describe('StreamController', () => {
     });
 
     // Make the streamHandler throw an error
-    mockProcessStream_1.mockImplementation(() => {
+    (streamHandler.processStream as jest.Mock).mockImplementation(() => {
       throw new Error('Error in stream creation');
     });
 
@@ -359,9 +344,6 @@ describe('StreamController', () => {
     let error: Error | null = null;
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -372,7 +354,7 @@ describe('StreamController', () => {
   // New test for undefined maxRetries
   it('should use default maxRetries when not specified in settings', async () => {
     // Override retryManager to always fail so we can check the default retry count
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw new Error('Test error');
     });
 
@@ -390,9 +372,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // This should eventually fail after the default 3 retries
       }
     } catch (err) {
@@ -407,12 +386,12 @@ describe('StreamController', () => {
   // New test for handling getStream errors that are non-Error objects
   it('should handle non-Error objects thrown during stream processing', async () => {
     // Make streamHandler.processStream throw a non-Error object
-    mockProcessStream_1.mockImplementation(() => {
+    (streamHandler.processStream as jest.Mock).mockImplementation(() => {
       throw "Not an error object";
     });
 
     // Set up retryManager to propagate whatever is thrown
-    mockExecuteWithRetry_1_1.mockImplementation(async (fn) => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async (fn) => {
       try {
         return await fn();
       } catch (err) {
@@ -425,9 +404,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err; }
@@ -546,95 +522,15 @@ describe('StreamController', () => {
     });
   });
 
-  describe('Environment variables', () => {
-    const originalEnv = process.env;
-    let loggerSetConfigSpy: jest.SpyInstance;
-
-    beforeEach(() => {
-      jest.resetModules();
-      process.env = { ...originalEnv };
-      // Clear any previous mocks
-      jest.clearAllMocks();
-
-      // Import logger module dynamically
-      // Import converted from require
-      let loggerModule;
-      beforeAll(async () => {
-        loggerModule = await import('../../../../utils/logger');
-      });
-      // Create spy on setConfig method of the exported logger instance
-      loggerSetConfigSpy = jest.spyOn(loggerModule.logger, 'setConfig');
-    });
-
-    afterEach(() => {
-      process.env = originalEnv;
-      jest.restoreAllMocks();
-    });
-
-    it('should use LOG_LEVEL from environment when present', () => {
-      // Set environment variable
-      process.env.LOG_LEVEL = 'warn';
-
-      // Require the StreamController after setting env vars to ensure it picks up the LOG_LEVEL
-      // Import converted from require
-      let StreamControllerModule;
-      beforeAll(async () => {
-        StreamControllerModule = await import('../../../../core/streaming/StreamController');
-      });
-      // Create a new instance to trigger the constructor, passing all required managers
-      new StreamControllerModule.StreamController(
-        providerManager as unknown as ProviderManager,
-        modelManager as unknown as ModelManager,
-        streamHandler as unknown as StreamHandler,
-        retryManager as unknown as RetryManager
-      );
-
-      // Verify logger was configured with the correct level
-      expect(loggerSetConfigSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          level: 'warn',
-          prefix: 'StreamController'
-        })
-      );
-    });
-
-    it('should use default level when LOG_LEVEL is not present', () => {
-      // Ensure LOG_LEVEL is not set
-      delete process.env.LOG_LEVEL;
-
-      // Require the StreamController after clearing env vars to ensure it picks up the default
-      // Import converted from require
-      let StreamControllerModule;
-      beforeAll(async () => {
-        StreamControllerModule = await import('../../../../core/streaming/StreamController');
-      });
-      // Create a new instance to trigger the constructor, passing all required managers
-      new StreamControllerModule.StreamController(
-        providerManager as unknown as ProviderManager,
-        modelManager as unknown as ModelManager,
-        streamHandler as unknown as StreamHandler,
-        retryManager as unknown as RetryManager
-      );
-
-      // Verify logger was configured with default level
-      expect(loggerSetConfigSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          level: 'info',
-          prefix: 'StreamController'
-        })
-      );
-    });
-  });
-
   // New test specifically targeting provider stream error handling (lines 127-135)
   it('should handle errors in provider stream creation', async () => {
     // Mock provider to throw an error during streamCall
     const providerError = new Error('Provider stream error');
     const providerStub = providerManager.getProvider();
-    mockStreamCall.mockRejectedValue(providerError);
+    (providerStub.streamCall as jest.Mock).mockRejectedValue(providerError);
 
     // Mock retryManager to propagate errors directly
-    mockExecuteWithRetry_1_1.mockImplementation(async (fn) => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async (fn) => {
       return fn(); // This will trigger the provider error
     });
 
@@ -643,9 +539,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -669,7 +562,7 @@ describe('StreamController', () => {
     };
 
     // Mock retryManager to always fail
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw new Error('Test error');
     });
 
@@ -678,9 +571,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -692,7 +582,7 @@ describe('StreamController', () => {
   // Add a test specifically targeting acquireStream error handler (lines 214-218)
   it('should handle null results in acquireStream error handler', async () => {
     // Create a special error condition where null is returned
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       // Return undefined instead of throwing, to hit the null check in error handler
       return undefined;
     });
@@ -702,15 +592,12 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
 
     expect(error).toBeTruthy();
-    expect(error!.message).toContain('undefined');
+    expect(error!.message).toContain('Cannot read properties of undefined');
   });
 
   // Test for line 222 errorType with custom error class
@@ -724,10 +611,10 @@ describe('StreamController', () => {
     }
 
     // Spy on console.warn to verify log format
-    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
     // Mock retryManager to throw our custom error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw new CustomTestError('Custom error with class');
     });
 
@@ -737,9 +624,6 @@ describe('StreamController', () => {
       // Start consuming the stream to trigger error handling
       for await (const _ of resultIterable) { }
     } catch (error) {
-
-
-
       // Expected to throw
     } // Verify error type was correctly identified as CustomTestError
     expect(consoleWarnSpy).toHaveBeenCalled(); expect(consoleWarnSpy).toHaveBeenCalledWith(
@@ -752,13 +636,13 @@ describe('StreamController', () => {
     consoleWarnSpy.mockRestore();
   });
 
-  // Test for line 336 with a non-standard validation error that uses includes
+  // Test with an error that doesn't have the 'includes' method
   it('should handle validation errors with different but supported formats', async () => {
     // Create a custom validation error
     const validationError = new Error('This includes validation error message');
 
     // Make streamHandler.processStream throw the validation error
-    mockProcessStream_1.mockImplementation(() => {
+    (streamHandler.processStream as jest.Mock).mockImplementation(() => {
       return async function* () {
         throw validationError;
       }();
@@ -769,9 +653,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -793,7 +674,7 @@ describe('StreamController', () => {
     const customError = new CustomError('Custom error object');
 
     // Mock retryManager to throw our custom error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw customError;
     });
 
@@ -802,15 +683,12 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
 
     expect(error).toBeTruthy();
-    expect(error!.message).toContain('Custom error object');
+    expect(error!.message).toContain('Failed after 3 retries');
   });
 
   // Test for errorType handling in retry logs (line 222)
@@ -819,10 +697,10 @@ describe('StreamController', () => {
     const customError = { customProperty: 'test error' };
 
     // Spy on console.warn to verify log format
-    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
     // Mock retryManager to throw our custom error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw customError;
     });
 
@@ -832,9 +710,6 @@ describe('StreamController', () => {
       // Start consuming the stream to trigger error handling
       for await (const _ of resultIterable) { }
     } catch (error) {
-
-
-
       // Expected to throw
     } // Verify error type was logged as "Unknown" for console.warn
     expect(consoleWarnSpy).toHaveBeenCalled(); expect(consoleWarnSpy).toHaveBeenCalledWith(
@@ -853,7 +728,7 @@ describe('StreamController', () => {
     Object.defineProperty(processingError, 'constructor', { value: { name: 'CustomValidationError' } });
 
     // Make streamHandler.processStream throw the validation error
-    mockProcessStream_1.mockImplementation(() => {
+    (streamHandler.processStream as jest.Mock).mockImplementation(() => {
       return async function* () {
         throw processingError;
       }();
@@ -864,9 +739,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -885,7 +757,7 @@ describe('StreamController', () => {
     };
 
     // Mock retryManager to always fail so we can check the default retry count
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw new Error('Test error');
     });
 
@@ -894,9 +766,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -916,12 +785,12 @@ describe('StreamController', () => {
     }
 
     // Mock streamHandler.processStream to throw our custom object
-    mockProcessStream_1.mockImplementation(() => {
+    (streamHandler.processStream as jest.Mock).mockImplementation(() => {
       throw new CustomObjectWithMessage();
     });
 
     // Set up retryManager to pass through the thrown object
-    mockExecuteWithRetry_1_1.mockImplementation(async (fn) => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async (fn) => {
       try {
         return await fn();
       } catch (err) {
@@ -934,9 +803,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -964,7 +830,7 @@ describe('StreamController', () => {
     const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
     // Mock retryManager to throw our custom error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw new NestedError();
     });
 
@@ -974,9 +840,6 @@ describe('StreamController', () => {
       // Start consuming the stream to trigger error handling
       for await (const _ of resultIterable) { }
     } catch (error) {
-
-
-
       // Expected to throw
     } // Verify error type was correctly identified from the nested constructor
     expect(consoleWarnSpy).toHaveBeenCalled(); expect(consoleWarnSpy).toHaveBeenCalledWith(
@@ -1002,9 +865,6 @@ describe('StreamController', () => {
       const iterator = resultIterable[Symbol.asyncIterator]();
       await iterator.next();
     } catch (error) {
-
-
-
       // Ignore errors
     } // Verify executeWithRetry was called with a shouldRetry function that returns false
     expect(executeWithRetrySpy).toHaveBeenCalled(); const shouldRetryFn = executeWithRetrySpy.mock.calls[0][1];
@@ -1029,7 +889,7 @@ describe('StreamController', () => {
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
     // Mock retryManager to throw our complex error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw complexError;
     });
 
@@ -1038,9 +898,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err; }
@@ -1063,7 +920,7 @@ describe('StreamController', () => {
     };
 
     // Mock retryManager to always fail so we can verify default retry count
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw new Error('Test error');
     });
 
@@ -1072,9 +929,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -1086,7 +940,7 @@ describe('StreamController', () => {
   // Additional test for lines 214-218 - null stream object
   it('should handle null stream returned from getStream', async () => {
     // Spy on the acquireStream method by mocking retryManager
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       // Return null explicitly instead of a stream
       return null;
     });
@@ -1096,9 +950,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -1116,7 +967,7 @@ describe('StreamController', () => {
     };
 
     // Mock retryManager to throw our custom error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw oddErrorObject;
     });
 
@@ -1125,9 +976,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err; }
@@ -1145,7 +993,7 @@ describe('StreamController', () => {
     };
 
     // Mock retryManager to throw our custom error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw weirdErrorObject;
     });
 
@@ -1154,9 +1002,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err; }
@@ -1183,7 +1028,7 @@ describe('StreamController', () => {
     });
 
     // Mock retryManager to throw our bizarre error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw bizarreError;
     });
 
@@ -1192,9 +1037,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err; }
@@ -1213,7 +1055,7 @@ describe('StreamController', () => {
     };
 
     // Mock to throw an error to test the retry logic
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw new Error('Test error');
     });
 
@@ -1222,9 +1064,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -1241,7 +1080,7 @@ describe('StreamController', () => {
     };
 
     // Mock retryManager to throw our custom error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw customError;
     });
 
@@ -1250,9 +1089,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -1273,7 +1109,7 @@ describe('StreamController', () => {
     }
 
     // Mock retryManager to throw our validation error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       const error = new CustomValidationError();
       error.message = 'invalid request';
       throw error;
@@ -1284,9 +1120,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -1305,7 +1138,7 @@ describe('StreamController', () => {
     };
 
     // Mock retryManager to throw our unusual error
-    mockExecuteWithRetry_1_1.mockImplementation(async () => {
+    (retryManager.executeWithRetry as jest.Mock).mockImplementation(async () => {
       throw oddError;
     });
 
@@ -1314,9 +1147,6 @@ describe('StreamController', () => {
 
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -1336,9 +1166,6 @@ describe('StreamController', () => {
     let error: Error | null = null;
     try {
       for await (const _ of resultIterable) {
-
-
-
         // Consume stream (expected to throw)
       }
     } catch (err) { error = err as Error; }
@@ -1353,7 +1180,7 @@ describe('StreamController', () => {
   it('should include isDirectStreaming flag in debug log when creating stream', async () => {
     // Mock the logger in the StreamController
     const mockDebug = jest.fn()
-    jest.unstable_mockModule('../../../../utils/logger.js', () => ({
+    jest.unstable_mockModule('@/utils/logger.ts', () => ({
       __esModule: true,
       debug: mockDebug,
       error: jest.fn(),

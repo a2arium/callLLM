@@ -6,5 +6,5 @@
 module.exports = {
   LLMCaller: null, // Will be populated during build
   // Other exports will be added during the build process
-  __esModule: true
+  __esModule: true,
 }; 

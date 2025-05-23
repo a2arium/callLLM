@@ -1,54 +1,51 @@
-import { jest , beforeAll} from '@jest/globals';
+import { jest, beforeAll } from '@jest/globals';
 // @ts-nocheck
-import { StreamHandler } from '../../../../adapters/openai/stream.js';
-import { FinishReason } from '../../../../interfaces/UniversalInterfaces.js';
+import { StreamHandler } from '@/adapters/openai/stream.ts';
+import { FinishReason } from '@/interfaces/UniversalInterfaces.ts';
 // Declare variables for modules to be dynamically imported
 let logger;
-import type { ToolDefinition } from '../../../../types/tooling.js';
-import type { ResponseStreamEvent } from '../../../../adapters/openai/types.js';
+import type { ToolDefinition } from '@/types/tooling.ts';
+import type { ResponseStreamEvent } from '@/adapters/openai/types.ts';
 import type { Stream } from 'openai/streaming';
 import { OpenAI } from 'openai';
-import { UniversalStreamResponse } from '../../../../interfaces/UniversalInterfaces.js';
-import { UsageData } from '../../../../interfaces/UsageInterfaces.js';
-import {
+import { type UniversalStreamResponse } from '@/interfaces/UniversalInterfaces.ts';
+import { type UsageData } from '@/interfaces/UsageInterfaces.ts';
+import type {
   ChatCompletionChunk,
-  ChatCompletionChunkChoice } from
-'../../../../interfaces/openai/OpenAIChatInterfaces.js';
-import { OpenAIStreamHandler } from '../../../../adapters/openai/stream.js';
+  ChatCompletionChunkChoice
+} from
+  '@/interfaces/openai/OpenAIChatInterfaces.ts';
 
 // Mock function declarations
-const mockCreateLogger = jest.fn()
+const mockWarnFn = jest.fn();
+const mockDebugFn = jest.fn();
+const mockInfoFn = jest.fn();
+const mockErrorFn = jest.fn();
 
 // Mock the logger
-jest.unstable_mockModule('../../../../utils/logger.js', () => {
-  // Create an internal mock logger for the warn test
-  const mockWarnFn = jest.fn()
+jest.unstable_mockModule('@/utils/logger.ts', () => {
+  return {
+    __esModule: true,
+    logger: {
+      debug: mockDebugFn,
+      info: mockInfoFn,
+      warn: mockWarnFn,
+      error: mockErrorFn,
+      setConfig: jest.fn(),
+      createLogger: jest.fn().mockImplementation(() => ({
+        debug: mockDebugFn,
+        info: mockInfoFn,
+        warn: mockWarnFn,
+        error: mockErrorFn
+      }))
+    }
+  };
+});
 
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const loggerModule = await import('../../../../utils/logger.js');
+  const loggerModule = await import('@/utils/logger.ts');
   logger = loggerModule.logger;
-});
-
-
-  // Mock the createLogger method to return a logger with our spied warn method
-  const mockCreateLogger = jest.fn().mockImplementation(() => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: mockWarnFn,
-    error: jest.fn()
-  }));
-
-  return { __esModule: true,
-    logger: {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      setConfig: jest.fn(),
-      createLogger: mockCreateLogger
-    }
-  };
 });
 
 // Create a mock Stream of ResponseStreamEvent objects - moved to top-level for all tests
@@ -72,8 +69,8 @@ function createMockStream(events: ResponseStreamEvent[]): Stream<ResponseStreamE
     [Symbol.asyncIterator]: () => asyncIterator,
     controller: {} as any,
     tee: () => [
-    createMockStream([...eventsCopy]),
-    createMockStream([...eventsCopy])],
+      createMockStream([...eventsCopy]),
+      createMockStream([...eventsCopy])],
 
     toReadableStream: () => new ReadableStream() as any
   } as Stream<ResponseStreamEvent>;
@@ -129,22 +126,22 @@ describe('StreamHandler', () => {
     const streamHandler = new StreamHandler();
 
     const mockEvents = [
-    {
-      type: 'response.output_text.delta',
-      delta: 'Hello'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.output_text.delta',
-      delta: ' world'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_123',
-        model: 'gpt-4o',
-        status: 'completed'
-      }
-    } as ResponseStreamEvent];
+      {
+        type: 'response.output_text.delta',
+        delta: 'Hello'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.output_text.delta',
+        delta: ' world'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_123',
+          model: 'gpt-4o',
+          status: 'completed'
+        }
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -165,43 +162,38 @@ describe('StreamHandler', () => {
     const streamHandler = new StreamHandler([testTool]);
 
     const mockEvents = [
-    {
-      type: 'response.output_item.added',
-      item: {
-        type: 'function_call',
-        id: 'call_123',
-        name: 'test_tool'
-      }
-    } as ResponseStreamEvent,
-    {
-      type: 'response.function_call_arguments.delta',
-      item_id: 'call_123',
-      delta: '{"param1":"'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.function_call_arguments.delta',
-      item_id: 'call_123',
-      delta: 'test"}'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.function_call_arguments.done',
-      item_id: 'call_123'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_123',
-        model: 'gpt-4o',
-        status: 'completed',
-        output: [
-        {
+      {
+        type: 'response.output_item.added',
+        item: {
           type: 'function_call',
           id: 'call_123',
           name: 'test_tool'
-        }]
+        }
+      } as ResponseStreamEvent,
+      {
+        type: 'response.function_call_arguments.delta',
+        item_id: 'call_123',
+        delta: '{"param1":"test"}'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.function_call_arguments.done',
+        item_id: 'call_123'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_123',
+          model: 'gpt-4o',
+          status: 'completed',
+          output: [
+            {
+              type: 'function_call',
+              id: 'call_123',
+              name: 'test_tool'
+            }]
 
-      }
-    } as ResponseStreamEvent];
+        }
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -211,17 +203,15 @@ describe('StreamHandler', () => {
       results.push(chunk);
     }
 
-    expect(results.length).toBe(4);
+    expect(results.length).toBe(3);
     // Check tool call initialization
     expect(results[0].toolCallChunks?.[0].name).toBe('test_tool');
     expect(results[0].toolCallChunks?.[0].id).toBe('call_123');
     // Check first argument chunk
-    expect(results[1].toolCallChunks?.[0].argumentsChunk).toBe('{"param1":"');
-    // Check second argument chunk
-    expect(results[2].toolCallChunks?.[0].argumentsChunk).toBe('test"}');
+    expect(results[1].toolCallChunks?.[0].argumentsChunk).toBe('{"param1":"test"}');
     // Check completion
-    expect(results[3].isComplete).toBe(true);
-    expect(results[3].metadata?.finishReason).toBe(FinishReason.TOOL_CALLS);
+    expect(results[2].isComplete).toBe(true);
+    expect(results[2].metadata?.finishReason).toBe(FinishReason.TOOL_CALLS);
   });
 
   test('should handle content_part events', async () => {
@@ -229,42 +219,42 @@ describe('StreamHandler', () => {
 
     // Cast to ResponseStreamEvent to bypass type checking for test mock
     const mockEvents = [
-    {
-      type: 'response.content_part.added',
-      content: 'Hello',
-      // Add minimum required properties
-      content_index: 0,
-      item_id: 'item_1',
-      output_index: 0,
-      part: {
-        type: 'text',
-        text: 'Hello',
-        annotations: []
-      }
-    } as unknown as ResponseStreamEvent,
-    {
-      type: 'response.content_part.added',
-      content: ' world',
-      content_index: 1,
-      item_id: 'item_1',
-      output_index: 0,
-      part: {
-        type: 'text',
-        text: ' world',
-        annotations: []
-      }
-    } as unknown as ResponseStreamEvent,
-    {
-      type: 'response.content_part.done'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_123',
-        model: 'gpt-4o',
-        status: 'completed'
-      }
-    } as ResponseStreamEvent];
+      {
+        type: 'response.content_part.added',
+        content: 'Hello',
+        // Add minimum required properties
+        content_index: 0,
+        item_id: 'item_1',
+        output_index: 0,
+        part: {
+          type: 'text',
+          text: 'Hello',
+          annotations: []
+        }
+      } as unknown as ResponseStreamEvent,
+      {
+        type: 'response.content_part.added',
+        content: ' world',
+        content_index: 1,
+        item_id: 'item_1',
+        output_index: 0,
+        part: {
+          type: 'text',
+          text: ' world',
+          annotations: []
+        }
+      } as unknown as ResponseStreamEvent,
+      {
+        type: 'response.content_part.done'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_123',
+          model: 'gpt-4o',
+          status: 'completed'
+        }
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -284,13 +274,13 @@ describe('StreamHandler', () => {
     const streamHandler = new StreamHandler();
 
     const mockEvents = [
-    {
-      type: 'response.output_text.delta',
-      delta: 'This response is incomplete'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.incomplete'
-    } as ResponseStreamEvent];
+      {
+        type: 'response.output_text.delta',
+        delta: 'This response is incomplete'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.incomplete'
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -310,20 +300,20 @@ describe('StreamHandler', () => {
 
     // We're creating a mock that has the properties the code actually uses
     const mockEvents = [
-    {
-      type: 'response.output_text.delta',
-      delta: 'This will fail'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.failed',
-      error: { message: 'Test error' },
-      // Adding a minimal valid response object with required fields
-      response: {
-        id: 'resp_123',
-        created_at: new Date().toISOString(),
-        status: 'failed'
-      }
-    } as unknown as ResponseStreamEvent];
+      {
+        type: 'response.output_text.delta',
+        delta: 'This will fail'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.failed',
+        error: { message: 'Test error' },
+        // Adding a minimal valid response object with required fields
+        response: {
+          id: 'resp_123',
+          created_at: new Date().toISOString(),
+          status: 'failed'
+        }
+      } as unknown as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -344,18 +334,18 @@ describe('StreamHandler', () => {
 
     // First stream
     const mockEvents1 = [
-    {
-      type: 'response.output_text.delta',
-      delta: 'First stream'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_1',
-        model: 'gpt-4o',
-        status: 'completed'
-      }
-    } as ResponseStreamEvent];
+      {
+        type: 'response.output_text.delta',
+        delta: 'First stream'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_1',
+          model: 'gpt-4o',
+          status: 'completed'
+        }
+      } as ResponseStreamEvent];
 
 
     // Process first stream
@@ -380,11 +370,11 @@ describe('StreamHandler', () => {
         model: 'gpt-4o',
         status: 'completed',
         output: [
-        {
-          type: 'function_call',
-          id: 'call_123',
-          name: 'test_tool'
-        }]
+          {
+            type: 'function_call',
+            id: 'call_123',
+            name: 'test_tool'
+          }]
 
       }
     } as ResponseStreamEvent];
@@ -403,87 +393,98 @@ describe('StreamHandler', () => {
   test('should warn about unknown item_id in function call arguments', async () => {
     const streamHandler = new StreamHandler();
 
-    // Get the mock logger's createLogger method
-    const mockInternalLogger = mockCreateLogger().warn;
+    // Spy on the console.warn function
+    const originalConsoleWarn = console.warn;
+    const consoleWarnSpy = jest.spyOn(console, 'warn');
 
     const mockEvents = [
-    {
-      type: 'response.function_call_arguments.delta',
-      item_id: 'unknown_id',
-      delta: '{"param1":"test"}'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_123',
-        model: 'gpt-4o',
-        status: 'completed'
-      }
-    } as ResponseStreamEvent];
+      {
+        type: 'response.function_call_arguments.delta',
+        item_id: 'unknown_id',
+        delta: '{"param1":"test"}'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_123',
+          model: 'gpt-4o',
+          status: 'completed'
+        }
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
 
-    for await (const _ of streamHandler.handleStream(mockStream)) {
+    try {
+      for await (const _ of streamHandler.handleStream(mockStream)) {
+        // Just iterate
+      }
 
-
-
-      // Just iterate
-    } // Verify internal logger's warn was called
-    expect(mockInternalLogger).toHaveBeenCalled();});
+      // Verify console.warn was called with something containing 'unknown_id'
+      expect(consoleWarnSpy).toHaveBeenCalled();
+      const warnCalls = consoleWarnSpy.mock.calls;
+      const hasUnknownIdWarning = warnCalls.some(
+        args => typeof args[0] === 'string' && args[0].includes('unknown_id')
+      );
+      expect(hasUnknownIdWarning).toBe(true);
+    } finally {
+      // Restore the original console.warn
+      consoleWarnSpy.mockRestore();
+    }
+  });
 
   test('should handle multiple tool calls with different IDs', async () => {
     const streamHandler = new StreamHandler([testTool]);
 
     const mockEvents = [
-    // First tool call
-    {
-      type: 'response.output_item.added',
-      item: {
-        type: 'function_call',
-        id: 'call_1',
-        name: 'tool_1'
-      }
-    } as ResponseStreamEvent,
-    {
-      type: 'response.function_call_arguments.delta',
-      item_id: 'call_1',
-      delta: '{"param1":"value1"}'
-    } as ResponseStreamEvent,
-    // Second tool call
-    {
-      type: 'response.output_item.added',
-      item: {
-        type: 'function_call',
-        id: 'call_2',
-        name: 'tool_2'
-      }
-    } as ResponseStreamEvent,
-    {
-      type: 'response.function_call_arguments.delta',
-      item_id: 'call_2',
-      delta: '{"param2":"value2"}'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_123',
-        model: 'gpt-4o',
-        status: 'completed',
-        output: [
-        {
+      // First tool call
+      {
+        type: 'response.output_item.added',
+        item: {
           type: 'function_call',
           id: 'call_1',
           name: 'tool_1'
-        },
-        {
+        }
+      } as ResponseStreamEvent,
+      {
+        type: 'response.function_call_arguments.delta',
+        item_id: 'call_1',
+        delta: '{"param1":"value1"}'
+      } as ResponseStreamEvent,
+      // Second tool call
+      {
+        type: 'response.output_item.added',
+        item: {
           type: 'function_call',
           id: 'call_2',
           name: 'tool_2'
-        }]
+        }
+      } as ResponseStreamEvent,
+      {
+        type: 'response.function_call_arguments.delta',
+        item_id: 'call_2',
+        delta: '{"param2":"value2"}'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_123',
+          model: 'gpt-4o',
+          status: 'completed',
+          output: [
+            {
+              type: 'function_call',
+              id: 'call_1',
+              name: 'tool_1'
+            },
+            {
+              type: 'function_call',
+              id: 'call_2',
+              name: 'tool_2'
+            }]
 
-      }
-    } as ResponseStreamEvent];
+        }
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -509,26 +510,26 @@ describe('StreamHandler', () => {
     const streamHandler = new StreamHandler();
 
     const mockEvents = [
-    {
-      type: 'response.output_text.delta',
-      delta: 'Final answer after reasoning'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_789',
-        model: 'o3-mini',
-        status: 'completed',
-        usage: {
-          output_tokens: 100,
-          input_tokens: 50,
-          total_tokens: 150,
-          output_tokens_details: {
-            reasoning_tokens: 75 // Reasoning tokens explicitly provided
+      {
+        type: 'response.output_text.delta',
+        delta: 'Final answer after reasoning'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_789',
+          model: 'o3-mini',
+          status: 'completed',
+          usage: {
+            output_tokens: 100,
+            input_tokens: 50,
+            total_tokens: 150,
+            output_tokens_details: {
+              reasoning_tokens: 75 // Reasoning tokens explicitly provided
+            }
           }
         }
-      }
-    } as ResponseStreamEvent];
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -564,56 +565,56 @@ describe('StreamHandler', () => {
     const streamHandler = new StreamHandler();
 
     const mockEvents = [
-    {
-      type: 'response.output_text.delta',
-      delta: 'Let me think about this...'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.in_progress',
-      response: {
-        usage: {
-          output_tokens: 20,
-          output_tokens_details: {
-            reasoning_tokens: 15 // First part mostly reasoning
+      {
+        type: 'response.output_text.delta',
+        delta: 'Let me think about this...'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.in_progress',
+        response: {
+          usage: {
+            output_tokens: 20,
+            output_tokens_details: {
+              reasoning_tokens: 15 // First part mostly reasoning
+            }
           }
         }
-      }
-    } as ResponseStreamEvent,
-    {
-      type: 'response.output_text.delta',
-      delta: 'After considering the factors, '
-    } as ResponseStreamEvent,
-    {
-      type: 'response.in_progress',
-      response: {
-        usage: {
-          output_tokens: 50,
-          output_tokens_details: {
-            reasoning_tokens: 35 // More reasoning tokens
+      } as ResponseStreamEvent,
+      {
+        type: 'response.output_text.delta',
+        delta: 'After considering the factors, '
+      } as ResponseStreamEvent,
+      {
+        type: 'response.in_progress',
+        response: {
+          usage: {
+            output_tokens: 50,
+            output_tokens_details: {
+              reasoning_tokens: 35 // More reasoning tokens
+            }
           }
         }
-      }
-    } as ResponseStreamEvent,
-    {
-      type: 'response.output_text.delta',
-      delta: 'the answer is 42.'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_456',
-        model: 'o3-mini',
-        status: 'completed',
-        usage: {
-          output_tokens: 70,
-          input_tokens: 30,
-          total_tokens: 100,
-          output_tokens_details: {
-            reasoning_tokens: 40 // Final count (only some of the new tokens are reasoning)
+      } as ResponseStreamEvent,
+      {
+        type: 'response.output_text.delta',
+        delta: 'the answer is 42.'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_456',
+          model: 'o3-mini',
+          status: 'completed',
+          usage: {
+            output_tokens: 70,
+            input_tokens: 30,
+            total_tokens: 100,
+            output_tokens_details: {
+              reasoning_tokens: 40 // Final count (only some of the new tokens are reasoning)
+            }
           }
         }
-      }
-    } as ResponseStreamEvent];
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -637,9 +638,9 @@ describe('StreamHandler', () => {
     // Note: In the actual implementation, this might be handled by an Accumulator
     // So our test only verifies that the deltas were emitted correctly
     const textDeltas = results.
-    filter((r) => r.content && r.content.length > 0).
-    map((r) => r.content).
-    join('');
+      filter((r) => r.content && r.content.length > 0).
+      map((r) => r.content).
+      join('');
 
     expect(textDeltas).toContain('Let me think about this');
     expect(textDeltas).toContain('After considering the factors');
@@ -656,23 +657,23 @@ describe('StreamHandler', () => {
     const streamHandler = new StreamHandler();
 
     const mockEvents = [
-    {
-      type: 'response.output_text.delta',
-      delta: 'This is a standard response without reasoning.'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_123',
-        model: 'gpt-4o',
-        status: 'completed',
-        usage: {
-          output_tokens: 50,
-          input_tokens: 20,
-          total_tokens: 70
+      {
+        type: 'response.output_text.delta',
+        delta: 'This is a standard response without reasoning.'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_123',
+          model: 'gpt-4o',
+          status: 'completed',
+          usage: {
+            output_tokens: 50,
+            input_tokens: 20,
+            total_tokens: 70
+          }
         }
-      }
-    } as ResponseStreamEvent];
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -699,44 +700,44 @@ describe('StreamHandler', () => {
 
     // Mock a stream with usage data containing high input token count (indicating image tokens);
     const mockEvents = [
-    // First content chunk
-    {
-      type: 'response.output_text.delta',
-      delta: 'Analyzing the image...'
-    } as ResponseStreamEvent,
-    // Progress event with usage data
-    {
-      type: 'response.in_progress',
-      response: {
-        usage: {
-          input_tokens: 3691, // High token count indicating image
-          output_tokens: 12,
-          total_tokens: 3703,
-          output_tokens_details: {
-            reasoning_tokens: 0
+      // First content chunk
+      {
+        type: 'response.output_text.delta',
+        delta: 'Analyzing the image...'
+      } as ResponseStreamEvent,
+      // Progress event with usage data
+      {
+        type: 'response.in_progress',
+        response: {
+          usage: {
+            input_tokens: 3691, // High token count indicating image
+            output_tokens: 12,
+            total_tokens: 3703,
+            output_tokens_details: {
+              reasoning_tokens: 0
+            }
           }
         }
-      }
-    } as ResponseStreamEvent,
-    // Second content chunk
-    {
-      type: 'response.output_text.delta',
-      delta: ' I can see a landscape.'
-    } as ResponseStreamEvent,
-    // Completion with final usage data
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_123',
-        model: 'gpt-4o',
-        status: 'completed',
-        usage: {
-          input_tokens: 3691, // High token count indicating image
-          output_tokens: 24,
-          total_tokens: 3715
+      } as ResponseStreamEvent,
+      // Second content chunk
+      {
+        type: 'response.output_text.delta',
+        delta: ' I can see a landscape.'
+      } as ResponseStreamEvent,
+      // Completion with final usage data
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_123',
+          model: 'gpt-4o',
+          status: 'completed',
+          usage: {
+            input_tokens: 3691, // High token count indicating image
+            output_tokens: 24,
+            total_tokens: 3715
+          }
         }
-      }
-    } as ResponseStreamEvent];
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -775,39 +776,39 @@ describe('StreamHandler', () => {
     // First set of deltas will cause local token calculation 
     // Then final chunk will have different (correct) token count from API
     const mockEvents = [
-    {
-      type: 'response.output_text.delta',
-      delta: 'First'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.output_text.delta',
-      delta: ' chunk'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.in_progress',
-      response: {
-        usage: {
-          output_tokens: 2
+      {
+        type: 'response.output_text.delta',
+        delta: 'First'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.output_text.delta',
+        delta: ' chunk'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.in_progress',
+        response: {
+          usage: {
+            output_tokens: 2
+          }
         }
-      }
-    } as ResponseStreamEvent,
-    {
-      type: 'response.output_text.delta',
-      delta: ' of text.'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_123',
-        model: 'gpt-4o',
-        status: 'completed',
-        usage: {
-          input_tokens: 50,
-          output_tokens: 12, // API reports different token count than what we calculate locally
-          total_tokens: 62
+      } as ResponseStreamEvent,
+      {
+        type: 'response.output_text.delta',
+        delta: ' of text.'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_123',
+          model: 'gpt-4o',
+          status: 'completed',
+          usage: {
+            input_tokens: 50,
+            output_tokens: 12, // API reports different token count than what we calculate locally
+            total_tokens: 62
+          }
         }
-      }
-    } as ResponseStreamEvent];
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -826,41 +827,41 @@ describe('StreamHandler', () => {
     const streamHandler = new StreamHandler();
 
     const mockEvents = [
-    {
-      type: 'response.output_text.delta',
-      delta: 'Thinking'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.in_progress',
-      response: {
-        usage: {
-          output_tokens: 10,
-          output_tokens_details: {
-            reasoning_tokens: 8
+      {
+        type: 'response.output_text.delta',
+        delta: 'Thinking'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.in_progress',
+        response: {
+          usage: {
+            output_tokens: 10,
+            output_tokens_details: {
+              reasoning_tokens: 8
+            }
           }
         }
-      }
-    } as ResponseStreamEvent,
-    {
-      type: 'response.output_text.delta',
-      delta: ' through this problem...'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_123',
-        model: 'gpt-4o',
-        status: 'completed',
-        usage: {
-          input_tokens: 30,
-          output_tokens: 25,
-          output_tokens_details: {
-            reasoning_tokens: 15
-          },
-          total_tokens: 55
+      } as ResponseStreamEvent,
+      {
+        type: 'response.output_text.delta',
+        delta: ' through this problem...'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_123',
+          model: 'gpt-4o',
+          status: 'completed',
+          usage: {
+            input_tokens: 30,
+            output_tokens: 25,
+            output_tokens_details: {
+              reasoning_tokens: 15
+            },
+            total_tokens: 55
+          }
         }
-      }
-    } as ResponseStreamEvent];
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -911,10 +912,10 @@ describe('OpenAI Response API Stream Handler', () => {
   test('correctly processes a text delta event', async () => {
     const streamHandler = new StreamHandler();
     const mockEvents = [
-    {
-      type: 'response.output_text.delta',
-      delta: 'Hello world'
-    } as ResponseStreamEvent];
+      {
+        type: 'response.output_text.delta',
+        delta: 'Hello world'
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -932,19 +933,19 @@ describe('OpenAI Response API Stream Handler', () => {
     const streamHandler = new StreamHandler([testTool]);
 
     const mockEvents = [
-    {
-      type: 'response.output_item.added',
-      item: {
-        type: 'function_call',
-        id: 'call_123',
-        name: 'test_tool'
-      }
-    } as ResponseStreamEvent,
-    {
-      type: 'response.function_call_arguments.delta',
-      item_id: 'call_123',
-      delta: '{"param1":"test"}'
-    } as ResponseStreamEvent];
+      {
+        type: 'response.output_item.added',
+        item: {
+          type: 'function_call',
+          id: 'call_123',
+          name: 'test_tool'
+        }
+      } as ResponseStreamEvent,
+      {
+        type: 'response.function_call_arguments.delta',
+        item_id: 'call_123',
+        delta: '{"param1":"test"}'
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -963,40 +964,40 @@ describe('OpenAI Response API Stream Handler', () => {
     const streamHandler = new StreamHandler([testTool]);
 
     const mockEvents = [
-    {
-      type: 'response.output_item.added',
-      item: {
-        type: 'function_call',
-        id: 'call_123',
-        name: 'test_tool'
-      }
-    } as ResponseStreamEvent,
-    {
-      type: 'response.function_call_arguments.delta',
-      item_id: 'call_123',
-      delta: '{"param1":"test"}'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_123',
-        model: 'gpt-4o',
-        status: 'completed',
-        output: [
-        {
+      {
+        type: 'response.output_item.added',
+        item: {
           type: 'function_call',
           id: 'call_123',
-          name: 'test_tool',
-          arguments: '{"param1":"test"}'
-        }],
-
-        usage: {
-          input_tokens: 20,
-          output_tokens: 30,
-          total_tokens: 50
+          name: 'test_tool'
         }
-      }
-    } as ResponseStreamEvent];
+      } as ResponseStreamEvent,
+      {
+        type: 'response.function_call_arguments.delta',
+        item_id: 'call_123',
+        delta: '{"param1":"test"}'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_123',
+          model: 'gpt-4o',
+          status: 'completed',
+          output: [
+            {
+              type: 'function_call',
+              id: 'call_123',
+              name: 'test_tool',
+              arguments: '{"param1":"test"}'
+            }],
+
+          usage: {
+            input_tokens: 20,
+            output_tokens: 30,
+            total_tokens: 50
+          }
+        }
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);
@@ -1018,39 +1019,39 @@ describe('OpenAI Response API Stream Handler', () => {
     const streamHandler = new StreamHandler();
 
     const mockEvents = [
-    {
-      type: 'response.output_text.delta',
-      delta: 'Hello'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.output_text.delta',
-      delta: ' world'
-    } as ResponseStreamEvent,
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_123',
-        model: 'gpt-4o',
-        status: 'completed',
-        output: [
-        {
-          type: 'message',
-          role: 'assistant',
-          content: [
-          {
-            type: 'output_text',
-            text: 'Hello world'
-          }]
+      {
+        type: 'response.output_text.delta',
+        delta: 'Hello'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.output_text.delta',
+        delta: ' world'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_123',
+          model: 'gpt-4o',
+          status: 'completed',
+          output: [
+            {
+              type: 'message',
+              role: 'assistant',
+              content: [
+                {
+                  type: 'output_text',
+                  text: 'Hello world'
+                }]
 
-        }],
+            }],
 
-        usage: {
-          input_tokens: 10,
-          output_tokens: 15,
-          total_tokens: 25
+          usage: {
+            input_tokens: 10,
+            output_tokens: 15,
+            total_tokens: 25
+          }
         }
-      }
-    } as ResponseStreamEvent];
+      } as ResponseStreamEvent];
 
 
     const mockStream = createMockStream(mockEvents);

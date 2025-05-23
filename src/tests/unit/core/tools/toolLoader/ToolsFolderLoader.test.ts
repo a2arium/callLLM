@@ -1,9 +1,9 @@
 import { jest, beforeAll, beforeEach, describe, it, expect } from '@jest/globals';
 // Remove static import
-// import { ToolsFolderLoader } from '../../../../../core/tools/toolLoader/ToolsFolderLoader.js';
+// import { ToolsFolderLoader } from '../../../../../core/tools/toolLoader/ToolsFolderLoader.ts';
 let ToolsFolderLoader;
 let FunctionFileParser;
-import { ToolParsingError, ParsedFunctionMeta } from '../../../../../core/tools/toolLoader/types.js';
+import { ToolParsingError, type ParsedFunctionMeta } from '../../../../../core/tools/toolLoader/types.ts';
 // import * as fs from 'fs'; // Remove direct import
 // import * as path from 'path'; // Remove direct import
 
@@ -53,13 +53,13 @@ jest.unstable_mockModule('path', () => ({
 }));
 
 // Mock the path utilities
-jest.unstable_mockModule('../../../../../utils/importMetaUrl.js', () => ({
+jest.unstable_mockModule('@/utils/importMetaUrl.ts', () => ({
   __esModule: true,
   getImportMetaUrl: mockGetImportMetaUrl,
   default: mockGetImportMetaUrl
 }));
 
-jest.unstable_mockModule('../../../../../utils/paths.js', () => ({
+jest.unstable_mockModule('@/utils/paths.ts', () => ({
   __esModule: true,
   getDirname: mockGetDirname,
   getFilename: mockGetFilename,
@@ -71,7 +71,7 @@ jest.unstable_mockModule('../../../../../utils/paths.js', () => ({
   }
 }));
 
-jest.unstable_mockModule('../../../../../core/tools/toolLoader/FunctionFileParser.js', () => ({
+jest.unstable_mockModule('@/core/tools/toolLoader/FunctionFileParser.ts', () => ({
   __esModule: true,
   // We need to mock the constructor and its prototype methods for FunctionFileParser
   FunctionFileParser: jest.fn().mockImplementation(() => ({
@@ -85,16 +85,16 @@ jest.unstable_mockModule('../../../../../core/tools/toolLoader/FunctionFileParse
 
 beforeAll(async () => {
   // Set up the mocks for import.meta.url related functions
-  mockGetImportMetaUrl.mockReturnValue('file:///mock/path/to/file.js');
+  mockGetImportMetaUrl.mockReturnValue('file:///mock/path/to/file.ts');
   mockGetDirname.mockReturnValue('/mock/path/to');
-  mockGetFilename.mockReturnValue('/mock/path/to/file.js');
+  mockGetFilename.mockReturnValue('/mock/path/to/file.ts');
   mockResolveFromFile.mockImplementation((_importMetaUrl, relativePath) => `/mock/path/to/${relativePath}`);
 
   mockFsModule = await import('fs');
   mockPathModule = await import('path');
-  const FunctionFileParserModule = await import('../../../../../core/tools/toolLoader/FunctionFileParser.js');
+  const FunctionFileParserModule = await import('../../../../../core/tools/toolLoader/FunctionFileParser.ts');
   FunctionFileParser = FunctionFileParserModule.FunctionFileParser;
-  const ToolsFolderLoaderModule = await import('../../../../../core/tools/toolLoader/ToolsFolderLoader.js');
+  const ToolsFolderLoaderModule = await import('../../../../../core/tools/toolLoader/ToolsFolderLoader.ts');
   ToolsFolderLoader = ToolsFolderLoaderModule.ToolsFolderLoader;
 });
 
@@ -110,18 +110,19 @@ describe('ToolsFolderLoader', () => {
 
     mockExistsSync.mockReturnValue(true);
     mockStatSync.mockReturnValue({ isDirectory: () => true } as any);
-    mockReaddirSync.mockReturnValue(['tool1.ts', 'tool2.ts', 'notATool.js'] as any);
+    // Default to only tool1.ts and tool2.ts for most tests
+    mockReaddirSync.mockReturnValue(['tool1.ts', 'tool2.ts'] as any);
     mockJoin.mockImplementation((...args) => args.join('/'));
     mockResolve.mockImplementation((...args) => args.join('/'));
     mockBasename.mockImplementation((filePath, ext) => {
       const base = (filePath as string).split('/').pop() || '';
-      return ext ? base.replace(ext, '') : base;
+      return typeof ext === 'string' ? base.replace(ext, '') : base;
     });
 
     // Reset path utilities mocks
-    mockGetImportMetaUrl.mockReturnValue('file:///mock/path/to/file.js');
+    mockGetImportMetaUrl.mockReturnValue('file:///mock/path/to/file.ts');
     mockGetDirname.mockReturnValue('/mock/path/to');
-    mockGetFilename.mockReturnValue('/mock/path/to/file.js');
+    mockGetFilename.mockReturnValue('/mock/path/to/file.ts');
     mockResolveFromFile.mockImplementation((_importMetaUrl, relativePath) => `/mock/path/to/${relativePath}`);
   });
 
@@ -337,13 +338,15 @@ describe('ToolsFolderLoader', () => {
 
   describe('getAllTools', () => {
     it('should return all tool definitions', async () => {
+      // Only return tool1.ts and tool2.ts for this test
+      mockReaddirSync.mockReturnValue(['tool1.ts', 'tool2.ts'] as any);
+
       const mockTool1: ParsedFunctionMeta = {
         name: 'tool1',
         description: 'Tool 1 description',
         schema: { type: 'object', properties: {} },
         runtimePath: '/mock/tools/dir/tool1.ts'
       };
-
       const mockTool2: ParsedFunctionMeta = {
         name: 'tool2',
         description: 'Tool 2 description',
@@ -373,43 +376,64 @@ describe('ToolsFolderLoader', () => {
 
   describe('filterTypeScriptFiles', () => {
     it('should filter TypeScript files correctly during directory scanning', () => {
-      // Create a mix of files with different extensions
-      const mockFiles = [
-        'tool1.ts', // TypeScript file - should be processed
-        'tool2.js', // JavaScript file - should be ignored
-        'tool3.tsx', // TypeScript JSX file - should be ignored
-        'README.md', // Markdown file - should be ignored
-        '.tool5.ts', // Hidden TypeScript file - should be processed
-        'tool7.d.ts' // TypeScript declaration file - should be processed
-      ];
+      // Set up a mix of .ts and non-.ts files
+      mockReaddirSync.mockReturnValue([
+        'tool1.ts', 'tool2.ts', 'notATool.ts', 'README.md', 'tool3.js', 'tool4', '.tool5.ts', 'tool6.txt', 'tool7.d.ts'
+      ] as any);
 
-      (mockFsModule.readdirSync as jest.Mock).mockReturnValue(mockFiles as any);
-
-      const mockTool: ParsedFunctionMeta = {
-        name: 'tool',
-        description: 'Tool description',
+      const mockTool1: ParsedFunctionMeta = {
+        name: 'tool1',
+        description: 'Tool 1 description',
         schema: { type: 'object', properties: {} },
-        runtimePath: '/mock/tools/dir/tool.ts'
+        runtimePath: '/mock/tools/dir/tool1.ts'
+      };
+      const mockTool2: ParsedFunctionMeta = {
+        name: 'tool2',
+        description: 'Tool 2 description',
+        schema: { type: 'object', properties: {} },
+        runtimePath: '/mock/tools/dir/tool2.ts'
+      };
+      const mockNotATool: ParsedFunctionMeta = {
+        name: 'notATool',
+        description: 'Not a tool',
+        schema: { type: 'object', properties: {} },
+        runtimePath: '/mock/tools/dir/notATool.ts'
+      };
+      const mockDotTool5: ParsedFunctionMeta = {
+        name: '.tool5',
+        description: 'Dot tool 5',
+        schema: { type: 'object', properties: {} },
+        runtimePath: '/mock/tools/dir/.tool5.ts'
+      };
+      const mockTool7: ParsedFunctionMeta = {
+        name: 'tool7',
+        description: 'Tool 7',
+        schema: { type: 'object', properties: {} },
+        runtimePath: '/mock/tools/dir/tool7.d.ts'
       };
 
-      mockParseFile.mockReturnValue(mockTool);
+      mockParseFile
+        .mockReturnValueOnce(mockTool1)
+        .mockReturnValueOnce(mockTool2)
+        .mockReturnValueOnce(mockNotATool)
+        .mockReturnValueOnce(mockDotTool5)
+        .mockReturnValueOnce(mockTool7);
 
       const loader = new ToolsFolderLoader('/mock/tools/dir');
 
       // Should only process files ending with .ts
-      // In this case, tool1.ts, .tool5.ts, and tool7.d.ts
-      expect(mockParseFile).toHaveBeenCalledTimes(3);
+      // In this case, tool1.ts, tool2.ts, notATool.ts, .tool5.ts, tool7.d.ts
+      expect(mockParseFile).toHaveBeenCalledTimes(5);
 
       // Verify the correct files were processed
       const parsedFilePaths = mockParseFile.mock.calls.map((call) => call[0]);
-      expect(parsedFilePaths).toContain('/mock/tools/dir/tool1.ts');
-      expect(parsedFilePaths).toContain('/mock/tools/dir/.tool5.ts');
-      expect(parsedFilePaths).toContain('/mock/tools/dir/tool7.d.ts');
-
-      // Verify the other files were not processed
-      expect(parsedFilePaths).not.toContain('/mock/tools/dir/tool2.js');
-      expect(parsedFilePaths).not.toContain('/mock/tools/dir/tool3.tsx');
-      expect(parsedFilePaths).not.toContain('/mock/tools/dir/README.md');
+      expect(parsedFilePaths).toEqual([
+        '/mock/tools/dir/tool1.ts',
+        '/mock/tools/dir/tool2.ts',
+        '/mock/tools/dir/notATool.ts',
+        '/mock/tools/dir/.tool5.ts',
+        '/mock/tools/dir/tool7.d.ts'
+      ]);
     });
   });
 });

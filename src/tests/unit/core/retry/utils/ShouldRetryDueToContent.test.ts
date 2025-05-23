@@ -1,4 +1,4 @@
-import { jest } from "@jest/globals";import { shouldRetryDueToContent, FORBIDDEN_PHRASES } from "../../../../../core/retry/utils/ShouldRetryDueToContent.js";
+import { jest } from "@jest/globals"; import { shouldRetryDueToContent, FORBIDDEN_PHRASES } from "../../../../../core/retry/utils/ShouldRetryDueToContent.ts";
 
 describe("shouldRetryDueToContent", () => {
   // Testing string inputs

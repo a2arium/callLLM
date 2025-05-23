@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
-import { StringSplitter, type SplitOptions } from '../../../../core/processors/StringSplitter.js';
-import { TokenCalculator } from '../../../../core/models/TokenCalculator.js';
+import { StringSplitter, type SplitOptions } from '../../../../core/processors/StringSplitter.ts';
+import { TokenCalculator } from '../../../../core/models/TokenCalculator.ts';
 
 // Mock function declarations
 // const mockCalculateTokens = jest.fn(); // This was unused and can be removed

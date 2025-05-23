@@ -1,6 +1,6 @@
 import { jest, describe, expect, test, beforeAll, beforeEach } from '@jest/globals';
-import { UniversalChatParams } from '../../../../interfaces/UniversalInterfaces.js';
-import { ResponseContentPartAddedEvent, ResponseStreamEvent } from '../../../../adapters/openai/types.js';
+import type { UniversalChatParams } from '@/interfaces/UniversalInterfaces.ts';
+import type { ResponseContentPartAddedEvent, ResponseStreamEvent } from '@/adapters/openai/types.ts';
 
 // Declare module variables
 let OpenAIResponseAdapter;
@@ -56,22 +56,22 @@ jest.unstable_mockModule('openai', () => ({
   OpenAI: mockOpenAI
 }));
 
-jest.unstable_mockModule('../../../../adapters/openai/stream.js', () => ({
+jest.unstable_mockModule('@/adapters/openai/stream.ts', () => ({
   __esModule: true,
   StreamHandler: mockStreamHandler
 }));
 
-jest.unstable_mockModule('../../../../adapters/openai/converter.js', () => ({
+jest.unstable_mockModule('@/adapters/openai/converter.ts', () => ({
   __esModule: true,
   Converter: mockConverter
 }));
 
-jest.unstable_mockModule('../../../../adapters/openai/validator.js', () => ({
+jest.unstable_mockModule('@/adapters/openai/validator.ts', () => ({
   __esModule: true,
   Validator: mockValidator
 }));
 
-jest.unstable_mockModule('../../../../utils/logger.js', () => ({
+jest.unstable_mockModule('@/utils/logger.ts', () => ({
   __esModule: true,
   logger: {
     setConfig: mockLoggerSetConfig,
@@ -85,10 +85,10 @@ jest.unstable_mockModule('../../../../utils/logger.js', () => ({
 
 // Dynamically import the modules after mocks are set up
 beforeAll(async () => {
-  const adapterModule = await import('../../../../adapters/openai/adapter.js');
+  const adapterModule = await import('@/adapters/openai/adapter.ts');
   OpenAIResponseAdapter = adapterModule.OpenAIResponseAdapter;
 
-  const errorsModule = await import('../../../../adapters/openai/errors.js');
+  const errorsModule = await import('@/adapters/openai/errors.ts');
   OpenAIResponseAdapterError = errorsModule.OpenAIResponseAdapterError;
   OpenAIResponseValidationError = errorsModule.OpenAIResponseValidationError;
 });

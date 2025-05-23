@@ -1,12 +1,12 @@
 import { jest } from '@jest/globals';
-import { ToolOrchestrator } from '../../../core/tools/ToolOrchestrator.js';
-import { ToolController } from '../../../core/tools/ToolController.js';
-import { ChatController } from '../../../core/chat/ChatController.js';
-import { ToolsManager } from '../../../core/tools/ToolsManager.js';
-import type { ToolDefinition } from '../../../types/tooling.js';
-import type { UniversalChatResponse, UniversalMessage } from '../../../interfaces/UniversalInterfaces.js';
-import { StreamController } from '../../../core/streaming/StreamController.js';
-import { HistoryManager } from '../../../core/history/HistoryManager.js';
+import { ToolOrchestrator } from '../../../core/tools/ToolOrchestrator.ts';
+import { ToolController } from '../../../core/tools/ToolController.ts';
+import { ChatController } from '../../../core/chat/ChatController.ts';
+import { ToolsManager } from '../../../core/tools/ToolsManager.ts';
+import type { ToolDefinition } from '../../../types/tooling.ts';
+import type { UniversalChatResponse, UniversalMessage } from '../../../interfaces/UniversalInterfaces.ts';
+import { StreamController } from '../../../core/streaming/StreamController.ts';
+import { HistoryManager } from '../../../core/history/HistoryManager.ts';
 
 // Mock ChatController
 class MockChatController {
@@ -114,14 +114,14 @@ describe('ToolOrchestrator Integration', () => {
         content: 'Let me check the weather and time in London.',
         metadata: {},
         toolCalls: [
-        {
-          name: 'getWeather',
-          arguments: { location: 'London' }
-        },
-        {
-          name: 'getTime',
-          arguments: { location: 'London' }
-        }]
+          {
+            name: 'getWeather',
+            arguments: { location: 'London' }
+          },
+          {
+            name: 'getTime',
+            arguments: { location: 'London' }
+          }]
 
       };
 
@@ -213,10 +213,10 @@ describe('ToolOrchestrator Integration', () => {
         content: 'Let me try to execute this tool.',
         metadata: {},
         toolCalls: [
-        {
-          name: 'errorTool',
-          arguments: { shouldFail: true }
-        }]
+          {
+            name: 'errorTool',
+            arguments: { shouldFail: true }
+          }]
 
       };
 
@@ -245,8 +245,8 @@ describe('ToolOrchestrator Integration', () => {
           }
         },
         callFunction: jest.fn().
-        mockResolvedValueOnce('First result').
-        mockResolvedValueOnce('Second result')
+          mockResolvedValueOnce('First result').
+          mockResolvedValueOnce('Second result')
       };
 
       toolsManager.addTool(mockTool);
@@ -298,10 +298,10 @@ describe('ToolOrchestrator Integration', () => {
         content: 'Let me execute the test tool.',
         metadata: {},
         toolCalls: [
-        {
-          name: 'testTool',
-          arguments: {}
-        }]
+          {
+            name: 'testTool',
+            arguments: {}
+          }]
 
       };
 
@@ -333,8 +333,8 @@ describe('ToolOrchestrator Integration', () => {
       toolsManager.addTool(mockTool);
 
       const historicalMessages: UniversalMessage[] = [
-      { role: 'user', content: 'Initial question' },
-      { role: 'assistant', content: 'Initial response' }];
+        { role: 'user', content: 'Initial question' },
+        { role: 'assistant', content: 'Initial response' }];
 
 
       const mockChatController = {
@@ -383,10 +383,10 @@ describe('ToolOrchestrator Integration', () => {
         content: 'Let me execute the test tool.',
         metadata: {},
         toolCalls: [
-        {
-          name: 'testTool',
-          arguments: {}
-        }]
+          {
+            name: 'testTool',
+            arguments: {}
+          }]
 
       };
 

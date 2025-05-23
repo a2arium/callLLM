@@ -1,5 +1,5 @@
 import { jest, describe, expect, test, beforeAll, beforeEach } from '@jest/globals';
-import { ModelInfo } from '../../../../interfaces/UniversalInterfaces.js';
+import { type ModelInfo } from '../../../../interfaces/UniversalInterfaces.ts';
 
 // Declare variables for modules to be dynamically imported
 let DataSplitter;
@@ -12,14 +12,14 @@ const mockTokenCalculator = jest.fn().mockImplementation(() => ({
 }));
 
 // Setup mocks before importing actual modules
-jest.unstable_mockModule('../../../../core/models/TokenCalculator.js', () => ({
+jest.unstable_mockModule('@/core/models/TokenCalculator.ts', () => ({
   __esModule: true,
   TokenCalculator: mockTokenCalculator
 }));
 
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const DataSplitterModule = await import('../../../../core/processors/DataSplitter.js');
+  const DataSplitterModule = await import('@/core/processors/DataSplitter.ts');
   DataSplitter = DataSplitterModule.DataSplitter;
 });
 

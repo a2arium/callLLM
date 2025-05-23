@@ -1,33 +1,33 @@
-import { jest , beforeAll} from '@jest/globals';
-import { Converter, extractPathFromPlaceholder, parseFileReferences } from '../../../../adapters/openai/converter.js';
-import { ToolDefinition } from '../../../../types/tooling.js';
-import { UniversalChatParams, UniversalMessage, FinishReason, ModelInfo, ReasoningEffort } from '../../../../interfaces/UniversalInterfaces.js';
+import { jest, beforeAll } from '@jest/globals';
+import { Converter, extractPathFromPlaceholder, parseFileReferences } from '@/adapters/openai/converter.ts';
+import { type ToolDefinition } from '@/types/tooling.ts';
+import { type UniversalChatParams, type UniversalMessage, type FinishReason, type ModelInfo, type ReasoningEffort } from '@/interfaces/UniversalInterfaces.ts';
 // Declare variables for modules to be dynamically imported
 let ModelManager;
-import { OpenAIResponseValidationError } from '../../../../adapters/openai/errors.js';
+import { OpenAIResponseValidationError } from '@/adapters/openai/errors.ts';
 import { z } from 'zod';
 
 // Mock ModelManager
-jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => ({
-        __esModule: true
-      }));
+jest.unstable_mockModule('@/core/models/ModelManager.ts', () => ({
+  __esModule: true,
+}));
 
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const ModelManagerModule = await import('../../../../core/models/ModelManager.js');
+  const ModelManagerModule = await import('@/core/models/ModelManager.ts');
   ModelManager = ModelManagerModule.ModelManager;
 });
 
 
 describe('OpenAI Response API Converter', () => {
   let converter: Converter;
-  let mockModelManager: jest.Mocked<ModelManager>;
+  let mockModelManager: jest.Mocked<typeof ModelManager>;
 
   beforeEach(() => {
     // Create a mock ModelManager
     mockModelManager = {
       getModel: jest.fn()
-    } as unknown as jest.Mocked<ModelManager>;
+    } as unknown as jest.Mocked<typeof ModelManager>;
 
     converter = new Converter(mockModelManager);
 
@@ -44,8 +44,8 @@ describe('OpenAI Response API Converter', () => {
     test('should convert basic universal params to OpenAI Response params', async () => {
       const universalParams: UniversalChatParams = {
         messages: [
-        { role: 'system', content: 'You are a helpful assistant.' },
-        { role: 'user', content: 'Hello!' }],
+          { role: 'system', content: 'You are a helpful assistant.' },
+          { role: 'user', content: 'Hello!' }],
 
         model: 'gpt-4o',
         settings: {
@@ -58,8 +58,8 @@ describe('OpenAI Response API Converter', () => {
 
       expect(result).toEqual(expect.objectContaining({
         input: [
-        { role: 'system', content: 'You are a helpful assistant.' },
-        { role: 'user', content: 'Hello!' }],
+          { role: 'system', content: 'You are a helpful assistant.' },
+          { role: 'user', content: 'Hello!' }],
 
         model: 'gpt-4o',
         max_output_tokens: 100,
@@ -167,19 +167,19 @@ describe('OpenAI Response API Converter', () => {
     test('should properly handle multipart message content', async () => {
       const universalParams: UniversalChatParams = {
         messages: [
-        {
-          role: 'user',
-          content: [
-          { type: 'text', text: 'Look at this image:' },
           {
-            type: 'image_url',
-            image_url: {
-              url: 'data:image/jpeg;base64,/9j/4AAQSkZJRg...',
-              detail: 'high'
-            }
-          }] as
-          any
-        }],
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Look at this image:' },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: 'data:image/jpeg;base64,/9j/4AAQSkZJRg...',
+                  detail: 'high'
+                }
+              }] as
+              any
+          }],
 
         model: 'gpt-4o-vision'
       };
@@ -187,26 +187,26 @@ describe('OpenAI Response API Converter', () => {
       const result = await converter.convertToOpenAIResponseParams('gpt-4o-vision', universalParams);
 
       expect(result.input).toEqual([
-      {
-        role: 'user',
-        content: [
-        { type: 'text', text: 'Look at this image:' },
         {
-          type: 'image_url',
-          image_url: {
-            url: 'data:image/jpeg;base64,/9j/4AAQSkZJRg...',
-            detail: 'high'
-          }
-        }]
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Look at this image:' },
+            {
+              type: 'image_url',
+              image_url: {
+                url: 'data:image/jpeg;base64,/9j/4AAQSkZJRg...',
+                detail: 'high'
+              }
+            }]
 
-      }]
+        }]
       );
     });
 
     test('should handle file placeholder format in message content', async () => {
       const universalParams: UniversalChatParams = {
         messages: [
-        { role: 'user', content: '<file:/path/to/image.jpg>' }],
+          { role: 'user', content: '<file:/path/to/image.jpg>' }],
 
         model: 'gpt-4o-vision'
       };
@@ -240,23 +240,23 @@ describe('OpenAI Response API Converter', () => {
       };
 
       expect(processedResult.input).toEqual([
-      {
-        role: 'user',
-        content: [
         {
-          type: 'input_image',
-          image_url: 'data:image/jpeg;base64,mock-base64-data',
-          detail: 'high'
-        }]
+          role: 'user',
+          content: [
+            {
+              type: 'input_image',
+              image_url: 'data:image/jpeg;base64,mock-base64-data',
+              detail: 'high'
+            }]
 
-      }]
+        }]
       );
     });
 
     test('should use default imageDetail if not provided with file placeholder', async () => {
       const universalParams: UniversalChatParams = {
         messages: [
-        { role: 'user', content: '<file:/path/to/image.jpg>' }],
+          { role: 'user', content: '<file:/path/to/image.jpg>' }],
 
         model: 'gpt-4o-vision'
       };
@@ -288,16 +288,16 @@ describe('OpenAI Response API Converter', () => {
       };
 
       expect(processedResult.input).toEqual([
-      {
-        role: 'user',
-        content: [
         {
-          type: 'input_image',
-          image_url: 'data:image/jpeg;base64,mock-base64-data',
-          detail: 'auto'
-        }]
+          role: 'user',
+          content: [
+            {
+              type: 'input_image',
+              image_url: 'data:image/jpeg;base64,mock-base64-data',
+              detail: 'auto'
+            }]
 
-      }]
+        }]
       );
     });
 
@@ -440,8 +440,8 @@ describe('OpenAI Response API Converter', () => {
         const expectedInputContent = params.messages.map((msg) => ({
           role: msg.role,
           content: msg.content.includes('System Instructions') ?
-          msg.content :
-          `[System Instructions: ${params.systemMessage}]\n\n${msg.content}`
+            msg.content :
+            `[System Instructions: ${params.systemMessage}]\n\n${msg.content}`
         }));
 
         // Instead of trying to access content directly, convert to JSON and check JSON structure
@@ -552,7 +552,7 @@ describe('OpenAI Response API Converter', () => {
               // Check if this is an image content part
               if ('type' in contentPart && contentPart.type === 'input_image' && 'image_url' in contentPart) {
                 if (contentPart.image_url === 'data:image/jpeg;base64,base64data1' ||
-                contentPart.image_url === 'https://example.com/image2.png') {
+                  contentPart.image_url === 'https://example.com/image2.png') {
                   foundImages++;
                 }
               }
@@ -731,7 +731,7 @@ describe('OpenAI Response API Converter', () => {
         object: 'response',
         status: 'completed',
         output: [
-        functionCall]
+          functionCall]
 
       };
 

@@ -1,4 +1,4 @@
-import type { ToolDefinition, ToolsManager as IToolsManager } from '../../types/tooling.js';
+import type { ToolDefinition, ToolsManager as IToolsManager } from '../../types/tooling.ts';
 
 export class ToolsManager implements IToolsManager {
     private tools: Map<string, ToolDefinition>;

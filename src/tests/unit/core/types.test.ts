@@ -1,5 +1,6 @@
-import { jest } from "@jest/globals";import type { ToolDefinition, ToolsManager, ToolChoice } from '../../../types/tooling.js';
-import { UniversalChatParams } from '../../../interfaces/UniversalInterfaces.js';
+import { jest } from "@jest/globals";
+import type { ToolDefinition, ToolsManager, ToolChoice } from '../../../types/tooling.ts';
+import { type UniversalChatParams } from '../../../interfaces/UniversalInterfaces.ts';
 
 describe('Tool Interfaces', () => {
   describe('ToolDefinition', () => {
@@ -46,10 +47,10 @@ describe('Tool Interfaces', () => {
 
       const toolsManager: ToolsManager = {
         getTool: (name: string) => undefined,
-        addTool: (tool: ToolDefinition) => {},
-        addTools: (tools: ToolDefinition[]) => {},
-        removeTool: (name: string) => {},
-        updateTool: (name: string, updated: Partial<ToolDefinition>) => {},
+        addTool: (tool: ToolDefinition) => { },
+        addTools: (tools: ToolDefinition[]) => { },
+        removeTool: (name: string) => { },
+        updateTool: (name: string, updated: Partial<ToolDefinition>) => { },
         listTools: () => []
       };
 
@@ -94,10 +95,10 @@ describe('Tool Calling Type Definitions', () => {
     const params: UniversalChatParams = {
       model: 'gpt-4',
       messages: [
-      {
-        role: 'user',
-        content: 'Hello'
-      }],
+        {
+          role: 'user',
+          content: 'Hello'
+        }],
 
       tools: [mockTool],
       settings: {
@@ -113,9 +114,9 @@ describe('Tool Calling Type Definitions', () => {
 
   it('should support all valid tool choice options', () => {
     const toolChoices: ToolChoice[] = [
-    'none',
-    'auto',
-    { type: 'function', function: { name: 'test_tool' } }];
+      'none',
+      'auto',
+      { type: 'function', function: { name: 'test_tool' } }];
 
 
     const params: UniversalChatParams = {

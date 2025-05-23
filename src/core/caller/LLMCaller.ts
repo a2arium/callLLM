@@ -1,4 +1,4 @@
-import {
+import type {
     UniversalChatParams,
     UniversalChatResponse,
     UniversalStreamResponse,
@@ -12,54 +12,54 @@ import {
     ResponseFormat,
     HistoryMode,
     TextPart,
-    toMessageParts,
     MessagePart,
     ImagePart,
     ImageSource,
     UrlSource,
     FilePathSource,
-} from '../../interfaces/UniversalInterfaces.js';
+} from '../../interfaces/UniversalInterfaces.ts';
+import { toMessageParts } from '../../interfaces/UniversalInterfaces.ts';
 import { z } from 'zod';
-import { ProviderManager } from './ProviderManager.js';
-import { RegisteredProviders } from '../../adapters/index.js';
-import { ProviderNotFoundError } from '../../adapters/types.js';
-import { ModelManager } from '../models/ModelManager.js';
-import { CapabilityError } from '../models/CapabilityError.js';
-import { TokenCalculator } from '../models/TokenCalculator.js';
-import { ResponseProcessor } from '../processors/ResponseProcessor.js';
+import { ProviderManager } from './ProviderManager.ts';
+import type { RegisteredProviders } from '../../adapters/index.ts';
+import { ProviderNotFoundError } from '../../adapters/types.ts';
+import { ModelManager } from '../models/ModelManager.ts';
+import { CapabilityError } from '../models/CapabilityError.ts';
+import { TokenCalculator } from '../models/TokenCalculator.ts';
+import { ResponseProcessor } from '../processors/ResponseProcessor.ts';
 import { v4 as uuidv4 } from 'uuid';
-import { UsageCallback } from '../../interfaces/UsageInterfaces.js';
-import { RequestProcessor } from '../processors/RequestProcessor.js';
-import { DataSplitter } from '../processors/DataSplitter.js';
-import { RetryManager } from '../retry/RetryManager.js';
-import { UsageTracker } from '../telemetry/UsageTracker.js';
-import { ChatController } from '../chat/ChatController.js';
-import { ToolsManager } from '../tools/ToolsManager.js';
-import { ToolController } from '../tools/ToolController.js';
-import { ToolOrchestrator } from '../tools/ToolOrchestrator.js';
-import { ChunkController, ChunkProcessingParams } from '../chunks/ChunkController.js';
-import { StreamingService } from '../streaming/StreamingService.js';
-import type { ToolDefinition, ToolCall } from '../../types/tooling.js';
-import { StreamController } from '../streaming/StreamController.js';
-import { HistoryManager } from '../history/HistoryManager.js';
-import { logger } from '../../utils/logger.js';
-import { PromptEnhancer } from '../prompt/PromptEnhancer.js';
-import { ToolsFolderLoader } from '../tools/toolLoader/ToolsFolderLoader.js';
-import type { StringOrDefinition } from '../tools/toolLoader/types.js';
-import type { MCPDirectAccess } from '../mcp/MCPDirectAccess.js';
-import type { McpToolSchema, MCPServersMap } from '../mcp/MCPConfigTypes.js';
-import { isMCPToolConfig } from '../mcp/MCPConfigTypes.js';
-import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.js';
-import { MCPToolLoader } from '../mcp/MCPToolLoader.js';
+import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
+import { RequestProcessor } from '../processors/RequestProcessor.ts';
+import { DataSplitter } from '../processors/DataSplitter.ts';
+import { RetryManager } from '../retry/RetryManager.ts';
+import { UsageTracker } from '../telemetry/UsageTracker.ts';
+import { ChatController } from '../chat/ChatController.ts';
+import { ToolsManager } from '../tools/ToolsManager.ts';
+import { ToolController } from '../tools/ToolController.ts';
+import { ToolOrchestrator } from '../tools/ToolOrchestrator.ts';
+import { ChunkController, type ChunkProcessingParams } from '../chunks/ChunkController.ts';
+import { StreamingService } from '../streaming/StreamingService.ts';
+import type { ToolDefinition, ToolCall } from '../../types/tooling.ts';
+import { StreamController } from '../streaming/StreamController.ts';
+import { HistoryManager } from '../history/HistoryManager.ts';
+import { logger } from '../../utils/logger.ts';
+import { PromptEnhancer } from '../prompt/PromptEnhancer.ts';
+import { ToolsFolderLoader } from '../tools/toolLoader/ToolsFolderLoader.ts';
+import type { StringOrDefinition } from '../tools/toolLoader/types.ts';
+import type { MCPDirectAccess } from '../mcp/MCPDirectAccess.ts';
+import type { McpToolSchema, MCPServersMap } from '../mcp/MCPConfigTypes.ts';
+import { isMCPToolConfig } from '../mcp/MCPConfigTypes.ts';
+import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
+import { MCPToolLoader } from '../mcp/MCPToolLoader.ts';
 import {
     normalizeImageSource,
     filePathToBase64,
     estimateImageTokens,
     saveBase64ToFile,
     validateImageFile
-} from '../file-data/fileData.js';
-import { BaseAdapter } from '../../adapters/base/baseAdapter.js';
-import { ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.js';
+} from '../file-data/fileData.ts';
+import { BaseAdapter } from '../../adapters/base/baseAdapter.ts';
+import type { ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.ts';
 
 /**
  * Interface that matches the core functionality of StreamController

@@ -1,18 +1,18 @@
 import { jest, beforeAll } from '@jest/globals';
-import { Validator } from '../../../../adapters/openai/validator.js';
-import { OpenAIResponseValidationError } from '../../../../adapters/openai/errors.js';
-import type { UniversalChatParams } from '../../../../interfaces/UniversalInterfaces.js';
-import type { ToolDefinition } from '../../../../types/tooling.js';
+import { Validator } from '@/adapters/openai/validator.ts';
+import { OpenAIResponseValidationError } from '@/adapters/openai/errors.ts';
+import type { UniversalChatParams } from '@/interfaces/UniversalInterfaces.ts';
+import type { ToolDefinition } from '@/types/tooling.ts';
 
 // Declare variables for modules to be dynamically imported
 let ModelManager;
 // let Validator; // No longer dynamically imported
 // let OpenAIResponseValidationError; // No longer dynamically imported
 
-import { ModelInfo, ReasoningEffort } from '../../../../interfaces/UniversalInterfaces.js';
+import { type ModelInfo, type ReasoningEffort } from '@/interfaces/UniversalInterfaces.ts';
 
 // Mock the ModelManager
-jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => ({
+jest.unstable_mockModule('@/core/models/ModelManager.ts', () => ({
   __esModule: true,
   // Provide a mock constructor for ModelManager
   ModelManager: jest.fn().mockImplementation(() => ({
@@ -20,7 +20,7 @@ jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => ({
   }))
 }));
 
-// jest.unstable_mockModule('../../../../adapters/openai/validator.js', () => ({ // REMOVE THIS MOCK
+// jest.unstable_mockModule('../../../../adapters/openai/validator.ts', () => ({ // REMOVE THIS MOCK
 //     __esModule: true,
 //     Validator: jest.fn().mockImplementation(() => ({
 //         validateParams: jest.fn(),
@@ -29,7 +29,7 @@ jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => ({
 //     }))
 // }));
 
-// jest.unstable_mockModule('../../../../adapters/openai/errors.js', () => ({ // REMOVE THIS MOCK
+// jest.unstable_mockModule('../../../../adapters/openai/errors.ts', () => ({ // REMOVE THIS MOCK
 //     __esModule: true,
 //     OpenAIResponseValidationError: class MockOpenAIResponseValidationError extends Error {
 //         constructor(message?: string) {
@@ -41,13 +41,13 @@ jest.unstable_mockModule('../../../../core/models/ModelManager.js', () => ({
 
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const ModelManagerModule = await import('../../../../core/models/ModelManager.js');
+  const ModelManagerModule = await import('@/core/models/ModelManager.ts');
   ModelManager = ModelManagerModule.ModelManager;
 
-  // const ValidatorModule = await import('../../../../adapters/openai/validator.js'); // No longer needed
+  // const ValidatorModule = await import('../../../../adapters/openai/validator.ts'); // No longer needed
   // Validator = ValidatorModule.Validator; // No longer needed
 
-  // const ErrorsModule = await import('../../../../adapters/openai/errors.js'); // No longer needed
+  // const ErrorsModule = await import('../../../../adapters/openai/errors.ts'); // No longer needed
   // OpenAIResponseValidationError = ErrorsModule.OpenAIResponseValidationError; // No longer needed
 });
 

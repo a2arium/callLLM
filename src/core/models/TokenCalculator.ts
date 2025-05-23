@@ -1,4 +1,4 @@
-import { Usage } from '../../interfaces/UniversalInterfaces.js';
+import type { Usage } from '../../interfaces/UniversalInterfaces.ts';
 import { encoding_for_model } from '@dqbd/tiktoken';
 
 export class TokenCalculator {

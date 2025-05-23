@@ -3,7 +3,7 @@
  */
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { getImportMetaUrl } from './importMetaUrl.js';
+import { getImportMetaUrl } from './importMetaUrl.ts';
 
 /**
  * Get the equivalent of __dirname in ESM

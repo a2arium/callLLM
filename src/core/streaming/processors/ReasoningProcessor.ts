@@ -1,5 +1,5 @@
-import type { StreamChunk, IStreamProcessor } from "../types.js";
-import { logger } from "../../../utils/logger.js";
+import type { StreamChunk, IStreamProcessor } from "../types.ts";
+import { logger } from "../../../utils/logger.ts";
 
 /**
  * ReasoningProcessor

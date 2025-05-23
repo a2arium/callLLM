@@ -1,8 +1,8 @@
-import { LLMProvider, LLMProviderImage, ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.js';
-import { AdapterConfig } from '../../adapters/base/baseAdapter.js';
-import { adapterRegistry, RegisteredProviders } from '../../adapters/index.js';
-import { ProviderNotFoundError } from '../../adapters/types.js';
-import { UniversalChatResponse } from '../../interfaces/UniversalInterfaces.js';
+import type { LLMProvider, LLMProviderImage, ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.ts';
+import type { AdapterConfig } from '../../adapters/base/baseAdapter.ts';
+import { adapterRegistry, type RegisteredProviders } from '../../adapters/index.ts';
+import { ProviderNotFoundError } from '../../adapters/types.ts';
+import type { UniversalChatResponse } from '../../interfaces/UniversalInterfaces.ts';
 
 export class ProviderManager {
     private provider: LLMProvider;

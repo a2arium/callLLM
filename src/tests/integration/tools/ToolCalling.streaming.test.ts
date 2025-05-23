@@ -1,21 +1,22 @@
-import { jest , beforeAll} from '@jest/globals';
-import { StreamingService } from '../../../core/streaming/StreamingService.js';
-import { HistoryManager } from '../../../core/history/HistoryManager.js';
+import { jest, beforeAll } from '@jest/globals';
+import { StreamingService } from '../../../core/streaming/StreamingService.ts';
+import { HistoryManager } from '../../../core/history/HistoryManager.ts';
 // Declare variables for modules to be dynamically imported
 let TokenCalculator;
-import { ToolController } from '../../../core/tools/ToolController.js';
-import { ToolsManager } from '../../../core/tools/ToolsManager.js';
-import { ToolOrchestrator } from '../../../core/tools/ToolOrchestrator.js';
-import { StreamHandler } from '../../../core/streaming/StreamHandler.js';
+import { ToolController } from '../../../core/tools/ToolController.ts';
+import { ToolsManager } from '../../../core/tools/ToolsManager.ts';
+import { ToolOrchestrator } from '../../../core/tools/ToolOrchestrator.ts';
+import { StreamHandler } from '../../../core/streaming/StreamHandler.ts';
 // Declare variables for modules to be dynamically imported
 let ModelManager;
-import { RetryManager } from '../../../core/retry/RetryManager.js';
-import type { ToolDefinition, ToolCall } from '../../../types/tooling.js';
-import type { UniversalStreamResponse, UniversalChatParams, UniversalMessage, FinishReason } from '../../../interfaces/UniversalInterfaces.js';
+import { RetryManager } from '../../../core/retry/RetryManager.ts';
+import type { ToolDefinition, ToolCall } from '../../../types/tooling.ts';
+import type { UniversalStreamResponse, UniversalChatParams, UniversalMessage, FinishReason } from '../../../interfaces/UniversalInterfaces.ts';
 
 // Mock TokenCalculator implementation
-jest.unstable_mockModule('../../../core/models/TokenCalculator.js', () => {
-  return { __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true,
+jest.unstable_mockModule('@/core/models/TokenCalculator.ts', () => {
+  return {
+    __esModule: true,
     TokenCalculator: jest.fn().mockImplementation(() => ({
       calculateTokens: jest.fn().mockReturnValue({ total: 10 }),
       calculateUsage: jest.fn(),
@@ -25,8 +26,9 @@ jest.unstable_mockModule('../../../core/models/TokenCalculator.js', () => {
 });
 
 // Mock ModelManager implementation
-jest.unstable_mockModule('../../../core/models/ModelManager.js', () => {
-  return { __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true, __esModule: true,
+jest.unstable_mockModule('@/core/models/ModelManager.ts', () => {
+  return {
+    __esModule: true,
     ModelManager: jest.fn().mockImplementation(() => ({
       getModel: jest.fn().mockReturnValue({
         name: 'test-model',
@@ -38,10 +40,10 @@ jest.unstable_mockModule('../../../core/models/ModelManager.js', () => {
 
 // Dynamically import modules after mocks are set up
 beforeAll(async () => {
-  const TokenCalculatorModule = await import('../../../core/models/TokenCalculator.js');
+  const TokenCalculatorModule = await import('@/core/models/TokenCalculator.ts');
   TokenCalculator = TokenCalculatorModule.TokenCalculator;
 
-  const ModelManagerModule = await import('../../../core/models/ModelManager.js');
+  const ModelManagerModule = await import('@/core/models/ModelManager.ts');
   ModelManager = ModelManagerModule.ModelManager;
 });
 
@@ -72,8 +74,8 @@ describe('Tool Calling with Streaming', () => {
   };
 
   let historyManager: HistoryManager;
-  let tokenCalculator: TokenCalculator;
-  let modelManager: ModelManager;
+  let tokenCalculator: typeof TokenCalculator;
+  let modelManager: typeof ModelManager;
   let toolsManager: ToolsManager;
   let toolController: ToolController;
   let toolOrchestrator: ToolOrchestrator;
@@ -165,8 +167,8 @@ describe('Tool Calling with Streaming', () => {
     const params: UniversalChatParams = {
       model: 'test-model',
       messages: [
-      { role: 'system', content: 'System message' },
-      { role: 'user', content: 'Use the test tool with param=test_value' }],
+        { role: 'system', content: 'System message' },
+        { role: 'user', content: 'Use the test tool with param=test_value' }],
 
       tools: [testTool]
     };
@@ -192,15 +194,15 @@ describe('Tool Calling with Streaming', () => {
 
     // Check that we got the content from the second stream call
     expect(receivedChunks.some((chunk) =>
-    chunk.content && chunk.content.includes('Tool executed with result')
+      chunk.content && chunk.content.includes('Tool executed with result')
     )).toBe(true);
 
     // Check that the tool result was added to history
     const history = historyManager.getMessages();
     expect(history.some((msg: UniversalMessage) =>
-    msg.role === 'tool' &&
-    msg.toolCallId === 'tool_call_123' &&
-    msg.content && msg.content.includes('Tool executed successfully')
+      msg.role === 'tool' &&
+      msg.toolCallId === 'tool_call_123' &&
+      msg.content && msg.content.includes('Tool executed successfully')
     )).toBe(true);
   });
 
