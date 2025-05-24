@@ -26,7 +26,16 @@ export function isNetworkError(error: Error): boolean {
         message.includes('socket') ||
         message.includes('econnreset') ||
         message.includes('timeout') ||
-        message.includes('timed out');
+        message.includes('timed out') ||
+        message.includes('premature close') ||
+        message.includes('fetch') ||
+        message.includes('econnrefused') ||
+        message.includes('enotfound') ||
+        message.includes('ehostunreach') ||
+        message.includes('enetunreach') ||
+        message.includes('aborted') ||
+        message.includes('stream') ||
+        message.includes('request timeout');
 }
 
 /**
