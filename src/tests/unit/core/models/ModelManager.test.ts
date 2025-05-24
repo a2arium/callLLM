@@ -150,9 +150,14 @@ describe('ModelManager', () => {
     });
 
     it('should throw error when maxResponseTokens is missing', () => {
-      const invalidModel = { ...validModel, maxResponseTokens: 0 };
+      const invalidModel = { ...validModel, maxResponseTokens: undefined } as any;
       expect(() => manager.addModel(invalidModel)).
         toThrow('Max response tokens is required');
+    });
+
+    it('should allow maxResponseTokens to be 0 for embedding models', () => {
+      const embeddingModel = { ...validModel, maxResponseTokens: 0 };
+      expect(() => manager.addModel(embeddingModel)).not.toThrow();
     });
 
     it('should throw error when characteristics is missing', () => {

@@ -1,4 +1,4 @@
-import type { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, UrlSource, Base64Source, ImageInputOpts, ImageOutputOpts, FilePathSource, ImageSource } from './UniversalInterfaces.ts';
+import type { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, UrlSource, Base64Source, ImageInputOpts, ImageOutputOpts, FilePathSource, ImageSource, EmbeddingParams, EmbeddingResponse } from './UniversalInterfaces.ts';
 import type { UsageCallback } from './UsageInterfaces.ts';
 
 export interface LLMProvider {
@@ -44,4 +44,11 @@ export type ImageCallParams = {
  */
 export interface LLMProviderImage {
     imageCall(model: string, op: ImageOp, params: ImageCallParams): Promise<UniversalChatResponse>;
+}
+
+/**
+ * Interface for providers that support embedding generation
+ */
+export interface LLMProviderEmbedding {
+    embeddingCall(model: string, params: EmbeddingParams): Promise<EmbeddingResponse>;
 }

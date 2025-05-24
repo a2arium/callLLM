@@ -328,4 +328,92 @@ export const defaultModels: ModelInfo[] = [
             firstTokenLatency: 2000,
         },
     },
+    // Embedding Models
+    {
+        name: 'text-embedding-3-small',
+        inputPricePerMillion: 0.02,
+        outputPricePerMillion: 0, // Embeddings don't generate tokens
+        maxRequestTokens: 8192,
+        maxResponseTokens: 0, // No response tokens for embeddings
+        tokenizationModel: "gpt-4",
+        characteristics: {
+            qualityIndex: 85,
+            outputSpeed: 0, // Not applicable for embeddings
+            firstTokenLatency: 50 // Time to get embeddings
+        },
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            embeddings: {
+                maxInputLength: 8192,
+                dimensions: [512, 1536],
+                defaultDimensions: 1536,
+                encodingFormats: ['float', 'base64']
+            },
+            input: {
+                text: true
+            },
+            output: {
+                text: false // Embeddings don't output text
+            }
+        }
+    },
+    {
+        name: 'text-embedding-3-large',
+        inputPricePerMillion: 0.13,
+        outputPricePerMillion: 0,
+        maxRequestTokens: 8192,
+        maxResponseTokens: 0,
+        tokenizationModel: "gpt-4",
+        characteristics: {
+            qualityIndex: 95,
+            outputSpeed: 0,
+            firstTokenLatency: 80
+        },
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            embeddings: {
+                maxInputLength: 8192,
+                dimensions: [256, 1024, 3072],
+                defaultDimensions: 3072,
+                encodingFormats: ['float', 'base64']
+            },
+            input: {
+                text: true
+            },
+            output: {
+                text: false
+            }
+        }
+    },
+    {
+        name: 'text-embedding-ada-002',
+        inputPricePerMillion: 0.10,
+        outputPricePerMillion: 0,
+        maxRequestTokens: 8192,
+        maxResponseTokens: 0,
+        tokenizationModel: "gpt-4",
+        characteristics: {
+            qualityIndex: 75,
+            outputSpeed: 0,
+            firstTokenLatency: 60
+        },
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            embeddings: {
+                maxInputLength: 8192,
+                dimensions: [1536],
+                defaultDimensions: 1536,
+                encodingFormats: ['float']
+            },
+            input: {
+                text: true
+            },
+            output: {
+                text: false
+            }
+        }
+    },
 ]; 

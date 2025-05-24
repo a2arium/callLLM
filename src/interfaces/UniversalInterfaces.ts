@@ -497,6 +497,22 @@ export type ModelCapabilities = {
     reasoning?: boolean;
 
     /**
+     * Whether the model supports embedding generation.
+     * When false, embedding generation requests will be rejected.
+     * @default false
+     */
+    embeddings?: boolean | {
+        /** Maximum input text length in tokens */
+        maxInputLength?: number;
+        /** Supported embedding dimensions */
+        dimensions?: number[];
+        /** Default dimension size */
+        defaultDimensions?: number;
+        /** Supported encoding formats */
+        encodingFormats?: ('float' | 'base64')[];
+    };
+
+    /**
      * Capabilities related to model input.
      * The presence of a modality key indicates support for that input type.
      */
@@ -594,8 +610,10 @@ export type ModelInfo = {
     };
 };
 
-// Model alias type
-export type ModelAlias = 'fast' | 'premium' | 'balanced' | 'cheap';
+/**
+ * Model aliases for selecting models by characteristics
+ */
+export type ModelAlias = 'cheap' | 'balanced' | 'fast' | 'premium';
 
 /**
  * Defines the level of reasoning effort for reasoning-capable models.
@@ -644,4 +662,70 @@ export type ImageGenerationResult = {
         usage?: Usage;
         callType?: 'image_generation' | 'image_edit' | 'image_variation';
     };
+};
+
+/**
+ * Parameters for embedding generation requests
+ */
+export type EmbeddingParams = {
+    /** Text input to be embedded. Can be a single string or array of strings for batch processing */
+    input: string | string[];
+    /** Model to use for embedding generation */
+    model: string;
+    /** Number of dimensions for the embedding. Must be supported by the model */
+    dimensions?: number;
+    /** Format for the returned embeddings */
+    encodingFormat?: 'float' | 'base64';
+    /** A unique identifier representing your end-user */
+    user?: string;
+    /** Unique identifier for this call */
+    callerId?: string;
+    /** Optional callback to receive incremental usage stats for batch processing */
+    usageCallback?: UsageCallback;
+    /** Batch size for usage callbacks when processing multiple inputs */
+    usageBatchSize?: number;
+};
+
+/**
+ * Individual embedding object in the response
+ */
+export type EmbeddingObject = {
+    /** The embedding vector as an array of numbers */
+    embedding: number[];
+    /** Index of this embedding in the batch request */
+    index: number;
+    /** Object type, always 'embedding' */
+    object: 'embedding';
+};
+
+/**
+ * Response from embedding generation
+ */
+export type EmbeddingResponse = {
+    /** Array of embedding objects */
+    embeddings: EmbeddingObject[];
+    /** Model used for generating embeddings */
+    model: string;
+    /** Usage statistics for the request */
+    usage: Usage;
+    /** Additional metadata about the response */
+    metadata?: Metadata;
+};
+
+/**
+ * Options for embedding calls through LLMCaller
+ */
+export type EmbeddingCallOptions = {
+    /** Text input to be embedded */
+    input: string | string[];
+    /** Optional model override. If not provided, uses provider default or caller configuration */
+    model?: string;
+    /** Number of dimensions for the embedding */
+    dimensions?: number;
+    /** Format for the returned embeddings */
+    encodingFormat?: 'float' | 'base64';
+    /** Optional callback to receive incremental usage stats */
+    usageCallback?: UsageCallback;
+    /** Batch size for usage callbacks when processing multiple inputs */
+    usageBatchSize?: number;
 }; 

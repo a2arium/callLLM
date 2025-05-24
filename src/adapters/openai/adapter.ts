@@ -9,7 +9,9 @@ import type {
     ModelInfo,
     ImageSource,
     ImageCallParams as BaseImageCallParams,
-    Usage
+    Usage,
+    EmbeddingParams,
+    EmbeddingResponse
 } from '../../interfaces/UniversalInterfaces.ts';
 import { FinishReason } from '../../interfaces/UniversalInterfaces.ts';
 import { OpenAIResponseAdapterError, OpenAIResponseValidationError, OpenAIResponseAuthError, OpenAIResponseRateLimitError, OpenAIResponseNetworkError, OpenAIResponseServiceError } from './errors.ts';
@@ -33,7 +35,7 @@ import { ModelManager } from '../../core/models/ModelManager.ts';
 import { defaultModels } from './models.ts';
 import type { RegisteredProviders } from '../index.ts';
 import { TokenCalculator } from '../../core/models/TokenCalculator.ts';
-import type { LLMProviderImage, ImageOp } from '../../interfaces/LLMProvider.ts';
+import type { LLMProviderImage, LLMProviderEmbedding, ImageOp } from '../../interfaces/LLMProvider.ts';
 import { saveBase64ToFile } from '../../core/file-data/fileData.ts';
 import * as fs from 'fs';
 import type { UrlSource, Base64Source, FilePathSource } from '../../interfaces/UniversalInterfaces.ts';
@@ -59,7 +61,7 @@ interface ExtendedImageCallParams extends BaseImageCallParams {
 /**
  * OpenAI Response Adapter implementing the OpenAI /v1/responses API endpoint
  */
-export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderImage {
+export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderImage, LLMProviderEmbedding {
     private client: OpenAI;
     private converter: Converter;
     private streamHandler: StreamHandler;
@@ -1516,6 +1518,116 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
         }
 
         return result;
+    }
+
+    async embeddingCall(model: string, params: EmbeddingParams): Promise<EmbeddingResponse> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.embeddingCall' });
+        log.debug('Generating embeddings', {
+            model,
+            inputType: Array.isArray(params.input) ? 'batch' : 'single',
+            inputCount: Array.isArray(params.input) ? params.input.length : 1
+        });
+
+        try {
+            // Convert to OpenAI embedding parameters
+            const openAIParams = this.convertToProviderEmbeddingParams(model, params);
+
+            // Call OpenAI embeddings API
+            const response = await this.client.embeddings.create(openAIParams);
+
+            // Convert response to universal format
+            const universalResponse = this.convertFromProviderEmbeddingResponse(response);
+
+            log.info('Successfully generated embeddings', {
+                model,
+                inputCount: Array.isArray(params.input) ? params.input.length : 1,
+                tokensUsed: universalResponse.usage.tokens.total,
+                cost: universalResponse.usage.costs.total
+            });
+
+            return universalResponse;
+        } catch (error: any) {
+            log.error('Failed to generate embeddings:', error);
+
+            // Handle specific OpenAI API error types
+            if (error instanceof OpenAI.APIError) {
+                if (error.status === 401) {
+                    throw new OpenAIResponseAuthError('Invalid API key or authentication error');
+                } else if (error.status === 429) {
+                    const retryAfter = error.headers?.['retry-after'];
+                    throw new OpenAIResponseRateLimitError('Rate limit exceeded',
+                        retryAfter ? parseInt(retryAfter, 10) : 60);
+                } else if (error.status >= 500) {
+                    throw new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`);
+                } else if (error.status === 400) {
+                    throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
+                }
+            }
+
+            throw new OpenAIResponseAdapterError(`OpenAI embedding API error: ${error?.message || String(error)}`);
+        }
+    }
+
+    convertToProviderEmbeddingParams(model: string, params: EmbeddingParams): OpenAI.EmbeddingCreateParams {
+        return {
+            model,
+            input: params.input,
+            dimensions: params.dimensions,
+            encoding_format: params.encodingFormat,
+            user: params.user,
+        };
+    }
+
+    convertFromProviderEmbeddingResponse(response: OpenAI.CreateEmbeddingResponse): EmbeddingResponse {
+        // Calculate usage based on OpenAI's response
+        const usage: Usage = {
+            tokens: {
+                input: {
+                    total: response.usage.prompt_tokens,
+                    cached: 0, // OpenAI doesn't provide cached token info for embeddings
+                },
+                output: {
+                    total: 0, // Embeddings don't generate output tokens
+                    reasoning: 0,
+                },
+                total: response.usage.prompt_tokens,
+            },
+            costs: this.calculateEmbeddingCosts(response.usage.prompt_tokens, response.model)
+        };
+
+        return {
+            embeddings: response.data.map((item, index) => ({
+                embedding: item.embedding,
+                index: index,
+                object: 'embedding' as const,
+            })),
+            model: response.model,
+            usage,
+            metadata: {
+                created: Date.now(),
+                model: response.model,
+            },
+        };
+    }
+
+    private calculateEmbeddingCosts(inputTokens: number, modelName: string): Usage['costs'] {
+        // Get model info for pricing
+        const modelInfo = this.modelManager.getModel(modelName);
+        const inputPricePerMillion = modelInfo?.inputPricePerMillion || 0.02; // Default to text-embedding-3-small pricing
+
+        const inputCost = (inputTokens * inputPricePerMillion) / 1_000_000;
+
+        return {
+            input: {
+                total: inputCost,
+                cached: 0,
+            },
+            output: {
+                total: 0, // No output costs for embeddings
+                reasoning: 0,
+            },
+            total: inputCost,
+        };
     }
 }
 

@@ -52,6 +52,7 @@
     "example:loadHistory": "node --loader ts-node/esm examples/loadHistory.ts",
     "example:image": "node --loader ts-node/esm examples/imageInput.ts",
     "example:imageGenerate": "node --loader ts-node/esm examples/imageGenerationAndEditing.ts",
+    "example:embeddings": "node --loader ts-node/esm examples/embeddings-example.ts",
     "lint": "eslint . --ext .ts"
   },
   "engines": {

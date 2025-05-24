@@ -1,4 +1,4 @@
-import type { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces.ts';
+import type { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, EmbeddingParams, EmbeddingResponse } from '../../interfaces/UniversalInterfaces.ts';
 import type { LLMProvider } from '../../interfaces/LLMProvider.ts';
 
 export class AdapterError extends Error {
@@ -27,6 +27,23 @@ export abstract class BaseAdapter implements LLMProvider {
     abstract convertToProviderParams(model: string, params: UniversalChatParams): unknown;
     abstract convertFromProviderResponse(response: unknown): UniversalChatResponse;
     abstract convertFromProviderStreamResponse(response: unknown): UniversalStreamResponse;
+
+    /**
+     * Optional embedding support. Providers that support embeddings should implement this.
+     */
+    embeddingCall?(model: string, params: EmbeddingParams): Promise<EmbeddingResponse>;
+
+    /**
+     * Convert embedding parameters to provider-specific format.
+     * Should be implemented by providers that support embeddings.
+     */
+    convertToProviderEmbeddingParams?(model: string, params: EmbeddingParams): unknown;
+
+    /**
+     * Convert provider embedding response to universal format.
+     * Should be implemented by providers that support embeddings.
+     */
+    convertFromProviderEmbeddingResponse?(response: unknown): EmbeddingResponse;
 
     protected validateConfig(config: AdapterConfig): void {
         if (!config.apiKey) {

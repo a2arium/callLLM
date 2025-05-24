@@ -1,8 +1,8 @@
-import type { LLMProvider, LLMProviderImage, ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.ts';
+import type { LLMProvider, LLMProviderImage, LLMProviderEmbedding, ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.ts';
 import type { AdapterConfig } from '../../adapters/base/baseAdapter.ts';
 import { adapterRegistry, type RegisteredProviders } from '../../adapters/index.ts';
 import { ProviderNotFoundError } from '../../adapters/types.ts';
-import type { UniversalChatResponse } from '../../interfaces/UniversalInterfaces.ts';
+import type { UniversalChatResponse, EmbeddingParams, EmbeddingResponse } from '../../interfaces/UniversalInterfaces.ts';
 
 export class ProviderManager {
     private provider: LLMProvider;
@@ -64,6 +64,43 @@ export class ProviderManager {
         }
 
         return imageProvider.imageCall(model, op, params);
+    }
+
+    /**
+     * Type guard to check if the provider implements the LLMProviderEmbedding interface
+     * @returns true if the provider implements LLMProviderEmbedding, false otherwise
+     */
+    public supportsEmbeddings(): boolean {
+        // Check if the provider has the embeddingCall method
+        return 'embeddingCall' in this.provider;
+    }
+
+    /**
+     * Attempts to access the embedding capabilities of the current provider
+     * @returns The provider cast to LLMProviderEmbedding if it supports embeddings, or null if not
+     */
+    public getEmbeddingProvider(): LLMProviderEmbedding | null {
+        // Use the type guard to check if the provider implements the LLMProviderEmbedding interface
+        if (this.supportsEmbeddings()) {
+            return this.provider as unknown as LLMProviderEmbedding;
+        }
+        return null;
+    }
+
+    /**
+     * Executes an embedding operation using the current provider if it supports embeddings
+     * @param model The model to use for embedding generation
+     * @param params Parameters for the embedding operation
+     * @returns A Promise resolving to the embedding response
+     * @throws Error if the provider doesn't support embeddings
+     */
+    public async callEmbeddingOperation(model: string, params: EmbeddingParams): Promise<EmbeddingResponse> {
+        const embeddingProvider = this.getEmbeddingProvider();
+        if (!embeddingProvider) {
+            throw new Error(`Provider '${this.currentProviderName}' does not support embedding generation`);
+        }
+
+        return embeddingProvider.embeddingCall(model, params);
     }
 
     public switchProvider(providerName: RegisteredProviders, apiKey?: string): void {

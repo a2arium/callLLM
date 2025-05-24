@@ -91,12 +91,16 @@ export class ModelManager {
         if (model.inputPricePerMillion === undefined) throw new Error('Input price is required');
         if (model.outputPricePerMillion === undefined) throw new Error('Output price is required');
         if (!model.maxRequestTokens) throw new Error('Max request tokens is required');
-        if (!model.maxResponseTokens) throw new Error('Max response tokens is required');
+        if (model.maxResponseTokens === undefined) throw new Error('Max response tokens is required');
         if (!model.characteristics) throw new Error('Model characteristics are required');
 
         // Check for negative prices
         if (model.inputPricePerMillion < 0) throw new Error('Invalid model configuration');
         if (model.outputPricePerMillion < 0) throw new Error('Invalid model configuration');
+
+        // Check for negative token values
+        if (model.maxRequestTokens < 0) throw new Error('Invalid model configuration');
+        if (model.maxResponseTokens < 0) throw new Error('Invalid model configuration');
     }
 
     public resolveModel(nameOrAlias: string): string {

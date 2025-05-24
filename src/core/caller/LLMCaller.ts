@@ -17,6 +17,8 @@ import type {
     ImageSource,
     UrlSource,
     FilePathSource,
+    EmbeddingCallOptions,
+    EmbeddingResponse
 } from '../../interfaces/UniversalInterfaces.ts';
 import { toMessageParts } from '../../interfaces/UniversalInterfaces.ts';
 import { z } from 'zod';
@@ -60,6 +62,7 @@ import {
 } from '../file-data/fileData.ts';
 import { BaseAdapter } from '../../adapters/base/baseAdapter.ts';
 import type { ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.ts';
+import { EmbeddingController } from '../embeddings/EmbeddingController.ts';
 
 /**
  * Interface that matches the core functionality of StreamController
@@ -136,6 +139,8 @@ export class LLMCaller implements MCPDirectAccess {
     private maxChunkIterations: number; // Store maxChunkIterations for chunk controller
     private mcpSchemaCache: Map<string, ToolDefinition[]> = new Map();
     private parallelChunking: boolean; // Whether to process chunks in parallel
+    // Embedding controller
+    private embeddingController?: EmbeddingController;
 
     constructor(
         providerName: RegisteredProviders,
@@ -1678,5 +1683,120 @@ export class LLMCaller implements MCPDirectAccess {
             log.error('Failed to save image output:', error);
             throw new Error(`Failed to save image to ${outputPath}: ${error instanceof Error ? error.message : String(error)}`);
         }
+    }
+
+    /**
+     * Generate embeddings for text input
+     */
+    async embeddings(options: EmbeddingCallOptions): Promise<EmbeddingResponse> {
+        const log = logger.createLogger({ prefix: 'LLMCaller.embeddings' });
+
+        // Resolve the model to use
+        const resolvedModel = this.resolveEmbeddingModel(options.model);
+
+        // Initialize embedding controller if not already done
+        if (!this.embeddingController) {
+            this.embeddingController = new EmbeddingController(
+                this.providerManager.getProvider() as BaseAdapter,
+                this.modelManager,
+                this.tokenCalculator,
+                options.usageCallback || this.usageCallback,
+                this.callerId
+            );
+        }
+
+        log.debug('Generating embeddings', {
+            model: resolvedModel,
+            inputType: Array.isArray(options.input) ? 'batch' : 'single',
+            inputCount: Array.isArray(options.input) ? options.input.length : 1
+        });
+
+        return this.embeddingController.generateEmbeddings({
+            input: options.input,
+            model: resolvedModel,
+            dimensions: options.dimensions,
+            encodingFormat: options.encodingFormat,
+            callerId: this.callerId,
+            usageCallback: options.usageCallback || this.usageCallback,
+            usageBatchSize: options.usageBatchSize,
+        });
+    }
+
+    /**
+     * Resolve embedding model from options or defaults
+     * Note: Aliases are not supported for embeddings to ensure model consistency
+     */
+    private resolveEmbeddingModel(requestedModel?: string): string {
+        const log = logger.createLogger({ prefix: 'LLMCaller.resolveEmbeddingModel' });
+
+        if (requestedModel) {
+            // Check if it's a specific model name
+            const modelInfo = this.modelManager.getModel(requestedModel);
+            if (modelInfo && modelInfo.capabilities?.embeddings) {
+                log.debug(`Using requested embedding model '${requestedModel}'`);
+                return requestedModel;
+            }
+
+            throw new CapabilityError(`Model '${requestedModel}' does not support embeddings`);
+        }
+
+        // Fall back to provider's default embedding model
+        const defaultModel = this.getDefaultEmbeddingModel();
+        log.debug(`Using default embedding model '${defaultModel}'`);
+        return defaultModel;
+    }
+
+    /**
+     * Get the default embedding model for the current provider
+     */
+    private getDefaultEmbeddingModel(): string {
+        const availableModels = this.modelManager.getAvailableModels();
+        const embeddingModels = availableModels.filter(model =>
+            model.capabilities?.embeddings
+        );
+
+        if (embeddingModels.length === 0) {
+            throw new CapabilityError('No embedding models available for this provider');
+        }
+
+        // Default to text-embedding-3-small for OpenAI, or first available model
+        const preferredModel = embeddingModels.find(model =>
+            model.name === 'text-embedding-3-small'
+        );
+
+        return preferredModel ? preferredModel.name : embeddingModels[0].name;
+    }
+
+    /**
+     * Get available embedding models
+     */
+    public getAvailableEmbeddingModels(): string[] {
+        const availableModels = this.modelManager.getAvailableModels();
+        return availableModels
+            .filter(model => model.capabilities?.embeddings)
+            .map(model => model.name);
+    }
+
+    /**
+     * Check embedding capabilities for a specific model
+     */
+    public checkEmbeddingCapabilities(modelName: string): {
+        supported: boolean;
+        maxInputLength?: number;
+        dimensions?: number[];
+        defaultDimensions?: number;
+        encodingFormats?: string[];
+    } {
+        if (!this.embeddingController) {
+            this.embeddingController = new EmbeddingController(
+                this.providerManager.getProvider() as BaseAdapter,
+                this.modelManager,
+                this.tokenCalculator,
+                this.usageCallback,
+                this.callerId
+            );
+        }
+
+        return this.embeddingController.checkEmbeddingCapabilities(modelName);
     }
 }
