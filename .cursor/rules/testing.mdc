@@ -43,6 +43,30 @@ alwaysApply: false
 - Document ESM-specific test strategies in test headers.
 - Reference real-world examples in the codebase.
 
+### Path Aliases in ESM Mocks
+- Use `@` path aliases consistently in `jest.unstable_mockModule` calls:
+  ```typescript
+  jest.unstable_mockModule('@/core/models/TokenCalculator.ts', () => ({
+    __esModule: true,
+    TokenCalculator: mockTokenCalculator
+  }));
+  ```
+- When using path aliases, be aware of typing challenges with `mockImplementation`:
+  ```typescript
+  // TypeScript may complain about parameter types
+  mockCalculateTokens.mockImplementation((text: string) => text.length);
+  // Error: Argument of type '(text: string) => number' is not assignable to parameter of type 'UnknownFunction'
+  
+  // Workaround: Use any for the parameters when necessary
+  mockCalculateTokens.mockImplementation((...args: any[]) => {
+    const text = args[0];
+    return typeof text === 'string' ? text.length : 0;
+  });
+  ```
+- Always ensure path aliases in tests match your tsconfig.json path mapping
+- Use consistent import patterns between mocks and actual imports
+- Document path alias usage in test file headers when it affects mock behavior
+
 ## Test Structure
 - Tests are organized in three levels:
   1. Unit tests (`/src/tests/unit/`)

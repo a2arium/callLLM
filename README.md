@@ -75,6 +75,7 @@ const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.');
 const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
     apiKey: 'your-api-key',  // Use env var instead in production
     historyMode: 'stateless',
+    maxChunkIterations: 50,  // Allow up to 50 data chunks (default: 20)
     settings: {
         temperature: 0.7,
         maxTotalTokens: 4000
@@ -628,6 +629,29 @@ In both cases:
 - Token limits are automatically respected
 - Context and instructions are preserved across chunks
 
+#### Smart Markdown Splitting
+
+When processing markdown content, the library automatically detects markdown formatting and uses intelligent hierarchical splitting:
+
+- **Automatic Detection**: Uses pattern matching to identify markdown content (headers, lists, code blocks, tables, etc.)
+- **Hierarchical Awareness**: Splits along semantic boundaries like section headers rather than arbitrary token limits
+- **Structure Preservation**: Maintains document hierarchy and context, keeping related content together
+- **Metadata Enrichment**: Provides section paths, heading information, and preserved elements for enhanced processing
+
+For example, a markdown document with sections will be split at natural boundaries:
+```markdown
+# Recipe Book
+## Chocolate Chip Cookies
+### Ingredients
+* 2 cups flour
+* 1 cup sugar
+### Instructions
+1. Mix ingredients
+2. Bake at 350°F
+```
+
+The library will split this into logical sections rather than cutting in the middle of ingredient lists or instructions, ensuring each chunk maintains semantic meaning.
+
 ### Forcing Input Splitting with maxCharsPerChunk
 
 If you want to force splitting of your input data into smaller pieces—regardless of token limits—you can use the `maxCharsPerChunk` option:
@@ -653,6 +677,43 @@ This is especially useful for:
 - Forcing smaller chunk sizes for downstream processing
 - Working with models or APIs that have additional non-token-based limits
 - Debugging or testing chunking behavior
+
+### Chunk Iteration Limits
+
+To prevent runaway processing with extremely large datasets, the library enforces a maximum number of chunks that can be processed in a single call:
+
+- **Default limit**: 20 chunks per call
+- **Configurable**: Set `maxChunkIterations` when creating the LLMCaller
+- **Safety mechanism**: Prevents excessive API calls and processing time
+
+**Example:**
+```typescript
+// Configure higher chunk limit for large datasets
+const caller = new LLMCaller('openai', 'gpt-4', 'You are a helpful assistant.', {
+    maxChunkIterations: 50,  // Allow up to 50 chunks (default: 20)
+    settings: {
+        temperature: 0.7
+    }
+});
+
+// This will now work with larger datasets that require more chunks
+const response = await caller.call({
+    message: "Analyze this large dataset:",
+    data: veryLargeDataset,
+    settings: { maxTokens: 1000 }
+});
+```
+
+If you encounter a `ChunkIterationLimitError`, you can:
+1. **Increase the limit**: Set a higher `maxChunkIterations` value
+2. **Optimize your data**: Use `maxCharsPerChunk` to create smaller chunks
+3. **Pre-process your data**: Split your dataset before passing it to the library
+
+**When to adjust the limit:**
+- Large document processing (>1MB of text)
+- Bulk data analysis tasks
+- Processing datasets with many small items
+- Working with verbose JSON structures
 
 ## JSON Mode and Schema Validation
 

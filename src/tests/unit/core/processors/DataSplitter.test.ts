@@ -342,4 +342,81 @@ describe('DataSplitter', () => {
       expect(reconstructed).toEqual(data);
     });
   });
+
+  describe('markdown detection and processing', () => {
+    it('should detect markdown content and use hierarchical splitting', async () => {
+      const markdownContent = `# Recipe Book
+
+## Chocolate Chip Cookies
+
+### Ingredients
+
+* 2 cups flour
+* 1 cup sugar
+
+### Instructions
+
+1. Mix ingredients
+2. Bake at 350°F`;
+
+      const result = await dataSplitter.splitIfNeeded({
+        message: 'test',
+        data: markdownContent,
+        modelInfo: mockModelInfo,
+        maxResponseTokens: 100
+      });
+
+      // Should detect as markdown but without expensive hierarchical parsing for single chunks
+      expect(result.some(chunk => chunk.metadata?.contentType === 'markdown')).toBe(true);
+      // For single chunks, we don't do expensive hierarchical parsing
+      expect(result[0].metadata?.hierarchicalInfo).toBeUndefined();
+    });
+
+    it('should not detect plain text as markdown', async () => {
+      const plainText = 'This is just plain text without any markdown formatting.';
+
+      const result = await dataSplitter.splitIfNeeded({
+        message: 'test',
+        data: plainText,
+        modelInfo: mockModelInfo,
+        maxResponseTokens: 100
+      });
+
+      expect(result[0].metadata?.contentType).toBe('text');
+      expect(result[0].metadata?.hierarchicalInfo).toBeUndefined();
+    });
+
+    it('should use hierarchical parsing only when splitting is needed', async () => {
+      // Create markdown content that will force splitting due to token limits
+      // Include multiple markdown elements to ensure detection
+      const largeMarkdownContent = `# Large Document
+
+${'This is content that will exceed our token limit. '.repeat(100)}
+
+## Section 2
+
+* This is a list item
+* Another list item
+
+${'More content here. '.repeat(50)}
+
+### Code Section
+
+\`\`\`javascript
+console.log('hello world');
+\`\`\``;
+
+      const result = await dataSplitter.splitIfNeeded({
+        message: 'test',
+        data: largeMarkdownContent,
+        modelInfo: { ...mockModelInfo, maxRequestTokens: 200 }, // Force splitting
+        maxResponseTokens: 100
+      });
+
+      // Should be split into multiple chunks with hierarchical info
+      expect(result.length).toBeGreaterThan(1);
+      expect(result.some(chunk => chunk.metadata?.contentType === 'markdown')).toBe(true);
+      expect(result.some(chunk => chunk.metadata?.hierarchicalInfo?.headingTitle === 'Large Document')).toBe(true);
+    });
+  });
 });

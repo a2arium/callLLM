@@ -382,13 +382,18 @@ describe('LLMCaller Settings & Configuration', () => {
       // Setup
       mockRequestProcessor.processRequest.mockResolvedValue(['chunk1', 'chunk2']);
 
-      // Spy on ChunkController.processChunks
+      // Spy on ChunkController.processChunks and processChunksParallel
       const mockProcessChunks = jest.fn().mockResolvedValue([
         { content: 'Response 1', role: 'assistant' },
         { content: 'Response 2', role: 'assistant' }] as UniversalChatResponse[]
       );
+      const mockProcessChunksParallel = jest.fn().mockResolvedValue([
+        { content: 'Response 1', role: 'assistant' },
+        { content: 'Response 2', role: 'assistant' }] as UniversalChatResponse[]
+      );
       (llmCaller as any).chunkController = {
-        processChunks: mockProcessChunks
+        processChunks: mockProcessChunks,
+        processChunksParallel: mockProcessChunksParallel
       };
 
       // Call stream with a message that gets split
@@ -400,8 +405,8 @@ describe('LLMCaller Settings & Configuration', () => {
         results.push(chunk);
       }
 
-      // Verify ChunkController was used
-      expect(mockProcessChunks).toHaveBeenCalledTimes(1);
+      // Verify ChunkController was used (parallel chunking is enabled by default)
+      expect(mockProcessChunksParallel).toHaveBeenCalledTimes(1);
 
       // Verify multiple responses were returned
       expect(results.length).toBe(2);

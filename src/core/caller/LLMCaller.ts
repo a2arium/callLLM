@@ -98,7 +98,9 @@ export type LLMCallerOptions = {
     responseProcessor?: ResponseProcessor;
     retryManager?: RetryManager;
     historyManager?: HistoryManager;
-    maxIterations?: number;
+    maxIterations?: number; // For tool calls
+    maxChunkIterations?: number; // For data chunking
+    parallelChunking?: boolean; // Whether to process chunks in parallel (default: true)
 };
 
 /**
@@ -131,7 +133,9 @@ export class LLMCaller implements MCPDirectAccess {
     // Lazy-initialized MCP client manager
     private _mcpAdapter: MCPServiceAdapter | null = null;
     private maxIterations: number; // Store maxIterations for tool controller
+    private maxChunkIterations: number; // Store maxChunkIterations for chunk controller
     private mcpSchemaCache: Map<string, ToolDefinition[]> = new Map();
+    private parallelChunking: boolean; // Whether to process chunks in parallel
 
     constructor(
         providerName: RegisteredProviders,
@@ -160,6 +164,7 @@ export class LLMCaller implements MCPDirectAccess {
         this.historyMode = options?.historyMode || 'stateless';
         this.systemMessage = systemMessage;
         this.maxIterations = options?.maxIterations ?? 5; // Initialize maxIterations
+        this.maxChunkIterations = options?.maxChunkIterations ?? 20; // Initialize maxChunkIterations
         this.historyManager = options?.historyManager || new HistoryManager(systemMessage);
         this.toolsManager = options?.toolsManager || new ToolsManager();
         this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
@@ -239,7 +244,7 @@ export class LLMCaller implements MCPDirectAccess {
             this.chatController,
             streamControllerAdapter as StreamController,
             this.historyManager,
-            20
+            this.maxChunkIterations
         );
 
         // Add tools if provided in options, after core components are set up
@@ -251,6 +256,9 @@ export class LLMCaller implements MCPDirectAccess {
                 logger.error('Error adding tools during LLMCaller initialization:', err);
             });
         }
+
+        // Initialize parallelChunking
+        this.parallelChunking = options?.parallelChunking === undefined ? true : options.parallelChunking;
     }
 
     // Model management methods - delegated to ModelManager
@@ -375,7 +383,7 @@ export class LLMCaller implements MCPDirectAccess {
             this.chatController,
             streamControllerAdapter as StreamController, // Use the defined adapter
             this.historyManager,
-            20 // Keep batch size or make configurable
+            this.maxChunkIterations // Keep batch size or make configurable
         );
     }
 
@@ -944,7 +952,27 @@ export class LLMCaller implements MCPDirectAccess {
                 }
             } else {
                 const chunkStreamParams = { ...chatParams, historicalMessages: chatParams.messages };
-                const responses = await this.chunkController.processChunks(finalProcessedMessages, chunkStreamParams);
+                const responses = this.parallelChunking
+                    ? await this.chunkController.processChunksParallel(finalProcessedMessages, {
+                        model: this.model,
+                        historicalMessages: chatParams.messages,
+                        settings: chatParams.settings,
+                        jsonSchema: actualOptions.jsonSchema,
+                        responseFormat: actualOptions.responseFormat,
+                        tools: chatParams.tools,
+                        callerId: this.callerId,
+                        maxCharsPerChunk: actualOptions.maxCharsPerChunk
+                    })
+                    : await this.chunkController.processChunks(finalProcessedMessages, {
+                        model: this.model,
+                        historicalMessages: chatParams.messages,
+                        settings: chatParams.settings,
+                        jsonSchema: actualOptions.jsonSchema,
+                        responseFormat: actualOptions.responseFormat,
+                        tools: chatParams.tools,
+                        callerId: this.callerId,
+                        maxCharsPerChunk: actualOptions.maxCharsPerChunk
+                    });
                 responses.forEach(response => {
                     if (response.content && (!response.toolCalls || response.toolCalls.length === 0) && response.metadata?.finishReason !== 'tool_calls') {
                         this.historyManager.addMessage('assistant', response.content);
@@ -1199,10 +1227,27 @@ export class LLMCaller implements MCPDirectAccess {
                 responses = [response];
             } else {
                 log.debug('Calling chunkController.processChunks (multi-chunk)', { chunkCount: finalProcessedMessages.length });
-                responses = await this.chunkController.processChunks(finalProcessedMessages, {
-                    ...chatParams,
-                    historicalMessages: chatParams.messages
-                });
+                responses = this.parallelChunking
+                    ? await this.chunkController.processChunksParallel(finalProcessedMessages, {
+                        model: this.model,
+                        historicalMessages: chatParams.messages,
+                        settings: chatParams.settings,
+                        jsonSchema: opts.jsonSchema,
+                        responseFormat: opts.responseFormat,
+                        tools: chatParams.tools,
+                        callerId: this.callerId,
+                        maxCharsPerChunk: opts.maxCharsPerChunk
+                    })
+                    : await this.chunkController.processChunks(finalProcessedMessages, {
+                        model: this.model,
+                        historicalMessages: chatParams.messages,
+                        settings: chatParams.settings,
+                        jsonSchema: opts.jsonSchema,
+                        responseFormat: opts.responseFormat,
+                        tools: chatParams.tools,
+                        callerId: this.callerId,
+                        maxCharsPerChunk: opts.maxCharsPerChunk
+                    });
                 responses.forEach(response => {
                     if (response.content && (!response.toolCalls || response.toolCalls.length === 0) && response.metadata?.finishReason !== 'tool_calls') {
                         this.historyManager.addMessage('assistant', response.content);

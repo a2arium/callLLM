@@ -32,17 +32,33 @@ export class StringSplitter {
      */
     public split(input: string, maxTokensPerChunk: number, options: SplitOptions = {}): string[] {
         const log = logger.createLogger({ prefix: 'StringSplitter.split' });
-        log.debug('Splitting input', { inputLength: input.length, maxTokensPerChunk, maxCharsPerChunk: options.maxCharsPerChunk });
+        log.debug('Starting string split', {
+            inputLength: input.length,
+            maxTokensPerChunk,
+            maxCharsPerChunk: options.maxCharsPerChunk,
+            forceFixedSplit: options.forceFixedSplit
+        });
+
         // Handle edge cases
         if (!input || maxTokensPerChunk <= 0) {
+            log.debug('Edge case: empty input or invalid maxTokens', { input: !!input, maxTokensPerChunk });
             return [];
         }
 
         const maxCharsPerChunk = options.maxCharsPerChunk;
         const inputTokens = this.tokenCalculator.calculateTokens(input);
 
+        log.debug('Input analysis', {
+            inputTokens,
+            inputLength: input.length,
+            fitsInTokens: inputTokens <= maxTokensPerChunk,
+            fitsInChars: !maxCharsPerChunk || input.length <= maxCharsPerChunk,
+            willReturnAsIs: inputTokens <= maxTokensPerChunk && (!maxCharsPerChunk || input.length <= maxCharsPerChunk)
+        });
+
         // If the input is small enough, return it as is
         if (inputTokens <= maxTokensPerChunk && (!maxCharsPerChunk || input.length <= maxCharsPerChunk)) {
+            log.debug('Input fits in single chunk, returning as-is');
             return [input];
         }
 
@@ -52,23 +68,43 @@ export class StringSplitter {
             return tokens <= maxTokensPerChunk && (!maxCharsPerChunk || text.length <= maxCharsPerChunk);
         };
 
+        const shouldSkipSmart = this.shouldSkipSmartSplit(input);
+        log.debug('Split strategy decision', {
+            forceFixedSplit: options.forceFixedSplit,
+            shouldSkipSmart,
+            willUseSmartSplit: !options.forceFixedSplit && !shouldSkipSmart
+        });
+
         // Smart splitting
         let result: string[];
-        if (!options.forceFixedSplit && !this.shouldSkipSmartSplit(input)) {
+        if (!options.forceFixedSplit && !shouldSkipSmart) {
+            log.debug('Attempting smart splitting strategy');
             try {
                 const smartChunks = this.splitWithSmartStrategy(input, maxTokensPerChunk, maxCharsPerChunk);
                 if (smartChunks.length > 0) {
+                    log.debug('Smart splitting successful', { chunkCount: smartChunks.length });
                     result = smartChunks;
                 } else {
+                    log.debug('Smart splitting returned no chunks, falling back to fixed split');
                     result = this.splitFixed(input, maxTokensPerChunk, maxCharsPerChunk);
                 }
             } catch (error) {
+                log.debug('Smart splitting failed, falling back to fixed split', { error: error instanceof Error ? error.message : String(error) });
                 result = this.splitFixed(input, maxTokensPerChunk, maxCharsPerChunk);
             }
         } else {
+            log.debug('Using fixed splitting strategy');
             result = this.splitFixed(input, maxTokensPerChunk, maxCharsPerChunk);
         }
-        log.debug('Produced chunks', { chunkCount: result.length, chunkLengths: result.map(c => c.length) });
+
+        log.debug('String splitting completed', {
+            chunkCount: result.length,
+            chunkLengths: result.map(c => c.length),
+            chunkTokenCounts: result.map(c => this.tokenCalculator.calculateTokens(c)),
+            totalChars: result.reduce((sum, c) => sum + c.length, 0),
+            totalTokens: result.reduce((sum, c) => sum + this.tokenCalculator.calculateTokens(c), 0)
+        });
+
         return result;
     }
 

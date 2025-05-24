@@ -195,7 +195,8 @@ async function main() {
 
     await processStreamExample(caller, 'Analyze these sections:', objectData);
 
-    // Example 4: Simple maxCharsPerChunk only (Regular Call)
+
+    // Example 4: Simple maxCharsPerChunk (Regular Call)
     console.log('\n=== Example 4: Simple maxCharsPerChunk only (Regular Call) ===');
     const charsLimitText = 'A'.repeat(40) + 'B'.repeat(40) + 'C'.repeat(40);
     const simpleResponses = await caller.call(

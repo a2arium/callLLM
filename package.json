@@ -1,6 +1,6 @@
 {
   "name": "callllm",
-  "version": "1.1.0",
+  "version": "0.2.0",
   "description": "A universal LLM caller library.",
   "type": "module",
   "main": "dist/cjs/index.cjs",
@@ -37,9 +37,7 @@
     "clean": "rm -rf dist",
     "build": "tsc && yarn build:cjs",
     "build:cjs": "node scripts/build-cjs.mjs",
-    "test": "NODE_OPTIONS=--experimental-vm-modules TS_CONFIG=tsconfig.test.json jest",
-    "test:watch": "NODE_OPTIONS=--experimental-vm-modules TS_CONFIG=tsconfig.test.json jest --watch",
-    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules TS_CONFIG=tsconfig.test.json jest --coverage",
+    "test": "NODE_OPTIONS=--experimental-vm-modules TS_CONFIG=tsconfig.test.json jest --coverage",
     "example:simple": "node --loader ts-node/esm examples/simpleChat.ts",
     "example:dataSplitting": "node --loader ts-node/esm examples/dataSplitting.ts",
     "example:usage": "node --loader ts-node/esm examples/usageTracking.ts",

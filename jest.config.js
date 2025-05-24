@@ -21,4 +21,31 @@ export default {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   rootDir: '.',
+  
+  // Coverage configuration
+  collectCoverage: false, // Set to true when --coverage flag is used
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/tests/**/*',
+    '!src/**/*.d.ts',
+    '!src/**/*.test.{ts,tsx}',
+    '!src/**/*.spec.{ts,tsx}',
+    '!src/**/index.{ts,tsx}', // Often just export files
+    '!src/examples/**/*', // Exclude examples from coverage
+  ],
+  coverageDirectory: 'coverage',
+  coverageReporters: [
+    'text',
+    'lcov',
+    'html',
+    'clover'
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 90,
+      functions: 90,
+      lines: 90,
+      statements: 90,
+    },
+  },
 }; 

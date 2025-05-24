@@ -404,5 +404,20 @@ describe('ChunkController', () => {
       expect(error.message).toBe(`Chunk iteration limit of ${maxIterations} exceeded`);
       expect(error.name).toBe('ChunkIterationLimitError');
     });
+
+    it('should be JSON serializable without circular references', () => {
+      const maxIterations = 10;
+      const error = new ChunkIterationLimitError(maxIterations);
+
+      // This should not throw "Converting circular structure to JSON"
+      expect(() => JSON.stringify(error)).not.toThrow();
+
+      const serialized = JSON.stringify(error);
+      const parsed = JSON.parse(serialized);
+
+      expect(parsed.name).toBe('ChunkIterationLimitError');
+      expect(parsed.message).toBe(`Chunk iteration limit of ${maxIterations} exceeded`);
+      expect(parsed.maxIterations).toBe(maxIterations);
+    });
   });
 });
