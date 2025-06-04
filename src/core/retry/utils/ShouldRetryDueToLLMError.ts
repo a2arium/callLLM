@@ -20,7 +20,7 @@ export function isRetryableStatusCode(statusCode: number): boolean {
  * @returns True if the error is network-related
  */
 export function isNetworkError(error: Error): boolean {
-    const message = error.message.toLowerCase();
+    const message = error.message.toLowerCase().replace(/_/g, ' ').replace(/-/g, ' ');
     return message.includes('network') ||
         message.includes('connection') ||
         message.includes('socket') ||
@@ -35,6 +35,7 @@ export function isNetworkError(error: Error): boolean {
         message.includes('enetunreach') ||
         message.includes('aborted') ||
         message.includes('stream') ||
+        message.includes('rate limit') ||
         message.includes('request timeout');
 }
 
