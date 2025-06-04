@@ -6,11 +6,13 @@
  * 2. Use multiple images in a single query
  * 3. Stream responses with image inputs
  * 4. Use JSON output format with image inputs
+ * 5. Use base64 input for image description
  */
 import { LLMCaller } from '../src/index.ts';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 import path from 'path';
+import fs from 'fs';
 import { getDirname } from '../src/utils/paths.ts';
 
 // Get the directory name using the utility function
@@ -21,7 +23,7 @@ dotenv.config();
 
 async function runExamples() {
     // Initialize with a multimodal model
-    const caller = new LLMCaller('openai', 'gpt-4.1-nano', 'You are a helpful assistant.');
+    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.');
 
     try {
         console.log('\n\n=========================================');
@@ -91,6 +93,27 @@ async function runExamples() {
         });
 
         console.log(`Response:`, imageResponseCompare[0].content);
+
+
+        console.log('\n\n=========================================');
+        console.log('Example 4: Base64 input for image description');
+        console.log('=========================================\n');
+
+        const base64Image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+
+        const base64Response = await caller.call({
+            text: "Describe what you see.",
+            file: base64Image,
+            input: {
+                image: {
+                    detail: "high"
+                }
+            }
+        });
+
+        console.log(`Base64 Response:`, base64Response[0].content);
+        console.log(`Usage:`, base64Response[0].metadata?.usage);
+
 
     } catch (error) {
         console.error('Error processing image:', error);

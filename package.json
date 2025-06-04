@@ -1,6 +1,6 @@
 {
   "name": "callllm",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A universal LLM caller library.",
   "type": "module",
   "main": "dist/cjs/index.cjs",

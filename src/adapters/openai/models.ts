@@ -182,7 +182,8 @@ export const defaultModels: ModelInfo[] = [
             toolCalls: true,
             parallelToolCalls: true,
             input: {
-                text: true
+                text: true,
+                image: true
             },
             output: {
                 text: {
@@ -212,7 +213,8 @@ export const defaultModels: ModelInfo[] = [
         capabilities: {
             toolCalls: true,
             input: {
-                text: true
+                text: true,
+                image: true
             },
             output: {
                 text: {

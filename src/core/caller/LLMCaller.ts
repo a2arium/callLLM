@@ -617,9 +617,16 @@ export class LLMCaller implements MCPDirectAccess {
             try {
                 let fileSourceInput: ImageSource;
                 if (typeof source === 'string') {
-                    fileSourceInput = source.startsWith('http')
-                        ? { type: 'url', url: source }
-                        : { type: 'file_path', path: source };
+                    if (source.startsWith('http')) {
+                        fileSourceInput = { type: 'url', url: source };
+                    } else if (source.startsWith('data:')) {
+                        // Handle data URLs (base64 encoded images)
+                        const [mimeInfo, base64Data] = source.split(',');
+                        const mimeType = mimeInfo.match(/data:([^;]+)/)?.[1] || 'image/png';
+                        fileSourceInput = { type: 'base64', data: base64Data, mime: mimeType };
+                    } else {
+                        fileSourceInput = { type: 'file_path', path: source };
+                    }
                 } else {
                     fileSourceInput = source;
                 }
@@ -648,9 +655,17 @@ export class LLMCaller implements MCPDirectAccess {
         if (actualOptions.mask) {
             log.debug(`Processing mask file: ${actualOptions.mask.substring(0, 50)}...`);
             try {
-                const maskSource: ImageSource = actualOptions.mask.startsWith('http')
-                    ? { type: 'url', url: actualOptions.mask }
-                    : { type: 'file_path', path: actualOptions.mask };
+                let maskSource: ImageSource;
+                if (actualOptions.mask.startsWith('http')) {
+                    maskSource = { type: 'url', url: actualOptions.mask };
+                } else if (actualOptions.mask.startsWith('data:')) {
+                    // Handle data URLs (base64 encoded images)
+                    const [mimeInfo, base64Data] = actualOptions.mask.split(',');
+                    const mimeType = mimeInfo.match(/data:([^;]+)/)?.[1] || 'image/png';
+                    maskSource = { type: 'base64', data: base64Data, mime: mimeType };
+                } else {
+                    maskSource = { type: 'file_path', path: actualOptions.mask };
+                }
 
                 const normalizedMask = await normalizeImageSource(maskSource);
 
