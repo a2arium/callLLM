@@ -5,6 +5,9 @@
 
 import { jest } from '@jest/globals';
 
+// Set up environment variables for testing
+process.env.OPENAI_API_KEY = 'test-api-key-for-jest';
+
 // Core Node.js modules (never auto-mocked)
 jest.mock('fs');
 jest.mock('path');
