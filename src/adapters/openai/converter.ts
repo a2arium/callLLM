@@ -422,13 +422,15 @@ export class Converter {
 
                 // Convert schema to appropriate format
                 if (isZodSchema(params.jsonSchema.schema)) {
-                    // Convert Zod schema to JSON Schema object
-                    formatConfig.schema = SchemaValidator.getSchemaObject(params.jsonSchema.schema);
+                    // Convert Zod schema to JSON Schema object, then prepare for OpenAI
+                    const jsonSchema = SchemaValidator.getSchemaObject(params.jsonSchema.schema);
+                    formatConfig.schema = this.prepareResponseSchemaForOpenAI(jsonSchema as Record<string, unknown>);
                 } else if (typeof params.jsonSchema.schema === 'string') {
                     try {
                         // Parse JSON string and ensure additionalProperties: false is set at all levels
                         const parsedSchema = JSON.parse(params.jsonSchema.schema);
-                        formatConfig.schema = SchemaFormatter.addAdditionalPropertiesFalse(parsedSchema);
+                        const schemaWithAdditionalProps = SchemaFormatter.addAdditionalPropertiesFalse(parsedSchema);
+                        formatConfig.schema = this.prepareResponseSchemaForOpenAI(schemaWithAdditionalProps as Record<string, unknown>);
                     } catch (error) {
                         log.info('Failed to parse JSON schema string');
                         // Fallback to simple JSON object format
@@ -437,7 +439,8 @@ export class Converter {
                     }
                 } else {
                     // Handle object schema directly and ensure additionalProperties: false is set
-                    formatConfig.schema = SchemaFormatter.addAdditionalPropertiesFalse(params.jsonSchema.schema);
+                    const schemaWithAdditionalProps = SchemaFormatter.addAdditionalPropertiesFalse(params.jsonSchema.schema);
+                    formatConfig.schema = this.prepareResponseSchemaForOpenAI(schemaWithAdditionalProps as Record<string, unknown>);
                 }
 
                 openAIParams.text = {
@@ -834,6 +837,81 @@ export class Converter {
         });
 
         return preparedParams;
+    }
+
+    /**
+     * Prepares response format JSON schema for OpenAI by making all properties required
+     * As OpenAy currently requires all properties to be required. Need to monitor situation
+     * and update this when OpenAI changes their requirements.
+     * and modifying descriptions of originally optional fields
+     */
+    private prepareResponseSchemaForOpenAI(jsonSchema: Record<string, unknown>): Record<string, unknown> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.prepareResponseSchemaForOpenAI' });
+
+        // Clone the schema to avoid modifying the original
+        const preparedSchema: Record<string, unknown> = JSON.parse(JSON.stringify(jsonSchema));
+
+        // Process the schema recursively
+        this.processSchemaForOpenAI(preparedSchema);
+
+        log.debug('Prepared response schema for OpenAI', {
+            type: preparedSchema.type,
+            propertiesCount: preparedSchema.properties ? Object.keys(preparedSchema.properties as Record<string, unknown>).length : 0,
+            requiredCount: preparedSchema.required ? (preparedSchema.required as string[]).length : 0
+        });
+
+        return preparedSchema;
+    }
+
+    /**
+     * Recursively processes a JSON schema object to make all properties required
+     * and modify descriptions of originally optional fields
+     */
+    private processSchemaForOpenAI(schema: Record<string, unknown>): void {
+        if (!schema || typeof schema !== 'object') {
+            return;
+        }
+
+        // Only process object schemas
+        if (schema.type === 'object' && schema.properties) {
+            const properties = schema.properties as Record<string, unknown>;
+            const currentRequired = (schema.required as string[]) || [];
+            const allPropertyKeys = Object.keys(properties);
+
+            // Identify originally optional fields (not in current required array)
+            const originallyOptionalFields = allPropertyKeys.filter(key => !currentRequired.includes(key));
+
+            // Process each property
+            for (const [key, property] of Object.entries(properties)) {
+                if (typeof property === 'object' && property !== null) {
+                    const prop = property as Record<string, unknown>;
+
+                    // If this field was originally optional, modify its description
+                    if (originallyOptionalFields.includes(key)) {
+                        const currentDescription = (prop.description as string) || '';
+                        const optionalSuffix = ' (optional field, leave empty if not to be provided)';
+
+                        // Only add the suffix if it's not already there
+                        if (!currentDescription.includes(optionalSuffix)) {
+                            prop.description = currentDescription + optionalSuffix;
+                        }
+                    }
+
+                    // Recursively process nested schemas
+                    this.processSchemaForOpenAI(prop);
+                }
+            }
+
+            // Make all properties required (OpenAI workaround)
+            if (allPropertyKeys.length > 0) {
+                schema.required = allPropertyKeys;
+            }
+        }
+
+        // Process array items if present
+        if (schema.type === 'array' && schema.items) {
+            this.processSchemaForOpenAI(schema.items as Record<string, unknown>);
+        }
     }
 }
 

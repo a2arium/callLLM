@@ -666,6 +666,109 @@ describe('OpenAI Response API Converter', () => {
       expect(format.schema.properties.email.description).toBe('The user\'s email address');
       expect(format.schema.properties.age.description).toBe('The user\'s age in years');
     });
+
+    it('should make all properties required and modify optional field descriptions for OpenAI', async () => {
+      // Create a Zod schema with both required and optional fields
+      const zodSchema = z.object({
+        venueName: z.string().describe('The name of the venue'),
+        officialWebsite: z.string().optional().describe('Official website URL if found'),
+        socialMedia: z.object({
+          facebook: z.string().optional().describe('Facebook page URL'),
+          instagram: z.string().optional().describe('Instagram account URL'),
+          twitter: z.string().optional().describe('Twitter/X account URL'),
+          linkedin: z.string().optional().describe('LinkedIn page URL'),
+          youtube: z.string().optional().describe('YouTube channel URL'),
+          tiktok: z.string().optional().describe('TikTok account URL')
+        }).describe('Social media accounts found'),
+        confidence: z.enum(['high', 'medium', 'low']).describe('Confidence level in the results'),
+        notes: z.string().optional().describe('Additional notes about the findings')
+      });
+
+      // Convert to OpenAI params
+      const result = await converter.convertToOpenAIResponseParams('test-model', {
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'Hi' }],
+        jsonSchema: {
+          name: 'VenueLinks',
+          schema: zodSchema
+        },
+        responseFormat: 'json'
+      });
+
+      // Verify the schema format
+      expect(result.text).toBeDefined();
+      const format = (result.text as any).format;
+      expect(format).toBeDefined();
+      expect(format.type).toBe('json_schema');
+      expect(format.name).toBe('VenueLinks');
+
+      const schema = format.schema;
+
+      // All top-level properties should be required (OpenAI workaround)
+      expect(schema.required).toEqual(['venueName', 'officialWebsite', 'socialMedia', 'confidence', 'notes']);
+
+      // Required field descriptions should remain unchanged
+      expect(schema.properties.venueName.description).toBe('The name of the venue');
+      expect(schema.properties.confidence.description).toBe('Confidence level in the results');
+
+      // Optional field descriptions should have the suffix added
+      expect(schema.properties.officialWebsite.description).toBe('Official website URL if found (optional field, leave empty if not applicable)');
+      expect(schema.properties.notes.description).toBe('Additional notes about the findings (optional field, leave empty if not applicable)');
+
+      // Nested object should also have all properties required
+      const socialMediaSchema = schema.properties.socialMedia;
+      expect(socialMediaSchema.required).toEqual(['facebook', 'instagram', 'twitter', 'linkedin', 'youtube', 'tiktok']);
+
+      // All nested optional fields should have the suffix added
+      expect(socialMediaSchema.properties.facebook.description).toBe('Facebook page URL (optional field, leave empty if not applicable)');
+      expect(socialMediaSchema.properties.instagram.description).toBe('Instagram account URL (optional field, leave empty if not applicable)');
+      expect(socialMediaSchema.properties.twitter.description).toBe('Twitter/X account URL (optional field, leave empty if not applicable)');
+      expect(socialMediaSchema.properties.linkedin.description).toBe('LinkedIn page URL (optional field, leave empty if not applicable)');
+      expect(socialMediaSchema.properties.youtube.description).toBe('YouTube channel URL (optional field, leave empty if not applicable)');
+      expect(socialMediaSchema.properties.tiktok.description).toBe('TikTok account URL (optional field, leave empty if not applicable)');
+    });
+
+    it('should work with the exact venueLinksSchema from user request', async () => {
+      // This is the exact schema from the user's original request
+      const venueLinksSchema = z.object({
+        venueName: z.string().describe('The name of the venue'),
+        officialWebsite: z.string().optional().describe('Official website URL if found'),
+        socialMedia: z.object({
+          facebook: z.string().optional().describe('Facebook page URL'),
+          instagram: z.string().optional().describe('Instagram account URL'),
+          twitter: z.string().optional().describe('Twitter/X account URL'),
+          linkedin: z.string().optional().describe('LinkedIn page URL'),
+          youtube: z.string().optional().describe('YouTube channel URL'),
+          tiktok: z.string().optional().describe('TikTok account URL')
+        }).describe('Social media accounts found'),
+        confidence: z.enum(['high', 'medium', 'low']).describe('Confidence level in the results'),
+        notes: z.string().optional().describe('Additional notes about the findings')
+      });
+
+      // Convert to OpenAI params
+      const result = await converter.convertToOpenAIResponseParams('test-model', {
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'Hi' }],
+        jsonSchema: {
+          schema: venueLinksSchema
+        },
+        responseFormat: 'json'
+      });
+
+      const schema = (result.text as any).format.schema;
+
+      // Verify that all properties are required
+      expect(schema.required).toEqual(['venueName', 'officialWebsite', 'socialMedia', 'confidence', 'notes']);
+
+      // Verify that optional fields have the suffix
+      expect(schema.properties.officialWebsite.description).toBe('Official website URL if found (optional field, leave empty if not applicable)');
+      expect(schema.properties.notes.description).toBe('Additional notes about the findings (optional field, leave empty if not applicable)');
+
+      // Verify nested optional fields
+      const socialMedia = schema.properties.socialMedia;
+      expect(socialMedia.required).toEqual(['facebook', 'instagram', 'twitter', 'linkedin', 'youtube', 'tiktok']);
+      expect(socialMedia.properties.facebook.description).toBe('Facebook page URL (optional field, leave empty if not applicable)');
+    });
   });
 
   describe('convertFromOpenAIResponse', () => {

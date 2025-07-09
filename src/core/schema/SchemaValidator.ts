@@ -64,7 +64,12 @@ export class SchemaValidator {
 
         // Handle optional types
         if (def.typeName === 'ZodOptional') {
-            return this.zodTypeToJsonSchema(def.innerType);
+            const innerSchema = this.zodTypeToJsonSchema(def.innerType);
+            // Preserve description from the optional wrapper if it exists
+            if (zodType.description && !innerSchema.description) {
+                (innerSchema as Record<string, unknown>).description = zodType.description;
+            }
+            return innerSchema;
         }
 
         let schema: Record<string, unknown>;
