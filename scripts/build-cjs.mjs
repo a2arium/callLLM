@@ -173,11 +173,11 @@ async function renameJsToCjs(dir) {
     
     if (entry.isDirectory()) {
       await renameJsToCjs(fullPath);
-    } else if (entry.name.endsWith('.cjs.ts')) { // Files compiled from .cjs.ts (e.g., importMetaUrl.cjs.js)
+    } else if (entry.name.endsWith('.cjs.js')) { // Files compiled from .cjs.ts (e.g., importMetaUrl.cjs.js)
       const newPath = fullPath.replace(/\.cjs\.js$/, '.cjs.cjs'); // Rename to .cjs.cjs (e.g., importMetaUrl.cjs.cjs)
       await fs.rename(fullPath, newPath);
       console.log(`Renamed ${fullPath} to ${newPath} (intermediate for .cjs.ts file)`);
-    } else if (entry.name.endsWith('.ts')) { // All other .js files
+    } else if (entry.name.endsWith('.js')) { // All other .js files
       const newPath = fullPath.replace(/\.js$/, '.cjs');
       await fs.rename(fullPath, newPath);
       console.log(`Renamed ${fullPath} to ${newPath}`);
