@@ -48,9 +48,9 @@ jobs:
       run: |
         echo "Verifying CJS require..."
         cat > test-cjs-require.cjs << 'EOF'
-        const { LLMCaller } = require('./dist/cjs/index.js');
-        const { getRegisteredProviders } = require('./dist/cjs/adapters/index.js');
-        const { TokenCalculator } = require('./dist/cjs/core/index.js');
+        const { LLMCaller } = require('./dist/cjs/index.cjs');
+        const { getRegisteredProviders } = require('./dist/cjs/adapters/index.cjs');
+        const { TokenCalculator } = require('./dist/cjs/core/index.cjs');
         console.log('CJS require successful:', 
           typeof LLMCaller === 'function' && 
           typeof getRegisteredProviders === 'function' && 
