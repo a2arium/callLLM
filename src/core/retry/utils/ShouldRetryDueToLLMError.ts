@@ -35,7 +35,6 @@ export function isNetworkError(error: Error): boolean {
         message.includes('enetunreach') ||
         message.includes('aborted') ||
         message.includes('stream') ||
-        message.includes('rate limit') ||
         message.includes('request timeout');
 }
 

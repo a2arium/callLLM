@@ -889,7 +889,7 @@ export class Converter {
                     // If this field was originally optional, modify its description
                     if (originallyOptionalFields.includes(key)) {
                         const currentDescription = (prop.description as string) || '';
-                        const optionalSuffix = ' (optional field, leave empty if not to be provided)';
+                        const optionalSuffix = ' (optional field, leave empty if not applicable)';
 
                         // Only add the suffix if it's not already there
                         if (!currentDescription.includes(optionalSuffix)) {
