@@ -2,63 +2,63 @@ name: CI
 
 on:
   push:
-    branches: [ main, master, feature/*, release/* ]
+    branches: [main, master, feature/*, release/*]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         node-version: [18.x, 20.x]
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'yarn'
-    
-    - name: Install dependencies
-      run: yarn install --frozen-lockfile
-    
-    - name: Build ESM and CJS
-      run: yarn build
-      
-    - name: Verify dual output structure
-      run: |
-        echo "Checking build output structure..."
-        ls -la dist/esm
-        ls -la dist/cjs
-        
-    - name: Verify ESM import
-      run: |
-        echo "Verifying ESM import..."
-        cat > test-esm.mjs << 'EOF'
-        import { LLMCaller } from './dist/esm/index.js';
-        console.log('ESM import successful:', typeof LLMCaller === 'function');
-        EOF
-        node test-esm.mjs
-        
-    - name: Verify CJS require
-      run: |
-        echo "Verifying CJS require..."
-        cat > test-cjs-require.cjs << 'EOF'
-        const { LLMCaller } = require('./dist/cjs/index.cjs');
-        const { getRegisteredProviders } = require('./dist/cjs/adapters/index.cjs');
-        const { TokenCalculator } = require('./dist/cjs/core/index.cjs');
-        console.log('CJS require successful:', 
-          typeof LLMCaller === 'function' && 
-          typeof getRegisteredProviders === 'function' && 
-          typeof TokenCalculator === 'function');
-        EOF
-        node test-cjs-require.cjs
-    
-    - name: Run tests
-      run: yarn test
-      env:
-        CI: true 
+      - uses: actions/checkout@v3
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "yarn"
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build ESM and CJS
+        run: yarn build
+
+      - name: Verify dual output structure
+        run: |
+          echo "Checking build output structure..."
+          ls -la dist/esm
+          ls -la dist/cjs
+
+      - name: Verify ESM import
+        run: |
+          echo "Verifying ESM import..."
+          cat > test-esm.mjs << 'EOF'
+          import { LLMCaller } from './dist/esm/index.js';
+          console.log('ESM import successful:', typeof LLMCaller === 'function');
+          EOF
+          node test-esm.mjs
+
+      - name: Verify CJS require
+        run: |
+          echo "Verifying CJS require..."
+          cat > test-cjs-require.cjs << 'EOF'
+          const { LLMCaller } = require('./dist/cjs/index.cjs');
+          const { getRegisteredProviders } = require('./dist/cjs/adapters/index.cjs');
+          const { TokenCalculator } = require('./dist/cjs/core/index.cjs');
+          console.log('CJS require successful:', 
+            typeof LLMCaller === 'function' && 
+            typeof getRegisteredProviders === 'function' && 
+            typeof TokenCalculator === 'function');
+          EOF
+          node test-cjs-require.cjs
+
+      - name: Run tests
+        run: yarn test
+        env:
+          CI: true
