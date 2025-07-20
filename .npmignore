@@ -1,0 +1,66 @@
+# Source files (we only publish dist/)
+src/
+
+# Development and build tools
+scripts/
+.cursor/
+plans/
+coverage/
+jest.config.js
+jest.setup.ts
+tsconfig*.json
+
+# Test files
+**/*.test.ts
+**/*.spec.ts
+src/tests/
+tests/
+
+# Documentation (except README)
+docs/
+*.md
+!README.md
+
+# Development dependencies and configs
+.gitignore
+.cursorignore
+.git/
+.github/
+
+# Examples (optional - you might want to include these)
+examples/
+
+# Environment files
+.env*
+!.env.example
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Node modules should already be ignored by npm by default, but just in case
+node_modules/
+
+# Yarn
+yarn.lock
+
+# Build artifacts that shouldn't be published
+*.tsbuildinfo 

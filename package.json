@@ -38,6 +38,7 @@
     "build": "tsc && yarn build:cjs",
     "build:cjs": "node scripts/build-cjs.mjs",
     "test": "NODE_OPTIONS=--experimental-vm-modules TS_CONFIG=tsconfig.test.json jest --coverage",
+    "prepublishOnly": "yarn clean && yarn build && yarn test",
     "example:simple": "node --loader ts-node/esm examples/simpleChat.ts",
     "example:dataSplitting": "node --loader ts-node/esm examples/dataSplitting.ts",
     "example:usage": "node --loader ts-node/esm examples/usageTracking.ts",
@@ -58,12 +59,16 @@
   "engines": {
     "node": ">=18"
   },
-  "author": "",
+  "author": "A2arium <a2arium@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/your-username/callllm.git"
+    "url": "git+https://github.com/a2arium/callllm.git"
   },
+  "bugs": {
+    "url": "https://github.com/a2arium/callllm/issues"
+  },
+  "homepage": "https://github.com/a2arium/callllm#readme",
   "keywords": [
     "llm",
     "ai",
