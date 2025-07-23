@@ -1405,7 +1405,22 @@ describe('Error handling and retry', () => {
   });
 
   it('maps specific SDK ToolInputValidationError to MCPToolCallError', async () => {
-    // This test is currently not implemented due to corrupted code. TODO: Re-implement if needed.
+    await adapter.connectToServer('test');
+
+    const validationError = new Error('Invalid input');
+    validationError.name = 'ToolInputValidationError';
+
+    const mockClient_1_1 = {
+      callTool: jest.fn().mockRejectedValue(validationError)
+    };
+
+    (adapter as any).sdkClients.set('test', mockClient_1_1);
+
+    await expect(async () => {
+      await adapter.executeMcpTool('test', 'test_tool', {});
+    }).rejects.toThrow(MCPToolCallError);
+
+    expect(mockClient_1_1.callTool).toHaveBeenCalledTimes(1);
   });
 
   it('maps specific SDK ToolExecutionError to MCPToolCallError', async () => {
