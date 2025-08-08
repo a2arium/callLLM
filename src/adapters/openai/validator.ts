@@ -43,7 +43,7 @@ export class Validator {
 
             // Validate reasoning effort values
             if (params.settings.reasoning.effort !== undefined) {
-                const validEfforts: ReasoningEffort[] = ['low', 'medium', 'high'];
+                const validEfforts: ReasoningEffort[] = ['minimal', 'low', 'medium', 'high'];
                 if (!validEfforts.includes(params.settings.reasoning.effort)) {
                     throw new OpenAIResponseValidationError(
                         `Reasoning effort must be one of: ${validEfforts.join(', ')}`

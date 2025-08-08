@@ -67,6 +67,77 @@ describe('OpenAI Response API Converter', () => {
       }));
     });
 
+    test('should set text.verbosity for GPT-5 models', async () => {
+      const universalParams: UniversalChatParams = {
+        messages: [{ role: 'user', content: 'Hello!' }],
+        model: 'gpt-5',
+        settings: {
+          verbosity: 'high'
+        }
+      };
+
+      // Model info with reasoning true (GPT-5)
+      mockModelManager.getModel.mockReturnValue({
+        name: 'gpt-5',
+        inputPricePerMillion: 1.25,
+        outputPricePerMillion: 10,
+        maxRequestTokens: 400000,
+        maxResponseTokens: 128000,
+        capabilities: { reasoning: true, input: { text: true }, output: { text: true } },
+        characteristics: { qualityIndex: 90, outputSpeed: 100, firstTokenLatency: 1000 }
+      } as unknown as ModelInfo);
+
+      const result = await converter.convertToOpenAIResponseParams('gpt-5', universalParams);
+      expect((result.text as any)?.verbosity).toBe('high');
+    });
+
+    test('should map verbosity to max_output_tokens for non-reasoning models when maxTokens not provided', async () => {
+      const universalParams: UniversalChatParams = {
+        messages: [{ role: 'user', content: 'Hello!' }],
+        model: 'gpt-4o',
+        settings: {
+          verbosity: 'medium'
+        }
+      };
+
+      mockModelManager.getModel.mockReturnValue({
+        name: 'gpt-4o',
+        inputPricePerMillion: 2.5,
+        outputPricePerMillion: 10,
+        maxRequestTokens: 200000,
+        maxResponseTokens: 100000,
+        capabilities: { input: { text: true }, output: { text: true } },
+        characteristics: { qualityIndex: 80, outputSpeed: 100, firstTokenLatency: 300 }
+      } as unknown as ModelInfo);
+
+      const result = await converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+      expect(result.max_output_tokens).toBe(50000);
+    });
+
+    test('should not override user-provided maxTokens with verbosity mapping', async () => {
+      const universalParams: UniversalChatParams = {
+        messages: [{ role: 'user', content: 'Hello!' }],
+        model: 'gpt-4o',
+        settings: {
+          verbosity: 'high',
+          maxTokens: 1234
+        }
+      };
+
+      mockModelManager.getModel.mockReturnValue({
+        name: 'gpt-4o',
+        inputPricePerMillion: 2.5,
+        outputPricePerMillion: 10,
+        maxRequestTokens: 200000,
+        maxResponseTokens: 100000,
+        capabilities: { input: { text: true }, output: { text: true } },
+        characteristics: { qualityIndex: 80, outputSpeed: 100, firstTokenLatency: 300 }
+      } as unknown as ModelInfo);
+
+      const result = await converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+      expect(result.max_output_tokens).toBe(1234);
+    });
+
     test('should convert universal tools to OpenAI Response tools', async () => {
       const toolDef: ToolDefinition = {
         name: 'test_tool',

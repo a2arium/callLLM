@@ -109,6 +109,13 @@ export type UniversalChatSettings = {
     /** Encourages new topics (-2.0 to 2.0). Higher values penalize based on presence. */
     presencePenalty?: number;
     /**
+     * Controls verbosity of responses where supported (e.g., GPT-5 text config).
+     * For non-reasoning models that don't support native verbosity, when provided
+     * and maxTokens is not set, the adapter maps verbosity to a derived
+     * max_output_tokens value.
+     */
+    verbosity?: 'low' | 'medium' | 'high';
+    /**
      * Maximum number of retries when the provider call fails
      * @default 3
      */
@@ -621,7 +628,7 @@ export type ModelAlias = 'cheap' | 'balanced' | 'fast' | 'premium';
  * - 'medium': Balanced approach to reasoning depth and token usage
  * - 'high': More thorough reasoning at the cost of more tokens and potentially longer generation time
  */
-export type ReasoningEffort = 'low' | 'medium' | 'high';
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high';
 
 // Parameters for image operations
 export type ImageCallParams = {

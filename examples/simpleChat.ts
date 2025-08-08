@@ -8,7 +8,12 @@ async function main() {
         // Test regular chat call
         console.log('Testing chat call...');
         const response = await caller.call(
-            'What is TypeScript and why should I use it?'
+            'What is TypeScript and why should I use it?',
+            {
+                settings: {
+                    verbosity: 'high'
+                }
+            }
         );
         console.log('\nChat Response:', response[0].content);
         console.log('\nUsage Information:');
@@ -21,6 +26,7 @@ async function main() {
             'Tell me a short story about a programmer.',
             {
                 settings: {
+                    verbosity: 'low',
                     temperature: 0.9
                 }
             }

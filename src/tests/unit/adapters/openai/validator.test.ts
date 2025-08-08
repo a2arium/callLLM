@@ -267,7 +267,7 @@ describe('OpenAI Response Validator', () => {
         // Verification
         expect(() => validator.validateParams(params)).toThrow(OpenAIResponseValidationError);
         expect(() => validator.validateParams(params)).toThrow(
-          'Reasoning effort must be one of: low, medium, high'
+          'Reasoning effort must be one of: minimal, low, medium, high'
         );
       });
 
@@ -294,7 +294,7 @@ describe('OpenAI Response Validator', () => {
         mockModelManagerInstance.getModel.mockReturnValue(reasoningModel);
 
         // Test all valid effort values
-        const effortValues: ReasoningEffort[] = ['low', 'medium', 'high'];
+        const effortValues: ReasoningEffort[] = ['minimal', 'low', 'medium', 'high'];
 
         for (const effort of effortValues) {
           const params = {

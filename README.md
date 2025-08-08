@@ -59,6 +59,7 @@ const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assista
 
 - [Function Folders](docs/function-folders.md) - Learn how to organize tools in separate files
 - [Working with Images](docs/images.md) - Guide to using multimodal models with image inputs and generating images
+- [GPT-5, Reasoning & Verbosity](docs/gpt5.md) - Using GPT-5 features, reasoning effort (incl. 'minimal'), and verbosity
 - More documentation coming soon
 
 ## Usage
@@ -916,6 +917,7 @@ The library supports both universal settings and model-specific settings. Settin
 | presencePenalty | number | Encourages new topics (-2.0 to 2.0). Higher values penalize tokens that have appeared at all | 0.0 |
 | responseFormat | 'text' \| 'json' | Specifies the desired response format | 'text' |
 | jsonSchema | { name?: string; schema: JSONSchemaDefinition } | Schema for response validation and formatting | undefined |
+| verbosity | 'low' \| 'medium' \| 'high' | Controls verbosity (native for GPT-5 via text.verbosity; mapped to max_output_tokens on non-reasoning models when maxTokens is not set) | model dependent |
 
 ### Model-Specific Settings
 
@@ -1255,7 +1257,7 @@ caller.setCallerId('new-conversation-id');
 
 Some models, like OpenAI's `o1` and `o3-mini`, and Anthropic's `claude-3.7-sonnet`, perform internal "reasoning" steps before generating the final output. These steps consume tokens and incur costs, which are tracked separately as `outputReasoning` tokens and costs in the usage data (both in metadata and callbacks).
 
-You can influence the amount of reasoning the model performs using the `reasoningEffort` setting. This allows you to balance response quality and complexity against cost and latency.
+You can influence the amount of reasoning the model performs using `settings.reasoning.effort`. This allows you to balance response quality and complexity against cost and latency.
 
 ```typescript
 const response = await caller.call(
@@ -1268,12 +1270,16 @@ const response = await caller.call(
 );
 ```
 
-Available `reasoningEffort` levels:
-- **low**: Minimal reasoning. Fastest and cheapest, but may be less thorough for complex tasks.
+Available effort levels:
+- **minimal**: Minimal reasoning. Fastest and cheapest, but may be less thorough for complex tasks.
+- **low**: Low reasoning. Fast and cheap, but may be less thorough for complex tasks.
 - **medium**: Balanced reasoning. Good default for moderate complexity.
 - **high**: Extensive reasoning. Most thorough, potentially higher quality responses for complex tasks, but slowest and most expensive due to increased reasoning token usage.
 
-**Note:** This setting is only effective for models that explicitly support reasoning effort control. For other models, it will be ignored. Check model capabilities or documentation.
+Notes:
+- On GPT-5, 'minimal' is supported natively.
+- On non‑GPT‑5 reasoning models, 'minimal' is mapped to 'low' for backward compatibility.
+- If a model has reasoning capability, temperature is ignored and a warning is logged; see docs/gpt5.md.
 
 ### History Modes
 

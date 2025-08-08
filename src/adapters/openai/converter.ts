@@ -380,8 +380,15 @@ export class Converter {
 
         // Set reasoning configuration if model supports it
         if (hasReasoningCapability && params.settings?.reasoning) {
+            // Map 'minimal' to 'low' for non-GPT-5 models for backwards compatibility
+            const requestedEffort = params.settings.reasoning.effort || 'medium';
+            const isGpt5Family = typeof model === 'string' && model.startsWith('gpt-5');
+            const normalizedEffort = (!isGpt5Family && requestedEffort === 'minimal')
+                ? 'low'
+                : requestedEffort;
+
             openAIParams.reasoning = {
-                effort: params.settings.reasoning.effort || 'medium'
+                effort: normalizedEffort as any
             };
 
             // Add summary option if requested
@@ -406,6 +413,39 @@ export class Converter {
         }
         if (params.settings?.maxTokens !== undefined) {
             openAIParams.max_output_tokens = params.settings.maxTokens;
+        } else if (modelInfo?.maxResponseTokens !== undefined) {
+            // Default to model's maxResponseTokens when maxTokens is not provided
+            openAIParams.max_output_tokens = modelInfo.maxResponseTokens;
+        }
+
+        // Verbosity handling
+        if (params.settings?.verbosity) {
+            const verbosity = params.settings.verbosity;
+            const isGpt5Family = typeof model === 'string' && model.startsWith('gpt-5');
+
+            // For GPT-5 family: set text.verbosity (create text block if needed)
+            if (isGpt5Family) {
+                const existingTextConfig = (openAIParams.text as ResponseTextConfig) || {} as ResponseTextConfig;
+                (openAIParams as any).text = {
+                    ...existingTextConfig,
+                    verbosity
+                } as ResponseTextConfig;
+            } else {
+                // For non-reasoning models: if max_output_tokens not explicitly set by user, map verbosity to a token cap
+                const isReasoning = hasReasoningCapability === true;
+                const userProvidedMax = params.settings?.maxTokens !== undefined;
+                if (!isReasoning && !userProvidedMax) {
+                    // Heuristic mapping based on model maxResponseTokens
+                    const maxResp = modelInfo?.maxResponseTokens;
+                    if (typeof maxResp === 'number') {
+                        let derived: number = maxResp;
+                        if (verbosity === 'low') derived = Math.max(256, Math.floor(maxResp * 0.25));
+                        else if (verbosity === 'medium') derived = Math.max(512, Math.floor(maxResp * 0.5));
+                        else if (verbosity === 'high') derived = Math.max(1024, Math.floor(maxResp * 0.75));
+                        openAIParams.max_output_tokens = derived;
+                    }
+                }
+            }
         }
         if (params.responseFormat === 'json' || (params.jsonSchema && params.jsonSchema.schema)) {
             // Set up text format configuration for the OpenAI Responses API
