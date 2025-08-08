@@ -271,7 +271,7 @@ describe('OpenAI Response Validator', () => {
         );
       });
 
-      it('should reject temperature for reasoning models', () => {
+      it('should ignore temperature and not throw for reasoning models', () => {
         // Setup - model has reasoning capability
         mockModelManagerInstance.getModel.mockReturnValue(reasoningModel);
 
@@ -284,10 +284,9 @@ describe('OpenAI Response Validator', () => {
         };
 
         // Verification
-        expect(() => validator.validateParams(params)).toThrow(OpenAIResponseValidationError);
-        expect(() => validator.validateParams(params)).toThrow(
-          'Temperature cannot be set for reasoning-capable models'
-        );
+        expect(() => validator.validateParams(params)).not.toThrow();
+        // Ensure temperature was removed
+        expect(params.settings?.temperature).toBeUndefined();
       });
 
       it('should allow all effort values for reasoning models', () => {

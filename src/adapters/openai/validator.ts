@@ -1,6 +1,7 @@
 import { OpenAI } from 'openai';
 import type { UniversalChatParams, ReasoningEffort } from '../../interfaces/UniversalInterfaces.ts';
 import { OpenAIResponseValidationError } from './errors.ts';
+import { logger } from '../../utils/logger.ts';
 import type { ToolDefinition } from '../../types/tooling.ts';
 import { ModelManager } from '../../core/models/ModelManager.ts';
 
@@ -51,11 +52,17 @@ export class Validator {
             }
         }
 
-        // Validate temperature is not used with reasoning models
+        // For reasoning-capable models, ignore temperature and warn instead of throwing
         if (hasReasoningCapability && params.settings?.temperature !== undefined) {
-            throw new OpenAIResponseValidationError(
-                'Temperature cannot be set for reasoning-capable models'
-            );
+            const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.Validator' });
+            log.warn('Temperature provided for reasoning-capable model; ignoring.', {
+                model: params.model,
+                temperature: params.settings.temperature
+            });
+            // Remove temperature so it is not sent to the provider
+            if (params.settings) {
+                delete (params.settings as { temperature?: number }).temperature;
+            }
         }
 
         // Settings validation for non-reasoning models

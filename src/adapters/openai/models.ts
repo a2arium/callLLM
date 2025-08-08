@@ -1,6 +1,119 @@
 import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
 
 export const defaultModels: ModelInfo[] = [
+    // GPT-5 family
+    {
+        name: 'gpt-5',
+        maxRequestTokens: 400000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 1.25,
+        inputCachedPricePerMillion: 0.125,
+        outputPricePerMillion: 10.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 69,
+            outputSpeed: 126.3,
+            firstTokenLatency: 74150,
+        },
+    },
+    {
+        name: 'gpt-5-mini',
+        maxRequestTokens: 400000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 0.25,
+        inputCachedPricePerMillion: 0.025,
+        outputPricePerMillion: 2.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 64,
+            outputSpeed: 160.9,
+            firstTokenLatency: 15760,
+        },
+    },
+    {
+        name: 'gpt-5-nano',
+        maxRequestTokens: 400000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 0.05,
+        inputCachedPricePerMillion: 0.005,
+        outputPricePerMillion: 0.40,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 54,
+            outputSpeed: 291.7,
+            firstTokenLatency: 22930,
+        },
+    },
+    {
+        name: 'gpt-5-chat-latest',
+        maxRequestTokens: 400000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 1.25,
+        inputCachedPricePerMillion: 0.125,
+        outputPricePerMillion: 10.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: false,
+            parallelToolCalls: false,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text']
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 69,
+            outputSpeed: 126.3,
+            firstTokenLatency: 74150,
+        },
+    },
     {
         name: 'gpt-4.1',
         maxRequestTokens: 1047576,
@@ -23,9 +136,9 @@ export const defaultModels: ModelInfo[] = [
             }
         },
         characteristics: {
-            qualityIndex: 53,
-            outputSpeed: 127.8,
-            firstTokenLatency: 420,
+            qualityIndex: 47,
+            outputSpeed: 121.6,
+            firstTokenLatency: 490,
         },
     },
     {
@@ -51,18 +164,18 @@ export const defaultModels: ModelInfo[] = [
             }
         },
         characteristics: {
-            qualityIndex: 70,
-            outputSpeed: 148.6,
-            firstTokenLatency: 37620,
+            qualityIndex: 65,
+            outputSpeed: 124.1,
+            firstTokenLatency: 49830,
         },
     },
     {
         name: 'o3',
         maxRequestTokens: 200000,
         maxResponseTokens: 100000,
-        inputPricePerMillion: 10.0,
-        inputCachedPricePerMillion: 2.5,
-        outputPricePerMillion: 40.0,
+        inputPricePerMillion: 2.0,
+        inputCachedPricePerMillion: 0.5,
+        outputPricePerMillion: 8.0,
         capabilities: {
             streaming: true,
             toolCalls: true,
@@ -80,8 +193,8 @@ export const defaultModels: ModelInfo[] = [
         },
         characteristics: {
             qualityIndex: 67,
-            outputSpeed: 0,
-            firstTokenLatency: 0,
+            outputSpeed: 151.7,
+            firstTokenLatency: 15840,
         },
     },
     {
@@ -106,9 +219,9 @@ export const defaultModels: ModelInfo[] = [
             }
         },
         characteristics: {
-            qualityIndex: 41,
-            outputSpeed: 238.4,
-            firstTokenLatency: 300,
+            qualityIndex: 30,
+            outputSpeed: 87.6,
+            firstTokenLatency: 360,
         },
     },
     {
@@ -145,7 +258,8 @@ export const defaultModels: ModelInfo[] = [
         maxRequestTokens: 128000,
         maxResponseTokens: 4096,
         inputPricePerMillion: 5.0,
-        outputPricePerMillion: 40.0,
+        inputCachedPricePerMillion: 1.25,
+        outputPricePerMillion: 0.0,
         // imageInputPricePerMillion: 10.0,  // TODO: add this
         // imageOutputPricePerMillion: 40.0, // TODO: add this
         capabilities: {
@@ -175,8 +289,9 @@ export const defaultModels: ModelInfo[] = [
         name: 'gpt-4o',
         maxRequestTokens: 128000,
         maxResponseTokens: 4096,
-        inputPricePerMillion: 5.0,
-        outputPricePerMillion: 15.0,
+        inputPricePerMillion: 2.5,
+        inputCachedPricePerMillion: 1.25,
+        outputPricePerMillion: 10.0,
         capabilities: {
             streaming: true,
             toolCalls: true,
@@ -192,7 +307,7 @@ export const defaultModels: ModelInfo[] = [
             }
         },
         characteristics: {
-            qualityIndex: 41,
+            qualityIndex: 29,
             outputSpeed: 119.8,
             firstTokenLatency: 340,
         },
@@ -206,9 +321,9 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 16384,
         tokenizationModel: "gpt-4",
         characteristics: {
-            qualityIndex: 73,
-            outputSpeed: 183.8,
-            firstTokenLatency: 730 // latency in ms
+            qualityIndex: 24,
+            outputSpeed: 68.5,
+            firstTokenLatency: 450 // latency in ms
         },
         capabilities: {
             toolCalls: true,
@@ -223,38 +338,14 @@ export const defaultModels: ModelInfo[] = [
             }
         }
     },
-    {
-        name: 'o1-preview',
-        maxRequestTokens: 128000,
-        maxResponseTokens: 4096,
-        inputPricePerMillion: 15.0,
-        outputPricePerMillion: 75.0,
-        capabilities: {
-            streaming: true,
-            toolCalls: true,
-            parallelToolCalls: true,
-            reasoning: true,
-            input: {
-                text: true
-            },
-            output: {
-                text: {
-                    textOutputFormats: ['text', 'json']
-                }
-            }
-        },
-        characteristics: {
-            qualityIndex: 0,
-            outputSpeed: 158.6,
-            firstTokenLatency: 19710,
-        },
-    },
+
     {
         name: 'o1-mini',
         maxRequestTokens: 128000,
         maxResponseTokens: 4096,
-        inputPricePerMillion: 5.0,
-        outputPricePerMillion: 25.0,
+        inputPricePerMillion: 1.10,
+        inputCachedPricePerMillion: 0.55,
+        outputPricePerMillion: 4.40,
         capabilities: {
             streaming: true,
             toolCalls: true,
@@ -284,9 +375,9 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 65536,
         tokenizationModel: "gpt-4",
         characteristics: {
-            qualityIndex: 63,
-            outputSpeed: 167.6,
-            firstTokenLatency: 13790 // latency in ms
+            qualityIndex: 53,
+            outputSpeed: 139.9,
+            firstTokenLatency: 17170 // latency in ms
         },
         capabilities: {
             streaming: true,
@@ -302,38 +393,11 @@ export const defaultModels: ModelInfo[] = [
             }
         }
     },
-    {
-        name: 'dall-e-3',
-        maxRequestTokens: 4096,
-        maxResponseTokens: 1, // Setting a minimal value since this is an image-only model
-        inputPricePerMillion: 4.0,
-        outputPricePerMillion: 0.0, // Pricing is per image, not tokens
-        capabilities: {
-            streaming: false,
-            toolCalls: false,
-            parallelToolCalls: false,
-            input: {
-                text: true
-            },
-            output: {
-                text: false,
-                image: {
-                    generate: true,
-                    edit: false,
-                    editWithMask: false
-                }
-            }
-        },
-        characteristics: {
-            qualityIndex: 80,
-            outputSpeed: 0,
-            firstTokenLatency: 2000,
-        },
-    },
+
     // Embedding Models
     {
         name: 'text-embedding-3-small',
-        inputPricePerMillion: 0.02,
+        inputPricePerMillion: 0.01,
         outputPricePerMillion: 0, // Embeddings don't generate tokens
         maxRequestTokens: 8192,
         maxResponseTokens: 0, // No response tokens for embeddings
@@ -362,7 +426,7 @@ export const defaultModels: ModelInfo[] = [
     },
     {
         name: 'text-embedding-3-large',
-        inputPricePerMillion: 0.13,
+        inputPricePerMillion: 0.065,
         outputPricePerMillion: 0,
         maxRequestTokens: 8192,
         maxResponseTokens: 0,
@@ -391,7 +455,7 @@ export const defaultModels: ModelInfo[] = [
     },
     {
         name: 'text-embedding-ada-002',
-        inputPricePerMillion: 0.10,
+        inputPricePerMillion: 0.05,
         outputPricePerMillion: 0,
         maxRequestTokens: 8192,
         maxResponseTokens: 0,

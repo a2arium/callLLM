@@ -2,18 +2,13 @@ import { LLMCaller } from '../src/core/caller/LLMCaller.ts';
 
 async function main() {
     // Initialize the caller with OpenAI
-    const caller = new LLMCaller('openai', 'gpt-4o-mini');
+    const caller = new LLMCaller('openai', 'gpt-5-mini');
 
     try {
         // Test regular chat call
         console.log('Testing chat call...');
         const response = await caller.call(
-            'What is TypeScript and why should I use it?',
-            {
-                settings: {
-                    maxTokens: 300
-                }
-            }
+            'What is TypeScript and why should I use it?'
         );
         console.log('\nChat Response:', response[0].content);
         console.log('\nUsage Information:');
@@ -26,8 +21,7 @@ async function main() {
             'Tell me a short story about a programmer.',
             {
                 settings: {
-                    temperature: 0.9,
-                    maxTokens: 400
+                    temperature: 0.9
                 }
             }
         );
