@@ -13,6 +13,8 @@ import { ToolOrchestrator } from '../tools/ToolOrchestrator.ts';
 import { HistoryManager } from '../history/HistoryManager.ts';
 import { HistoryTruncator } from '../history/HistoryTruncator.ts';
 import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
+import type { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts'
+import type { ConversationContext, LLMCallContext } from '../telemetry/collector/types.ts'
 
 /**
  * StreamingService
@@ -35,6 +37,9 @@ export class StreamingService {
     private retryManager: RetryManager;
     private historyTruncator: HistoryTruncator;
     private mcpAdapterProvider: () => MCPServiceAdapter | null = () => null;
+    private telemetryCollector?: TelemetryCollector;
+    private conversationCtx?: ConversationContext;
+    private llmCtx?: LLMCallContext;
 
     constructor(
         private providerManager: ProviderManager,
@@ -48,7 +53,8 @@ export class StreamingService {
         },
         private toolController?: ToolController,
         private toolOrchestrator?: ToolOrchestrator,
-        mcpAdapterProvider?: () => MCPServiceAdapter | null
+        mcpAdapterProvider?: () => MCPServiceAdapter | null,
+        telemetryCollector?: TelemetryCollector
     ) {
         this.tokenCalculator = new TokenCalculator();
         this.responseProcessor = new ResponseProcessor();
@@ -60,6 +66,7 @@ export class StreamingService {
         if (mcpAdapterProvider) {
             this.mcpAdapterProvider = mcpAdapterProvider;
         }
+        this.telemetryCollector = telemetryCollector;
         this.streamHandler = new StreamHandler(
             this.tokenCalculator,
             this.historyManager,
@@ -86,8 +93,14 @@ export class StreamingService {
             callerId,
             tokenBatchSize: options?.tokenBatchSize || 100,
             hasToolController: Boolean(this.toolController),
-            hasToolOrchestrator: Boolean(this.toolOrchestrator)
+            hasToolOrchestrator: Boolean(this.toolOrchestrator),
+            hasCollector: Boolean(this.telemetryCollector)
         });
+    }
+
+    public setTelemetryContext(collector: TelemetryCollector | undefined, conversationCtx?: ConversationContext): void {
+        this.telemetryCollector = collector;
+        this.conversationCtx = conversationCtx;
     }
 
     /**
@@ -102,6 +115,31 @@ export class StreamingService {
             level: process.env.LOG_LEVEL as any || 'info',
             prefix: 'StreamingService.createStream'
         });
+
+        // Collector: start LLM for streaming
+        const providerName = (this.providerManager.getCurrentProviderName?.() as unknown as string) || this.providerManager.getProvider()?.constructor?.name || 'unknown';
+        if (this.telemetryCollector) {
+            // Create conversation ctx if not provided externally
+            this.conversationCtx = this.telemetryCollector.startConversation('stream', {
+                callerId: params.callerId,
+                hasTools: Boolean(params.tools?.length)
+            });
+            this.llmCtx = this.telemetryCollector.startLLM(this.conversationCtx, {
+                provider: String(providerName).toLowerCase(),
+                model,
+                streaming: true,
+                responseFormat: params.responseFormat === 'json' ? 'json' : 'text',
+                toolsEnabled: Boolean(params.tools && params.tools.length > 0),
+                settings: params.settings
+            });
+            // Emit prompt messages
+            const msgs = (params.messages || []).map((m, idx) => ({
+                role: m.role as any,
+                content: typeof m.content === 'string' ? m.content : String(m.content ?? ''),
+                sequence: idx
+            }));
+            this.telemetryCollector.addPrompt(this.llmCtx, msgs);
+        }
 
         // Ensure system message is included if provided
         if (systemMessage && !params.messages.some(m => m.role === 'system')) {
@@ -121,7 +159,8 @@ export class StreamingService {
         const modelInfo = this.modelManager.getModel(model);
 
         if (!modelInfo) {
-            throw new Error(`Model ${model} not found for provider ${this.providerManager.getProvider().constructor.name}`);
+            const err = new Error(`Model ${model} not found for provider ${this.providerManager.getProvider().constructor.name}`);
+            throw err;
         }
 
         log.debug('Creating stream', {
@@ -131,7 +170,14 @@ export class StreamingService {
             toolsEnabled: Boolean(params.tools?.length)
         });
 
-        return this.executeWithRetry(model, params, inputTokens, modelInfo);
+        // Collector will handle usage; no-op here
+
+        try {
+            const stream = await this.executeWithRetry(model, params, inputTokens, modelInfo);
+            return this.wrapStreamWithTelemetry(stream, undefined, model);
+        } catch (error) {
+            throw error;
+        }
     }
 
     /**
@@ -250,6 +296,41 @@ export class StreamingService {
                 timeToFailMs: Date.now() - startTime
             });
             throw error;
+        }
+    }
+
+    /** Wrap outgoing stream to add telemetry events and final usage */
+    private async *wrapStreamWithTelemetry(
+        stream: AsyncIterable<UniversalStreamResponse>,
+        _span?: unknown,
+        model?: string
+    ): AsyncIterable<UniversalStreamResponse> {
+        let last: UniversalStreamResponse | undefined;
+        let count = 0;
+        try {
+            for await (const chunk of stream) {
+                count++;
+                last = chunk;
+                const hasContent = Boolean((chunk as any).contentText || chunk.content?.trim());
+                const choiceContent = (chunk as any).contentText || chunk.content || '';
+                if (this.telemetryCollector && this.llmCtx) {
+                    this.telemetryCollector.addChoice(this.llmCtx, {
+                        content: hasContent ? String(choiceContent) : '',
+                        contentLength: String(choiceContent).length,
+                        index: 0,
+                        sequence: count,
+                        finishReason: (chunk as any).isComplete ? ((chunk as any).metadata?.finishReason ?? 'stop') : 'incomplete',
+                        isChunk: true
+                    });
+                }
+                yield chunk;
+            }
+        } catch (err) {
+            throw err;
+        }
+
+        if (this.telemetryCollector && this.llmCtx) {
+            this.telemetryCollector.endLLM(this.llmCtx, (last as any)?.metadata?.usage as any, (last as any)?.metadata?.model);
         }
     }
 

@@ -4,11 +4,17 @@ import { ToolIterationLimitError, ToolNotFoundError, ToolExecutionError } from '
 import { logger } from '../../utils/logger.ts';
 import type { ToolCall } from '../../types/tooling.ts';
 import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
+// OpenTelemetry provider is handled behind the TelemetryCollector
+import type { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts'
+import type { ToolCallContext, ConversationContext } from '../telemetry/collector/types.ts'
 
 export class ToolController {
     private toolsManager: ToolsManager;
     private iterationCount: number = 0;
     private maxIterations: number;
+    // no direct otel reference here
+    private telemetryCollector?: TelemetryCollector;
+    private conversationCtx?: ConversationContext;
 
     /**
      * Creates a new ToolController instance
@@ -17,12 +23,19 @@ export class ToolController {
      */
     constructor(
         toolsManager: ToolsManager,
-        maxIterations: number = 5
+        maxIterations: number = 5,
+        telemetryCollector?: TelemetryCollector
     ) {
         this.toolsManager = toolsManager;
         this.maxIterations = maxIterations;
+        this.telemetryCollector = telemetryCollector;
         const log = logger.createLogger({ prefix: 'ToolController.constructor', level: process.env.LOG_LEVEL as any || 'info' });
         log.debug(`Initialized with maxIterations: ${maxIterations}`);
+    }
+
+    public setTelemetryContext(collector: TelemetryCollector | undefined, conversationCtx?: ConversationContext): void {
+        this.telemetryCollector = collector;
+        this.conversationCtx = conversationCtx;
     }
 
     /**
@@ -198,6 +211,24 @@ export class ToolController {
             let error: string | undefined;
             let toolMessage: UniversalMessage | undefined;
 
+            // Telemetry
+            const isParallel = parsedToolCalls.length > 1;
+            const executionIndex = parsedToolCalls.findIndex(call => call.name === name && call.id === id);
+
+            // Collector: start tool context when conversation context exists
+            let toolCtx: ToolCallContext | undefined;
+            if (this.telemetryCollector && this.conversationCtx) {
+                toolCtx = this.telemetryCollector.startTool(this.conversationCtx, {
+                    name,
+                    type: tool?.metadata?.isMCP ? 'mcp' : 'function',
+                    executionIndex,
+                    parallel: isParallel
+                });
+            }
+
+            const startTime = Date.now();
+            // collector handles details on end
+
             if (!tool) {
                 log.warn(`Tool not found: ${name}`, {
                     availableToolNames: callSpecificTools?.map(t => t.name) || [],
@@ -211,6 +242,9 @@ export class ToolController {
                     content: error,
                     metadata: { tool_call_id: toolCallId }
                 };
+                if (this.telemetryCollector && toolCtx) {
+                    this.telemetryCollector.endTool(toolCtx, undefined, notFoundError);
+                }
             } else {
                 // --- Execute the tool (Standard or MCP) --- 
                 try {
@@ -239,25 +273,14 @@ export class ToolController {
                             // Stringify other types if necessary
                             result = JSON.stringify(mcpResultRaw);
                         }
-                        // If mcpResultRaw is undefined, result remains undefined
-
-                        // --- Standard Tool Execution Logic (using callFunction) ---
-                    } else if (tool.callFunction) { // Use callFunction
-                        log.debug(`Executing standard function tool: ${tool.name}`);
-                        // Standard function execution expects arguments directly
-                        const standardResultRaw = await tool.callFunction(args || {}); // Use callFunction
-                        log.debug(`Standard function tool execution successful: ${tool.name}`);
-                        // Type check the raw result
-                        if (typeof standardResultRaw === 'string' || (typeof standardResultRaw === 'object' && standardResultRaw !== null)) {
-                            result = standardResultRaw as string | Record<string, unknown>;
-                        } else if (standardResultRaw !== undefined) {
-                            // Stringify other types if necessary
-                            result = JSON.stringify(standardResultRaw);
-                        }
-                        // If standardResultRaw is undefined, result remains undefined
                     } else {
-                        log.error(`Tool definition is invalid or missing execution logic: ${tool.name}`);
-                        throw new ToolExecutionError(tool.name, 'Tool function not defined.');
+                        // --- Standard tool execution ---
+                        if (typeof tool.callFunction === 'function') {
+                            result = await tool.callFunction(args || {});
+                        } else {
+                            log.error('Tool definition missing callFunction', { toolName: tool.name });
+                            throw new ToolExecutionError(name, 'Tool definition missing callFunction');
+                        }
                     }
 
                     // Prepare JSON content for tool result messages
@@ -268,16 +291,24 @@ export class ToolController {
                             content,
                             metadata: { tool_call_id: toolCallId }
                         };
+                        if (this.telemetryCollector && toolCtx) {
+                            this.telemetryCollector.endTool(toolCtx, result, undefined);
+                        }
                     }
-                } catch (execError) {
-                    log.error(`Tool execution failed: ${name}`, { error: execError });
-                    const execErrorMsg = execError instanceof Error ? execError.message : String(execError);
-                    error = `Error executing tool ${name}: ${execErrorMsg}`;
+                } catch (err) {
+                    log.error('Error executing tool call', {
+                        toolName: name,
+                        error: err instanceof Error ? err.message : String(err)
+                    });
+                    error = `Error: ${err instanceof Error ? err.message : String(err)}`;
                     toolMessage = {
                         role: 'tool',
                         content: error,
                         metadata: { tool_call_id: toolCallId }
                     };
+                    if (this.telemetryCollector && toolCtx) {
+                        this.telemetryCollector.endTool(toolCtx, undefined, err);
+                    }
                 }
             }
 

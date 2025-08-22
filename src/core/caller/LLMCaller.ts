@@ -63,6 +63,9 @@ import {
 import { BaseAdapter } from '../../adapters/base/baseAdapter.ts';
 import type { ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.ts';
 import { EmbeddingController } from '../embeddings/EmbeddingController.ts';
+import { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts'
+import { OpenTelemetryProvider } from '../telemetry/providers/openTelemetry/OpenTelemetryProvider.ts'
+import type { PromptMessage } from '../telemetry/collector/types.ts'
 
 /**
  * Interface that matches the core functionality of StreamController
@@ -104,6 +107,8 @@ export type LLMCallerOptions = {
     maxIterations?: number; // For tool calls
     maxChunkIterations?: number; // For data chunking
     parallelChunking?: boolean; // Whether to process chunks in parallel (default: true)
+    // Telemetry
+    telemetryCollector?: TelemetryCollector;
 };
 
 /**
@@ -141,6 +146,7 @@ export class LLMCaller implements MCPDirectAccess {
     private parallelChunking: boolean; // Whether to process chunks in parallel
     // Embedding controller
     private embeddingController?: EmbeddingController;
+    private telemetryCollector?: TelemetryCollector;
 
     constructor(
         providerName: RegisteredProviders,
@@ -174,10 +180,17 @@ export class LLMCaller implements MCPDirectAccess {
         this.toolsManager = options?.toolsManager || new ToolsManager();
         this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
         this.requestProcessor = new RequestProcessor();
+        // Initialize new TelemetryCollector and register OpenTelemetry provider if enabled
+        this.telemetryCollector = new TelemetryCollector();
+        try {
+            const otelProvider = new OpenTelemetryProvider();
+            this.telemetryCollector.registerProvider(otelProvider);
+        } catch { /* ignore */ }
         // Initialize ToolController with only ToolsManager and maxIterations
         this.toolController = new ToolController(
             this.toolsManager,
-            this.maxIterations
+            this.maxIterations,
+            this.telemetryCollector
         );
 
         // Initialize the folder loader if toolsDir is provided
@@ -192,10 +205,17 @@ export class LLMCaller implements MCPDirectAccess {
         // **Initialize StreamingService early, passing adapter provider**
         this.streamingService = options?.streamingService ||
             new StreamingService(
-                this.providerManager, this.modelManager, this.historyManager, this.retryManager,
-                this.usageCallback, this.callerId, { tokenBatchSize: 100 }, this.toolController,
+                this.providerManager,
+                this.modelManager,
+                this.historyManager,
+                this.retryManager,
+                this.usageCallback,
+                this.callerId,
+                { tokenBatchSize: 100 },
+                this.toolController,
                 undefined, // toolOrchestrator is set later
-                () => this.getMcpAdapter() // Pass adapter provider
+                () => this.getMcpAdapter(),
+                this.telemetryCollector
             );
 
         // **Initialize ChatController, passing adapter provider**
@@ -204,66 +224,60 @@ export class LLMCaller implements MCPDirectAccess {
             this.usageTracker, this.toolController,
             undefined, // Pass undefined for toolOrchestrator for now
             this.historyManager,
-            () => this.getMcpAdapter() // Pass adapter provider
+            () => this.getMcpAdapter(),
+            this.telemetryCollector
         );
+        // OpenTelemetry is managed via TelemetryCollector; no direct setter needed
 
-        // **Create the adapter using initialized streamingService**
-        // eslint-disable-next-line @typescript-eslint/no-this-alias
-        const self = this;
+        // Create ToolOrchestrator and wire controllers
         const streamControllerAdapter: StreamControllerInterface = {
             createStream: async (
                 model: string,
                 params: UniversalChatParams,
                 inputTokens: number
             ): Promise<AsyncIterable<UniversalStreamResponse>> => {
-                params.callerId = params.callerId || self.callerId;
-                if (!self.streamingService) {
+                params.callerId = params.callerId || this.callerId;
+                if (!this.streamingService) {
                     throw new Error('StreamingService is not initialized');
                 }
-                return self.streamingService.createStream(params, model, undefined);
+                return this.streamingService.createStream(params, model, undefined);
             }
         };
-
-        // **Initialize ToolOrchestrator**
         this.toolOrchestrator = new ToolOrchestrator(
             this.toolController,
             this.chatController,
-            streamControllerAdapter as StreamController,
+            streamControllerAdapter as unknown as StreamController,
             this.historyManager
         );
-
-        // **Link ToolOrchestrator back to ChatController & StreamingService**
-        if (typeof this.chatController.setToolOrchestrator === 'function') {
-            this.chatController.setToolOrchestrator(this.toolOrchestrator);
-        } else {
-            // For architecture versions without setToolOrchestrator
-            const log = logger.createLogger({ prefix: 'LLMCaller.constructor' });
-            log.debug('ChatController.setToolOrchestrator not found - may be using newer API');
-        }
+        this.chatController.setToolOrchestrator(this.toolOrchestrator);
         this.streamingService.setToolOrchestrator(this.toolOrchestrator);
-        // No need to set adapter provider here again, passed in constructor
+        this.streamingService.setMCPAdapterProvider(() => this.getMcpAdapter());
 
-        // Initialize ChunkController (now all dependencies should be ready)
+        // Initialize ChunkController with parallel options
+        this.parallelChunking = options?.parallelChunking ?? true;
         this.chunkController = new ChunkController(
             this.tokenCalculator,
             this.chatController,
-            streamControllerAdapter as StreamController,
+            streamControllerAdapter as unknown as StreamController,
             this.historyManager,
             this.maxChunkIterations
         );
 
-        // Add tools if provided in options, after core components are set up
-        if (options?.tools && options.tools.length > 0) {
-            // Call addTools but don't await it here to keep constructor synchronous
-            // Note: Tools might not be fully loaded/connected immediately after constructor returns.
-            this.addTools(options.tools).catch(err => {
-                // Log error if initial tool loading fails
-                logger.error('Error adding tools during LLMCaller initialization:', err);
-            });
+        // Initialize Tools from folder if provided
+        if (this.folderLoader) {
+            // Optionally, host can load and add tools at runtime using ToolsFolderLoader APIs.
+            // Avoid dynamic async work in constructor to keep initialization predictable.
         }
 
-        // Initialize parallelChunking
-        this.parallelChunking = options?.parallelChunking === undefined ? true : options.parallelChunking;
+        // Create StreamController (wrapper) after StreamingService
+        const streamCtrl = new StreamController(
+            this.providerManager,
+            this.modelManager,
+            (this as any).streamingService?.['streamHandler'] || (this.streamingService as any)['streamHandler'],
+            this.retryManager
+        );
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+        (this as any).streamController = streamCtrl as unknown as StreamController;
     }
 
     // Model management methods - delegated to ModelManager
@@ -498,11 +512,69 @@ export class LLMCaller implements MCPDirectAccess {
 
         // Use the StreamingService to create the stream
         try {
-            return await this.streamingService.createStream(
+            // Start conversation in new TelemetryCollector
+            const conversationCtx = this.telemetryCollector?.startConversation('stream', {
+                callerId: this.callerId,
+                hasTools: Boolean(params.tools?.length)
+            });
+            // OTel spans are no longer created here; providers will emit via the collector
+            const create = async () => await this.streamingService.createStream(
                 params,
                 params.model,
                 undefined  // System message comes from history manager via params
             );
+            const stream = await create();
+
+            const self = this;
+            async function* wrap(): AsyncIterable<UniversalStreamResponse> {
+                const startTime = Date.now();
+                let llmCallsCount = 0;
+                let toolCallsCount = 0;
+                let totalTokens = 0;
+                let totalCost = 0;
+                let errorCount = 0;
+                let lastChunk: UniversalStreamResponse | undefined;
+
+                try {
+                    for await (const chunk of stream) {
+                        lastChunk = chunk;
+
+                        // Track metrics for conversation summary
+                        if (chunk.metadata?.usage) {
+                            totalTokens += chunk.metadata.usage.tokens.total || 0;
+                            if (chunk.metadata.usage.costs) {
+                                totalCost += chunk.metadata.usage.costs.total || 0;
+                            }
+                        }
+
+                        if (chunk.toolCalls?.length) {
+                            toolCallsCount += chunk.toolCalls.length;
+                        }
+
+                        if (chunk.isComplete) {
+                            llmCallsCount++;
+                        }
+
+                        yield chunk;
+                    }
+                } catch (error) {
+                    errorCount++;
+                    throw error;
+                } finally {
+                    const success = errorCount === 0 && Boolean(lastChunk?.isComplete);
+                    if (self.telemetryCollector && conversationCtx) {
+                        self.telemetryCollector.endConversation(conversationCtx, {
+                            totalTokens,
+                            totalCost,
+                            llmCallsCount,
+                            toolCallsCount,
+                            success,
+                            errorCount
+                        });
+                    }
+                }
+            }
+            return wrap();
         } catch (error) {
             // Enhance error with context
             if (error instanceof ProviderNotFoundError) {
@@ -953,21 +1025,8 @@ export class LLMCaller implements MCPDirectAccess {
             if (finalProcessedMessages.length <= 1) {
                 const stream = await this.internalStreamCall(chatParams);
                 for await (const chunk of stream as AsyncIterable<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>>) {
-                    if (chunk.isComplete && actualOptions.outputPath && chunk.image) {
-                        // Create a temporary UniversalChatResponse to use with processImageOutput
-                        const tempResponse: UniversalChatResponse = {
-                            content: chunk.contentText || null,
-                            role: chunk.role,
-                            image: chunk.image,
-                            metadata: chunk.metadata
-                        };
-                        const processedOutputResponse = await this.processImageOutput(tempResponse, actualOptions.outputPath);
-                        // Update chunk with imageSavedPath from metadata if present
-                        if (processedOutputResponse.metadata?.imageSavedPath) {
-                            if (!chunk.metadata) chunk.metadata = {};
-                            chunk.metadata.imageSavedPath = processedOutputResponse.metadata.imageSavedPath;
-                        }
-                    }
+                    // Image output processing is handled within the adapters when outputPath is provided
+                    // No additional processing needed here as the adapter handles outputPath automatically
                     yield chunk;
                 }
             } else {
@@ -1017,13 +1076,8 @@ export class LLMCaller implements MCPDirectAccess {
                         }
                     };
 
-                    if (streamResponseChunk.isComplete && actualOptions.outputPath && streamResponseChunk.image) {
-                        const processedOutputResponse = await this.processImageOutput(response, actualOptions.outputPath); // Pass full response for processImageOutput
-                        if (processedOutputResponse.metadata?.imageSavedPath) {
-                            if (!streamResponseChunk.metadata) streamResponseChunk.metadata = {};
-                            streamResponseChunk.metadata.imageSavedPath = processedOutputResponse.metadata.imageSavedPath;
-                        }
-                    }
+                    // Image output processing is handled within the adapters when outputPath is provided
+                    // No additional processing needed here as the adapter handles outputPath automatically
                     yield streamResponseChunk;
                 }
             }
@@ -1190,12 +1244,9 @@ export class LLMCaller implements MCPDirectAccess {
                         imageParams
                     );
 
-                    // Process image output if needed
-                    const processedResponse = opts.outputPath && response.image
-                        ? await this.processImageOutput(response, opts.outputPath)
-                        : response;
-
-                    return [processedResponse];
+                    // Image output processing is handled within the adapters when outputPath is provided
+                    // No additional processing needed here as the adapter handles outputPath automatically
+                    return [response];
                 }
             }
 
@@ -1240,51 +1291,106 @@ export class LLMCaller implements MCPDirectAccess {
                     processedMessages
                 });
 
-            let responses: UniversalChatResponse[];
-            if (finalProcessedMessages.length <= 1) {
-                log.debug('Calling internalChatCall (single chunk)');
-                const response = await this.internalChatCall<T>(chatParams);
-                responses = [response];
-            } else {
-                log.debug('Calling chunkController.processChunks (multi-chunk)', { chunkCount: finalProcessedMessages.length });
-                responses = this.parallelChunking
-                    ? await this.chunkController.processChunksParallel(finalProcessedMessages, {
-                        model: this.model,
-                        historicalMessages: chatParams.messages,
-                        settings: chatParams.settings,
-                        jsonSchema: opts.jsonSchema,
-                        responseFormat: opts.responseFormat,
-                        tools: chatParams.tools,
-                        callerId: this.callerId,
-                        maxCharsPerChunk: opts.maxCharsPerChunk
-                    })
-                    : await this.chunkController.processChunks(finalProcessedMessages, {
-                        model: this.model,
-                        historicalMessages: chatParams.messages,
-                        settings: chatParams.settings,
-                        jsonSchema: opts.jsonSchema,
-                        responseFormat: opts.responseFormat,
-                        tools: chatParams.tools,
-                        callerId: this.callerId,
-                        maxCharsPerChunk: opts.maxCharsPerChunk
-                    });
-                responses.forEach(response => {
-                    if (response.content && (!response.toolCalls || response.toolCalls.length === 0) && response.metadata?.finishReason !== 'tool_calls') {
-                        this.historyManager.addMessage('assistant', response.content);
-                    }
-                });
+            // Start conversation with the new collector
+            const conversationCtx = this.telemetryCollector?.startConversation('call', {
+                callerId: this.callerId,
+                hasTools: Boolean(chatParams.tools?.length)
+            });
+            // Propagate telemetry context so ChatController/ToolController can create child spans
+            if (this.telemetryCollector && conversationCtx) {
+                this.chatController.setTelemetryContext(this.telemetryCollector, conversationCtx);
+                this.toolController.setTelemetryContext(this.telemetryCollector, conversationCtx);
             }
 
-            // After getting all responses, process image output for each if applicable
-            const processedResponses = await Promise.all(responses.map(async (res) => {
-                if (opts.outputPath && res.image) {
-                    return await this.processImageOutput(res, opts.outputPath);
+            // Collector-driven conversation already started above for stream/call
+
+            const startTime = Date.now();
+
+            let responses: UniversalChatResponse[];
+            let llmCallsCount = 0;
+            let toolCallsCount = 0;
+            let totalTokens = 0;
+            let totalCost = 0;
+            let errorCount = 0;
+
+            try {
+                if (finalProcessedMessages.length <= 1) {
+                    log.debug('Calling internalChatCall (single chunk)');
+                    const exec = async () => await this.internalChatCall<T>(chatParams);
+                    const response = await exec();
+                    responses = [response];
+                    llmCallsCount = 1;
+                } else {
+                    log.debug('Calling chunkController.processChunks (multi-chunk)', { chunkCount: finalProcessedMessages.length });
+                    const execChunks = async () => this.parallelChunking
+                        ? await this.chunkController.processChunksParallel(finalProcessedMessages, {
+                            model: this.model,
+                            historicalMessages: chatParams.messages,
+                            settings: chatParams.settings,
+                            jsonSchema: opts.jsonSchema,
+                            responseFormat: opts.responseFormat,
+                            tools: chatParams.tools,
+                            callerId: this.callerId,
+                            maxCharsPerChunk: opts.maxCharsPerChunk
+                        })
+                        : await this.chunkController.processChunks(finalProcessedMessages, {
+                            model: this.model,
+                            historicalMessages: chatParams.messages,
+                            settings: chatParams.settings,
+                            jsonSchema: opts.jsonSchema,
+                            responseFormat: opts.responseFormat,
+                            tools: chatParams.tools,
+                            callerId: this.callerId,
+                            maxCharsPerChunk: opts.maxCharsPerChunk
+                        });
+                    responses = await execChunks();
+                    llmCallsCount = responses.length;
+                    responses.forEach(response => {
+                        if (response.content && (!response.toolCalls || response.toolCalls.length === 0) && response.metadata?.finishReason !== 'tool_calls') {
+                            this.historyManager.addMessage('assistant', response.content);
+                        }
+                    });
                 }
-                return res;
-            }));
+
+                // Calculate conversation metrics
+                responses.forEach(response => {
+                    if (response.metadata?.usage) {
+                        totalTokens += response.metadata.usage.tokens.total || 0;
+                        if (response.metadata.usage.costs) {
+                            totalCost += response.metadata.usage.costs.total || 0;
+                        }
+                    }
+                    if (response.toolCalls?.length) {
+                        toolCallsCount += response.toolCalls.length;
+                    }
+                });
+
+            } catch (error) {
+                errorCount++;
+                throw error;
+            }
+
+            // Image output processing is handled within the adapters when outputPath is provided
+            // No additional processing needed here as the adapter handles outputPath automatically
+            const processedResponses = responses;
 
             if (chatParams.historyMode?.toLowerCase() === 'stateless') {
                 this.historyManager.initializeWithSystemMessage();
+            }
+
+            // Record conversation summary and end span
+            const duration = Date.now() - startTime;
+            const success = errorCount === 0 && responses.length > 0;
+
+            if (this.telemetryCollector && conversationCtx) {
+                this.telemetryCollector.endConversation(conversationCtx, {
+                    totalTokens,
+                    totalCost,
+                    llmCallsCount,
+                    toolCallsCount,
+                    success,
+                    errorCount
+                });
             }
 
             return processedResponses;
@@ -1592,226 +1698,5 @@ export class LLMCaller implements MCPDirectAccess {
             // Re-throw the error to the caller
             throw error;
         }
-    }
-
-    /**
-     * Explicitly connects to a specific MCP server that has been configured during LLMCaller initialization 
-     * or in previous LLM calls with 'tools' parameter.
-     * Call this method before using callMcpTool to ensure the server connection is established.
-     * 
-     * @param serverKey The server key to connect to (e.g., 'filesystem')
-     * @returns Promise that resolves when connection is complete
-     */
-    async connectToMcpServer(serverKey: string): Promise<void> {
-        const log = logger.createLogger({ prefix: 'LLMCaller.connectToMcpServer' });
-
-        if (!serverKey) {
-            throw new Error('Server key is required for connecting to an MCP server');
-        }
-
-        // Get the adapter (initializes with empty config if needed)
-        const mcpAdapter = this.getMcpAdapter();
-
-        try {
-            // Connect to the specified server
-            log.debug(`Connecting to MCP server: ${serverKey}`);
-            await mcpAdapter.connectToServer(serverKey);
-            log.info(`Successfully connected to MCP server: ${serverKey}`);
-        } catch (error) {
-            // Provide more helpful error message if server configuration is missing
-            if (error instanceof Error &&
-                error.message.includes('Server configuration not found')) {
-                const helpfulError = new Error(
-                    `No configuration found for MCP server "${serverKey}". ` +
-                    `Please ensure you've provided this server configuration either when initializing LLMCaller ` +
-                    `or in a previous call() with the 'tools' parameter.`
-                );
-                log.error(helpfulError.message);
-                throw helpfulError;
-            }
-            // Otherwise re-throw the original error
-            throw error;
-        }
-    }
-
-    /**
-     * Disconnects from all MCP servers and cleans up resources.
-     * Call this when you're done with MCP tools to free up resources.
-     * 
-     * @returns Promise that resolves when all disconnections are complete
-     */
-    async disconnectMcpServers(): Promise<void> {
-        const log = logger.createLogger({ prefix: 'LLMCaller.disconnectMcpServer' });
-
-        // Disconnect all MCP servers if the adapter exists
-        if (this._mcpAdapter) {
-            log.debug('Disconnecting from all MCP servers');
-            await this._mcpAdapter.disconnectAll();
-
-            // Clear the adapter reference
-            this._mcpAdapter = null;
-        } else {
-            log.debug('No MCP connections to disconnect');
-        }
-
-        log.debug('Disconnection complete');
-    }
-
-    /**
-     * Processes image output from a response, including saving to file if outputPath provided
-     * @param response The chat response that might contain image data
-     * @param outputPath Optional path to save the image to
-     * @private
-     */
-    private async processImageOutput(
-        response: UniversalChatResponse,
-        outputPath?: string
-    ): Promise<UniversalChatResponse> {
-        const log = logger.createLogger({ prefix: 'LLMCaller.processImageOutput' });
-
-        // If there's no image in the response or no outputPath, return as-is
-        if (!response.image || !outputPath) {
-            return response;
-        }
-
-        try {
-            log.debug(`Processing image output, saving to: ${outputPath}`);
-
-            // Save the image to the specified path
-            await saveBase64ToFile(
-                response.image.data,
-                outputPath,
-                response.image.mime
-            );
-
-            log.debug(`Successfully saved image to ${outputPath}`);
-
-            // Add the saved path to the response metadata for reference
-            if (!response.metadata) {
-                response.metadata = {};
-            }
-
-            response.metadata.imageSavedPath = outputPath;
-
-            return response;
-        } catch (error) {
-            log.error('Failed to save image output:', error);
-            throw new Error(`Failed to save image to ${outputPath}: ${error instanceof Error ? error.message : String(error)}`);
-        }
-    }
-
-    /**
-     * Generate embeddings for text input
-     */
-    async embeddings(options: EmbeddingCallOptions): Promise<EmbeddingResponse> {
-        const log = logger.createLogger({ prefix: 'LLMCaller.embeddings' });
-
-        // Resolve the model to use
-        const resolvedModel = this.resolveEmbeddingModel(options.model);
-
-        // Initialize embedding controller if not already done
-        if (!this.embeddingController) {
-            this.embeddingController = new EmbeddingController(
-                this.providerManager.getProvider() as BaseAdapter,
-                this.modelManager,
-                this.tokenCalculator,
-                options.usageCallback || this.usageCallback,
-                this.callerId
-            );
-        }
-
-        log.debug('Generating embeddings', {
-            model: resolvedModel,
-            inputType: Array.isArray(options.input) ? 'batch' : 'single',
-            inputCount: Array.isArray(options.input) ? options.input.length : 1
-        });
-
-        return this.embeddingController.generateEmbeddings({
-            input: options.input,
-            model: resolvedModel,
-            dimensions: options.dimensions,
-            encodingFormat: options.encodingFormat,
-            callerId: this.callerId,
-            usageCallback: options.usageCallback || this.usageCallback,
-            usageBatchSize: options.usageBatchSize,
-        });
-    }
-
-    /**
-     * Resolve embedding model from options or defaults
-     * Note: Aliases are not supported for embeddings to ensure model consistency
-     */
-    private resolveEmbeddingModel(requestedModel?: string): string {
-        const log = logger.createLogger({ prefix: 'LLMCaller.resolveEmbeddingModel' });
-
-        if (requestedModel) {
-            // Check if it's a specific model name
-            const modelInfo = this.modelManager.getModel(requestedModel);
-            if (modelInfo && modelInfo.capabilities?.embeddings) {
-                log.debug(`Using requested embedding model '${requestedModel}'`);
-                return requestedModel;
-            }
-
-            throw new CapabilityError(`Model '${requestedModel}' does not support embeddings`);
-        }
-
-        // Fall back to provider's default embedding model
-        const defaultModel = this.getDefaultEmbeddingModel();
-        log.debug(`Using default embedding model '${defaultModel}'`);
-        return defaultModel;
-    }
-
-    /**
-     * Get the default embedding model for the current provider
-     */
-    private getDefaultEmbeddingModel(): string {
-        const availableModels = this.modelManager.getAvailableModels();
-        const embeddingModels = availableModels.filter(model =>
-            model.capabilities?.embeddings
-        );
-
-        if (embeddingModels.length === 0) {
-            throw new CapabilityError('No embedding models available for this provider');
-        }
-
-        // Default to text-embedding-3-small for OpenAI, or first available model
-        const preferredModel = embeddingModels.find(model =>
-            model.name === 'text-embedding-3-small'
-        );
-
-        return preferredModel ? preferredModel.name : embeddingModels[0].name;
-    }
-
-    /**
-     * Get available embedding models
-     */
-    public getAvailableEmbeddingModels(): string[] {
-        const availableModels = this.modelManager.getAvailableModels();
-        return availableModels
-            .filter(model => model.capabilities?.embeddings)
-            .map(model => model.name);
-    }
-
-    /**
-     * Check embedding capabilities for a specific model
-     */
-    public checkEmbeddingCapabilities(modelName: string): {
-        supported: boolean;
-        maxInputLength?: number;
-        dimensions?: number[];
-        defaultDimensions?: number;
-        encodingFormats?: string[];
-    } {
-        if (!this.embeddingController) {
-            this.embeddingController = new EmbeddingController(
-                this.providerManager.getProvider() as BaseAdapter,
-                this.modelManager,
-                this.tokenCalculator,
-                this.usageCallback,
-                this.callerId
-            );
-        }
-
-        return this.embeddingController.checkEmbeddingCapabilities(modelName);
     }
 }

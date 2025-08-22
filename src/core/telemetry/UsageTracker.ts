@@ -74,8 +74,6 @@ export class UsageTracker {
 
         if (this.callback && this.callerId) {
             log.debug(`Invoking usage callback for callerId: ${this.callerId}`);
-            console.log(`[DEBUG] Non-streaming usage callback firing for caller: ${this.callerId}`, usage.tokens);
-
             await Promise.resolve(
                 this.callback({
                     callerId: this.callerId,
