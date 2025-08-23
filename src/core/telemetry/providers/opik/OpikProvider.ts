@@ -12,6 +12,8 @@ import type {
     ToolCallContext
 } from '../../collector/types.ts';
 import { logger } from '../../../../utils/logger.ts';
+import { readFileSync } from 'fs';
+import path from 'path';
 
 let OpikClient: any;
 
@@ -36,6 +38,7 @@ export class OpikProvider implements TelemetryProvider {
     private spanByTool: Record<string, any> = {};
     private messagesByLLM: Record<string, PromptMessage[]> = {};
     private responseTextByLLM: Record<string, string> = {};
+    private imagesByLLM: Record<string, Array<{ source: 'url' | 'base64' | 'file_path'; url?: string; path?: string; base64?: string }>> = {};
 
     async init(config: ProviderInit): Promise<void> {
         this.enabled = /^(1|true)$/i.test(String(config.env.CALLLLM_OPIK_ENABLED || ''));
@@ -258,10 +261,54 @@ export class OpikProvider implements TelemetryProvider {
             this.convoInputById[ctx.conversationId] = {
                 messages: messages.map(m => ({ role: m.role, content: redact ? '[redacted]' : this.truncate(m.content), sequence: m.sequence }))
             };
+
+            // Detect image references in messages and attach to span input as images
+            const detectedImages: Array<{ source: 'url' | 'base64' | 'file_path'; url?: string; path?: string; base64?: string }> = [];
+            for (const m of messages) {
+                const content = m.content || '';
+                const fileMatch = content.match(/^<file:(.+)>$/);
+                if (fileMatch) {
+                    const ref = fileMatch[1];
+                    if (ref.startsWith('http')) {
+                        detectedImages.push({ source: 'url', url: ref });
+                    } else if (ref.startsWith('data:')) {
+                        detectedImages.push({ source: 'base64', base64: ref });
+                    } else {
+                        try {
+                            const abs = path.isAbsolute(ref) ? ref : path.resolve(ref);
+                            const data = readFileSync(abs);
+                            // naive mime by ext
+                            const ext = path.extname(abs).toLowerCase();
+                            const mime = ext === '.png' ? 'image/png'
+                                : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg'
+                                    : ext === '.webp' ? 'image/webp'
+                                        : 'application/octet-stream';
+                            const b64 = `data:${mime};base64,${data.toString('base64')}`;
+                            detectedImages.push({ source: 'file_path', path: abs, base64: b64 });
+                        } catch { /* ignore fs errors */ }
+                    }
+                }
+            }
+            if (detectedImages.length) {
+                const existing = (this.imagesByLLM[ctx.llmCallId] || []);
+                this.imagesByLLM[ctx.llmCallId] = [...existing, ...detectedImages];
+            }
+            // Build image preview messages only for url/base64 so we don't duplicate local file refs
+            const imagePreviewMessages = (this.imagesByLLM[ctx.llmCallId] || [])
+                .filter(img => img.source === 'url' || img.source === 'base64')
+                .map(img => {
+                    const preview = img.base64 ? (this.redaction.redactPrompts ? '[image redacted]' : this.truncate(img.base64))
+                        : (img.url || '[image]');
+                    return { role: 'user', content: `image: ${preview}`, sequence: (messages[messages.length - 1]?.sequence ?? 0) + 1 };
+                });
             span.update({
                 input: {
                     ...(span.data?.input || {}),
-                    messages: messages.map(m => ({ role: m.role, content: redact ? '[redacted]' : this.truncate(m.content), sequence: m.sequence }))
+                    messages: [
+                        ...messages.map(m => ({ role: m.role, content: redact ? '[redacted]' : this.truncate(m.content), sequence: m.sequence })),
+                        ...imagePreviewMessages
+                    ],
+                    ...(this.imagesByLLM[ctx.llmCallId]?.length ? { images: this.imagesByLLM[ctx.llmCallId] } : {})
                 }
             });
             // Do not flush on every prompt update to prevent spam
@@ -278,16 +325,36 @@ export class OpikProvider implements TelemetryProvider {
                 this.log.debug('Opik addChoice', { llmCallId: ctx.llmCallId, isChunk: choice.isChunk, length: choice.content?.length, sequence: choice.sequence });
             }
             const redact = this.redaction.redactResponses;
-            const content = redact ? '[redacted]' : this.truncate(choice.content);
+            const rawContent = choice.content || '';
+            if (!rawContent) return;
+            const content = redact ? '[redacted]' : this.truncate(rawContent);
             const prev = (span.data?.output || {});
             const existing = this.responseTextByLLM[ctx.llmCallId] ?? ((prev.response || '') as string);
+            let nextResponse: string;
+            if (!choice.isChunk) {
+                // For non-chunk updates, prefer the final complete content (replace)
+                nextResponse = content;
+            } else if (existing) {
+                if (rawContent === existing || existing.endsWith(rawContent)) {
+                    // Duplicate or trailing duplicate chunk; keep existing
+                    nextResponse = existing;
+                } else if (rawContent.includes(existing)) {
+                    // New content is a superset (e.g., accumulated text); replace
+                    nextResponse = content;
+                } else {
+                    // Append incremental chunk
+                    nextResponse = `${existing}${content}`;
+                }
+            } else {
+                nextResponse = content;
+            }
             span.update({
                 output: {
                     ...(prev || {}),
-                    response: `${existing}${content}`
+                    response: nextResponse
                 }
             });
-            this.responseTextByLLM[ctx.llmCallId] = `${existing}${content}`;
+            this.responseTextByLLM[ctx.llmCallId] = nextResponse;
             // Do not flush on every chunk to prevent excessive flush calls
         } catch (err) { this.log.warn('Opik addChoice failed', err as Error); }
     }
@@ -317,6 +384,10 @@ export class OpikProvider implements TelemetryProvider {
                     response: responseText,
                     responseModel
                 },
+                input: {
+                    ...(span.data?.input || {}),
+                    ...(this.imagesByLLM[ctx.llmCallId]?.length ? { images: this.imagesByLLM[ctx.llmCallId] } : {})
+                },
                 metadata: {
                     ...(span.data?.metadata || {}),
                     'original_usage.prompt_tokens': promptTokens,
@@ -345,13 +416,26 @@ export class OpikProvider implements TelemetryProvider {
                         }))
                     }
                     : undefined;
+                const images = this.imagesByLLM[ctx.llmCallId];
+                // Add lightweight preview lines for URL/base64 images to trace messages for UI visibility
+                const imagePreviewMessagesForTrace = (images || [])
+                    .filter(img => img.source === 'url' || img.source === 'base64')
+                    .map(img => ({
+                        role: 'user',
+                        content: `image: ${img.base64 ? (this.redaction.redactPrompts ? '[image redacted]' : this.truncate(img.base64)) : (img.url || '[image]')}`,
+                        sequence: (messages[messages.length - 1]?.sequence ?? 0) + 1
+                    }));
                 const outputObject = responseText
                     ? {
                         response: redactResponses ? '[redacted]' : this.truncate(responseText)
                     }
                     : undefined;
+                const traceInput = (inputObject || {}) as any;
+                if (Array.isArray(traceInput.messages) && imagePreviewMessagesForTrace.length) {
+                    traceInput.messages = [...traceInput.messages, ...imagePreviewMessagesForTrace];
+                }
                 trace.update({
-                    ...(inputObject ? { input: inputObject } : {}),
+                    ...(inputObject || imagePreviewMessagesForTrace.length ? { input: traceInput } : {}),
                     ...(outputObject ? { output: outputObject } : {}),
                     metadata: {
                         ...(trace.data?.metadata || {}),
@@ -366,6 +450,7 @@ export class OpikProvider implements TelemetryProvider {
         delete this.messagesByLLM[ctx.llmCallId];
         delete this.choiceCountByLLM[ctx.llmCallId];
         delete this.responseTextByLLM[ctx.llmCallId];
+        delete this.imagesByLLM[ctx.llmCallId];
     }
 
     startTool(ctx: ToolCallContext): void {

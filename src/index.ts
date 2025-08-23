@@ -24,8 +24,6 @@ export type {
     UsageCallback,
     UsageData
 } from './interfaces/UsageInterfaces.ts';
-export { OtelService } from './core/telemetry/OtelService.ts'
-export { getAutoOtelService, shutdownAutoOtel } from './core/telemetry/OtelBootstrap.ts'
 
 // Tool-related types
 export type {

@@ -181,10 +181,14 @@ export class LLMCaller implements MCPDirectAccess {
         this.toolsManager = options?.toolsManager || new ToolsManager();
         this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
         this.requestProcessor = new RequestProcessor();
-        // Initialize TelemetryCollector and register providers
-        this.telemetryCollector = new TelemetryCollector();
-        try { this.telemetryCollector.registerProvider(new OpenTelemetryProvider()); } catch { /* ignore */ }
-        try { this.telemetryCollector.registerProvider(new OpikProvider()); } catch { /* ignore */ }
+        // Initialize TelemetryCollector with providers upfront to avoid readiness races
+        this.telemetryCollector = new TelemetryCollector({
+            providers: [
+                (() => { try { return new OpenTelemetryProvider(); } catch { return undefined as any; } })(),
+                (() => { try { return new OpikProvider(); } catch { return undefined as any; } })()
+            ].filter(Boolean) as any,
+            env: process.env
+        });
         // Initialize ToolController with only ToolsManager and maxIterations
         this.toolController = new ToolController(
             this.toolsManager,
