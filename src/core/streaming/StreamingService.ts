@@ -119,26 +119,30 @@ export class StreamingService {
         // Collector: start LLM for streaming
         const providerName = (this.providerManager.getCurrentProviderName?.() as unknown as string) || this.providerManager.getProvider()?.constructor?.name || 'unknown';
         if (this.telemetryCollector) {
-            // Create conversation ctx if not provided externally
-            this.conversationCtx = this.telemetryCollector.startConversation('stream', {
-                callerId: params.callerId,
-                hasTools: Boolean(params.tools?.length)
-            });
-            this.llmCtx = this.telemetryCollector.startLLM(this.conversationCtx, {
-                provider: String(providerName).toLowerCase(),
-                model,
-                streaming: true,
-                responseFormat: params.responseFormat === 'json' ? 'json' : 'text',
-                toolsEnabled: Boolean(params.tools && params.tools.length > 0),
-                settings: params.settings
-            });
-            // Emit prompt messages
-            const msgs = (params.messages || []).map((m, idx) => ({
-                role: m.role as any,
-                content: typeof m.content === 'string' ? m.content : String(m.content ?? ''),
-                sequence: idx
-            }));
-            this.telemetryCollector.addPrompt(this.llmCtx, msgs);
+            // Ensure providers are ready so spans attach correctly
+            try { await (this.telemetryCollector as any).awaitReady?.(); } catch { /* ignore */ }
+            // Only use the injected conversation context; do not auto-create here to avoid duplicates
+            if (!this.conversationCtx) {
+                const logMissing = logger.createLogger({ prefix: 'StreamingService.createStream' });
+                logMissing.debug('No injected conversationCtx; streaming will proceed without telemetry conversation');
+            }
+            if (this.conversationCtx) {
+                this.llmCtx = this.telemetryCollector.startLLM(this.conversationCtx, {
+                    provider: String(providerName).toLowerCase(),
+                    model,
+                    streaming: true,
+                    responseFormat: params.responseFormat === 'json' ? 'json' : 'text',
+                    toolsEnabled: Boolean(params.tools && params.tools.length > 0),
+                    settings: params.settings
+                });
+                // Emit prompt messages
+                const msgs = (params.messages || []).map((m, idx) => ({
+                    role: m.role as any,
+                    content: typeof m.content === 'string' ? m.content : String(m.content ?? ''),
+                    sequence: idx
+                }));
+                this.telemetryCollector.addPrompt(this.llmCtx, msgs);
+            }
         }
 
         // Ensure system message is included if provided
@@ -330,6 +334,15 @@ export class StreamingService {
         }
 
         if (this.telemetryCollector && this.llmCtx) {
+            // Ensure we pass full text output and final usage to providers that need it (e.g., Opik)
+            const finalText = (last as any)?.contentText || (last as any)?.content || '';
+            // Add final choice event so non-stream span has complete output
+            this.telemetryCollector.addChoice(this.llmCtx, {
+                content: finalText,
+                contentLength: String(finalText).length,
+                index: 0,
+                finishReason: (last as any)?.metadata?.finishReason || 'stop'
+            });
             this.telemetryCollector.endLLM(this.llmCtx, (last as any)?.metadata?.usage as any, (last as any)?.metadata?.model);
         }
     }

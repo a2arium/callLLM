@@ -63,6 +63,11 @@ export type ConversationSummary = {
     errorCount?: number;
 };
 
+export type ConversationInputOutput = {
+    initialMessages?: PromptMessage[];
+    finalResponse?: string;
+};
+
 export type ProviderInit = {
     env: NodeJS.ProcessEnv;
     redaction?: RedactionPolicy;
@@ -72,7 +77,7 @@ export type TelemetryProvider = {
     name: string;
     init(config: ProviderInit): Promise<void>;
     startConversation(ctx: ConversationContext): void;
-    endConversation(ctx: ConversationContext, summary?: ConversationSummary): void;
+    endConversation(ctx: ConversationContext, summary?: ConversationSummary, inputOutput?: ConversationInputOutput): void;
     startLLM(ctx: LLMCallContext): void;
     addPrompt(ctx: LLMCallContext, messages: PromptMessage[]): void;
     addChoice(ctx: LLMCallContext, choice: ChoiceEvent): void;

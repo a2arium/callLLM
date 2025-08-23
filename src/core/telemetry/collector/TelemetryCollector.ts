@@ -4,6 +4,7 @@ import { logger } from '../../../utils/logger.ts';
 import type {
     ChoiceEvent,
     ConversationContext,
+    ConversationInputOutput,
     ConversationSummary,
     LLMCallContext,
     PromptMessage,
@@ -19,9 +20,11 @@ export class TelemetryCollector {
     private readonly redaction: RedactionPolicy;
     private readonly initPromises: Promise<void>[] = [];
     private allReady = false;
+    private isFlushing = false;
+    private readyPromise: Promise<void> | null = null;
     private pendingEvents: Array<
         | { t: 'startConversation'; ctx: ConversationContext }
-        | { t: 'endConversation'; ctx: ConversationContext; summary?: ConversationSummary }
+        | { t: 'endConversation'; ctx: ConversationContext; summary?: ConversationSummary; inputOutput?: ConversationInputOutput }
         | { t: 'startLLM'; ctx: LLMCallContext }
         | { t: 'addPrompt'; llm: LLMCallContext; messages: PromptMessage[] }
         | { t: 'addChoice'; llm: LLMCallContext; choice: ChoiceEvent }
@@ -53,10 +56,10 @@ export class TelemetryCollector {
             this.initPromises.push(pr);
         }
         if (this.initPromises.length > 0) {
-            Promise.all(this.initPromises).then(() => {
+            this.readyPromise = Promise.all(this.initPromises).then(() => {
                 this.allReady = true;
                 this.flushPending();
-            }).catch(() => { /* ignore */ });
+            }).catch(() => { /* ignore */ return; });
         }
     }
 
@@ -67,10 +70,21 @@ export class TelemetryCollector {
             this.log.debug('Provider initialized', { name: (provider as any).name || 'unknown' });
         }).catch((e) => this.log.warn('Provider init error', e as Error));
         this.initPromises.push(pr);
-        Promise.all(this.initPromises).then(() => {
+        this.readyPromise = Promise.all(this.initPromises).then(() => {
             this.allReady = true;
             this.flushPending();
-        }).catch(() => { /* ignore */ });
+        }).catch(() => { /* ignore */ return; });
+    }
+
+    async awaitReady(): Promise<void> {
+        if (this.allReady) return;
+        if (!this.readyPromise) {
+            this.readyPromise = Promise.all(this.initPromises).then(() => {
+                this.allReady = true;
+                this.flushPending();
+            }).catch(() => { /* ignore */ return; });
+        }
+        try { await this.readyPromise; } catch { /* ignore */ }
     }
 
     // Conversation lifecycle
@@ -82,7 +96,7 @@ export class TelemetryCollector {
             startedAt: Date.now()
         };
         this.log.debug('startConversation', { type, conversationId: ctx.conversationId, ready: this.allReady });
-        if (!this.allReady) {
+        if (!this.allReady || this.isFlushing) {
             this.pendingEvents.push({ t: 'startConversation', ctx });
         } else {
             for (const p of this.providers) p.startConversation(ctx);
@@ -90,12 +104,12 @@ export class TelemetryCollector {
         return ctx;
     }
 
-    endConversation(ctx: ConversationContext, summary?: ConversationSummary): void {
-        this.log.debug('endConversation', { conversationId: ctx.conversationId, summary, ready: this.allReady });
-        if (!this.allReady) {
-            this.pendingEvents.push({ t: 'endConversation', ctx, summary });
+    endConversation(ctx: ConversationContext, summary?: ConversationSummary, inputOutput?: ConversationInputOutput): void {
+        this.log.debug('endConversation', { conversationId: ctx.conversationId, summary, inputOutput, ready: this.allReady });
+        if (!this.allReady || this.isFlushing) {
+            this.pendingEvents.push({ t: 'endConversation', ctx, summary, inputOutput });
         } else {
-            for (const p of this.providers) p.endConversation(ctx, summary);
+            for (const p of this.providers) p.endConversation(ctx, summary, inputOutput);
         }
     }
 
@@ -108,7 +122,7 @@ export class TelemetryCollector {
             ...meta
         };
         this.log.debug('startLLM', { conversationId: conversation.conversationId, llmCallId: ctx.llmCallId, model: ctx.model, ready: this.allReady });
-        if (!this.allReady) {
+        if (!this.allReady || this.isFlushing) {
             this.pendingEvents.push({ t: 'startLLM', ctx });
         } else {
             for (const p of this.providers) p.startLLM(ctx);
@@ -119,7 +133,7 @@ export class TelemetryCollector {
     addPrompt(llm: LLMCallContext, messages: PromptMessage[]): void {
         // Redaction/truncation is handled by providers per policy; we pass raw
         this.log.debug('addPrompt', { llmCallId: llm.llmCallId, count: messages.length, ready: this.allReady });
-        if (!this.allReady) {
+        if (!this.allReady || this.isFlushing) {
             this.pendingEvents.push({ t: 'addPrompt', llm, messages });
         } else {
             for (const p of this.providers) p.addPrompt(llm, messages);
@@ -128,7 +142,7 @@ export class TelemetryCollector {
 
     addChoice(llm: LLMCallContext, choice: ChoiceEvent): void {
         this.log.debug('addChoice', { llmCallId: llm.llmCallId, isChunk: Boolean(choice.isChunk), length: choice.contentLength, sequence: choice.sequence, ready: this.allReady });
-        if (!this.allReady) {
+        if (!this.allReady || this.isFlushing) {
             this.pendingEvents.push({ t: 'addChoice', llm, choice });
         } else {
             for (const p of this.providers) p.addChoice(llm, choice);
@@ -137,7 +151,7 @@ export class TelemetryCollector {
 
     endLLM(llm: LLMCallContext, usage?: Usage, responseModel?: string): void {
         this.log.debug('endLLM', { llmCallId: llm.llmCallId, responseModel, usage: usage ? { input: usage.tokens.input.total, output: usage.tokens.output.total, total: usage.tokens.total } : undefined, ready: this.allReady });
-        if (!this.allReady) {
+        if (!this.allReady || this.isFlushing) {
             this.pendingEvents.push({ t: 'endLLM', llm, usage, responseModel });
         } else {
             for (const p of this.providers) p.endLLM(llm, usage, responseModel);
@@ -153,7 +167,7 @@ export class TelemetryCollector {
             ...meta
         };
         this.log.debug('startTool', { conversationId: conversation.conversationId, toolCallId: ctx.toolCallId, name: ctx.name, ready: this.allReady });
-        if (!this.allReady) {
+        if (!this.allReady || this.isFlushing) {
             this.pendingEvents.push({ t: 'startTool', ctx });
         } else {
             for (const p of this.providers) p.startTool(ctx);
@@ -163,7 +177,7 @@ export class TelemetryCollector {
 
     endTool(tool: ToolCallContext, result?: unknown, error?: unknown): void {
         this.log.debug('endTool', { toolCallId: tool.toolCallId, hasError: Boolean(error), ready: this.allReady });
-        if (!this.allReady) {
+        if (!this.allReady || this.isFlushing) {
             this.pendingEvents.push({ t: 'endTool', tool, result, error });
         } else {
             for (const p of this.providers) p.endTool(tool, result, error);
@@ -172,6 +186,7 @@ export class TelemetryCollector {
 
     private flushPending(): void {
         if (!this.allReady || !this.pendingEvents.length) return;
+        this.isFlushing = true;
         this.log.debug('Flushing pending telemetry events', { count: this.pendingEvents.length });
         for (const ev of this.pendingEvents) {
             switch (ev.t) {
@@ -179,7 +194,7 @@ export class TelemetryCollector {
                     for (const p of this.providers) p.startConversation(ev.ctx);
                     break;
                 case 'endConversation':
-                    for (const p of this.providers) p.endConversation(ev.ctx, ev.summary);
+                    for (const p of this.providers) p.endConversation(ev.ctx, ev.summary, ev.inputOutput);
                     break;
                 case 'startLLM':
                     for (const p of this.providers) p.startLLM(ev.ctx);
@@ -202,6 +217,7 @@ export class TelemetryCollector {
             }
         }
         this.pendingEvents = [];
+        this.isFlushing = false;
     }
 }
 

@@ -65,7 +65,8 @@ import type { ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.ts';
 import { EmbeddingController } from '../embeddings/EmbeddingController.ts';
 import { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts'
 import { OpenTelemetryProvider } from '../telemetry/providers/openTelemetry/OpenTelemetryProvider.ts'
-import type { PromptMessage } from '../telemetry/collector/types.ts'
+import { OpikProvider } from '../telemetry/providers/opik/OpikProvider.ts'
+import type { PromptMessage, ConversationInputOutput } from '../telemetry/collector/types.ts'
 
 /**
  * Interface that matches the core functionality of StreamController
@@ -180,12 +181,10 @@ export class LLMCaller implements MCPDirectAccess {
         this.toolsManager = options?.toolsManager || new ToolsManager();
         this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
         this.requestProcessor = new RequestProcessor();
-        // Initialize new TelemetryCollector and register OpenTelemetry provider if enabled
+        // Initialize TelemetryCollector and register providers
         this.telemetryCollector = new TelemetryCollector();
-        try {
-            const otelProvider = new OpenTelemetryProvider();
-            this.telemetryCollector.registerProvider(otelProvider);
-        } catch { /* ignore */ }
+        try { this.telemetryCollector.registerProvider(new OpenTelemetryProvider()); } catch { /* ignore */ }
+        try { this.telemetryCollector.registerProvider(new OpikProvider()); } catch { /* ignore */ }
         // Initialize ToolController with only ToolsManager and maxIterations
         this.toolController = new ToolController(
             this.toolsManager,
@@ -517,6 +516,9 @@ export class LLMCaller implements MCPDirectAccess {
                 callerId: this.callerId,
                 hasTools: Boolean(params.tools?.length)
             });
+            if (this.telemetryCollector && conversationCtx) {
+                this.streamingService.setTelemetryContext(this.telemetryCollector, conversationCtx);
+            }
             // OTel spans are no longer created here; providers will emit via the collector
             const create = async () => await this.streamingService.createStream(
                 params,
@@ -534,10 +536,16 @@ export class LLMCaller implements MCPDirectAccess {
                 let totalCost = 0;
                 let errorCount = 0;
                 let lastChunk: UniversalStreamResponse | undefined;
+                let finalResponseText = '';
 
                 try {
                     for await (const chunk of stream) {
                         lastChunk = chunk;
+
+                        // Accumulate response text for telemetry
+                        if (chunk.content) {
+                            finalResponseText += chunk.content;
+                        }
 
                         // Track metrics for conversation summary
                         if (chunk.metadata?.usage) {
@@ -563,6 +571,18 @@ export class LLMCaller implements MCPDirectAccess {
                 } finally {
                     const success = errorCount === 0 && Boolean(lastChunk?.isComplete);
                     if (self.telemetryCollector && conversationCtx) {
+                        // Capture initial messages and final response for telemetry
+                        const initialMessages: PromptMessage[] = params.messages.map((msg, index) => ({
+                            role: msg.role as 'system' | 'user' | 'assistant' | 'tool',
+                            content: msg.content || '',
+                            sequence: index
+                        }));
+
+                        const inputOutput: ConversationInputOutput = {
+                            initialMessages,
+                            finalResponse: finalResponseText
+                        };
+
                         self.telemetryCollector.endConversation(conversationCtx, {
                             totalTokens,
                             totalCost,
@@ -570,7 +590,7 @@ export class LLMCaller implements MCPDirectAccess {
                             toolCallsCount,
                             success,
                             errorCount
-                        });
+                        }, inputOutput);
                     }
                 }
             }
@@ -1291,6 +1311,8 @@ export class LLMCaller implements MCPDirectAccess {
                     processedMessages
                 });
 
+            // Ensure telemetry providers are ready before starting conversation
+            await this.telemetryCollector?.awaitReady?.();
             // Start conversation with the new collector
             const conversationCtx = this.telemetryCollector?.startConversation('call', {
                 callerId: this.callerId,
@@ -1383,6 +1405,20 @@ export class LLMCaller implements MCPDirectAccess {
             const success = errorCount === 0 && responses.length > 0;
 
             if (this.telemetryCollector && conversationCtx) {
+                // Capture initial messages and final response for telemetry
+                const initialMessages: PromptMessage[] = chatParams.messages.map((msg, index) => ({
+                    role: msg.role as 'system' | 'user' | 'assistant' | 'tool',
+                    content: msg.content || '',
+                    sequence: index
+                }));
+
+                const finalResponse = responses.length > 0 ? responses.map(r => r.content).join('\n') : '';
+
+                const inputOutput: ConversationInputOutput = {
+                    initialMessages,
+                    finalResponse
+                };
+
                 this.telemetryCollector.endConversation(conversationCtx, {
                     totalTokens,
                     totalCost,
@@ -1390,7 +1426,7 @@ export class LLMCaller implements MCPDirectAccess {
                     toolCallsCount,
                     success,
                     errorCount
-                });
+                }, inputOutput);
             }
 
             return processedResponses;

@@ -5,6 +5,7 @@ import type { Usage } from '../../../../interfaces/UniversalInterfaces.ts';
 import type {
     ChoiceEvent,
     ConversationContext,
+    ConversationInputOutput,
     ConversationSummary,
     LLMCallContext,
     PromptMessage,
@@ -72,7 +73,7 @@ export class OpenTelemetryProvider implements TelemetryProvider {
         } catch { /* ignore */ }
     }
 
-    endConversation(ctx: ConversationContext, summary?: ConversationSummary): void {
+    endConversation(ctx: ConversationContext, summary?: ConversationSummary, inputOutput?: ConversationInputOutput): void {
         if (!this.enabled) return;
         const span = (globalThis as any)[`__callllm_conv_${ctx.conversationId}`];
         if (!span) return;
@@ -84,6 +85,20 @@ export class OpenTelemetryProvider implements TelemetryProvider {
             if (summary?.toolCallsCount !== undefined) (attrs as any)['gen_ai.conversation.tool_calls'] = summary.toolCallsCount;
             if (summary?.success !== undefined) (attrs as any)['gen_ai.conversation.success'] = summary.success;
             if (summary?.errorCount !== undefined) (attrs as any)['gen_ai.conversation.errors.count'] = summary.errorCount;
+
+            // Add input/output attributes for OpenTelemetry
+            if (inputOutput?.initialMessages?.length) {
+                (attrs as any)['gen_ai.conversation.input.messages.count'] = inputOutput.initialMessages.length;
+                // Add first message as example (truncated)
+                const firstMsg = inputOutput.initialMessages[0];
+                if (firstMsg && !this.redaction.redactPrompts) {
+                    (attrs as any)['gen_ai.conversation.input.first_message'] = this.truncate(firstMsg.content);
+                }
+            }
+            if (inputOutput?.finalResponse && !this.redaction.redactResponses) {
+                (attrs as any)['gen_ai.conversation.output.response'] = this.truncate(inputOutput.finalResponse);
+            }
+
             span.setAttributes(attrs);
             this.log.debug('endConversation set attributes', { conversationId: ctx.conversationId, ...attrs as any });
         } catch { /* ignore */ }
