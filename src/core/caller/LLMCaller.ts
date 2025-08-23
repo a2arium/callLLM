@@ -583,7 +583,7 @@ export class LLMCaller implements MCPDirectAccess {
                             finalResponse: finalResponseText
                         };
 
-                        self.telemetryCollector.endConversation(conversationCtx, {
+                        await self.telemetryCollector.endConversation(conversationCtx, {
                             totalTokens,
                             totalCost,
                             llmCallsCount,
@@ -1419,7 +1419,7 @@ export class LLMCaller implements MCPDirectAccess {
                     finalResponse
                 };
 
-                this.telemetryCollector.endConversation(conversationCtx, {
+                await this.telemetryCollector.endConversation(conversationCtx, {
                     totalTokens,
                     totalCost,
                     llmCallsCount,

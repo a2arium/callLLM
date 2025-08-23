@@ -35,6 +35,7 @@ export class OpikProvider implements TelemetryProvider {
     private spanByLLM: Record<string, any> = {};
     private spanByTool: Record<string, any> = {};
     private messagesByLLM: Record<string, PromptMessage[]> = {};
+    private responseTextByLLM: Record<string, string> = {};
 
     async init(config: ProviderInit): Promise<void> {
         this.enabled = /^(1|true)$/i.test(String(config.env.CALLLLM_OPIK_ENABLED || ''));
@@ -132,20 +133,19 @@ export class OpikProvider implements TelemetryProvider {
                 this.log.debug('Opik startConversation skipped; trace already exists', { conversationId: ctx.conversationId });
                 return;
             }
+            // Create trace without input/output - we'll create a summary span with the final data
             const trace = this.client.trace({
                 name: `conversation.${ctx.type}`,
-                input: { conversationId: ctx.conversationId, type: ctx.type },
-                output: {}
+                metadata: { conversationId: ctx.conversationId, type: ctx.type }
             });
             this.traceByConversation[ctx.conversationId] = trace;
             try {
                 this.log.debug('Opik trace created', { traceId: trace?.data?.id, project: trace?.data?.projectName });
             } catch { /* ignore */ }
-            // Avoid immediate flush flood; rely on end events for finalization
         } catch (err) { this.log.warn('Opik startConversation failed', err as Error); }
     }
 
-    endConversation(ctx: ConversationContext, summary?: ConversationSummary, inputOutput?: ConversationInputOutput): void {
+    async endConversation(ctx: ConversationContext, summary?: ConversationSummary, inputOutput?: ConversationInputOutput): Promise<void> {
         if (!this.enabled || !this.client) return;
         if (this.endedConversations[ctx.conversationId]) {
             this.log.debug('Opik endConversation skipped; already ended', { conversationId: ctx.conversationId });
@@ -155,15 +155,6 @@ export class OpikProvider implements TelemetryProvider {
         if (!trace) return;
         try {
             this.log.debug('Opik endConversation', { conversationId: ctx.conversationId, hasSummary: Boolean(summary), hasInputOutput: Boolean(inputOutput) });
-
-            // Use passed input/output data; keep Opik trace input/output as JsonListString for compatibility
-            const inputList: string[] | undefined = inputOutput?.initialMessages?.length
-                ? inputOutput.initialMessages.map(m => `${m.role}: ${this.redaction.redactPrompts ? '[redacted]' : this.truncate(m.content)}`)
-                : undefined;
-
-            const outputList: string[] | undefined = inputOutput?.finalResponse
-                ? [this.redaction.redactResponses ? '[redacted]' : this.truncate(inputOutput.finalResponse)]
-                : undefined;
 
             const metadata = {
                 ...(trace.data?.metadata || {}),
@@ -175,20 +166,53 @@ export class OpikProvider implements TelemetryProvider {
                 'summary.errors': summary?.errorCount,
             } as Record<string, unknown>;
 
+            // Update trace input/output using object shapes (as expected by Opik API)
+            const inputObject: Record<string, unknown> | undefined = inputOutput?.initialMessages?.length
+                ? {
+                    messages: inputOutput.initialMessages.map(m => ({
+                        role: m.role,
+                        content: this.redaction.redactPrompts ? '[redacted]' : this.truncate(m.content),
+                        sequence: m.sequence
+                    }))
+                }
+                : undefined;
+
+            const outputObject: Record<string, unknown> | undefined = (inputOutput && (inputOutput.finalResponse !== undefined))
+                ? {
+                    response: inputOutput.finalResponse
+                        ? (this.redaction.redactResponses ? '[redacted]' : this.truncate(inputOutput.finalResponse))
+                        : 'No response'
+                }
+                : undefined;
+
+            this.log.debug('Opik trace.update with input/output objects', {
+                hasInput: Boolean(inputObject),
+                hasOutput: Boolean(outputObject)
+            });
+
             trace.update({
                 name: `conversation.${ctx.type}`,
-                input: inputList,
-                output: outputList,
+                ...(inputObject ? { input: inputObject } : {}),
+                ...(outputObject ? { output: outputObject } : {}),
                 metadata,
                 endTime: new Date()
             });
+
+            // Force flush before ending to ensure update is processed
+            if (this.client?.flush) {
+                const flushPromise = this.client.flush();
+                if (flushPromise && typeof flushPromise.then === 'function') {
+                    await flushPromise;
+                    this.log.debug('Opik forced flush completed before trace.end()');
+                }
+            }
+
             trace.end?.();
             this.endedConversations[ctx.conversationId] = true;
         } catch (err) { this.log.warn('Opik endConversation failed', err as Error); }
         delete this.traceByConversation[ctx.conversationId];
         delete this.convoInputById[ctx.conversationId];
         delete this.convoOutputById[ctx.conversationId];
-        this.flushSafe();
     }
 
     startLLM(ctx: LLMCallContext): void {
@@ -256,13 +280,14 @@ export class OpikProvider implements TelemetryProvider {
             const redact = this.redaction.redactResponses;
             const content = redact ? '[redacted]' : this.truncate(choice.content);
             const prev = (span.data?.output || {});
-            const existing = (prev.response || '') as string;
+            const existing = this.responseTextByLLM[ctx.llmCallId] ?? ((prev.response || '') as string);
             span.update({
                 output: {
                     ...(prev || {}),
                     response: `${existing}${content}`
                 }
             });
+            this.responseTextByLLM[ctx.llmCallId] = `${existing}${content}`;
             // Do not flush on every chunk to prevent excessive flush calls
         } catch (err) { this.log.warn('Opik addChoice failed', err as Error); }
     }
@@ -273,7 +298,7 @@ export class OpikProvider implements TelemetryProvider {
         if (!span) return;
         try {
             this.log.debug('Opik endLLM', { llmCallId: ctx.llmCallId, responseModel, hasUsage: Boolean(usage) });
-            const responseText = (span.data?.output?.response || '') as string;
+            const responseText = this.responseTextByLLM[ctx.llmCallId] ?? ((span.data?.output?.response || '') as string);
             const promptTokens = usage?.tokens.input.total;
             const completionTokens = usage?.tokens.output.total;
             const totalTokens = usage?.tokens.total;
@@ -311,15 +336,23 @@ export class OpikProvider implements TelemetryProvider {
                 const redactPrompts = this.redaction.redactPrompts;
                 const redactResponses = this.redaction.redactResponses;
                 const messages = this.messagesByLLM[ctx.llmCallId] || [];
-                const inputList = messages.length
-                    ? messages.map(m => `${m.role}: ${redactPrompts ? '[redacted]' : this.truncate(m.content)}`)
+                const inputObject = messages.length
+                    ? {
+                        messages: messages.map(m => ({
+                            role: m.role,
+                            content: redactPrompts ? '[redacted]' : this.truncate(m.content),
+                            sequence: m.sequence
+                        }))
+                    }
                     : undefined;
-                const outputList = responseText
-                    ? [redactResponses ? '[redacted]' : this.truncate(responseText)]
+                const outputObject = responseText
+                    ? {
+                        response: redactResponses ? '[redacted]' : this.truncate(responseText)
+                    }
                     : undefined;
                 trace.update({
-                    input: inputList,
-                    output: outputList,
+                    ...(inputObject ? { input: inputObject } : {}),
+                    ...(outputObject ? { output: outputObject } : {}),
                     metadata: {
                         ...(trace.data?.metadata || {}),
                         'original_usage.prompt_tokens': promptTokens,
@@ -332,6 +365,7 @@ export class OpikProvider implements TelemetryProvider {
         delete this.spanByLLM[ctx.llmCallId];
         delete this.messagesByLLM[ctx.llmCallId];
         delete this.choiceCountByLLM[ctx.llmCallId];
+        delete this.responseTextByLLM[ctx.llmCallId];
     }
 
     startTool(ctx: ToolCallContext): void {

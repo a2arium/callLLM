@@ -77,7 +77,7 @@ export type TelemetryProvider = {
     name: string;
     init(config: ProviderInit): Promise<void>;
     startConversation(ctx: ConversationContext): void;
-    endConversation(ctx: ConversationContext, summary?: ConversationSummary, inputOutput?: ConversationInputOutput): void;
+    endConversation(ctx: ConversationContext, summary?: ConversationSummary, inputOutput?: ConversationInputOutput): Promise<void> | void;
     startLLM(ctx: LLMCallContext): void;
     addPrompt(ctx: LLMCallContext, messages: PromptMessage[]): void;
     addChoice(ctx: LLMCallContext, choice: ChoiceEvent): void;

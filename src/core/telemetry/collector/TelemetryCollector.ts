@@ -56,9 +56,9 @@ export class TelemetryCollector {
             this.initPromises.push(pr);
         }
         if (this.initPromises.length > 0) {
-            this.readyPromise = Promise.all(this.initPromises).then(() => {
+            this.readyPromise = Promise.all(this.initPromises).then(async () => {
                 this.allReady = true;
-                this.flushPending();
+                await this.flushPending();
             }).catch(() => { /* ignore */ return; });
         }
     }
@@ -79,9 +79,9 @@ export class TelemetryCollector {
     async awaitReady(): Promise<void> {
         if (this.allReady) return;
         if (!this.readyPromise) {
-            this.readyPromise = Promise.all(this.initPromises).then(() => {
+            this.readyPromise = Promise.all(this.initPromises).then(async () => {
                 this.allReady = true;
-                this.flushPending();
+                await this.flushPending();
             }).catch(() => { /* ignore */ return; });
         }
         try { await this.readyPromise; } catch { /* ignore */ }
@@ -104,12 +104,12 @@ export class TelemetryCollector {
         return ctx;
     }
 
-    endConversation(ctx: ConversationContext, summary?: ConversationSummary, inputOutput?: ConversationInputOutput): void {
+    async endConversation(ctx: ConversationContext, summary?: ConversationSummary, inputOutput?: ConversationInputOutput): Promise<void> {
         this.log.debug('endConversation', { conversationId: ctx.conversationId, summary, inputOutput, ready: this.allReady });
         if (!this.allReady || this.isFlushing) {
             this.pendingEvents.push({ t: 'endConversation', ctx, summary, inputOutput });
         } else {
-            for (const p of this.providers) p.endConversation(ctx, summary, inputOutput);
+            await Promise.all(this.providers.map(p => p.endConversation(ctx, summary, inputOutput)));
         }
     }
 
@@ -184,7 +184,7 @@ export class TelemetryCollector {
         }
     }
 
-    private flushPending(): void {
+    private async flushPending(): Promise<void> {
         if (!this.allReady || !this.pendingEvents.length) return;
         this.isFlushing = true;
         this.log.debug('Flushing pending telemetry events', { count: this.pendingEvents.length });
@@ -194,7 +194,7 @@ export class TelemetryCollector {
                     for (const p of this.providers) p.startConversation(ev.ctx);
                     break;
                 case 'endConversation':
-                    for (const p of this.providers) p.endConversation(ev.ctx, ev.summary, ev.inputOutput);
+                    await Promise.all(this.providers.map(p => p.endConversation(ev.ctx, ev.summary, ev.inputOutput)));
                     break;
                 case 'startLLM':
                     for (const p of this.providers) p.startLLM(ev.ctx);
