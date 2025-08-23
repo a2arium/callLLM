@@ -75,44 +75,44 @@ async function runExamples() {
             }
         }
 
-        // console.log('\n\n=========================================');
-        // console.log('Example 3: Multiple images using file paths');
-        // console.log('=========================================\n');
+        console.log('\n\n=========================================');
+        console.log('Example 3: Multiple images using file paths');
+        console.log('=========================================\n');
 
-        // const imageResponseCompare = await caller.call({
-        //     files: [
-        //         path.join(__dirname, 'dogs.jpg'),
-        //         "https://upload.wikimedia.org/wikipedia/commons/6/6e/Golde33443.jpg"
-        //     ],
-        //     text: "Compare these two dog images and tell me their breeds and differences.",
-        //     input: {
-        //         image: {
-        //             detail: "auto" // Automatically determine detail level
-        //         }
-        //     }
-        // });
+        const imageResponseCompare = await caller.call({
+            files: [
+                path.join(__dirname, 'dogs.jpg'),
+                "https://upload.wikimedia.org/wikipedia/commons/6/6e/Golde33443.jpg"
+            ],
+            text: "Compare these two dog images and tell me their breeds and differences.",
+            input: {
+                image: {
+                    detail: "auto" // Automatically determine detail level
+                }
+            }
+        });
 
-        // console.log(`Response:`, imageResponseCompare[0].content);
+        console.log(`Response:`, imageResponseCompare[0].content);
 
 
-        // console.log('\n\n=========================================');
-        // console.log('Example 4: Base64 input for image description');
-        // console.log('=========================================\n');
+        console.log('\n\n=========================================');
+        console.log('Example 4: Base64 input for image description');
+        console.log('=========================================\n');
 
-        // const base64Image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+        const base64Image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
 
-        // const base64Response = await caller.call({
-        //     text: "Describe what you see.",
-        //     file: base64Image,
-        //     input: {
-        //         image: {
-        //             detail: "high"
-        //         }
-        //     }
-        // });
+        const base64Response = await caller.call({
+            text: "Describe what you see.",
+            file: base64Image,
+            input: {
+                image: {
+                    detail: "high"
+                }
+            }
+        });
 
-        // console.log(`Base64 Response:`, base64Response[0].content);
-        // console.log(`Usage:`, base64Response[0].metadata?.usage);
+        console.log(`Base64 Response:`, base64Response[0].content);
+        console.log(`Usage:`, base64Response[0].metadata?.usage);
 
 
     } catch (error) {

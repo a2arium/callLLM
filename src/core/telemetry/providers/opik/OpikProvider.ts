@@ -188,14 +188,30 @@ export class OpikProvider implements TelemetryProvider {
                 }
                 : undefined;
 
+            // Merge with existing trace input to preserve images and preview lines added during endLLM
+            const priorInput: any = trace.data?.input || {};
+            let mergedInput: any | undefined = undefined;
+            if (inputObject) {
+                const baseMsgs = Array.isArray((inputObject as any).messages) ? (inputObject as any).messages : [];
+                const priorMsgs = Array.isArray(priorInput.messages) ? priorInput.messages : [];
+                const previewMsgs = priorMsgs.filter((m: any) => m && typeof m.content === 'string' && m.content.startsWith('image:'));
+                mergedInput = {
+                    ...priorInput,
+                    messages: [...baseMsgs, ...previewMsgs],
+                    ...(priorInput.images ? { images: priorInput.images } : {})
+                };
+            } else if (priorInput && (priorInput.images || priorInput.messages)) {
+                mergedInput = priorInput;
+            }
+
             this.log.debug('Opik trace.update with input/output objects', {
-                hasInput: Boolean(inputObject),
+                hasInput: Boolean(mergedInput),
                 hasOutput: Boolean(outputObject)
             });
 
             trace.update({
                 name: `conversation.${ctx.type}`,
-                ...(inputObject ? { input: inputObject } : {}),
+                ...(mergedInput ? { input: mergedInput } : {}),
                 ...(outputObject ? { output: outputObject } : {}),
                 metadata,
                 endTime: new Date()
@@ -293,9 +309,9 @@ export class OpikProvider implements TelemetryProvider {
                 const existing = (this.imagesByLLM[ctx.llmCallId] || []);
                 this.imagesByLLM[ctx.llmCallId] = [...existing, ...detectedImages];
             }
-            // Build image preview messages only for url/base64 so we don't duplicate local file refs
+            // Build image preview messages only for url (avoid duplicating base64/file_path)
             const imagePreviewMessages = (this.imagesByLLM[ctx.llmCallId] || [])
-                .filter(img => img.source === 'url' || img.source === 'base64')
+                .filter(img => img.source === 'url')
                 .map(img => {
                     const preview = img.base64 ? (this.redaction.redactPrompts ? '[image redacted]' : this.truncate(img.base64))
                         : (img.url || '[image]');
@@ -417,12 +433,12 @@ export class OpikProvider implements TelemetryProvider {
                     }
                     : undefined;
                 const images = this.imagesByLLM[ctx.llmCallId];
-                // Add lightweight preview lines for URL/base64 images to trace messages for UI visibility
+                // Add lightweight preview lines for URL images to trace messages for UI visibility (skip base64)
                 const imagePreviewMessagesForTrace = (images || [])
-                    .filter(img => img.source === 'url' || img.source === 'base64')
+                    .filter(img => img.source === 'url')
                     .map(img => ({
                         role: 'user',
-                        content: `image: ${img.base64 ? (this.redaction.redactPrompts ? '[image redacted]' : this.truncate(img.base64)) : (img.url || '[image]')}`,
+                        content: `image: ${img.url || '[image]'}`,
                         sequence: (messages[messages.length - 1]?.sequence ?? 0) + 1
                     }));
                 const outputObject = responseText
@@ -433,6 +449,17 @@ export class OpikProvider implements TelemetryProvider {
                 const traceInput = (inputObject || {}) as any;
                 if (Array.isArray(traceInput.messages) && imagePreviewMessagesForTrace.length) {
                     traceInput.messages = [...traceInput.messages, ...imagePreviewMessagesForTrace];
+                }
+                // Include a lightweight images array on the trace (avoid heavy base64 except when source is base64)
+                if (images?.length) {
+                    const sanitizedImages = images.map(img => ({
+                        source: img.source,
+                        ...(img.path ? { path: img.path } : {}),
+                        ...(img.url ? { url: img.url } : {}),
+                        // Include base64 for any source when available (respect redaction and truncation)
+                        ...(img.base64 && !this.redaction.redactPrompts ? { base64: this.truncate(img.base64) } : {})
+                    }));
+                    traceInput.images = sanitizedImages;
                 }
                 trace.update({
                     ...(inputObject || imagePreviewMessagesForTrace.length ? { input: traceInput } : {}),
