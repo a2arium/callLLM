@@ -84,6 +84,7 @@ export type TelemetryProvider = {
     endLLM(ctx: LLMCallContext, usage?: Usage, responseModel?: string): void;
     startTool(ctx: ToolCallContext): void;
     endTool(ctx: ToolCallContext, result?: unknown, error?: unknown): void;
+    shutdown?(): Promise<void> | void;
 };
 
 

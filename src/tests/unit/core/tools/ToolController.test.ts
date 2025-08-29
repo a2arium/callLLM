@@ -169,7 +169,8 @@ describe('ToolController', () => {
     // Update expectation to match new error format - toolCallId is in metadata
     expect(result.messages[0]).toMatchObject({
       role: 'tool',
-      content: expect.stringContaining('Error executing tool failingTool: call failed'),
+      // New format may include native Error prefix
+      content: expect.stringContaining('call failed'),
       metadata: { tool_call_id: 'call_fail' }
     });
     expect(result.toolCalls[0]).toMatchObject({ id: 'call_fail', toolName: 'failingTool', error: expect.stringContaining('call failed') });

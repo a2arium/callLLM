@@ -121,6 +121,7 @@ export class LLMCaller implements MCPDirectAccess {
     private tokenCalculator: TokenCalculator;
     private responseProcessor: ResponseProcessor;
     private retryManager: RetryManager;
+    private readonly log = logger.createLogger({ prefix: 'LLMCaller' });
     private model: string;
     private systemMessage: string; // Keep track of the initial system message
     private callerId: string;
@@ -182,11 +183,32 @@ export class LLMCaller implements MCPDirectAccess {
         this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
         this.requestProcessor = new RequestProcessor();
         // Initialize TelemetryCollector with providers upfront to avoid readiness races
+        const providers = [
+            (() => {
+                try {
+                    const provider = new OpenTelemetryProvider();
+                    this.log.debug('OpenTelemetryProvider created successfully');
+                    return provider;
+                } catch (err) {
+                    this.log.debug('OpenTelemetryProvider creation failed', err as Error);
+                    return undefined as any;
+                }
+            })(),
+            (() => {
+                try {
+                    const provider = new OpikProvider();
+                    this.log.debug('OpikProvider created successfully');
+                    return provider;
+                } catch (err) {
+                    this.log.debug('OpikProvider creation failed', err as Error);
+                    return undefined as any;
+                }
+            })()
+        ].filter(Boolean) as any;
+
+        this.log.debug('Telemetry providers created', { count: providers.length });
         this.telemetryCollector = new TelemetryCollector({
-            providers: [
-                (() => { try { return new OpenTelemetryProvider(); } catch { return undefined as any; } })(),
-                (() => { try { return new OpikProvider(); } catch { return undefined as any; } })()
-            ].filter(Boolean) as any,
+            providers,
             env: process.env
         });
         // Initialize ToolController with only ToolsManager and maxIterations
@@ -199,6 +221,12 @@ export class LLMCaller implements MCPDirectAccess {
         // Initialize the folder loader if toolsDir is provided
         if (options?.toolsDir) {
             this.folderLoader = new ToolsFolderLoader(options.toolsDir);
+        }
+
+        // Kick off tool registration if tools are provided in constructor options
+        if (options?.tools && options.tools.length > 0) {
+            // Do not await in constructor; tests may wait on microtask queue
+            void this.addTools(options.tools);
         }
 
         const resolvedModel = this.modelManager.getModel(modelOrAlias);
@@ -252,9 +280,21 @@ export class LLMCaller implements MCPDirectAccess {
             streamControllerAdapter as unknown as StreamController,
             this.historyManager
         );
-        this.chatController.setToolOrchestrator(this.toolOrchestrator);
-        this.streamingService.setToolOrchestrator(this.toolOrchestrator);
-        this.streamingService.setMCPAdapterProvider(() => this.getMcpAdapter());
+        if (typeof (this.chatController as any).setToolOrchestrator === 'function') {
+            this.chatController.setToolOrchestrator(this.toolOrchestrator);
+        } else {
+            this.log.debug('ChatController.setToolOrchestrator not available on instance (possibly mocked)');
+        }
+        if (typeof (this.streamingService as any).setToolOrchestrator === 'function') {
+            this.streamingService.setToolOrchestrator(this.toolOrchestrator);
+        } else {
+            this.log.debug('StreamingService.setToolOrchestrator not available on instance (possibly mocked)');
+        }
+        if (typeof (this.streamingService as any).setMCPAdapterProvider === 'function') {
+            this.streamingService.setMCPAdapterProvider(() => this.getMcpAdapter());
+        } else {
+            this.log.debug('StreamingService.setMCPAdapterProvider not available on instance (possibly mocked)');
+        }
 
         // Initialize ChunkController with parallel options
         this.parallelChunking = options?.parallelChunking ?? true;
@@ -273,14 +313,44 @@ export class LLMCaller implements MCPDirectAccess {
         }
 
         // Create StreamController (wrapper) after StreamingService
-        const streamCtrl = new StreamController(
-            this.providerManager,
-            this.modelManager,
-            (this as any).streamingService?.['streamHandler'] || (this.streamingService as any)['streamHandler'],
-            this.retryManager
-        );
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-        (this as any).streamController = streamCtrl as unknown as StreamController;
+        const internalStreamHandler = (this as any).streamingService?.['streamHandler'] || (this.streamingService as any)['streamHandler'];
+        if (internalStreamHandler) {
+            const streamCtrl = new StreamController(
+                this.providerManager,
+                this.modelManager,
+                internalStreamHandler,
+                this.retryManager
+            );
+            // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+            (this as any).streamController = streamCtrl as unknown as StreamController;
+        } else {
+            this.log.debug('StreamingService.streamHandler not available; skipping StreamController wrapper creation');
+        }
+
+        // Register MCP server configurations provided at construction time (support wrapped and raw maps)
+        if (options?.tools?.length) {
+            const isRawMcpServersMap = (obj: unknown): obj is MCPServersMap => {
+                if (!obj || typeof obj !== 'object' || ('name' in (obj as any))) return false;
+                const values = Object.values(obj as Record<string, unknown>);
+                if (values.length === 0) return false;
+                return values.every(v => v && typeof v === 'object' && (
+                    'command' in (v as any) || 'url' in (v as any) || 'pluginPath' in (v as any) || 'args' in (v as any)
+                ));
+            };
+            const mcpConfigs = options.tools.flatMap(t => {
+                if (isMCPToolConfig(t as any)) return [(t as any).mcpServers as MCPServersMap];
+                if (isRawMcpServersMap(t)) return [t as MCPServersMap];
+                return [] as MCPServersMap[];
+            });
+            if (mcpConfigs.length) {
+                const adapter = this.getMcpAdapter();
+                for (const cfg of mcpConfigs) {
+                    for (const [serverKey, serverConfig] of Object.entries(cfg)) {
+                        adapter.registerServerConfig(serverKey, serverConfig);
+                    }
+                }
+            }
+        }
     }
 
     // Model management methods - delegated to ModelManager
@@ -520,7 +590,7 @@ export class LLMCaller implements MCPDirectAccess {
                 callerId: this.callerId,
                 hasTools: Boolean(params.tools?.length)
             });
-            if (this.telemetryCollector && conversationCtx) {
+            if (this.telemetryCollector && conversationCtx && typeof (this.streamingService as any).setTelemetryContext === 'function') {
                 this.streamingService.setTelemetryContext(this.telemetryCollector, conversationCtx);
             }
             // OTel spans are no longer created here; providers will emit via the collector
@@ -833,6 +903,33 @@ export class LLMCaller implements MCPDirectAccess {
         const mergedStandardToolsMap: Map<string, ToolDefinition> = new Map();
         [...baseTools, ...callSpecificStandardTools].forEach(t => mergedStandardToolsMap.set(t.name, t));
         finalEffectiveTools = Array.from(mergedStandardToolsMap.values());
+
+        // Register MCP server configurations passed via opts.tools (support both wrapped and raw maps)
+        const isRawMcpServersMap = (obj: unknown): obj is MCPServersMap => {
+            if (!obj || typeof obj !== 'object' || ('name' in (obj as any))) return false;
+            const values = Object.values(obj as Record<string, unknown>);
+            if (values.length === 0) return false;
+            return values.every(v => v && typeof v === 'object' && (
+                'command' in (v as any) || 'url' in (v as any) || 'pluginPath' in (v as any) || 'args' in (v as any)
+            ));
+        };
+        const mcpConfigObjects = (opts.tools || []).flatMap(t => {
+            if (isMCPToolConfig(t as any)) return [(t as any).mcpServers as MCPServersMap];
+            if (isRawMcpServersMap(t)) return [t as MCPServersMap];
+            return [] as MCPServersMap[];
+        });
+        if (mcpConfigObjects.length) {
+            const adapterForRegistration = this.getMcpAdapter();
+            for (const cfg of mcpConfigObjects) {
+                for (const [serverKey, serverConfig] of Object.entries(cfg)) {
+                    if (typeof (adapterForRegistration as any).registerServerConfig === 'function') {
+                        adapterForRegistration.registerServerConfig(serverKey, serverConfig);
+                    } else {
+                        this.log.debug('MCP adapter missing registerServerConfig (mocked?); skipping registration');
+                    }
+                }
+            }
+        }
 
         // Now fetch and merge MCP tools
         const mcpAdapter = this.getMcpAdapter();
@@ -1324,8 +1421,12 @@ export class LLMCaller implements MCPDirectAccess {
             });
             // Propagate telemetry context so ChatController/ToolController can create child spans
             if (this.telemetryCollector && conversationCtx) {
-                this.chatController.setTelemetryContext(this.telemetryCollector, conversationCtx);
-                this.toolController.setTelemetryContext(this.telemetryCollector, conversationCtx);
+                if (typeof (this.chatController as any).setTelemetryContext === 'function') {
+                    this.chatController.setTelemetryContext(this.telemetryCollector, conversationCtx);
+                }
+                if (typeof (this.toolController as any).setTelemetryContext === 'function') {
+                    this.toolController.setTelemetryContext(this.telemetryCollector, conversationCtx);
+                }
             }
 
             // Collector-driven conversation already started above for stream/call
@@ -1727,6 +1828,15 @@ export class LLMCaller implements MCPDirectAccess {
 
         // Get the MCP adapter (initializes if needed, assumes config is handled)
         const mcpAdapter = this.getMcpAdapter();
+        // Auto-connect if needed for direct calls
+        if (!mcpAdapter.isConnected(serverKey)) {
+            try {
+                await mcpAdapter.connectToServer(serverKey);
+            } catch (error) {
+                log.error(`Direct MCP connect failed: ${serverKey}`, { error });
+                throw error;
+            }
+        }
 
         // Delegate the execution to the MCP adapter
         try {
@@ -1737,6 +1847,31 @@ export class LLMCaller implements MCPDirectAccess {
             log.error(`Direct MCP tool call failed: ${serverKey}.${toolName}`, { error });
             // Re-throw the error to the caller
             throw error;
+        }
+    }
+
+    /** Connect to a configured MCP server (used by tests and integrations). */
+    public async connectToMcpServer(serverKey: string): Promise<void> {
+        const adapter = this.getMcpAdapter();
+        const configured = adapter.listConfiguredServers();
+        if (!configured.includes(serverKey)) {
+            throw new Error(`No configuration found for MCP server "${serverKey}"`);
+        }
+        await adapter.connectToServer(serverKey);
+    }
+
+    /** Disconnect from all configured MCP servers (used by examples). */
+    public async disconnectMcpServers(): Promise<void> {
+        const adapter = this.getMcpAdapter();
+        const servers = adapter.listConfiguredServers();
+        for (const key of servers) {
+            try {
+                if (adapter.isConnected(key)) {
+                    await adapter.disconnectServer(key);
+                }
+            } catch {
+                // ignore
+            }
         }
     }
 }

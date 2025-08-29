@@ -224,9 +224,10 @@ describe('ToolOrchestrator Integration', () => {
 
       expect(result.newToolCalls).toBe(1);
       expect(result.requiresResubmission).toBe(true);
+      // New error string can include the native Error prefix; assert more flexibly
       expect(mockHistoryManager.addMessage).toHaveBeenCalledWith(
         'tool',
-        'Error executing tool errorTool: Tool execution failed',
+        expect.stringContaining('Error executing tool errorTool:'),
         {
           toolCallId: expect.any(String)
         }

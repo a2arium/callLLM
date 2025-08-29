@@ -97,25 +97,7 @@ export class OpikProvider implements TelemetryProvider {
             if (!projectName) this.log.debug('OPIK_PROJECT_NAME not set; relying on SDK default');
             if (!workspaceName) this.log.debug('OPIK_WORKSPACE not set; required for cloud');
 
-            // Ensure we flush on process exit to avoid losing telemetry
-            try {
-                const proc: any = (globalThis as any).process;
-                if (proc?.once && typeof proc.once === 'function') {
-                    proc.once('beforeExit', () => {
-                        if (this.flushedOnExit) return;
-                        this.flushedOnExit = true;
-                        try {
-                            this.log.debug('Opik beforeExit: flushing telemetry');
-                            const p = this.client?.flush?.();
-                            if (p && typeof (p as any).then === 'function') {
-                                (p as Promise<void>).catch((err) => this.log.warn('Opik beforeExit flush error', err as Error));
-                            }
-                        } catch (err) {
-                            this.log.warn('Opik beforeExit flush error', err as Error);
-                        }
-                    });
-                }
-            } catch { /* ignore */ }
+            // Avoid registering beforeExit async flush hooks which can keep the event loop alive
         } catch (e) {
             this.enabled = false;
             this.log.warn('Failed to initialize Opik client; provider disabled', e as Error);
@@ -553,6 +535,19 @@ export class OpikProvider implements TelemetryProvider {
             default:
                 return undefined; // Do not override Opik logger for other values
         }
+    }
+
+    // Optional lifecycle for collector shutdown
+    async shutdown(): Promise<void> {
+        try {
+            if (this.client?.flush) {
+                await this.client.flush();
+            }
+            try { await this.client?.shutdown?.(); } catch { /* ignore */ }
+            try { this.client?.stop?.(); } catch { /* ignore */ }
+            try { this.client?.close?.(); } catch { /* ignore */ }
+        } catch { /* ignore */ }
+        this.client = undefined;
     }
 }
 

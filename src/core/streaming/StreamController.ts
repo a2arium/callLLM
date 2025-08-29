@@ -23,11 +23,11 @@ export class StreamController {
         private streamHandler: StreamHandler,
         private retryManager: RetryManager
     ) {
-        logger.setConfig({
+        const log = logger.createLogger({
             level: process.env.LOG_LEVEL as any || 'info',
             prefix: 'StreamController'
         });
-        logger.debug('Initialized StreamController', {
+        log.debug('Initialized StreamController', {
             providerManager: providerManager.constructor.name,
             modelManager: modelManager.constructor.name,
             streamHandler: streamHandler.constructor.name,
@@ -92,14 +92,14 @@ export class StreamController {
          * 4. Return the processed stream (which is an async generator)
          */
         const getStream = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
-            logger.setConfig({
+            const log = logger.createLogger({
                 level: process.env.LOG_LEVEL as any || 'info',
                 prefix: 'StreamController.getStream'
             });
             const provider = this.providerManager.getProvider();
             const providerType = provider.constructor.name;
 
-            logger.debug('Requesting provider stream', {
+            log.debug('Requesting provider stream', {
                 provider: providerType,
                 model,
                 callerId: params.callerId,
@@ -116,7 +116,7 @@ export class StreamController {
             try {
                 // Get the raw provider stream - this actually makes the API call
                 providerStream = await provider.streamCall(model, params);
-                logger.debug('Provider stream created', {
+                log.debug('Provider stream created', {
                     timeToCreateMs: Date.now() - streamStartTime,
                     model,
                     provider: providerType,
@@ -124,7 +124,7 @@ export class StreamController {
                 });
             } catch (error) {
                 providerRequestError = error as Error;
-                logger.error('Provider stream creation failed', {
+                log.error('Provider stream creation failed', {
                     error: providerRequestError.message,
                     provider: providerType,
                     model,
@@ -137,7 +137,7 @@ export class StreamController {
             // This log message might not appear if ChunkController is used because
             // it might never reach this point in the code if it's using its own
             // stream processing logic
-            logger.debug('Processing provider stream through StreamHandler', {
+            log.debug('Processing provider stream through StreamHandler', {
                 model,
                 callerId: params.callerId,
                 requestId,
@@ -162,13 +162,13 @@ export class StreamController {
                 // This log executes right after the generator is created, but BEFORE
                 // any processing actually happens. That's why this log message may appear
                 // to be out of order or missing if you're looking at a complete trace.
-                logger.debug('Stream handler processing completed', {
+                log.debug('Stream handler processing completed', {
                     processingTimeMs: Date.now() - handlerStartTime,
                     model,
                     requestId
                 });
             } catch (error) {
-                logger.error('Error in stream handler processing', {
+                log.error('Error in stream handler processing', {
                     error: error instanceof Error ? error.message : 'Unknown error',
                     processingTimeMs: Date.now() - handlerStartTime,
                     model,
@@ -178,7 +178,7 @@ export class StreamController {
             }
 
             if (result == null) {
-                logger.error('Processed stream is undefined', {
+                log.error('Processed stream is undefined', {
                     model,
                     requestId,
                     processingTimeMs: Date.now() - handlerStartTime
@@ -197,7 +197,8 @@ export class StreamController {
          */
         const acquireStream = async (): Promise<AsyncIterable<UniversalStreamResponse>> => {
             try {
-                logger.debug('Acquiring stream with retry manager', {
+                const log = logger.createLogger({ prefix: 'StreamController.acquireStream' });
+                log.debug('Acquiring stream with retry manager', {
                     maxRetries,
                     model,
                     callerId: params.callerId,
@@ -221,7 +222,7 @@ export class StreamController {
                     () => false // Do not retry internally.
                 );
 
-                logger.debug('Stream acquired successfully', {
+                log.debug('Stream acquired successfully', {
                     acquireTimeMs: Date.now() - retryStartTime,
                     model,
                     requestId
@@ -229,7 +230,8 @@ export class StreamController {
 
                 return result;
             } catch (error) {
-                logger.error('Error acquiring stream', {
+                const logErr = logger.createLogger({ prefix: 'StreamController.acquireStream' });
+                logErr.error('Error acquiring stream', {
                     error: error instanceof Error ? error.message : 'Unknown error',
                     model,
                     callerId: params.callerId,
@@ -256,7 +258,8 @@ export class StreamController {
          */
         const outerRetryStream = async function* (this: StreamController, attempt: number): AsyncGenerator<UniversalStreamResponse> {
             try {
-                logger.debug('Starting stream attempt', {
+                const log = logger.createLogger({ prefix: 'StreamController.outerRetryStream' });
+                log.debug('Starting stream attempt', {
                     attempt: attempt + 1,
                     maxRetries,
                     model,
@@ -292,7 +295,7 @@ export class StreamController {
                                 ? (chunkTimings[chunkTimings.length - 1] - chunkTimings[0]) / (chunkTimings.length - 1)
                                 : 0;
 
-                            logger.debug('Stream completed successfully', {
+                            log.debug('Stream completed successfully', {
                                 attempt: attempt + 1,
                                 totalChunks: chunkCount,
                                 contentLength: accumulatedContent.length,
@@ -311,7 +314,7 @@ export class StreamController {
                         yield chunk;
                     }
                 } catch (streamError) {
-                    logger.error('Error during stream iteration', {
+                    log.error('Error during stream iteration', {
                         error: streamError instanceof Error ? streamError.message : 'Unknown error',
                         attempt: attempt + 1,
                         chunkCount,
@@ -325,7 +328,7 @@ export class StreamController {
 
                     // Propagate validation errors immediately without retry
                     if (streamError instanceof Error && streamError.message.includes('validation error')) {
-                        logger.warn('Validation error, not retrying', {
+                        log.warn('Validation error, not retrying', {
                             error: streamError.message,
                             attempt: attempt + 1,
                             requestId
@@ -343,7 +346,7 @@ export class StreamController {
                     const contentToCheck = accumulatedContent;
                     const shouldRetry = shouldRetryDueToContent({ content: contentToCheck });
 
-                    logger.debug('Content retry check', {
+                    log.debug('Content retry check', {
                         shouldRetry,
                         contentLength: contentToCheck.length,
                         attempt: attempt + 1,
@@ -351,7 +354,7 @@ export class StreamController {
                     });
 
                     if (shouldRetry) {
-                        logger.warn('Triggering retry due to content', {
+                        log.warn('Triggering retry due to content', {
                             attempt: attempt + 1,
                             contentLength: contentToCheck.length,
                             model,
@@ -376,7 +379,8 @@ export class StreamController {
                         ? errMsg.split('Last error: ')[1]
                         : errMsg;
 
-                    logger.error('All retry attempts failed', {
+                    const log = logger.createLogger({ prefix: 'StreamController.outerRetryStream' });
+                    log.error('All retry attempts failed', {
                         maxRetries,
                         totalAttempts: attempt + 1,
                         model,
@@ -395,7 +399,8 @@ export class StreamController {
                 const delayMs = baseDelay * Math.pow(2, attempt + 1);
                 const nextAttemptNumber = attempt + 2;
 
-                logger.warn('Retrying stream after error', {
+                const log = logger.createLogger({ prefix: 'StreamController.outerRetryStream' });
+                log.warn('Retrying stream after error', {
                     attempt: attempt + 1,
                     nextAttempt: nextAttemptNumber,
                     error: error instanceof Error ? error.message : 'Unknown error',
@@ -409,7 +414,7 @@ export class StreamController {
 
                 await new Promise((resolve) => setTimeout(resolve, delayMs));
 
-                logger.debug('Starting next retry attempt', {
+                log.debug('Starting next retry attempt', {
                     attempt: nextAttemptNumber,
                     maxRetries,
                     model,
