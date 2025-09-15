@@ -28,7 +28,7 @@ async function main() {
     // Initialize the caller with OpenAI
     const caller = new LLMCaller(
         'openai',
-        'fast',
+        'cheap',
         'You are a helpful assistant that can use MCP servers.',
         {
             tools: [mcpConfig]

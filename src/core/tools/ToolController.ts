@@ -221,6 +221,8 @@ export class ToolController {
                 toolCtx = this.telemetryCollector.startTool(this.conversationCtx, {
                     name,
                     type: tool?.metadata?.isMCP ? 'mcp' : 'function',
+                    requestedId: id,
+                    args: args,
                     executionIndex,
                     parallel: isParallel
                 });

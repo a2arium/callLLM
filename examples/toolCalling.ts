@@ -99,6 +99,7 @@ async function main() {
     console.log('Response:', weatherResponse);
     console.log(caller.getHistoricalMessages());
 
+
     // 2. Multi - Tool Call
     console.log('\n2. Multi-Tool Call');
     console.log('------------------');
@@ -236,6 +237,7 @@ async function main() {
         console.error('\nError processing stream:', error);
         throw error;
     }
+
 }
 
 main().catch(console.error);

@@ -117,7 +117,8 @@ export class OpenTelemetryProvider implements TelemetryProvider {
                 'gen_ai.request.model': ctx.model,
                 'gen_ai.request.is_stream': ctx.streaming,
                 'gen_ai.output.type': ctx.responseFormat === 'json' ? 'json' : 'text',
-                'gen_ai.tools.enabled': Boolean(ctx.toolsEnabled)
+                'gen_ai.tools.enabled': Boolean(ctx.toolsEnabled),
+                ...(Array.isArray((ctx as any).toolsAvailable) ? { 'gen_ai.tools.available': JSON.stringify((ctx as any).toolsAvailable).slice(0, 4000) } : {})
             } as Attributes
         }, parent ? trace.setSpan(context.active(), parent) : context.active());
         (span as any).__callllm_id = ctx.llmCallId;
@@ -157,6 +158,23 @@ export class OpenTelemetryProvider implements TelemetryProvider {
         if (!this.enabled) return;
         const span = (globalThis as any)[`__callllm_llm_${ctx.llmCallId}`];
         if (!span) return;
+        // If the choice carries tool call requests, log them as a dedicated event
+        if (choice.toolCalls && choice.toolCalls.length > 0) {
+            try {
+                const toolCallsPayload = choice.toolCalls.map(tc => ({
+                    id: tc.id,
+                    name: tc.name,
+                    arguments: tc.arguments
+                }));
+                span.addEvent('gen_ai.choice.tool_calls', {
+                    'gen_ai.choice.tool_calls.count': toolCallsPayload.length,
+                    'gen_ai.choice.tool_calls.payload': JSON.stringify(toolCallsPayload).slice(0, 2000),
+                    ...(choice.finishReason ? { 'gen_ai.choice.finish_reason': choice.finishReason } : {})
+                });
+                this.log.debug('addChoice tool_calls event added', { llmCallId: ctx.llmCallId, count: toolCallsPayload.length });
+            } catch { /* ignore */ }
+            return;
+        }
         const content = this.redaction.redactResponses ? '[redacted]' : this.truncate(choice.content);
         try {
             span.addEvent(choice.isChunk ? 'gen_ai.choice.chunk' : 'gen_ai.choice', {
@@ -203,6 +221,8 @@ export class OpenTelemetryProvider implements TelemetryProvider {
                 'gen_ai.operation.name': 'execute_tool',
                 'gen_ai.tool.name': ctx.name,
                 'gen_ai.tool.type': ctx.type,
+                ...(ctx.requestedId ? { 'gen_ai.tool.requested_id': ctx.requestedId } : {}),
+                ...(ctx.args ? { 'gen_ai.tool.arguments': JSON.stringify(ctx.args).slice(0, 4000) } : {}),
                 'gen_ai.tool.execution.index': ctx.executionIndex ?? 0,
                 'gen_ai.tool.execution.parallel': Boolean(ctx.parallel)
             } as Attributes

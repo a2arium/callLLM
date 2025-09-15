@@ -17,10 +17,7 @@ async function main() {
     const caller = new LLMCaller(
         'openai',
         'fast',
-        'You are a helpful assistant.',
-        {
-            historyMode: 'full'
-        }
+        'You are a helpful assistant.'
     );
 
     try {

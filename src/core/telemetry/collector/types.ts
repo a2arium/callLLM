@@ -24,6 +24,7 @@ export type LLMCallContext = {
     streaming: boolean;
     responseFormat?: 'text' | 'json';
     toolsEnabled?: boolean;
+    toolsAvailable?: string[]; // list of function names available to the model
     settings?: Record<string, unknown>;
     startedAt: number;
 };
@@ -33,6 +34,8 @@ export type ToolCallContext = {
     conversationId: string;
     name: string;
     type: 'function' | 'mcp' | 'unknown';
+    requestedId?: string; // original tool call id from the LLM request
+    args?: Record<string, unknown>; // the arguments used to execute the tool
     executionIndex?: number;
     parallel?: boolean;
     argsPreview?: string;
@@ -52,6 +55,13 @@ export type ChoiceEvent = {
     sequence?: number; // for streaming chunks
     finishReason?: string;
     isChunk?: boolean;
+    // When the choice represents a tool call request instead of text, include details
+    isToolCall?: boolean;
+    toolCalls?: Array<{
+        id?: string;
+        name: string;
+        arguments: Record<string, unknown>;
+    }>;
 };
 
 export type ConversationSummary = {
@@ -84,6 +94,7 @@ export type TelemetryProvider = {
     endLLM(ctx: LLMCallContext, usage?: Usage, responseModel?: string): void;
     startTool(ctx: ToolCallContext): void;
     endTool(ctx: ToolCallContext, result?: unknown, error?: unknown): void;
+    flush?(): Promise<void> | void;
     shutdown?(): Promise<void> | void;
 };
 

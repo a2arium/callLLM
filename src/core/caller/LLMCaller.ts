@@ -353,6 +353,77 @@ export class LLMCaller implements MCPDirectAccess {
         }
     }
 
+
+    /**
+     * Generate text embeddings using a supported embedding model.
+     */
+    public async embeddings(options: EmbeddingCallOptions): Promise<EmbeddingResponse> {
+        // Lazily initialize the EmbeddingController
+        if (!this.embeddingController) {
+            const adapter = this.providerManager.getProvider() as unknown as BaseAdapter;
+            this.embeddingController = new EmbeddingController(
+                adapter,
+                this.modelManager,
+                this.tokenCalculator,
+                this.usageCallback,
+                this.callerId
+            );
+        }
+
+        // Require an explicit embedding model (no aliases for embeddings)
+        const modelName = options.model || this.model;
+        const capabilities = ModelManager.getCapabilities(modelName);
+        if (!capabilities.embeddings) {
+            throw new CapabilityError(`Model "${modelName}" does not support embeddings`);
+        }
+
+        return this.embeddingController.generateEmbeddings({
+            input: options.input,
+            model: modelName,
+            dimensions: options.dimensions,
+            encodingFormat: options.encodingFormat,
+            usageCallback: options.usageCallback,
+            usageBatchSize: options.usageBatchSize,
+            callerId: this.callerId
+        });
+    }
+
+    /**
+     * List available embedding-capable models for the current provider.
+     */
+    public getAvailableEmbeddingModels(): string[] {
+        return this.modelManager
+            .getAvailableModels()
+            .filter(m => Boolean(m.capabilities?.embeddings))
+            .map(m => m.name);
+    }
+
+    /**
+     * Check embedding capabilities for a specific model.
+     */
+    public checkEmbeddingCapabilities(modelName: string): {
+        supported: boolean;
+        maxInputLength?: number;
+        dimensions?: number[];
+        defaultDimensions?: number;
+        encodingFormats?: string[];
+    } {
+        const capabilities = ModelManager.getCapabilities(modelName);
+        if (!capabilities.embeddings) {
+            return { supported: false };
+        }
+        if (typeof capabilities.embeddings === 'boolean') {
+            return { supported: true };
+        }
+        return {
+            supported: true,
+            maxInputLength: capabilities.embeddings.maxInputLength,
+            dimensions: capabilities.embeddings.dimensions,
+            defaultDimensions: capabilities.embeddings.defaultDimensions,
+            encodingFormats: capabilities.embeddings.encodingFormats
+        };
+    }
+
     // Model management methods - delegated to ModelManager
     public getAvailableModels() {
         return this.modelManager.getAvailableModels();
@@ -590,8 +661,13 @@ export class LLMCaller implements MCPDirectAccess {
                 callerId: this.callerId,
                 hasTools: Boolean(params.tools?.length)
             });
-            if (this.telemetryCollector && conversationCtx && typeof (this.streamingService as any).setTelemetryContext === 'function') {
-                this.streamingService.setTelemetryContext(this.telemetryCollector, conversationCtx);
+            if (this.telemetryCollector && conversationCtx) {
+                if (typeof (this.streamingService as any).setTelemetryContext === 'function') {
+                    this.streamingService.setTelemetryContext(this.telemetryCollector, conversationCtx);
+                }
+                if (typeof (this.toolController as any).setTelemetryContext === 'function') {
+                    this.toolController.setTelemetryContext(this.telemetryCollector, conversationCtx);
+                }
             }
             // OTel spans are no longer created here; providers will emit via the collector
             const create = async () => await this.streamingService.createStream(
@@ -1358,16 +1434,135 @@ export class LLMCaller implements MCPDirectAccess {
                         imageParams.mask = await normalizeImageSource(maskSource);
                     }
 
-                    // Call the image operation directly
-                    const response = await this.providerManager.callImageOperation(
-                        modelToUse,
-                        imageOperation,
-                        imageParams
-                    );
+                    // --- Telemetry wiring for image operations ---
+                    let conversationCtx: import('../telemetry/collector/types.ts').ConversationContext | undefined;
+                    let llmCtx: import('../telemetry/collector/types.ts').LLMCallContext | undefined;
+                    let initialMessages: import('../telemetry/collector/types.ts').PromptMessage[] | undefined;
+                    try {
+                        // Ensure telemetry providers are ready
+                        await this.telemetryCollector?.awaitReady?.();
 
-                    // Image output processing is handled within the adapters when outputPath is provided
-                    // No additional processing needed here as the adapter handles outputPath automatically
-                    return [response];
+                        // Start conversation and LLM span for image op
+                        conversationCtx = this.telemetryCollector?.startConversation('call', {
+                            callerId: this.callerId,
+                            hasTools: false
+                        });
+
+                        if (this.telemetryCollector && conversationCtx) {
+                            const providerName = (this.providerManager.getCurrentProviderName?.() as unknown as string)
+                                || this.providerManager.getProvider().constructor.name
+                                || 'unknown';
+                            llmCtx = this.telemetryCollector.startLLM(conversationCtx, {
+                                provider: String(providerName).toLowerCase(),
+                                model: modelToUse,
+                                streaming: false,
+                                responseFormat: 'text',
+                                toolsEnabled: false,
+                                toolsAvailable: [],
+                                settings: opts.settings
+                            });
+
+                            // Build prompt messages including any referenced files/mask
+                            initialMessages = [];
+                            const baseSequence = 0;
+                            if (opts.text) {
+                                initialMessages.push({ role: 'user', content: opts.text, sequence: baseSequence });
+                            }
+                            let seq = (initialMessages[initialMessages.length - 1]?.sequence ?? baseSequence) + 1;
+                            // Files
+                            if (imageParams.files && imageParams.files.length > 0) {
+                                for (const f of imageParams.files as any[]) {
+                                    if (f.type === 'url' && f.url) {
+                                        initialMessages.push({ role: 'user', content: `<file:${f.url}>`, sequence: seq++ });
+                                    } else if (f.type === 'base64' && f.data) {
+                                        const mime = (f.mime || 'application/octet-stream');
+                                        initialMessages.push({ role: 'user', content: `<file:data:${mime};base64,${f.data}>`, sequence: seq++ });
+                                    }
+                                }
+                            }
+                            // Mask
+                            if ((imageParams as any).mask) {
+                                const m: any = (imageParams as any).mask;
+                                if (m.type === 'url' && m.url) {
+                                    initialMessages.push({ role: 'user', content: `<file:${m.url}>`, sequence: seq++ });
+                                } else if (m.type === 'base64' && m.data) {
+                                    const mime = (m.mime || 'application/octet-stream');
+                                    initialMessages.push({ role: 'user', content: `<file:data:${mime};base64,${m.data}>`, sequence: seq++ });
+                                }
+                            }
+                            if (initialMessages.length > 0 && llmCtx) {
+                                this.telemetryCollector.addPrompt(llmCtx, initialMessages);
+                            }
+                        }
+
+                        // Call the image operation directly
+                        const response = await this.providerManager.callImageOperation(
+                            modelToUse,
+                            imageOperation,
+                            imageParams
+                        );
+
+                        // Emit an output image marker for telemetry consumers (generic addChoice)
+                        if (this.telemetryCollector && llmCtx) {
+                            const imgUrl = response.metadata?.imageUrl;
+                            const imgObj = response.image;
+                            let imageMarker: string | undefined;
+                            if (imgUrl && typeof imgUrl === 'string') {
+                                imageMarker = `image: ${imgUrl}`;
+                            } else if (imgObj && imgObj.data && imgObj.dataSource === 'base64') {
+                                const mime = imgObj.mime || 'image/png';
+                                imageMarker = `image: data:${mime};base64,${imgObj.data}`;
+                            }
+                            if (imageMarker) {
+                                this.telemetryCollector.addChoice(llmCtx, {
+                                    content: imageMarker,
+                                    contentLength: imageMarker.length,
+                                    index: 0,
+                                    isChunk: false,
+                                    finishReason: 'stop'
+                                });
+                            }
+                        }
+
+                        // End LLM span and conversation with usage details
+                        if (this.telemetryCollector && conversationCtx && llmCtx) {
+                            const usage = response.metadata?.usage as any;
+                            const responseModel = response.metadata?.model || modelToUse;
+                            this.telemetryCollector.endLLM(llmCtx, usage, responseModel);
+                            await this.telemetryCollector.endConversation(conversationCtx, {
+                                totalTokens: usage?.tokens?.total,
+                                totalCost: usage?.costs?.total,
+                                llmCallsCount: 1,
+                                toolCallsCount: 0,
+                                success: true,
+                                errorCount: 0
+                            }, {
+                                initialMessages: initialMessages,
+                                finalResponse: ''
+                            });
+                        }
+
+                        // Image output processing is handled within the adapters when outputPath is provided
+                        // No additional processing needed here as the adapter handles outputPath automatically
+                        return [response];
+                    } catch (err) {
+                        // On error, best-effort end spans and conversation
+                        if (this.telemetryCollector && conversationCtx) {
+                            try {
+                                if (llmCtx) this.telemetryCollector.endLLM(llmCtx, undefined, modelToUse);
+                                await this.telemetryCollector.endConversation(conversationCtx, {
+                                    llmCallsCount: 1,
+                                    toolCallsCount: 0,
+                                    success: false,
+                                    errorCount: 1
+                                }, {
+                                    initialMessages: initialMessages,
+                                    finalResponse: ''
+                                });
+                            } catch { /* ignore telemetry errors */ }
+                        }
+                        throw err;
+                    }
                 }
             }
 

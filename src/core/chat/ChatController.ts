@@ -106,17 +106,21 @@ export class ChatController {
 
         // Telemetry (Collector) context
         let llmCtx: LLMCallContext | undefined;
+        let llmSpanEnded = false;
 
         try {
             // --- Telemetry: Collector start LLM ---
             const providerName = (this.providerManager.getCurrentProviderName?.() as unknown as string) || this.providerManager.getProvider().constructor.name || 'unknown';
             if (this.telemetryCollector && this.conversationCtx) {
+                // Build toolsAvailable list as just tool names
+                const toolsAvailable = (tools || []).map(t => t.name);
                 llmCtx = this.telemetryCollector.startLLM(this.conversationCtx, {
                     provider: String(providerName).toLowerCase(),
                     model,
                     streaming: false,
                     responseFormat: responseFormat === 'json' ? 'json' : 'text',
                     toolsEnabled: Boolean(tools && tools.length > 0),
+                    toolsAvailable: toolsAvailable,
                     settings
                 });
                 const promptMessages: PromptMessage[] = (messages || []).map((m, idx) => ({
@@ -321,7 +325,8 @@ export class ChatController {
                 throw new Error('No response received from provider');
             }
 
-            // Process tool calls if detected in the response
+            // Before processing tools, record span output for this LLM call
+            // so that each LLM span reflects its own output (tool call request or text)
             const hasToolCalls = Boolean(
                 (response.toolCalls?.length ?? 0) > 0 ||
                 response.metadata?.finishReason === FinishReason.TOOL_CALLS
@@ -329,6 +334,24 @@ export class ChatController {
 
             let finalResponse = response; // Assume original response is final unless resubmission happens
 
+            if (this.telemetryCollector && llmCtx) {
+                if (hasToolCalls) {
+                    const tc = (response.toolCalls || []).map(tc => ({ id: tc.id, name: tc.name, arguments: tc.arguments }));
+                    this.telemetryCollector.addChoice(llmCtx, {
+                        content: '',
+                        contentLength: 0,
+                        index: 0,
+                        finishReason: response.metadata?.finishReason || 'tool_calls',
+                        isChunk: false,
+                        isToolCall: true,
+                        toolCalls: tc
+                    });
+                    this.telemetryCollector.endLLM(llmCtx, response.metadata?.usage as any, response.metadata?.model);
+                    llmSpanEnded = true;
+                }
+            }
+
+            // Process tool calls if detected in the response
             if (hasToolCalls && this.toolController && this.toolOrchestrator && this.historyManager) {
                 log.debug('Tool calls detected, processing...');
 
@@ -402,8 +425,8 @@ export class ChatController {
                 this.historyManager.addMessage('assistant', validatedResponse.content ?? '', { toolCalls: validatedResponse.toolCalls });
             }
 
-            // --- Telemetry: Collector end LLM ---
-            if (this.telemetryCollector && llmCtx) {
+            // --- Telemetry: Collector end LLM (only if not already ended for tool_calls) ---
+            if (this.telemetryCollector && llmCtx && !llmSpanEnded) {
                 const content = validatedResponse.content ?? '';
                 this.telemetryCollector.addChoice(llmCtx, {
                     content,

@@ -32,20 +32,18 @@ export class TelemetryCollector {
         | { t: 'startTool'; ctx: ToolCallContext }
         | { t: 'endTool'; tool: ToolCallContext; result?: unknown; error?: unknown }
     > = [];
-    private activeConversations = 0;
-    private readonly debugHandles: boolean;
 
     constructor(config?: { providers?: TelemetryProvider[]; redaction?: RedactionPolicy; env?: NodeJS.ProcessEnv }) {
         this.redaction = config?.redaction || {
             redactPrompts: /^(1|true)$/i.test(String(process.env.CALLLLM_OTEL_REDACT_PROMPTS || '')),
             redactResponses: /^(1|true)$/i.test(String(process.env.CALLLLM_OTEL_REDACT_RESPONSES || '')),
-            redactToolArgs: /^(1|true)$/i.test(String(process.env.CALLLLM_OTEL_REDACT_TOOL_ARGS || '')),
+            // Always include tool arguments in telemetry
+            redactToolArgs: false,
             piiDetection: /^(1|true)$/i.test(String(process.env.CALLLLM_OTEL_PII_DETECTION || '')),
             maxContentLength: 2000,
             allowedAttributes: ['gen_ai.request.model', 'gen_ai.system', 'gen_ai.operation.name']
         };
         const env = config?.env || process.env;
-        this.debugHandles = /^(1|true)$/i.test(String(env.CALLLLM_DEBUG_HANDLES || ''));
         if (config?.providers?.length) {
             this.providers = config.providers;
         }
@@ -64,18 +62,6 @@ export class TelemetryCollector {
                 await this.flushPending();
             }).catch(() => { /* ignore */ return; });
         }
-
-        // Best-effort process exit hook: ensure providers attempt shutdown without blocking
-        try {
-            const proc: any = (globalThis as any).process;
-            if (proc?.on && typeof proc.on === 'function') {
-                proc.on('exit', () => {
-                    for (const p of this.providers) {
-                        try { p.shutdown?.(); } catch { /* ignore */ }
-                    }
-                });
-            }
-        } catch { /* ignore */ }
     }
 
     registerProvider(provider: TelemetryProvider, env: NodeJS.ProcessEnv = process.env): void {
@@ -115,34 +101,16 @@ export class TelemetryCollector {
             this.pendingEvents.push({ t: 'startConversation', ctx });
         } else {
             for (const p of this.providers) p.startConversation(ctx);
-            this.activeConversations += 1;
         }
         return ctx;
     }
 
     async endConversation(ctx: ConversationContext, summary?: ConversationSummary, inputOutput?: ConversationInputOutput): Promise<void> {
-        this.log.debug('TelemetryCollector.endConversation called', {
-            conversationId: ctx.conversationId,
-            activeConversations: this.activeConversations,
-            ready: this.allReady,
-            isFlushing: this.isFlushing
-        });
-
+        this.log.debug('endConversation', { conversationId: ctx.conversationId, summary, inputOutput, ready: this.allReady });
         if (!this.allReady || this.isFlushing) {
-            this.log.debug('Not ready or flushing, buffering endConversation event');
             this.pendingEvents.push({ t: 'endConversation', ctx, summary, inputOutput });
         } else {
-            this.log.debug('Calling provider endConversation methods');
             await Promise.all(this.providers.map(p => p.endConversation(ctx, summary, inputOutput)));
-            this.activeConversations = Math.max(0, this.activeConversations - 1);
-            this.log.debug('After endConversation, activeConversations:', this.activeConversations);
-            if (this.activeConversations === 0) {
-                this.log.debug('No active conversations left, initiating provider shutdown');
-                // No more active conversations; attempt provider shutdown to release timers/sockets
-                await Promise.all(this.providers.map(async (p) => { try { await p.shutdown?.(); } catch (e) { this.log.warn('Provider shutdown error', e as Error); } }));
-                this.log.debug('Provider shutdown completed, calling maybeDebugAndExit');
-                this.maybeDebugAndExit();
-            }
         }
     }
 
@@ -217,6 +185,22 @@ export class TelemetryCollector {
         }
     }
 
+    async flush(): Promise<void> {
+        // Best-effort flush on providers that support it
+        const proms: Promise<void>[] = [];
+        for (const p of this.providers) {
+            try {
+                const fn = (p as any).flush;
+                if (typeof fn === 'function') {
+                    const r = fn.call(p);
+                    if (r && typeof r.then === 'function') proms.push(r as Promise<void>);
+                }
+            } catch { /* ignore */ }
+        }
+        if (proms.length) {
+            try { await Promise.allSettled(proms); } catch { /* ignore */ }
+        }
+    }
     private async flushPending(): Promise<void> {
         if (!this.allReady || !this.pendingEvents.length) return;
         this.isFlushing = true;
@@ -225,13 +209,9 @@ export class TelemetryCollector {
             switch (ev.t) {
                 case 'startConversation':
                     for (const p of this.providers) p.startConversation(ev.ctx);
-                    this.activeConversations += 1;
                     break;
                 case 'endConversation':
-                    this.log.debug('Processing buffered endConversation event', { conversationId: ev.ctx.conversationId });
                     await Promise.all(this.providers.map(p => p.endConversation(ev.ctx, ev.summary, ev.inputOutput)));
-                    this.activeConversations = Math.max(0, this.activeConversations - 1);
-                    this.log.debug('After processing buffered endConversation, activeConversations:', this.activeConversations);
                     break;
                 case 'startLLM':
                     for (const p of this.providers) p.startLLM(ev.ctx);
@@ -255,106 +235,6 @@ export class TelemetryCollector {
         }
         this.pendingEvents = [];
         this.isFlushing = false;
-        if (this.activeConversations === 0) {
-            await Promise.all(this.providers.map(async (p) => { try { await p.shutdown?.(); } catch (e) { this.log.warn('Provider shutdown error', e as Error); } }));
-            this.maybeDebugAndExit();
-        }
-    }
-
-    private maybeDebugAndExit(): void {
-        this.log.debug('maybeDebugAndExit called', { debugHandles: this.debugHandles });
-        try {
-            if (this.debugHandles) {
-                // Defer to end of tick so any pending microtasks can settle
-                setTimeout(() => {
-                    try {
-                        const handles = (process as any)._getActiveHandles?.() || [];
-                        const requests = (process as any)._getActiveRequests?.() || [];
-
-                        // More detailed handle analysis
-                        const handleDetails = handles.map((h: any) => {
-                            const type = h?.constructor?.name || typeof h;
-                            const details: any = { type };
-
-                            // Try to get more info about the handle
-                            if (h && typeof h === 'object') {
-                                if ('_connectionKey' in h) details.connectionKey = h._connectionKey;
-                                if ('remoteAddress' in h) details.remoteAddress = h.remoteAddress;
-                                if ('remotePort' in h) details.remotePort = h.remotePort;
-                                if ('destroyed' in h) details.destroyed = h.destroyed;
-                                if ('readable' in h) details.readable = h.readable;
-                                if ('writable' in h) details.writable = h.writable;
-                                if ('readyState' in h) details.readyState = h.readyState;
-                                if ('_handle' in h && h._handle) details.hasHandle = true;
-                                if ('ref' in h && typeof h.ref === 'function') {
-                                    details.isReferenced = h._handle ? h._handle.hasRef?.() : 'unknown';
-                                }
-                            }
-
-                            return details;
-                        });
-
-                        this.log.debug('Active handles after telemetry shutdown', {
-                            handleCount: handles.length,
-                            requestCount: requests.length,
-                            handles: handleDetails,
-                            // Also log raw handles for inspection
-                            rawHandles: handles.slice(0, 3).map(h => String(h))
-                        });
-
-                        // Check for timers specifically
-                        const timers = handles.filter((h: any) =>
-                            h?.constructor?.name === 'Timeout' ||
-                            h?.constructor?.name === 'Immediate' ||
-                            h?.constructor?.name === 'Timer'
-                        );
-                        if (timers.length > 0) {
-                            this.log.debug('Active timers found', {
-                                timerCount: timers.length,
-                                timers: timers.map((t: any) => ({
-                                    type: t?.constructor?.name,
-                                    hasRef: t?._handle?.hasRef?.(),
-                                    msecs: t?._idleTimeout
-                                }))
-                            });
-                        }
-
-                        // Check for sockets/streams
-                        const sockets = handles.filter((h: any) =>
-                            h?.constructor?.name?.includes('Socket') ||
-                            h?.constructor?.name?.includes('Stream') ||
-                            h?.constructor?.name?.includes('TCP')
-                        );
-                        if (sockets.length > 0) {
-                            this.log.debug('Active sockets/streams found', {
-                                socketCount: sockets.length,
-                                sockets: sockets.map((s: any) => ({
-                                    type: s?.constructor?.name,
-                                    destroyed: s?.destroyed,
-                                    readable: s?.readable,
-                                    writable: s?.writable,
-                                    readyState: s?.readyState
-                                }))
-                            });
-                        }
-                    } catch (err) {
-                        this.log.warn('Error debugging handles', err as Error);
-                    }
-                }, 100); // Give a bit more time for cleanup
-            }
-            // Remove the force exit logic completely
-        } catch { /* ignore */ }
-    }
-
-    /** Gracefully shutdown all telemetry providers. */
-    public async shutdown(): Promise<void> {
-        this.log.debug('Shutting down telemetry providers');
-        try {
-            await this.awaitReady();
-        } catch { /* ignore */ }
-        await Promise.all(this.providers.map(async (p) => {
-            try { await (p.shutdown?.()); } catch { /* ignore */ }
-        }));
     }
 }
 

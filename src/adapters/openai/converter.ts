@@ -413,9 +413,6 @@ export class Converter {
         }
         if (params.settings?.maxTokens !== undefined) {
             openAIParams.max_output_tokens = params.settings.maxTokens;
-        } else if (modelInfo?.maxResponseTokens !== undefined) {
-            // Default to model's maxResponseTokens when maxTokens is not provided
-            openAIParams.max_output_tokens = modelInfo.maxResponseTokens;
         }
 
         // Verbosity handling
@@ -447,6 +444,7 @@ export class Converter {
                 }
             }
         }
+        // Do not force defaults; leave unset unless explicitly derived or provided
         if (params.responseFormat === 'json' || (params.jsonSchema && params.jsonSchema.schema)) {
             // Set up text format configuration for the OpenAI Responses API
             if (params.jsonSchema && params.jsonSchema.schema) {

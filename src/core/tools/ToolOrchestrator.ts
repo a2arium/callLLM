@@ -181,6 +181,15 @@ export class ToolOrchestrator {
             }
         }
 
+        // Ensure provider telemetry ingests tool spans before next LLM turn
+        try {
+            const controllerAny: any = this.toolController as any;
+            const collector = controllerAny?.telemetryCollector || controllerAny?._telemetryCollector || undefined;
+            if (collector && typeof collector.flush === 'function') {
+                await collector.flush();
+            }
+        } catch { /* ignore */ }
+
         return {
             requiresResubmission: toolResult.requiresResubmission,
             newToolCalls: newToolCallsCount

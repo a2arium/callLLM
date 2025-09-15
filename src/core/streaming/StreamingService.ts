@@ -127,12 +127,14 @@ export class StreamingService {
                 logMissing.debug('No injected conversationCtx; streaming will proceed without telemetry conversation');
             }
             if (this.conversationCtx) {
+                const toolsAvailable = (params.tools || []).map(t => t.name);
                 this.llmCtx = this.telemetryCollector.startLLM(this.conversationCtx, {
                     provider: String(providerName).toLowerCase(),
                     model,
                     streaming: true,
                     responseFormat: params.responseFormat === 'json' ? 'json' : 'text',
                     toolsEnabled: Boolean(params.tools && params.tools.length > 0),
+                    toolsAvailable: toolsAvailable,
                     settings: params.settings
                 });
                 // Emit prompt messages
@@ -311,21 +313,43 @@ export class StreamingService {
     ): AsyncIterable<UniversalStreamResponse> {
         let last: UniversalStreamResponse | undefined;
         let count = 0;
+        let llmSpanEnded = false;
         try {
             for await (const chunk of stream) {
                 count++;
                 last = chunk;
-                const hasContent = Boolean((chunk as any).contentText || chunk.content?.trim());
-                const choiceContent = (chunk as any).contentText || chunk.content || '';
-                if (this.telemetryCollector && this.llmCtx) {
+                // If this chunk carries tool call requests, record them; end the LLM span only when complete
+                if (!llmSpanEnded && this.telemetryCollector && this.llmCtx && (chunk as any).toolCalls && (chunk as any).toolCalls.length > 0) {
+                    const toolCalls = (chunk as any).toolCalls.map((tc: any) => ({ id: tc.id, name: tc.name, arguments: tc.arguments }));
                     this.telemetryCollector.addChoice(this.llmCtx, {
-                        content: hasContent ? String(choiceContent) : '',
-                        contentLength: String(choiceContent).length,
+                        content: '',
+                        contentLength: 0,
                         index: 0,
                         sequence: count,
-                        finishReason: (chunk as any).isComplete ? ((chunk as any).metadata?.finishReason ?? 'stop') : 'incomplete',
-                        isChunk: true
+                        finishReason: (chunk as any).metadata?.finishReason || 'tool_calls',
+                        isChunk: false,
+                        isToolCall: true,
+                        toolCalls
                     });
+                    // End the LLM span only if this is the final chunk for the call
+                    if ((chunk as any).isComplete) {
+                        this.telemetryCollector.endLLM(this.llmCtx, (chunk as any)?.metadata?.usage as any, (chunk as any)?.metadata?.model);
+                        llmSpanEnded = true;
+                    }
+                } else {
+                    // Regular content chunk
+                    const hasContent = Boolean((chunk as any).contentText || chunk.content?.trim());
+                    const choiceContent = (chunk as any).contentText || chunk.content || '';
+                    if (this.telemetryCollector && this.llmCtx) {
+                        this.telemetryCollector.addChoice(this.llmCtx, {
+                            content: hasContent ? String(choiceContent) : '',
+                            contentLength: String(choiceContent).length,
+                            index: 0,
+                            sequence: count,
+                            finishReason: (chunk as any).isComplete ? ((chunk as any).metadata?.finishReason ?? 'stop') : 'incomplete',
+                            isChunk: true
+                        });
+                    }
                 }
                 yield chunk;
             }
@@ -333,7 +357,7 @@ export class StreamingService {
             throw err;
         }
 
-        if (this.telemetryCollector && this.llmCtx) {
+        if (this.telemetryCollector && this.llmCtx && !llmSpanEnded) {
             // Ensure we pass full text output and final usage to providers that need it (e.g., Opik)
             const finalText = (last as any)?.contentText || (last as any)?.content || '';
             // Add final choice event so non-stream span has complete output

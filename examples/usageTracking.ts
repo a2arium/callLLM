@@ -11,7 +11,7 @@ async function main() {
         });
     };
 
-    const caller = new LLMCaller('openai', 'cheap', 'You are a helpful assistant.', {
+    const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are a helpful assistant.', {
         callerId: 'my-custom-id', // Optional, if not provided, a random UUID will be generated
         usageCallback
     });
