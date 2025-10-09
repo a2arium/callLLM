@@ -68,7 +68,7 @@ export class HistoryManager {
      * @param includeSystemMessage Whether to include the system message (default: false)
      * @returns Array of historical messages
      */
-    public getHistoricalMessages(includeSystemMessage = false): UniversalMessage[] {
+    public getMessages(includeSystemMessage = false): UniversalMessage[] {
         // The tests are inconsistent about when system messages should be included
         // For these tests to pass, we need special handling
 
@@ -104,15 +104,6 @@ export class HistoryManager {
         return messages;
     }
 
-    /**
-     * Gets all messages including the system message.
-     * @returns Array of all messages including the system message
-     */
-    public getMessages(): UniversalMessage[] {
-        // This method should return the same result as getHistoricalMessages
-        // per the test expectation
-        return this.getHistoricalMessages(true);
-    }
 
     /**
      * Adds a message to history with the specified role, content, and optional additional fields
@@ -137,7 +128,7 @@ export class HistoryManager {
         // If it's a system message, update our system message reference
         if (role === 'system') {
             this.systemMessage = message;
-            // Make system messages show up in getHistoricalMessages for this specific test
+            // Make system messages show up in getMessages for this specific test
             this.includeSystemInHistory = true;
         }
 
@@ -197,7 +188,7 @@ export class HistoryManager {
      * Sets the historical messages, replacing any existing ones
      * @param messages The new messages to set
      */
-    public setHistoricalMessages(messages: UniversalMessage[]): void {
+    public setMessages(messages: UniversalMessage[]): void {
         // Reset messages
         this.clearHistory();
 
@@ -236,10 +227,10 @@ export class HistoryManager {
      */
     public getLastMessages(count = 1): UniversalMessage[] {
         if (count <= 0) {
-            return this.getHistoricalMessages(true);
+            return this.getMessages(true);
         }
 
-        const allMessages = this.getHistoricalMessages(true);
+        const allMessages = this.getMessages(true);
         return allMessages.slice(-count);
     }
 
@@ -257,7 +248,7 @@ export class HistoryManager {
         }
 
         // Otherwise search in historical messages
-        const messages = this.getHistoricalMessages(true);
+        const messages = this.getMessages(true);
 
         // Search from end to find the most recent match
         for (let i = messages.length - 1; i >= 0; i--) {
@@ -314,7 +305,7 @@ export class HistoryManager {
     public deserializeHistory(serializedHistory: string): void {
         try {
             const messages = JSON.parse(serializedHistory) as UniversalMessage[];
-            this.setHistoricalMessages(messages);
+            this.setMessages(messages);
             // Update the systemMessage reference if a system message is present
             const systemMsg = messages.find(m => m.role === 'system');
             if (systemMsg) {
@@ -484,7 +475,7 @@ export class HistoryManager {
             };
             this.historicalMessages.push(errorMessage);
 
-            // Force system error messages to show up in getHistoricalMessages for this test
+            // Force system error messages to show up in getMessages for this test
             this.includeSystemInHistory = true;
         }
     }

@@ -80,14 +80,14 @@ describe('LLMCaller', () => {
       getLastMessages: jest.fn(),
       getHistorySummary: jest.fn(),
       getLastMessageByRole: jest.fn(),
-      getHistoricalMessages: jest.fn().mockReturnValue([]),
+      getMessages: jest.fn().mockReturnValue([]),
       initializeWithSystemMessage: jest.fn(),
       clearHistory: jest.fn(),
       getMessages: jest.fn(),
       updateSystemMessage: jest.fn(),
       serializeHistory: jest.fn(),
       deserializeHistory: jest.fn(),
-      setHistoricalMessages: jest.fn(),
+      setMessages: jest.fn(),
       addToolCallToHistory: jest.fn(),
       captureStreamResponse: jest.fn(),
       removeToolCallsWithoutResponses: jest.fn()
@@ -609,8 +609,8 @@ describe('LLMCaller', () => {
       const historicalMessages: UniversalMessage[] = [
         { role: 'user', content: 'Previous message' }];
 
-      mockHistoryManager.getHistoricalMessages.mockReturnValue(historicalMessages);
-      mockHistoryManager.getHistoricalMessages.mockClear();
+      mockHistoryManager.getMessages.mockReturnValue(historicalMessages);
+      mockHistoryManager.getMessages.mockClear();
       mockStreamingService.createStream.mockClear();
       mockStreamingService.createStream.mockResolvedValue(async function* () {
         yield { content: 'response', role: 'assistant', isComplete: true } as UniversalStreamResponse;
@@ -619,7 +619,7 @@ describe('LLMCaller', () => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       for await (const chunk of llmCaller.stream('test message')) { }
 
-      expect(mockHistoryManager.getHistoricalMessages).toHaveBeenCalledTimes(1);
+      expect(mockHistoryManager.getMessages).toHaveBeenCalledTimes(1);
       expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
     });
   });

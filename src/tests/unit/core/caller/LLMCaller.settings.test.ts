@@ -59,7 +59,7 @@ jest.unstable_mockModule('@/core/history/HistoryManager.ts', () => ({
   __esModule: true,
   HistoryManager: jest.fn().mockImplementation(() => ({
     getMessages: mockHistoryManagerGetMessages,
-    getHistoricalMessages: jest.fn().mockReturnValue([{ role: 'system', content: 'You are a helpful assistant' }]),
+    getMessages: jest.fn().mockReturnValue([{ role: 'system', content: 'You are a helpful assistant' }]),
     addMessage: jest.fn(),
     clearHistory: jest.fn(),
     initializeWithSystemMessage: jest.fn()
@@ -195,7 +195,7 @@ describe('LLMCaller Settings & Configuration', () => {
 
     mockHistoryManager = {
       getMessages: mockHistoryManagerGetMessages.mockReturnValue([{ role: 'system', content: 'You are a helpful assistant' }]),
-      getHistoricalMessages: jest.fn().mockReturnValue([{ role: 'system', content: 'You are a helpful assistant' }]),
+      getMessages: jest.fn().mockReturnValue([{ role: 'system', content: 'You are a helpful assistant' }]),
       addMessage: jest.fn(),
       clearHistory: jest.fn(),
       initializeWithSystemMessage: jest.fn()

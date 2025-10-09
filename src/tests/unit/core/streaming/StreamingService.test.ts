@@ -124,7 +124,7 @@ describe('StreamingService', () => {
     } as unknown as jest.Mocked<typeof ModelManager>;
 
     mockHistoryManager = {
-      getHistoricalMessages: jest.fn().mockReturnValue([]),
+      getMessages: jest.fn().mockReturnValue([]),
       getLastMessageByRole: jest.fn(),
       getMessages: jest.fn().mockReturnValue([]),
       addMessage: jest.fn(),

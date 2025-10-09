@@ -111,7 +111,7 @@ export class ChunkController {
                 params.historicalMessages.filter((m: UniversalMessage) => m.role !== 'system')
                     .forEach(m => chunkProcessingHistory.addMessage(m.role, m.content, m));
             } else {
-                chunkProcessingHistory.setHistoricalMessages(params.historicalMessages);
+                chunkProcessingHistory.setMessages(params.historicalMessages);
             }
         }
 
@@ -244,7 +244,7 @@ export class ChunkController {
                 params.historicalMessages.filter((m: UniversalMessage) => m.role !== 'system')
                     .forEach(m => chunkProcessingHistory.addMessage(m.role, m.content, m));
             } else {
-                chunkProcessingHistory.setHistoricalMessages(params.historicalMessages);
+                chunkProcessingHistory.setMessages(params.historicalMessages);
             }
         }
 
@@ -304,11 +304,11 @@ export class ChunkController {
 
     // Helper to get messages including system message from HistoryManager instance
     private getMessagesFromHistory(history: HistoryManager): UniversalMessage[] {
-        const historyMsgs = history.getHistoricalMessages() || [];
+        const historyMsgs = history.getMessages() || [];
         // Attempt to find system message within the history
         const systemMsg = historyMsgs.find((m: UniversalMessage) => m.role === 'system');
         if (systemMsg) {
-            // If found, return all messages (assuming getHistoricalMessages includes it)
+            // If found, return all messages (assuming getMessages includes it)
             return historyMsgs;
         } else {
             // If not found (perhaps cleared or never set), prepend a default or tracked one
@@ -353,7 +353,7 @@ export class ChunkController {
                     params.historicalMessages.filter((m: UniversalMessage) => m.role !== 'system')
                         .forEach(m => chunkHistory.addMessage(m.role, m.content, m));
                 } else {
-                    chunkHistory.setHistoricalMessages(params.historicalMessages);
+                    chunkHistory.setMessages(params.historicalMessages);
                 }
             }
             return chunkHistory;

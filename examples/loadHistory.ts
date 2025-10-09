@@ -29,10 +29,10 @@ async function runLoadHistoryExample() {
 
 
     // 3. Set the historical messages
-    caller.setHistoricalMessages(previousConversation);
+    caller.setMessages(previousConversation);
 
     // // Log history state *after* setting and *before* the call
-    // const messagesBeforeCall = caller.getMessages();
+    // const messagesBeforeCall = caller.getMessages(true);
     // console.log(`\nHistory set. Current message count before call: ${messagesBeforeCall.length}`);
     // console.log('Messages before call:', JSON.stringify(messagesBeforeCall, null, 2));
 
@@ -56,7 +56,7 @@ async function runLoadHistoryExample() {
         }
 
         // Log history state *after* the call
-        const messagesAfterCall1 = caller.getMessages();
+        const messagesAfterCall1 = caller.getMessages(true);
         console.log(`\nFinal message count after first call: ${messagesAfterCall1.length}`);
         console.log('Messages after first call:', JSON.stringify(messagesAfterCall1, null, 2)); // Check if it has expected count
 
@@ -70,7 +70,7 @@ async function runLoadHistoryExample() {
     console.log(`Adding new user message: "${newMessageContent}"`);
     caller.addMessage('user', newMessageContent);
 
-    const messagesAfterAdd = caller.getMessages();
+    const messagesAfterAdd = caller.getMessages(true);
     console.log(`\nCurrent message count after addMessage: ${messagesAfterAdd.length}`);
     console.log('Messages after addMessage:', JSON.stringify(messagesAfterAdd, null, 2));
 
@@ -88,7 +88,7 @@ async function runLoadHistoryExample() {
         }
 
         // Log final history state
-        const messagesAfterCall2 = caller.getMessages();
+        const messagesAfterCall2 = caller.getMessages(true);
         console.log(`\nFinal message count after second call: ${messagesAfterCall2.length}`);
         console.log('Messages after second call:', JSON.stringify(messagesAfterCall2, null, 2));
 

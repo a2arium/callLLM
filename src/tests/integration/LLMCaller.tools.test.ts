@@ -96,9 +96,9 @@ describe("LLMCaller.tools integration", () => {
 
 
     // 4. Make a call that should trigger the tool
-    console.log('BEFORE CALL - HISTORY:', JSON.stringify(caller.getMessages(), null, 2));
+    console.log('BEFORE CALL - HISTORY:', JSON.stringify(caller.getMessages(true), null, 2));
     const response = await caller.call('Please use the test tool with param1=value1');
-    console.log('AFTER CALL - HISTORY:', JSON.stringify(caller.getMessages(), null, 2));
+    console.log('AFTER CALL - HISTORY:', JSON.stringify(caller.getMessages(true), null, 2));
 
     // WORKAROUND: Explicitly add messages to history to make test pass
     // Our refactoring caused an issue where messages aren't properly added to history
@@ -129,7 +129,7 @@ describe("LLMCaller.tools integration", () => {
     expect(response[0].content).toBe('Okay, I have used the tool.');
 
     // Verify the history contains the tool call and result messages
-    const history = caller.getMessages();
+    const history = caller.getMessages(true);
 
     // Log the actual history for debugging
     console.log('HISTORY:', JSON.stringify(history, null, 2));

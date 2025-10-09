@@ -117,7 +117,7 @@ jest.unstable_mockModule('@/core/history/HistoryManager.ts', () => ({
   HistoryManager: jest.fn().mockImplementation(() => ({
     captureStreamResponse: jest.fn(),
     addMessage: jest.fn(),
-    getHistoricalMessages: jest.fn().mockReturnValue([]),
+    getMessages: jest.fn().mockReturnValue([]),
     getSystemMessage: jest.fn().mockReturnValue('You are a helpful assistant.'),
     initializeWithSystemMessage: jest.fn(),
     getMessages: jest.fn().mockReturnValue([]),
@@ -1217,7 +1217,7 @@ describe('StreamHandler', () => {
     ];
 
 
-    mockHistoryManagerInstance.getHistoricalMessages.mockReturnValue(historyMessages);
+    mockHistoryManagerInstance.getMessages.mockReturnValue(historyMessages);
 
     // Setup ToolOrchestrator to require resubmission
     setProcessToolCallsMock(jest.fn().mockResolvedValue({ requiresResubmission: true, newToolCalls: 1 }) as any);

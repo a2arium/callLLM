@@ -26,7 +26,7 @@ Here are the primary ways you can add, manage, and influence the history used in
     Messages with roles like `'tool'` or `'function'` can also be added, often including a `toolCallId` to link them to a previous assistant message that requested the tool.
 
 2.  **Setting/Replacing the Entire History**:
-    If you need to load a previous conversation state or set the history programmatically, you can use `setHistoricalMessages`. This replaces the entire current history with the provided array of messages.
+    If you need to load a previous conversation state or set the history programmatically, you can use `setMessages`. This replaces the entire current history with the provided array of messages.
 
     ```typescript
     import { LLMCaller, UniversalMessage } from 'callllm';
@@ -39,7 +39,7 @@ Here are the primary ways you can add, manage, and influence the history used in
         { role: 'assistant', content: '1 + 1 equals 2.' },
     ];
 
-    caller.setHistoricalMessages(previousConversation);
+    caller.setMessages(previousConversation);
 
     // Now the history contains the messages from `previousConversation`
     // const response = await caller.call('...');
@@ -55,11 +55,11 @@ Here are the primary ways you can add, manage, and influence the history used in
 
     // ... add some messages ...
     caller.addMessage('user', 'Message 1');
-    console.log('History size before clear:', caller.getHistoricalMessages().length); // Will be > 0
+    console.log('History size before clear:', caller.getMessages().length); // Will be > 0
 
     caller.clearHistory(); // Clears messages and re-adds the system message
 
-    console.log('History size after clear:', caller.getHistoricalMessages().length); // Will be 1 (system message)
+    console.log('History size after clear:', caller.getMessages().length); // Will be 1 (system message)
     ```
 
 4.  **Updating the System Message**:
@@ -106,14 +106,14 @@ Here are the primary ways you can add, manage, and influence the history used in
     *   `'stateless'`: Only sends the current user message and the system message (if one is set in `HistoryManager`) to the model. No previous conversation turns are included. Each call is independent. Most token-efficient.
 
 6.  **Accessing History**:
-    You can retrieve the current message history using methods like `getHistoricalMessages()` (excluding the initial system message unless it was explicitly added back) or `getMessages()` (includes the initial system message). `getHistorySummary()` provides a condensed view.
+    You can retrieve the current message history using methods like `getMessages()` (excluding the initial system message unless it was explicitly added back) or `getMessages(true)` (includes the initial system message). `getHistorySummary()` provides a condensed view.
 
     ```typescript
     // Get all messages including system message
-    const allMessages = caller.getMessages();
+    const allMessages = caller.getMessages(true);
 
     // Get messages excluding the initial system message
-    const historicalMessages = caller.getHistoricalMessages();
+    const historicalMessages = caller.getMessages();
 
     // Get a summary of the history
     const summary = caller.getHistorySummary({ maxContentLength: 50 });

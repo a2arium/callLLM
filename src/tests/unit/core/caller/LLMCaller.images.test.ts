@@ -133,7 +133,7 @@ jest.unstable_mockModule('@/core/history/HistoryManager.ts', () => ({
     getMessages: jest.fn().mockReturnValue([]),
     getMessageHistory: jest.fn().mockReturnValue([]),
     getSystemMessage: jest.fn().mockReturnValue('You are a helpful assistant.'),
-    getHistoricalMessages: jest.fn().mockReturnValue([]),
+    getMessages: jest.fn().mockReturnValue([]),
     initializeWithSystemMessage: jest.fn()
   }))
 }));

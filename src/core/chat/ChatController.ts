@@ -155,7 +155,7 @@ export class ChatController {
                 log.debug('Using dynamic history mode for chat - intelligently truncating history');
 
                 // Get all historical messages
-                const allMessages = this.historyManager.getMessages();
+                const allMessages = this.historyManager.getMessages(true);
 
                 // If we have a truncator and messages to dynamic, do the truncation
                 if (allMessages.length > 0) {
@@ -195,7 +195,7 @@ export class ChatController {
 
                 if (formatInstruction) {
                     // Only add if we don't already have an instruction with the same content
-                    const existingInstructions = this.historyManager.getMessages().filter(msg =>
+                    const existingInstructions = this.historyManager.getMessages(true).filter(msg =>
                         msg.metadata?.isFormatInstruction);
 
                     const alreadyHasInstruction = existingInstructions.some(msg => {
@@ -370,7 +370,7 @@ export class ChatController {
                     // Call execute recursively, explicitly passing necessary context
                     finalResponse = await this.execute<T>({
                         ...params, // Spread original params
-                        messages: this.historyManager.getMessages(), // Use updated history
+                        messages: this.historyManager.getMessages(true), // Use updated history
                         tools: undefined, // No tools needed for resubmission
                         settings: {
                             ...params.settings,

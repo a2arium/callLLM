@@ -40,7 +40,7 @@ describe('ToolOrchestrator', () => {
     historyManager = {
       addToolCallToHistory: jest.fn(),
       addMessage: jest.fn(),
-      getHistoricalMessages: jest.fn(),
+      getMessages: jest.fn(),
       getLatestMessages: jest.fn(),
       getLastMessageByRole: jest.fn()
     } as unknown as jest.Mocked<HistoryManager>;

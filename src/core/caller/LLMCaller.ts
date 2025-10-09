@@ -652,7 +652,7 @@ export class LLMCaller implements MCPDirectAccess {
         params.model = params.model || this.model;
 
         // Calculate tokens for usage tracking
-        const inputTokens = await this.tokenCalculator.calculateTotalTokens(params.messages);
+        const inputTokens = await this.tokenCalculator.calculateTotalTokens(params.messages ?? []);
 
         // Use the StreamingService to create the stream
         try {
@@ -722,7 +722,8 @@ export class LLMCaller implements MCPDirectAccess {
                     const success = errorCount === 0 && Boolean(lastChunk?.isComplete);
                     if (self.telemetryCollector && conversationCtx) {
                         // Capture initial messages and final response for telemetry
-                        const initialMessages: PromptMessage[] = params.messages.map((msg, index) => ({
+                        const baseMessages = (params.messages ?? (self.historyManager?.getMessages?.() ?? []));
+                        const initialMessages: PromptMessage[] = baseMessages.map((msg, index) => ({
                             role: msg.role as 'system' | 'user' | 'assistant' | 'tool',
                             content: msg.content || '',
                             sequence: index
@@ -1059,7 +1060,7 @@ export class LLMCaller implements MCPDirectAccess {
         const effectiveHistoryMode = this.mergeHistoryMode(opts.historyMode);
 
         // Get messages from history manager (which already has the latest user message)
-        let messages = this.historyManager.getHistoricalMessages();
+        let messages = this.historyManager.getMessages() || [];
 
         // When there's only one processed message and it contains the 'data' field,
         // we should use the processed message instead of the history manager's version
@@ -1073,7 +1074,7 @@ export class LLMCaller implements MCPDirectAccess {
             log.debug(`Processed message structure:`, JSON.stringify(opts.processedMessages[0]));
 
             // Get all messages except the most recent user message
-            const previousMessages = messages.filter(msg =>
+            const previousMessages = (messages ?? []).filter(msg =>
                 !(msg.role === 'user' && msg.content === actualMessage));
 
             // processedMessages is an array of strings (not objects with a text property)
@@ -1706,7 +1707,8 @@ export class LLMCaller implements MCPDirectAccess {
 
             if (this.telemetryCollector && conversationCtx) {
                 // Capture initial messages and final response for telemetry
-                const initialMessages: PromptMessage[] = chatParams.messages.map((msg, index) => ({
+                const baseMessages = (chatParams.messages ?? this.historyManager?.getMessages?.() ?? []);
+                const initialMessages: PromptMessage[] = baseMessages.map((msg, index) => ({
                     role: msg.role as 'system' | 'user' | 'assistant' | 'tool',
                     content: msg.content || '',
                     sequence: index
@@ -1802,24 +1804,16 @@ export class LLMCaller implements MCPDirectAccess {
 
     // History management methods - delegated to HistoryManager
 
-    /**
-     * Gets the current historical messages (excluding the initial system message unless requested)
-     * Check HistoryManager implementation for exact behavior.
-     * @returns Array of historical messages (typically user/assistant/tool roles)
-     */
-    public getHistoricalMessages(): UniversalMessage[] {
-        return this.historyManager.getHistoricalMessages();
-    }
+
 
     /**
-     * Gets all messages including the system message.
+     * Gets all messages including or excluding the system message.
+     * @param includeSystemMessage Whether to include the system message (default: false)
      * @returns Array of all messages.
      */
-    public getMessages(): UniversalMessage[] {
-        // Use the HistoryManager's getMessages method which already includes the system message
-        return this.historyManager.getMessages();
+    public getMessages(includeSystemMessage = false): UniversalMessage[] {
+        return this.historyManager.getMessages(includeSystemMessage);
     }
-
 
     /**
      * Adds a message to the historical messages
@@ -1852,8 +1846,8 @@ export class LLMCaller implements MCPDirectAccess {
      * Consider using clearHistory and addMessage if you want to preserve the original system message.
      * @param messages The messages to set
      */
-    public setHistoricalMessages(messages: UniversalMessage[]): void {
-        this.historyManager.setHistoricalMessages(messages);
+    public setMessages(messages: UniversalMessage[]): void {
+        this.historyManager.setMessages(messages);
     }
 
     /**
@@ -1891,7 +1885,7 @@ export class LLMCaller implements MCPDirectAccess {
     public deserializeHistory(serialized: string): void {
         this.historyManager.deserializeHistory(serialized);
         // Update the local systemMessage variable if the deserialized history contains a system message
-        const systemMsgInHistory = this.historyManager.getHistoricalMessages().find((m: UniversalMessage) => m.role === 'system');
+        const systemMsgInHistory = this.historyManager.getMessages().find((m: UniversalMessage) => m.role === 'system');
         this.systemMessage = systemMsgInHistory ? systemMsgInHistory.content : 'You are a helpful assistant.'; // Use default if none found
     }
 

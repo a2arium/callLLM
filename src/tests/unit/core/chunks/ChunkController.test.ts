@@ -12,8 +12,8 @@ const mockChatExecute = jest.fn();
 const mockCreateStream = jest.fn();
 
 const mockAddMessage = jest.fn();
-const mockGetHistoricalMessages = jest.fn().mockReturnValue([]);
-const mockSetHistoricalMessages = jest.fn();
+const mockgetMessages = jest.fn().mockReturnValue([]);
+const mocksetMessages = jest.fn();
 const mockClearHistory = jest.fn()
 
 // Create mock dependencies with factory functions
@@ -44,8 +44,8 @@ jest.unstable_mockModule('@/core/history/HistoryManager', () => ({
   __esModule: true,
   HistoryManager: jest.fn().mockImplementation(() => ({
     addMessage: mockAddMessage,
-    getHistoricalMessages: mockGetHistoricalMessages,
-    setHistoricalMessages: mockSetHistoricalMessages,
+    getMessages: mockgetMessages,
+    setMessages: mocksetMessages,
     clearHistory: mockClearHistory
   }))
 }));

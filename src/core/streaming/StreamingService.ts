@@ -247,7 +247,7 @@ export class StreamingService {
                 log.debug('Using dynamic history mode for streaming - intelligently truncating history');
 
                 // Get all historical messages
-                const allMessages = this.historyManager.getMessages();
+                const allMessages = this.historyManager.getMessages(true);
 
                 // If we have messages to truncate, do the truncation
                 if (allMessages.length > 0) {

@@ -14,14 +14,14 @@ describe('HistoryManager', () => {
   describe('constructor', () => {
     it('should initialize without a system message', () => {
       const manager = new HistoryManager();
-      expect(manager.getHistoricalMessages()).toEqual([]);
+      expect(manager.getMessages()).toEqual([]);
     });
 
     it('should initialize with a system message', () => {
       const systemMessage = 'This is a system message';
       const manager = new HistoryManager(systemMessage);
 
-      const messages = manager.getHistoricalMessages();
+      const messages = manager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0]).toEqual({
         role: 'system',
@@ -39,7 +39,7 @@ describe('HistoryManager', () => {
       manager.initializeWithSystemMessage();
 
       // Should still be empty
-      expect(manager.getHistoricalMessages()).toEqual([]);
+      expect(manager.getMessages()).toEqual([]);
     });
 
     it('should add a system message when initialized', () => {
@@ -48,13 +48,13 @@ describe('HistoryManager', () => {
 
       // Clear history
       manager.clearHistory();
-      expect(manager.getHistoricalMessages()).toEqual([]);
+      expect(manager.getMessages()).toEqual([]);
 
       // Re-initialize
       manager.initializeWithSystemMessage();
 
       // Should have system message again
-      const messages = manager.getHistoricalMessages();
+      const messages = manager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0]).toEqual({
         role: 'system',
@@ -63,9 +63,9 @@ describe('HistoryManager', () => {
     });
   });
 
-  describe('getHistoricalMessages', () => {
+  describe('getMessages', () => {
     it('should return an empty array when no messages exist', () => {
-      expect(historyManager.getHistoricalMessages()).toEqual([]);
+      expect(historyManager.getMessages()).toEqual([]);
     });
 
     it('should return all valid messages', () => {
@@ -75,7 +75,7 @@ describe('HistoryManager', () => {
       historyManager.addMessage('user', userMessage);
       historyManager.addMessage('assistant', assistantMessage);
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(2);
       expect(messages[0]).toEqual({
         role: 'user',
@@ -94,7 +94,7 @@ describe('HistoryManager', () => {
       // Add an empty message - should be filtered out
       historyManager.addMessage('user', '');
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0].content).toBe('Valid message');
     });
@@ -114,9 +114,9 @@ describe('HistoryManager', () => {
         }]
       };
 
-      historyManager.setHistoricalMessages([toolCallsMessage]);
+      historyManager.setMessages([toolCallsMessage]);
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0].toolCalls).toHaveLength(1);
       expect(messages[0].content).toBe('');
@@ -128,9 +128,9 @@ describe('HistoryManager', () => {
         content: ''
       };
 
-      historyManager.setHistoricalMessages([emptyMessage]);
+      historyManager.setMessages([emptyMessage]);
 
-      expect(historyManager.getHistoricalMessages()).toEqual([]);
+      expect(historyManager.getMessages()).toEqual([]);
     });
 
     it('should preserve toolCallId when present', () => {
@@ -140,9 +140,9 @@ describe('HistoryManager', () => {
         toolCallId: 'tool123'
       };
 
-      historyManager.setHistoricalMessages([toolResponseMessage]);
+      historyManager.setMessages([toolResponseMessage]);
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0].toolCallId).toBe('tool123');
     });
@@ -153,9 +153,9 @@ describe('HistoryManager', () => {
         content: '   '
       };
 
-      historyManager.setHistoricalMessages([whitespaceMessage]);
+      historyManager.setMessages([whitespaceMessage]);
 
-      expect(historyManager.getHistoricalMessages()).toEqual([]);
+      expect(historyManager.getMessages()).toEqual([]);
     });
   });
 
@@ -163,7 +163,7 @@ describe('HistoryManager', () => {
     it('should add a user message', () => {
       historyManager.addMessage('user', 'User message');
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0]).toEqual({
         role: 'user',
@@ -174,7 +174,7 @@ describe('HistoryManager', () => {
     it('should add an assistant message', () => {
       historyManager.addMessage('assistant', 'Assistant response');
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0]).toEqual({
         role: 'assistant',
@@ -185,7 +185,7 @@ describe('HistoryManager', () => {
     it('should add a system message', () => {
       historyManager.addMessage('system', 'System instruction');
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0]).toEqual({
         role: 'system',
@@ -196,7 +196,7 @@ describe('HistoryManager', () => {
     it('should add a tool message', () => {
       historyManager.addMessage('tool', 'Tool response');
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0]).toEqual({
         role: 'tool',
@@ -211,7 +211,7 @@ describe('HistoryManager', () => {
 
       historyManager.addMessage('tool', 'Tool result', additionalFields);
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0]).toEqual({
         role: 'tool',
@@ -223,7 +223,7 @@ describe('HistoryManager', () => {
     it('should not add invalid messages', () => {
       historyManager.addMessage('user', '');
 
-      expect(historyManager.getHistoricalMessages()).toEqual([]);
+      expect(historyManager.getMessages()).toEqual([]);
     });
   });
 
@@ -235,17 +235,17 @@ describe('HistoryManager', () => {
       historyManager.addMessage('assistant', 'Assistant response');
 
       // Verify messages were added
-      expect(historyManager.getHistoricalMessages()).toHaveLength(3);
+      expect(historyManager.getMessages()).toHaveLength(3);
 
       // Clear history
       historyManager.clearHistory();
 
       // Verify history is empty
-      expect(historyManager.getHistoricalMessages()).toEqual([]);
+      expect(historyManager.getMessages()).toEqual([]);
     });
   });
 
-  describe('setHistoricalMessages', () => {
+  describe('setMessages', () => {
     it('should set messages and validate them', () => {
       const messages: UniversalMessage[] = [
         { role: 'system', content: 'System message' },
@@ -253,9 +253,9 @@ describe('HistoryManager', () => {
         { role: 'assistant', content: 'Assistant response' }];
 
 
-      historyManager.setHistoricalMessages(messages);
+      historyManager.setMessages(messages);
 
-      const storedMessages = historyManager.getHistoricalMessages();
+      const storedMessages = historyManager.getMessages();
       expect(storedMessages).toHaveLength(3);
       expect(storedMessages[0].content).toBe('System message');
       expect(storedMessages[1].content).toBe('User message');
@@ -269,9 +269,9 @@ describe('HistoryManager', () => {
         { role: 'assistant', content: 'Assistant response' }];
 
 
-      historyManager.setHistoricalMessages(messages);
+      historyManager.setMessages(messages);
 
-      const storedMessages = historyManager.getHistoricalMessages();
+      const storedMessages = historyManager.getMessages();
       expect(storedMessages).toHaveLength(2);
       expect(storedMessages[0].content).toBe('System message');
       expect(storedMessages[1].content).toBe('Assistant response');
@@ -335,7 +335,7 @@ describe('HistoryManager', () => {
 
     it('should handle count=0 by returning the entire array', () => {
       // Setup - confirm we have 5 messages
-      const allMessages = historyManager.getHistoricalMessages();
+      const allMessages = historyManager.getMessages();
       expect(allMessages.length).toBe(5);
 
       // The implementation of getLastMessages(0) returns this.historicalMessages.slice(-0),
@@ -361,13 +361,13 @@ describe('HistoryManager', () => {
 
       // Clear the history
       historyManager.clearHistory();
-      expect(historyManager.getHistoricalMessages()).toEqual([]);
+      expect(historyManager.getMessages()).toEqual([]);
 
       // Deserialize the history
       historyManager.deserializeHistory(serialized);
 
       // Check if history was restored correctly
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(3);
       expect(messages[0].content).toBe('System message');
       expect(messages[1].content).toBe('User message');
@@ -384,13 +384,13 @@ describe('HistoryManager', () => {
 
       // Add a message
       historyManager.addMessage('user', 'Test message');
-      expect(historyManager.getHistoricalMessages()).toHaveLength(1);
+      expect(historyManager.getMessages()).toHaveLength(1);
 
       // Deserialize empty history
       historyManager.deserializeHistory(serialized);
 
       // History should be empty
-      expect(historyManager.getHistoricalMessages()).toEqual([]);
+      expect(historyManager.getMessages()).toEqual([]);
     });
 
     it('should throw an error for invalid JSON during deserialization', () => {
@@ -412,7 +412,7 @@ describe('HistoryManager', () => {
       historyManager.updateSystemMessage('Updated system message');
 
       // Check if the system message was updated and history preserved
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(2);
       expect(messages[0].role).toBe('system');
       expect(messages[0].content).toBe('Updated system message');
@@ -428,7 +428,7 @@ describe('HistoryManager', () => {
       historyManager.updateSystemMessage('New system message');
 
       // Check if the system message was added
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(2);
       expect(messages[0].role).toBe('system');
       expect(messages[0].content).toBe('New system message');
@@ -445,7 +445,7 @@ describe('HistoryManager', () => {
       historyManager.updateSystemMessage('New system message', false);
 
       // Check if history was cleared and only the system message remains
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0].role).toBe('system');
       expect(messages[0].content).toBe('New system message');
@@ -470,7 +470,7 @@ describe('HistoryManager', () => {
 
       historyManager.addToolCallToHistory(toolName, args, result);
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(2);
 
       // Check assistant message with tool call
@@ -497,7 +497,7 @@ describe('HistoryManager', () => {
 
       historyManager.addToolCallToHistory(toolName, args, undefined, error);
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(2);
 
       // Find the messages by role instead of assuming specific positions
@@ -528,7 +528,7 @@ describe('HistoryManager', () => {
 
       historyManager.addToolCallToHistory(toolName, args, result, error);
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(3);
 
       // Find the messages by role instead of assuming specific positions
@@ -679,7 +679,7 @@ describe('HistoryManager', () => {
       historyManager.captureStreamResponse('Complete response', true);
 
       // Only the final complete response should be added to history
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0].role).toBe('assistant');
       expect(messages[0].content).toBe('Complete response');
@@ -689,7 +689,7 @@ describe('HistoryManager', () => {
       // Simulating a case where content is the current chunk but contentText is the full accumulated text
       historyManager.captureStreamResponse('Final chunk', true, 'Complete accumulated response');
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0].content).toBe('Complete accumulated response');
     });
@@ -699,14 +699,14 @@ describe('HistoryManager', () => {
       historyManager.captureStreamResponse('Partial response', false);
 
       // No messages should be added for partial chunks
-      expect(historyManager.getHistoricalMessages()).toEqual([]);
+      expect(historyManager.getMessages()).toEqual([]);
     });
 
     it('should not add empty messages', () => {
       historyManager.captureStreamResponse('', true);
 
       // Empty messages shouldn't be added
-      expect(historyManager.getHistoricalMessages()).toEqual([]);
+      expect(historyManager.getMessages()).toEqual([]);
     });
   });
 
@@ -815,7 +815,7 @@ describe('HistoryManager', () => {
       });
 
       // Before removing, we should have 3 messages
-      expect(historyManager.getHistoricalMessages()).toHaveLength(3);
+      expect(historyManager.getMessages()).toHaveLength(3);
 
       // Remove unmatched tool calls
       const removed = historyManager.removeToolCallsWithoutResponses();
@@ -824,7 +824,7 @@ describe('HistoryManager', () => {
       expect(removed).toBe(1);
 
       // After removing, we should have 2 messages (the matched call and its response);
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(2);
 
       // The remaining messages should be the matched call and its response
@@ -851,7 +851,7 @@ describe('HistoryManager', () => {
       });
 
       // Before removing, we should have 2 messages
-      expect(historyManager.getHistoricalMessages()).toHaveLength(2);
+      expect(historyManager.getMessages()).toHaveLength(2);
 
       // Remove unmatched tool calls
       const removed = historyManager.removeToolCallsWithoutResponses();
@@ -860,7 +860,7 @@ describe('HistoryManager', () => {
       expect(removed).toBe(0);
 
       // After removing, we should still have 2 messages
-      expect(historyManager.getHistoricalMessages()).toHaveLength(2);
+      expect(historyManager.getMessages()).toHaveLength(2);
     });
 
     it('should handle multiple tool calls in a single message', () => {
@@ -889,7 +889,7 @@ describe('HistoryManager', () => {
       });
 
       // Before removing, we should have 2 messages
-      expect(historyManager.getHistoricalMessages()).toHaveLength(2);
+      expect(historyManager.getMessages()).toHaveLength(2);
 
       // Remove unmatched tool calls
       const removed = historyManager.removeToolCallsWithoutResponses();
@@ -898,7 +898,7 @@ describe('HistoryManager', () => {
       expect(removed).toBe(1);
 
       // After removing, we should have 1 message (just the tool response);
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0].role).toBe('tool');
       expect(messages[0].toolCallId).toBe('matched_call_3');
@@ -906,7 +906,7 @@ describe('HistoryManager', () => {
   });
 
   describe('getMessages', () => {
-    it('should return the same result as getHistoricalMessages', () => {
+    it('should return the same result as getMessages', () => {
       // Clear and set up a history with various message types
       historyManager.clearHistory();
       historyManager.addMessage('system', 'System message');
@@ -914,8 +914,8 @@ describe('HistoryManager', () => {
       historyManager.addMessage('assistant', 'Assistant message');
 
       // Compare results from both methods
-      const historicalMessages = historyManager.getHistoricalMessages();
-      const allMessages = historyManager.getMessages();
+      const historicalMessages = historyManager.getMessages();
+      const allMessages = historyManager.getMessages(true);
 
       // Both should return the same result
       expect(allMessages).toEqual(historicalMessages);
@@ -1055,7 +1055,7 @@ describe('HistoryManager', () => {
 
       // Add directly to history and then get validated messages
       historyManager['historicalMessages'].push(messageWithoutRole);
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
 
       // Should have applied the default 'user' role
       expect(messages).toHaveLength(1);
@@ -1075,7 +1075,7 @@ describe('HistoryManager', () => {
         }]
       });
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0].content).toBe('');
     });
@@ -1169,7 +1169,7 @@ describe('HistoryManager', () => {
         }]
       });
 
-      const messages = historyManager.getHistoricalMessages();
+      const messages = historyManager.getMessages();
       expect(messages).toHaveLength(1);
       // The content should be preserved (not converted to empty string)
       expect(messages[0].content).toBe('   ');

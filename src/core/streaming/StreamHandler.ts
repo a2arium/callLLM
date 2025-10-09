@@ -364,7 +364,7 @@ export class StreamHandler {
                         }
 
                         // Update message history state based on results added by orchestrator
-                        currentMessages = this.historyManager.getMessages();
+                        currentMessages = this.historyManager.getMessages(true);
 
                         // If we have StreamingService, continue the stream with tool results
                         if (toolProcessingResult.requiresResubmission && this.streamingService) {

@@ -139,7 +139,7 @@ describe('ChatController', () => {
       getMessages: jest.fn().mockReturnValue([]),
       addMessage: jest.fn(),
       getSystemMessage: jest.fn().mockReturnValue({ role: 'system', content: 'Test system message' }),
-      getHistoricalMessages: jest.fn().mockReturnValue([
+      getMessages: jest.fn().mockReturnValue([
         { role: 'system', content: 'System prompt' },
         { role: 'user', content: 'User query with image placeholder' }]
       )
@@ -1000,7 +1000,7 @@ describe('ChatController', () => {
     // Save the original function references for restoration
     const originalTriggerCallback = mockUsageTracker.triggerCallback;
     const originalChatCall = mockProviderManager.getProvider().chatCall;
-    const originalGetHistoricalMessages = mockHistoryManager.getHistoricalMessages;
+    const originalgetMessages = mockHistoryManager.getMessages;
 
     try {
       // Set up callerId and callback - both needed for triggerCallback to work
@@ -1019,7 +1019,7 @@ describe('ChatController', () => {
       mockedChatCall.mockImplementation(() => Promise.resolve(mockResponseWithImageTokens));
 
       // Mock history messages
-      (mockHistoryManager as any).getHistoricalMessages = jest.fn().mockReturnValue([
+      (mockHistoryManager as any).getMessages = jest.fn().mockReturnValue([
         { role: 'system', content: 'System prompt' },
         { role: 'user', content: 'Analyze this image <file:image.jpg>' }]
       );
@@ -1037,7 +1037,7 @@ describe('ChatController', () => {
       // Restore original functions
       mockUsageTracker.triggerCallback = originalTriggerCallback;
       mockProviderManager.getProvider().chatCall = originalChatCall;
-      (mockHistoryManager as any).getHistoricalMessages = originalGetHistoricalMessages;
+      (mockHistoryManager as any).getMessages = originalgetMessages;
 
       // Clean up added properties
       delete (mockUsageTracker as any).callerId;

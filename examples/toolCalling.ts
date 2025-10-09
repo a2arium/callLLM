@@ -97,7 +97,7 @@ async function main() {
         'What\'s the weather like in San Francisco?'
     );
     console.log('Response:', weatherResponse);
-    console.log(caller.getHistoricalMessages());
+    console.log(caller.getMessages());
 
 
     // 2. Multi - Tool Call
@@ -188,7 +188,7 @@ async function main() {
             // Indicate completion if flagged
             if (chunk.isComplete) {
                 console.log('\n\nStream completed');
-                console.log(caller.getHistoricalMessages());
+                console.log(caller.getMessages());
             }
         }
     } catch (error) {
@@ -230,7 +230,7 @@ async function main() {
             if (chunk.isComplete) {
                 console.log('\n\nStream completed');
                 console.log('Final accumulated content:', chunk.contentText);
-                console.log('History:', caller.getHistoricalMessages());
+                console.log('History:', caller.getMessages());
             }
         }
     } catch (error) {

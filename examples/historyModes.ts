@@ -50,7 +50,7 @@ async function runHistoryModeExample() {
     console.log(`Assistant: ${response3[0].content}`);
 
     console.log('\nHistory after Full mode conversation:');
-    const fullModeHistory = fullModeCaller.getHistoricalMessages();
+    const fullModeHistory = fullModeCaller.getMessages();
     fullModeHistory.forEach(msg => {
         console.log(`- ${msg.role}: ${msg.content}`);
     });
@@ -117,7 +117,7 @@ async function runHistoryModeExample() {
     console.log('\n');
 
     console.log('\nHistory after Full History streaming mode conversation:');
-    const fullStreamingHistory = fullStreamingCaller.getHistoricalMessages();
+    const fullStreamingHistory = fullStreamingCaller.getMessages();
     fullStreamingHistory.forEach(msg => {
         console.log(`- ${msg.role}: ${msg.content}`);
     });
@@ -179,7 +179,7 @@ async function runHistoryModeExample() {
     console.log('NOTE: The model does not know what "above" refers to, as previous context is not included!');
 
     console.log('\nHistory after Stateless mode conversation:');
-    const statelessHistory = statelessCaller.getHistoricalMessages();
+    const statelessHistory = statelessCaller.getMessages();
     statelessHistory.forEach(msg => {
         console.log(`- ${msg.role}: ${msg.content}`);
     });
@@ -267,7 +267,7 @@ async function runHistoryModeExample() {
     console.log('NOTE: The model does not know what "above" refers to, as previous context is not included!');
 
     console.log('\nHistory after Stateless streaming mode conversation:');
-    const statelessStreamingHistory = statelessStreamingCaller.getHistoricalMessages();
+    const statelessStreamingHistory = statelessStreamingCaller.getMessages();
     statelessStreamingHistory.forEach(msg => {
         console.log(`- ${msg.role}: ${msg.content}`);
     });

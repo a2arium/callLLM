@@ -198,7 +198,7 @@ describe('Tool Calling with Streaming', () => {
     )).toBe(true);
 
     // Check that the tool result was added to history
-    const history = historyManager.getMessages();
+    const history = historyManager.getMessages(true);
     expect(history.some((msg: UniversalMessage) =>
       msg.role === 'tool' &&
       msg.toolCallId === 'tool_call_123' &&

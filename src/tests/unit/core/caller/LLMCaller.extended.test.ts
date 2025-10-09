@@ -56,9 +56,9 @@ describe('LLMCaller - Model Management', () => {
 
     mockHistoryManager = {
       addMessage: jest.fn(),
-      getHistoricalMessages: jest.fn().mockReturnValue([]),
+      getMessages: jest.fn().mockReturnValue([]),
       updateSystemMessage: jest.fn(),
-      setHistoricalMessages: jest.fn(),
+      setMessages: jest.fn(),
       clearHistory: jest.fn(),
       getLastMessageByRole: jest.fn(),
       getLastMessages: jest.fn(),
@@ -134,7 +134,7 @@ describe('LLMCaller - Model Management', () => {
 
       mockHistoryManager.addMessage.mockClear();
       mockStreamingService.createStream.mockClear();
-      mockHistoryManager.getHistoricalMessages.mockReturnValue([{
+      mockHistoryManager.getMessages.mockReturnValue([{
         role: 'user',
         content: message
       }]);
@@ -314,8 +314,8 @@ describe('LLMCaller - Model Management', () => {
 
     it('should set historical messages', () => {
       const messages = [testMessage];
-      llmCaller.setHistoricalMessages(messages);
-      expect(mockHistoryManager.setHistoricalMessages).toHaveBeenCalledWith(messages);
+      llmCaller.setMessages(messages);
+      expect(mockHistoryManager.setMessages).toHaveBeenCalledWith(messages);
     });
 
     it('should get last message by role', () => {
@@ -356,7 +356,7 @@ describe('LLMCaller - Model Management', () => {
     it('should serialize and deserialize history', () => {
       const serializedHistory = '[{"role":"user","content":"test"}]';
       mockHistoryManager.serializeHistory.mockReturnValue(serializedHistory);
-      mockHistoryManager.getHistoricalMessages.mockReturnValue([{ role: 'system', content: 'new system message' }]);
+      mockHistoryManager.getMessages.mockReturnValue([{ role: 'system', content: 'new system message' }]);
 
       const result = llmCaller.serializeHistory();
       expect(result).toBe(serializedHistory);
