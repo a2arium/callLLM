@@ -154,11 +154,12 @@ export class Converter {
                 description: toolDef.description || undefined,
                 strict: true
             };
+            const toolParams = (openAITool.parameters || {}) as Record<string, unknown>;
             log.debug(`Formatted tool ${toolDef.name} for OpenAI native:`, {
                 name: openAITool.name,
-                parametersType: openAITool.parameters.type as string,
-                propertiesCount: Object.keys((openAITool.parameters.properties as Record<string, unknown>) || {}).length,
-                requiredParams: (openAITool.parameters.required as string[]) || 'none'
+                parametersType: toolParams.type as string,
+                propertiesCount: toolParams.properties ? Object.keys(toolParams.properties as Record<string, unknown>).length : 0,
+                requiredParams: (toolParams.required as string[]) || 'none'
             });
             return openAITool;
         });
@@ -450,8 +451,7 @@ export class Converter {
             if (params.jsonSchema && params.jsonSchema.schema) {
                 // Handle schema-based JSON formatting with json_schema type
                 const formatConfig: any = {
-                    type: 'json_schema',
-                    strict: true
+                    type: 'json_schema'
                 };
 
                 if (params.jsonSchema.name) {
@@ -481,9 +481,20 @@ export class Converter {
                     formatConfig.schema = this.prepareResponseSchemaForOpenAI(schemaWithAdditionalProps as Record<string, unknown>);
                 }
 
-                openAIParams.text = {
-                    format: formatConfig
-                } as ResponseTextConfig;
+                // Decide if schema is safe to attach for OpenAI
+                const root = (formatConfig as any).schema as Record<string, unknown> | undefined;
+                const hasUnionAtRoot = root && (Array.isArray((root as any).oneOf) || Array.isArray((root as any).anyOf) || Array.isArray((root as any).allOf));
+                const isObjectRoot = root && (root as any).type === 'object';
+                if (!root || !isObjectRoot || hasUnionAtRoot) {
+                    // Fallback to json_object when schema isn't compatible
+                    openAIParams.text = {
+                        format: { type: 'json_object' }
+                    } as ResponseTextConfig;
+                } else {
+                    openAIParams.text = {
+                        format: formatConfig
+                    } as ResponseTextConfig;
+                }
             } else {
                 // Simple JSON format without schema
                 openAIParams.text = {
@@ -513,6 +524,19 @@ export class Converter {
         // Add image detail for usage calculation if provided
         if (adapterOpts?.imageDetail) {
             openAIParams.metadata.image_detail = adapterOpts.imageDetail;
+        }
+
+        // If using json_object, add minimal instruction to include the word "json" as required by API
+        const isJsonObjectFormat = (openAIParams.text as any)?.format?.type === 'json_object';
+        if (isJsonObjectFormat) {
+            const jsonHint = 'Respond strictly in JSON.';
+            const hasJsonInMessages = Array.isArray(openAIParams.input) && openAIParams.input.some((msg: any) => {
+                const content = (msg && typeof msg.content === 'string') ? msg.content : '';
+                return /json/i.test(content);
+            });
+            if (!hasJsonInMessages && Array.isArray(openAIParams.input)) {
+                openAIParams.input.unshift({ role: 'developer', content: jsonHint } as any);
+            }
         }
 
         log.debug('Converted to native params (partial):', openAIParams);
@@ -889,6 +913,33 @@ export class Converter {
         // Clone the schema to avoid modifying the original
         const preparedSchema: Record<string, unknown> = JSON.parse(JSON.stringify(jsonSchema));
 
+        // If root contains unsupported constructs for OpenAI, wrap under data
+        const reasons: string[] = [];
+        const hasOneOf = Array.isArray((preparedSchema as any).oneOf);
+        const hasAnyOf = Array.isArray((preparedSchema as any).anyOf);
+        const hasAllOf = Array.isArray((preparedSchema as any).allOf);
+        const hasNot = typeof (preparedSchema as any).not === 'object';
+        const isObjectRoot = (preparedSchema as any).type === 'object';
+        if (hasOneOf) reasons.push('oneOf at root');
+        if (hasAnyOf) reasons.push('anyOf at root');
+        if (hasAllOf) reasons.push('allOf at root');
+        if (hasNot) reasons.push('not at root');
+        if (!isObjectRoot) reasons.push('root type is not object');
+
+        if (reasons.length > 0) {
+            const original = JSON.parse(JSON.stringify(preparedSchema));
+            // Remove unsupported root-level combinators before wrapping
+            delete (preparedSchema as any).oneOf;
+            delete (preparedSchema as any).anyOf;
+            delete (preparedSchema as any).allOf;
+            delete (preparedSchema as any).not;
+            (preparedSchema as any).type = 'object';
+            (preparedSchema as any).properties = { data: original };
+            (preparedSchema as any).required = ['data'];
+            (preparedSchema as any).additionalProperties = false;
+            log.info('Wrapped root schema under properties.data due to OpenAI root limitations', { reasons });
+        }
+
         // Process the schema recursively
         this.processSchemaForOpenAI(preparedSchema);
 
@@ -910,6 +961,36 @@ export class Converter {
             return;
         }
 
+        // Ensure each node has a type when possible (OpenAI requires 'type')
+        const ensureType = (node: Record<string, unknown>): void => {
+            if (!node || typeof node !== 'object') return;
+            if (!Object.prototype.hasOwnProperty.call(node, 'type')) {
+                const hasProps = typeof (node as any).properties === 'object';
+                const hasItems = Boolean((node as any).items);
+                const hasEnum = Array.isArray((node as any).enum);
+                if (hasProps) (node as any).type = 'object';
+                else if (hasItems) (node as any).type = 'array';
+                else if (hasEnum) (node as any).type = 'string';
+                else (node as any).type = 'string';
+            }
+        };
+
+        // Normalize composition branches and enforce type
+        for (const key of ['oneOf', 'anyOf', 'allOf'] as const) {
+            const list = (schema as any)[key];
+            if (Array.isArray(list)) {
+                for (const option of list) {
+                    if (option && typeof option === 'object') {
+                        ensureType(option as Record<string, unknown>);
+                        if ((option as any).type === 'object' && (option as any).properties) {
+                            (option as any).additionalProperties = false;
+                        }
+                        this.processSchemaForOpenAI(option as Record<string, unknown>);
+                    }
+                }
+            }
+        }
+
         // Only process object schemas
         if (schema.type === 'object' && schema.properties) {
             const properties = schema.properties as Record<string, unknown>;
@@ -923,13 +1004,12 @@ export class Converter {
             for (const [key, property] of Object.entries(properties)) {
                 if (typeof property === 'object' && property !== null) {
                     const prop = property as Record<string, unknown>;
+                    ensureType(prop);
 
-                    // If this field was originally optional, modify its description
+                    // If this field was originally optional, add suffix to description to hint optionality to the model
                     if (originallyOptionalFields.includes(key)) {
                         const currentDescription = (prop.description as string) || '';
                         const optionalSuffix = ' (optional field, leave empty if not applicable)';
-
-                        // Only add the suffix if it's not already there
                         if (!currentDescription.includes(optionalSuffix)) {
                             prop.description = currentDescription + optionalSuffix;
                         }
@@ -940,11 +1020,14 @@ export class Converter {
                 }
             }
 
-            // Make all properties required (OpenAI workaround)
+            // OpenAI quirk: require that 'required' lists every key in properties
             if (allPropertyKeys.length > 0) {
                 schema.required = allPropertyKeys;
             }
         }
+
+        // Ensure current node has type as a last step
+        ensureType(schema);
 
         // Process array items if present
         if (schema.type === 'array' && schema.items) {
