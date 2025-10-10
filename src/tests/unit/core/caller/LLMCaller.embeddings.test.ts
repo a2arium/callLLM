@@ -84,7 +84,31 @@ describe('LLMCaller embeddings API', () => {
     });
 
     it('embeddings() throws when model lacks embedding capability', async () => {
-        (ModelManager.getCapabilities as any).mockReturnValueOnce({ input: { text: true }, output: { text: true } });
+        // Mock a non-embedding model
+        const nonEmbeddingModel: ModelInfo = {
+            name: 'gpt-4.1',
+            inputPricePerMillion: 0.01,
+            outputPricePerMillion: 0.02,
+            maxRequestTokens: 4000,
+            maxResponseTokens: 1000,
+            capabilities: {
+                streaming: true,
+                toolCalls: true,
+                input: { text: true },
+                output: { text: true }
+            },
+            characteristics: { qualityIndex: 90, outputSpeed: 50, firstTokenLatency: 300 }
+        };
+
+        // Mock getModel to return non-embedding model
+        modelManager.getModel.mockReturnValue(nonEmbeddingModel);
+
+        // Mock getCapabilities for this model
+        (ModelManager.getCapabilities as any).mockReturnValueOnce({
+            input: { text: true },
+            output: { text: true }
+        });
+
         const llm = new LLMCaller('openai' as RegisteredProviders, 'gpt-4.1', 'sys', {
             providerManager,
             modelManager,

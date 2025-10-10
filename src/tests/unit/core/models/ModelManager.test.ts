@@ -25,6 +25,21 @@ jest.unstable_mockModule('@/adapters/openai/models.ts', () => ({
         qualityIndex: 80,
         outputSpeed: 200,
         firstTokenLatency: 500
+      },
+      capabilities: {
+        streaming: true,
+        toolCalls: false,
+        parallelToolCalls: false,
+        batchProcessing: false,
+        reasoning: false,
+        input: {
+          text: true
+        },
+        output: {
+          text: {
+            textOutputFormats: ['text']
+          }
+        }
       }
     },
     {
@@ -75,6 +90,21 @@ describe('ModelManager', () => {
       qualityIndex: 80,
       outputSpeed: 150,
       firstTokenLatency: 2000
+    },
+    capabilities: {
+      streaming: true,
+      toolCalls: false,
+      parallelToolCalls: false,
+      batchProcessing: false,
+      reasoning: false,
+      input: {
+        text: true
+      },
+      output: {
+        text: {
+          textOutputFormats: ['text']
+        }
+      }
     }
   };
 
@@ -225,7 +255,8 @@ describe('ModelManager', () => {
       expect(model).toEqual(validModel);
       expect(mockSelectModel).toHaveBeenCalledWith(
         expect.arrayContaining([validModel]),
-        'fast'
+        'fast',
+        undefined // no specific capability requirements provided
       );
     });
 
@@ -261,7 +292,8 @@ describe('ModelManager', () => {
       expect(modelName).toBe('test-model');
       expect(mockSelectModel).toHaveBeenCalledWith(
         expect.arrayContaining([validModel]),
-        'fast'
+        'fast',
+        undefined // no specific capability requirements provided
       );
     });
   });

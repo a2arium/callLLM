@@ -308,13 +308,16 @@ describe('LLMCaller', () => {
   });
 
   describe('constructor', () => {
-    it('should throw error when model is not found', () => {
+    it('should throw error when model is not found during call', async () => {
       mockModelManager.getModel.mockReturnValue(undefined);
 
-      expect(() => new LLMCaller('openai' as RegisteredProviders, 'non-existent-model', 'You are a helpful assistant.', {
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'non-existent-model', 'You are a helpful assistant.', {
         providerManager: mockProviderManager,
         modelManager: mockModelManager
-      })).toThrow('Model non-existent-model not found for provider openai');
+      });
+
+      // Error should be thrown when making a call, not during construction
+      await expect(caller.call('test message')).rejects.toThrow('Model non-existent-model not found');
     });
 
     it('should initialize with default system message', () => {
@@ -1017,6 +1020,189 @@ describe('LLMCaller', () => {
 
       // Verify the user message contains the processed content with data
       expect(lastUserMessage.content).toBe(processedContent);
+    });
+  });
+
+  describe('lazy model resolution with capability requirements', () => {
+    beforeEach(() => {
+      // Reset all model manager mocks
+      mockModelManager.getModel.mockReset();
+    });
+
+    it('should resolve model with basic text requirements for regular calls', async () => {
+      const testModel = {
+        name: 'text-model',
+        inputPricePerMillion: 1,
+        outputPricePerMillion: 2,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 80, outputSpeed: 100, firstTokenLatency: 500 }
+      };
+
+      mockModelManager.getModel.mockReturnValue(testModel);
+
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'cheap', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: mockModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      // Mock chat controller to capture model name
+      let capturedModel: string | undefined;
+      mockChatController.execute.mockImplementation((params) => {
+        capturedModel = params.model;
+        return Promise.resolve({
+          content: 'Response',
+          role: 'assistant',
+          metadata: {}
+        });
+      });
+
+      // Make a basic call
+      await caller.call('Hello world');
+
+      // Verify that the model was resolved and used
+      expect(capturedModel).toBe('text-model');
+      expect(mockModelManager.getModel).toHaveBeenCalledWith('cheap', undefined);
+    });
+
+    it('should cache resolved model for subsequent calls', async () => {
+      const testModel = {
+        name: 'cached-model',
+        inputPricePerMillion: 1,
+        outputPricePerMillion: 2,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 80, outputSpeed: 100, firstTokenLatency: 500 }
+      };
+
+      mockModelManager.getModel.mockReturnValue(testModel);
+
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'fast', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: mockModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      // Make multiple calls
+      await caller.call('First message');
+      await caller.call('Second message');
+
+      // ModelManager.getModel should be called multiple times since caching happens at LLMCaller level
+      // but each call might trigger resolution with different requirements
+      expect(mockModelManager.getModel).toHaveBeenCalled();
+    });
+
+    it('should resolve to tool-capable model when tools are present', async () => {
+      const toolCapableModel = {
+        name: 'tool-capable-model',
+        inputPricePerMillion: 5,
+        outputPricePerMillion: 15,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          toolCalls: true,
+          parallelToolCalls: true,
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 85, outputSpeed: 80, firstTokenLatency: 800 }
+      };
+
+      mockModelManager.getModel.mockReturnValue(toolCapableModel);
+
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'balanced', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: mockModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      // Add a tool to trigger tool calling requirements
+      caller.addTool({
+        name: 'test_tool',
+        description: 'A test tool',
+        parameters: { type: 'object', properties: {} }
+      });
+
+      let capturedModel: string | undefined;
+      mockChatController.execute.mockImplementation((params) => {
+        capturedModel = params.model;
+        return Promise.resolve({
+          content: 'Response',
+          role: 'assistant',
+          metadata: {}
+        });
+      });
+
+      // Make a call with tools
+      await caller.call('Use the test tool');
+
+      // Verify tool-capable model was selected
+      expect(capturedModel).toBe('tool-capable-model');
+    });
+
+    it('should throw Error when no suitable model is found', async () => {
+      // Make model manager return undefined (no suitable model)
+      mockModelManager.getModel.mockReturnValue(undefined);
+
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'cheap', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: mockModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      // Attempt to make a call - should throw Error
+      await expect(caller.call('Test message')).rejects.toThrow('Model cheap not found');
+    });
+
+    it('should store model alias without resolving initially', async () => {
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'cheap', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: mockModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      // Model should not be resolved during construction
+      expect(mockModelManager.getModel).not.toHaveBeenCalled();
+      expect((caller as any).model).toBe('cheap');
     });
   });
 });

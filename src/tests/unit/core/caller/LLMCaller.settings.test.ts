@@ -483,7 +483,7 @@ describe('LLMCaller Settings & Configuration', () => {
       // Verify
       expect((llmCaller as any).model).toBe(newModelName);
       expect(mockProviderManager.switchProvider).not.toHaveBeenCalled();
-      expect(mockModelManager.getModel).toHaveBeenCalledWith(newModelName);
+      expect(mockModelManager.getModel).toHaveBeenCalledWith(newModelName, undefined);
     });
 
     it('should update model and provider with provider change', async () => {
@@ -532,7 +532,7 @@ describe('LLMCaller Settings & Configuration', () => {
       // Execute & Verify
       expect(() => {
         llmCaller.setModel({ nameOrAlias: nonExistentModel });
-      }).toThrow(`Model ${nonExistentModel} not found in provider openai`);
+      }).toThrow(`Model ${nonExistentModel} not found`);
     });
   });
 
@@ -642,7 +642,7 @@ describe('LLMCaller Settings & Configuration', () => {
       const result = llmCaller.getModel(modelName);
 
       // Verify
-      expect(mockModelManager.getModel).toHaveBeenCalledWith(modelName);
+      expect(mockModelManager.getModel).toHaveBeenCalledWith(modelName, undefined);
       expect(result).toEqual(mockModel);
     });
 
