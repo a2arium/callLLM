@@ -54,7 +54,9 @@
     "example:image": "tsx examples/imageInput.ts",
     "example:imageGenerate": "tsx examples/imageGenerationAndEditing.ts",
     "example:embeddings": "tsx examples/embeddings-example.ts",
-      "lint": "eslint . --ext .ts"
+    "adapters:e2e": "tsx adapters-e2e/run.ts",
+    "adapters:e2e:fast": "tsx adapters-e2e/run.ts --providers=openai --scenarios=simple-chat,streaming-chat",
+    "lint": "eslint . --ext .ts"
   },
   "engines": {
     "node": ">=18"
