@@ -42,6 +42,7 @@ import { ToolOrchestrator } from '../tools/ToolOrchestrator.ts';
 import { ChunkController, type ChunkProcessingParams } from '../chunks/ChunkController.ts';
 import { StreamingService } from '../streaming/StreamingService.ts';
 import type { ToolDefinition, ToolCall } from '../../types/tooling.ts';
+import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
 import { StreamController } from '../streaming/StreamController.ts';
 import { HistoryManager } from '../history/HistoryManager.ts';
 import { logger } from '../../utils/logger.ts';
@@ -53,6 +54,7 @@ import type { McpToolSchema, MCPServersMap } from '../mcp/MCPConfigTypes.ts';
 import { isMCPToolConfig } from '../mcp/MCPConfigTypes.ts';
 import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
 import { MCPToolLoader } from '../mcp/MCPToolLoader.ts';
+import type { CapabilityRequirement } from '../models/ModelSelector.ts';
 import {
     normalizeImageSource,
     filePathToBase64,
@@ -150,6 +152,9 @@ export class LLMCaller implements MCPDirectAccess {
     private embeddingController?: EmbeddingController;
     private telemetryCollector?: TelemetryCollector;
 
+    // Cached resolved model name
+    private resolvedModel?: string;
+
     constructor(
         providerName: RegisteredProviders,
         modelOrAlias: string,
@@ -229,9 +234,9 @@ export class LLMCaller implements MCPDirectAccess {
             void this.addTools(options.tools);
         }
 
-        const resolvedModel = this.modelManager.getModel(modelOrAlias);
-        if (!resolvedModel) throw new Error(`Model ${modelOrAlias} not found for provider ${providerName}`);
-        this.model = resolvedModel.name;
+        // Store the model/alias without resolving it immediately
+        // Model resolution will happen during calls with appropriate capability requirements
+        this.model = modelOrAlias;
 
         // **Initialize StreamingService early, passing adapter provider**
         this.streamingService = options?.streamingService ||
@@ -371,10 +376,29 @@ export class LLMCaller implements MCPDirectAccess {
         }
 
         // Require an explicit embedding model (no aliases for embeddings)
-        const modelName = options.model || this.model;
+        let modelName = options.model || this.model;
         const capabilities = ModelManager.getCapabilities(modelName);
         if (!capabilities.embeddings) {
-            throw new CapabilityError(`Model "${modelName}" does not support embeddings`);
+            // If the current model doesn't support embeddings, try to find a suitable embedding model
+            const requirements = this.buildCapabilityRequirements({
+                needsEmbeddings: true
+            });
+
+            try {
+                const embeddingModel = this.getModel(modelName, requirements);
+                if (embeddingModel && embeddingModel.name !== modelName) {
+                    this.log.info(`Resolved to embedding model ${embeddingModel.name} for embeddings request`);
+                    modelName = embeddingModel.name;
+                }
+            } catch (error) {
+                this.log.warn(`Could not find a suitable embedding model: ${error}`);
+            }
+
+            // Check again with the resolved model
+            const resolvedCapabilities = ModelManager.getCapabilities(modelName);
+            if (!resolvedCapabilities.embeddings) {
+                throw new CapabilityError(`Model "${modelName}" does not support embeddings`);
+            }
         }
 
         return this.embeddingController.generateEmbeddings({
@@ -433,8 +457,8 @@ export class LLMCaller implements MCPDirectAccess {
         this.modelManager.addModel(model);
     }
 
-    public getModel(nameOrAlias: string) {
-        return this.modelManager.getModel(nameOrAlias);
+    public getModel(nameOrAlias: string, capabilityRequirements?: CapabilityRequirement) {
+        return this.modelManager.getModel(nameOrAlias, capabilityRequirements);
     }
 
     public updateModel(modelName: string, updates: Parameters<ModelManager['updateModel']>[1]) {
@@ -445,21 +469,22 @@ export class LLMCaller implements MCPDirectAccess {
         provider?: RegisteredProviders;
         nameOrAlias: string;
         apiKey?: string;
+        capabilityRequirements?: CapabilityRequirement;
     }): void {
-        const { provider, nameOrAlias, apiKey } = options;
+        const { provider, nameOrAlias, apiKey, capabilityRequirements } = options;
 
         if (provider) {
             this.providerManager.switchProvider(provider as RegisteredProviders, apiKey);
             this.modelManager = new ModelManager(provider as RegisteredProviders);
         }
 
-        // Resolve and set new model
-        const resolvedModel = this.modelManager.getModel(nameOrAlias);
-        if (!resolvedModel) {
-            throw new Error(`Model ${nameOrAlias} not found in provider ${provider || this.providerManager.getCurrentProviderName()}`);
-        }
+        // Resolve and set new model with capability requirements
+        const resolvedModel = this.resolveModelWithCapabilities(nameOrAlias, capabilityRequirements);
         const modelChanged = this.model !== resolvedModel.name;
         this.model = resolvedModel.name;
+
+        // Clear cached resolved model
+        this.resolvedModel = undefined;
 
         // If provider changed, we need to re-initialize dependent components
         if (provider) {
@@ -467,6 +492,134 @@ export class LLMCaller implements MCPDirectAccess {
         }
         // If only the model changed, typically controllers don't need full re-init,
         // as the model name is passed per-request.
+    }
+
+    /**
+     * Builds capability requirements based on request parameters
+     */
+    private buildCapabilityRequirements(options?: {
+        needsTextOutput?: boolean;
+        needsJsonOutput?: boolean;
+        needsImageInput?: boolean;
+        needsImageOutput?: boolean;
+        needsImageGeneration?: boolean;
+        needsImageEdit?: boolean;
+        needsImageEditWithMask?: boolean;
+        needsToolCalls?: boolean;
+        needsParallelToolCalls?: boolean;
+        needsStreaming?: boolean;
+        needsEmbeddings?: boolean;
+        needsReasoning?: boolean;
+    }): CapabilityRequirement | undefined {
+        if (!options) return undefined;
+
+        const requirements: CapabilityRequirement = {};
+
+        // Text output requirements
+        if (options.needsTextOutput !== false) {
+            requirements.textOutput = {
+                required: true,
+                formats: options.needsJsonOutput ? ['json'] : ['text']
+            };
+        }
+
+        // Image input requirements
+        if (options.needsImageInput) {
+            requirements.imageInput = {
+                required: true
+            };
+        }
+
+        // Image output requirements
+        if (options.needsImageOutput || options.needsImageGeneration || options.needsImageEdit || options.needsImageEditWithMask) {
+            const operations: ('generate' | 'edit' | 'editWithMask')[] = [];
+            if (options.needsImageGeneration) operations.push('generate');
+            if (options.needsImageEdit) operations.push('edit');
+            if (options.needsImageEditWithMask) operations.push('editWithMask');
+
+            requirements.imageOutput = {
+                required: true,
+                operations: operations.length > 0 ? operations : undefined
+            };
+        }
+
+        // Tool calling requirements
+        if (options.needsToolCalls) {
+            requirements.toolCalls = {
+                required: true,
+                parallel: options.needsParallelToolCalls
+            };
+        }
+
+        // Streaming requirements
+        if (options.needsStreaming !== false) {
+            requirements.streaming = {
+                required: true
+            };
+        }
+
+        // Embedding requirements
+        if (options.needsEmbeddings) {
+            requirements.embeddings = {
+                required: true
+            };
+        }
+
+        // Reasoning requirements
+        if (options.needsReasoning) {
+            requirements.reasoning = {
+                required: true
+            };
+        }
+
+        // Return undefined if no requirements
+        return Object.keys(requirements).length > 0 ? requirements : undefined;
+    }
+
+    /**
+     * Resolves a model name/alias with capability requirements
+     */
+    private getResolvedModel(requirements?: CapabilityRequirement): string {
+        // If we have a cached resolved model and no specific requirements, return it
+        if (this.resolvedModel && !requirements) {
+            return this.resolvedModel;
+        }
+
+        // Resolve the model with capability requirements
+        const modelInfo = this.resolveModelWithCapabilities(this.model, requirements);
+        const modelName = modelInfo.name;
+
+        // Cache the resolved model if no specific requirements
+        if (!requirements) {
+            this.resolvedModel = modelName;
+        }
+
+        return modelName;
+    }
+
+    private resolveModelWithCapabilities(
+        nameOrAlias: string,
+        requirements?: CapabilityRequirement
+    ): ModelInfo {
+        // First try to resolve with capability requirements
+        const model = this.modelManager.getModel(nameOrAlias, requirements);
+        if (model) {
+            return model;
+        }
+
+        // If that fails and we had requirements, try without requirements for backwards compatibility
+        if (requirements) {
+            const fallbackModel = this.modelManager.getModel(nameOrAlias);
+            if (fallbackModel) {
+                this.log.warn('Model resolved without capability requirements - may not support all requested features', {
+                    model: fallbackModel.name,
+                    requestedRequirements: requirements
+                });
+                return fallbackModel;
+            }
+        }
+
+        throw new Error(`Model ${nameOrAlias} not found`);
     }
 
     // Helper to re-initialize controllers after major changes (e.g., provider switch)
@@ -624,7 +777,7 @@ export class LLMCaller implements MCPDirectAccess {
 
         // Ensure essential parameters are present
         params.callerId = params.callerId || this.callerId;
-        params.model = params.model || this.model;
+        params.model = params.model || this.getResolvedModel();
 
         const { systemMessage, ...paramsForController } = params;
         const chatResponse = await this.chatController.execute(paramsForController as any);
@@ -649,7 +802,7 @@ export class LLMCaller implements MCPDirectAccess {
 
         // Ensure essential parameters are present
         params.callerId = params.callerId || this.callerId;
-        params.model = params.model || this.model;
+        params.model = params.model || this.getResolvedModel();
 
         // Calculate tokens for usage tracking
         const inputTokens = await this.tokenCalculator.calculateTotalTokens(params.messages ?? []);
@@ -956,9 +1109,10 @@ export class LLMCaller implements MCPDirectAccess {
         const actualMessage = opts.userText || opts.text || '';
 
         // Get model info for capability checks
-        const modelInfo = this.modelManager.getModel(this.model);
+        const resolvedModelName = this.getResolvedModel();
+        const modelInfo = this.modelManager.getModel(resolvedModelName);
         if (!modelInfo) {
-            throw new Error(`Model ${this.model} not found`);
+            throw new Error(`Model ${resolvedModelName} not found`);
         }
 
         // --- Tool Resolution and MCP Schema Fetching ---
@@ -1092,6 +1246,18 @@ export class LLMCaller implements MCPDirectAccess {
             messages = [...previousMessages, processedUserMessage];
         }
 
+        // Build final chat parameters - everything in one place
+        const chatParams: UniversalChatParams = {
+            model: this.getResolvedModel(),
+            messages: messages,
+            settings: mergedSettings,
+            jsonSchema: opts.jsonSchema,
+            responseFormat: opts.responseFormat,
+            tools: effectiveTools,
+            callerId: this.callerId, // Important: Always include callerId
+            historyMode: effectiveHistoryMode
+        };
+
         // Check if JSON is requested and whether to use native mode
         const jsonRequested = opts.responseFormat === 'json' || opts.jsonSchema !== undefined;
         const modelSupportsJsonMode = typeof modelInfo.capabilities?.output?.text === 'object' &&
@@ -1099,17 +1265,28 @@ export class LLMCaller implements MCPDirectAccess {
         const useNativeJsonMode = modelSupportsJsonMode && jsonRequested &&
             !(opts.settings?.jsonMode === 'force-prompt');
 
-        // Build final chat parameters - everything in one place
-        const chatParams: UniversalChatParams = {
-            model: this.model,
-            messages: messages,
-            settings: mergedSettings,
-            jsonSchema: opts.jsonSchema,
-            responseFormat: useNativeJsonMode ? 'json' : (opts.jsonSchema ? 'text' : opts.responseFormat),
-            tools: effectiveTools,
-            callerId: this.callerId, // Important: Always include callerId
-            historyMode: effectiveHistoryMode
-        };
+        // If JSON is requested but the current model doesn't support it, try to find a better model
+        if (jsonRequested && !modelSupportsJsonMode) {
+            const requirements = this.buildCapabilityRequirements({
+                needsTextOutput: true,
+                needsJsonOutput: true
+            });
+
+            try {
+                const currentModel = this.getResolvedModel();
+                const betterModel = this.getModel(currentModel, requirements);
+                if (betterModel && betterModel.name !== currentModel) {
+                    this.log.info(`Resolved to model ${betterModel.name} for JSON output request`);
+                    // Update the model in chatParams
+                    chatParams.model = betterModel.name;
+                }
+            } catch (error) {
+                this.log.warn(`Could not find a suitable model for JSON output: ${error}`);
+            }
+        }
+
+        // Update response format based on model capabilities
+        chatParams.responseFormat = useNativeJsonMode ? 'json' : (opts.jsonSchema ? 'text' : opts.responseFormat);
 
         return { chatParams, processedMessages: opts.processedMessages };
     }
@@ -1138,7 +1315,7 @@ export class LLMCaller implements MCPDirectAccess {
                 messageParts = actualOptions.text ? toMessageParts(actualOptions.text) : [];
             }
 
-            const modelToUse = actualOptions.settings?.providerOptions?.model as string || this.model;
+            let modelToUse = actualOptions.settings?.providerOptions?.model as string || this.getResolvedModel();
             if (typeof ModelManager.getCapabilities === 'function') {
                 const capabilities = ModelManager.getCapabilities(modelToUse);
                 const hasImageInput = actualOptions.file || (actualOptions.files && actualOptions.files.length > 0);
@@ -1304,7 +1481,7 @@ export class LLMCaller implements MCPDirectAccess {
                 ? { text: message, ...options }
                 : { ...message };
 
-            const modelToUse = opts.settings?.providerOptions?.model as string || this.model;
+            let modelToUse = opts.settings?.providerOptions?.model as string || this.getResolvedModel();
             if (typeof ModelManager.getCapabilities === 'function') {
                 const capabilities = ModelManager.getCapabilities(modelToUse);
                 const hasImageInput = opts.file || (opts.files && opts.files.length > 0);
@@ -1343,6 +1520,34 @@ export class LLMCaller implements MCPDirectAccess {
                             if (!capabilities.output.image.edit) {
                                 throw new CapabilityError(`Model "${modelToUse}" does not support editing multiple images.`);
                             }
+                        }
+                    }
+
+                    // If modelToUse was an alias and doesn't support image operations, try to resolve a better model
+                    if (!capabilities.output.image || (
+                        typeof capabilities.output.image === 'object' && (
+                            (imageOperation === 'generate' && !capabilities.output.image.generate) ||
+                            (imageOperation === 'edit' && !capabilities.output.image.edit) ||
+                            (imageOperation === 'edit-masked' && !capabilities.output.image.editWithMask)
+                        )
+                    )) {
+                        log.debug(`Model ${modelToUse} doesn't support required image operation ${imageOperation}, attempting to find a suitable model`);
+
+                        // Build capability requirements for image operations
+                        const requirements = this.buildCapabilityRequirements({
+                            needsImageGeneration: imageOperation === 'generate',
+                            needsImageEdit: imageOperation === 'edit' || imageOperation === 'composite',
+                            needsImageEditWithMask: imageOperation === 'edit-masked'
+                        });
+
+                        try {
+                            const betterModel = this.getModel(modelToUse, requirements);
+                            if (betterModel && betterModel.name !== modelToUse) {
+                                log.info(`Resolved to model ${betterModel.name} for image operation ${imageOperation}`);
+                                modelToUse = betterModel.name;
+                            }
+                        } catch (error) {
+                            log.warn(`Could not find a suitable model for image operation ${imageOperation}: ${error}`);
                         }
                     }
 

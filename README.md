@@ -341,6 +341,77 @@ Currently supported LLM providers:
 - OpenAI (ChatGPT)
 - More coming soon (Anthropic, Google, etc.)
 
+## Capability-Aware Alias Resolution
+
+The library now supports capability-aware alias resolution, which means that when you use model aliases (`cheap`, `balanced`, `fast`, `premium`), the system will automatically select the best model that supports the specific capabilities you need.
+
+### How It Works
+
+When you request specific features like image generation, JSON output, or embeddings, the library will:
+
+1. **Filter models** based on the required capabilities
+2. **Apply the alias selection logic** (cheapest, fastest, etc.) on the filtered models
+3. **Return the optimal model** that meets your requirements
+
+### Examples
+
+```typescript
+import { LLMCaller } from 'callllm';
+import type { CapabilityRequirement } from 'callllm';
+
+const caller = new LLMCaller('openai', 'cheap', 'You are a helpful assistant.');
+
+// Basic text output - selects cheapest text-capable model
+const textModel = caller.getModel('cheap');
+
+// JSON output - automatically finds a cheap model that supports JSON
+const jsonRequirements: CapabilityRequirement = {
+    textOutput: {
+        required: true,
+        formats: ['json']
+    }
+};
+const jsonModel = caller.getModel('cheap', jsonRequirements);
+
+// Image generation - finds a cheap model that can generate images
+const imageGenRequirements: CapabilityRequirement = {
+    imageOutput: {
+        required: true,
+        operations: ['generate']
+    }
+};
+const imageModel = caller.getModel('cheap', imageGenRequirements);
+
+// Embeddings - finds a cheap embedding model
+const embeddingRequirements: CapabilityRequirement = {
+    embeddings: { required: true }
+};
+const embeddingModel = caller.getModel('cheap', embeddingRequirements);
+
+// Tool calls - finds a cheap model that supports function calling
+const toolCallRequirements: CapabilityRequirement = {
+    toolCalls: { required: true }
+};
+const toolCallModel = caller.getModel('cheap', toolCallRequirements);
+```
+
+### Supported Capability Requirements
+
+- **Text Output**: `textOutput: { required: boolean, formats?: ('text' | 'json')[] }`
+- **Image Input**: `imageInput: { required: boolean }`
+- **Image Output**: `imageOutput: { required: boolean, operations?: ('generate' | 'edit' | 'editWithMask')[] }`
+- **Tool Calls**: `toolCalls: { required: boolean, parallel?: boolean }`
+- **Streaming**: `streaming: { required: boolean }`
+- **Embeddings**: `embeddings: { required: boolean, dimensions?: number[], encodingFormat?: 'float' | 'base64' }`
+- **Reasoning**: `reasoning: { required: boolean }`
+
+The capability-aware resolution is automatically used in:
+
+- `embeddings()` method calls
+- `call()` and `stream()` methods when image output is requested
+- `call()` and `stream()` methods when JSON output is requested
+- Manual model resolution via `getModel(nameOrAlias, requirements)`
+
 ### Adding New Providers
 
 The library uses an extensible adapter pattern that makes it easy to add support for new LLM providers. To add a new provider:

@@ -54,7 +54,7 @@
     "example:image": "tsx examples/imageInput.ts",
     "example:imageGenerate": "tsx examples/imageGenerationAndEditing.ts",
     "example:embeddings": "tsx examples/embeddings-example.ts",
-    "lint": "eslint . --ext .ts"
+      "lint": "eslint . --ext .ts"
   },
   "engines": {
     "node": ">=18"

@@ -1,19 +1,309 @@
-import type { ModelInfo, ModelAlias } from '../../interfaces/UniversalInterfaces.ts';
+import type { ModelInfo, ModelAlias, ModelCapabilities } from '../../interfaces/UniversalInterfaces.ts';
+
+/**
+ * Capability requirements for model selection
+ */
+export type CapabilityRequirement = {
+    /** Text output capability requirements */
+    textOutput?: {
+        /** Whether text output is required */
+        required: boolean;
+        /** Specific formats required (e.g., ['json']) */
+        formats?: ('text' | 'json')[];
+    };
+
+    /** Image input capability requirements */
+    imageInput?: {
+        /** Whether image input is required */
+        required: boolean;
+        /** Specific formats required (e.g., ['png', 'jpeg']) */
+        formats?: string[];
+    };
+
+    /** Image output capability requirements */
+    imageOutput?: {
+        /** Whether image output is required */
+        required: boolean;
+        /** Specific image operations required */
+        operations?: ('generate' | 'edit' | 'editWithMask')[];
+    };
+
+    /** Tool calling capability requirements */
+    toolCalls?: {
+        /** Whether tool calling is required */
+        required: boolean;
+        /** Whether parallel tool calls are required */
+        parallel?: boolean;
+    };
+
+    /** Streaming capability requirements */
+    streaming?: {
+        /** Whether streaming is required */
+        required: boolean;
+    };
+
+    /** Embedding capability requirements */
+    embeddings?: {
+        /** Whether embeddings are required */
+        required: boolean;
+        /** Specific dimensions required */
+        dimensions?: number[];
+        /** Specific encoding format required */
+        encodingFormat?: 'float' | 'base64';
+    };
+
+    /** Reasoning capability requirements */
+    reasoning?: {
+        /** Whether reasoning is required */
+        required: boolean;
+    };
+};
 
 export class ModelSelector {
-    public static selectModel(models: ModelInfo[], alias: ModelAlias): string {
+    public static selectModel(models: ModelInfo[], alias: ModelAlias, requirements?: CapabilityRequirement): string {
+        // Filter models based on capability requirements first
+        // If no specific requirements provided, ensure basic text output capability for general use
+        const filteredModels = requirements
+            ? this.filterModelsByCapabilities(models, requirements)
+            : this.filterModelsByCapabilities(models, {
+                textOutput: { required: true, formats: ['text'] }
+            });
+
+        if (filteredModels.length === 0) {
+            throw new Error(`No models available that meet the capability requirements for alias: ${alias}`);
+        }
+
         switch (alias) {
             case 'cheap':
-                return this.selectCheapestModel(models);
+                return this.selectCheapestModel(filteredModels);
             case 'balanced':
-                return this.selectBalancedModel(models);
+                return this.selectBalancedModel(filteredModels);
             case 'fast':
-                return this.selectFastestModel(models);
+                return this.selectFastestModel(filteredModels);
             case 'premium':
-                return this.selectPremiumModel(models);
+                return this.selectPremiumModel(filteredModels);
             default:
                 throw new Error(`Unknown model alias: ${alias}`);
         }
+    }
+
+    /**
+     * Filters models based on capability requirements
+     */
+    private static filterModelsByCapabilities(models: ModelInfo[], requirements: CapabilityRequirement): ModelInfo[] {
+        return models.filter(model => {
+            const capabilities = model.capabilities || this.getDefaultCapabilities();
+
+            // Check text output requirements
+            if (requirements.textOutput?.required) {
+                if (!this.supportsTextOutput(capabilities, requirements.textOutput.formats)) {
+                    return false;
+                }
+            }
+
+            // Check image input requirements
+            if (requirements.imageInput?.required) {
+                if (!this.supportsImageInput(capabilities, requirements.imageInput.formats)) {
+                    return false;
+                }
+            }
+
+            // Check image output requirements
+            if (requirements.imageOutput?.required) {
+                if (!this.supportsImageOutput(capabilities, requirements.imageOutput.operations)) {
+                    return false;
+                }
+            }
+
+            // Check tool calling requirements
+            if (requirements.toolCalls?.required) {
+                if (!capabilities.toolCalls) {
+                    return false;
+                }
+                if (requirements.toolCalls.parallel && !capabilities.parallelToolCalls) {
+                    return false;
+                }
+            }
+
+            // Check streaming requirements
+            if (requirements.streaming?.required) {
+                if (!capabilities.streaming) {
+                    return false;
+                }
+            }
+
+            // Check embedding requirements
+            if (requirements.embeddings?.required) {
+                if (!this.supportsEmbeddings(capabilities, requirements.embeddings)) {
+                    return false;
+                }
+            }
+
+            // Check reasoning requirements
+            if (requirements.reasoning?.required) {
+                if (!capabilities.reasoning) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * Checks if model supports text output with specified formats
+     */
+    private static supportsTextOutput(capabilities: ModelCapabilities, formats?: ('text' | 'json')[]): boolean {
+        const textCapability = capabilities.output.text;
+
+        // If text output is completely disabled
+        if (textCapability === false) {
+            return false;
+        }
+
+        // If text output is enabled (basic true or object with formats)
+        if (textCapability === true) {
+            // Basic text output supports 'text' format by default
+            return !formats || formats.every(f => f === 'text');
+        }
+
+        // If text output is an object with specific formats
+        if (typeof textCapability === 'object' && textCapability.textOutputFormats) {
+            return !formats || formats.every(f => textCapability.textOutputFormats.includes(f));
+        }
+
+        // Default to false for unexpected structures
+        return false;
+    }
+
+    /**
+     * Checks if model supports image input with specified formats
+     */
+    private static supportsImageInput(capabilities: ModelCapabilities, formats?: string[]): boolean {
+        const imageCapability = capabilities.input.image;
+
+        // If image input is not supported
+        if (!imageCapability) {
+            return false;
+        }
+
+        // If image input is enabled (basic true)
+        if (imageCapability === true) {
+            return true; // Supports all formats by default
+        }
+
+        // If image input is an object with specific formats
+        if (typeof imageCapability === 'object' && imageCapability.formats) {
+            return !formats || formats.every(f => imageCapability.formats!.includes(f));
+        }
+
+        // Default to true for basic support
+        return true;
+    }
+
+    /**
+     * Checks if model supports image output with specified operations
+     */
+    private static supportsImageOutput(capabilities: ModelCapabilities, operations?: ('generate' | 'edit' | 'editWithMask')[]): boolean {
+        const imageCapability = capabilities.output.image;
+
+        // If image output is not supported
+        if (!imageCapability) {
+            return false;
+        }
+
+        // If image output is a boolean, check its value
+        if (typeof imageCapability === 'boolean') {
+            return imageCapability; // true supports all operations, false supports none
+        }
+
+        // If image output is an object with specific operations
+        if (typeof imageCapability === 'object') {
+            if (!operations) {
+                return true; // No specific operations required
+            }
+
+            return operations.every(op => {
+                switch (op) {
+                    case 'generate':
+                        return imageCapability.generate === true;
+                    case 'edit':
+                        return imageCapability.edit === true;
+                    case 'editWithMask':
+                        return imageCapability.editWithMask === true;
+                    default:
+                        return false;
+                }
+            });
+        }
+
+        // Default to false for unexpected structures
+        return false;
+    }
+
+    /**
+     * Checks if model supports embeddings with specified requirements
+     */
+    private static supportsEmbeddings(capabilities: ModelCapabilities, requirements?: {
+        dimensions?: number[];
+        encodingFormat?: 'float' | 'base64';
+    }): boolean {
+        const embeddingCapability = capabilities.embeddings;
+
+        // If embeddings are not supported
+        if (!embeddingCapability) {
+            return false;
+        }
+
+        // If embeddings are enabled (basic true)
+        if (embeddingCapability === true) {
+            return true; // Supports all formats and dimensions by default
+        }
+
+        // If embeddings are an object with specific capabilities
+        if (typeof embeddingCapability === 'object') {
+            // Check dimensions requirement
+            if (requirements?.dimensions) {
+                if (!embeddingCapability.dimensions ||
+                    !requirements.dimensions.every(d => embeddingCapability.dimensions!.includes(d))) {
+                    return false;
+                }
+            }
+
+            // Check encoding format requirement
+            if (requirements?.encodingFormat) {
+                if (!embeddingCapability.encodingFormats ||
+                    !embeddingCapability.encodingFormats.includes(requirements.encodingFormat)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // Default to false for unexpected structures
+        return false;
+    }
+
+    /**
+     * Returns default capabilities for models that don't specify them
+     */
+    private static getDefaultCapabilities(): ModelCapabilities {
+        return {
+            streaming: true,
+            toolCalls: false,
+            parallelToolCalls: false,
+            batchProcessing: false,
+            reasoning: false,
+            input: {
+                text: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text']
+                }
+            }
+        };
     }
 
     private static selectCheapestModel(models: ModelInfo[]): string {

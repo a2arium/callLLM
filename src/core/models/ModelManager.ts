@@ -1,5 +1,5 @@
 import type { ModelInfo, ModelAlias, ModelCapabilities } from '../../interfaces/UniversalInterfaces.ts';
-import { ModelSelector } from './ModelSelector.ts';
+import { ModelSelector, type CapabilityRequirement } from './ModelSelector.ts';
 import { defaultModels as openAIResponseModels } from '../../adapters/openai/models.ts';
 import type { RegisteredProviders } from '../../adapters/index.ts';
 
@@ -58,11 +58,12 @@ export class ModelManager {
         this.models.set(model.name, model);
     }
 
-    public getModel(nameOrAlias: string): ModelInfo | undefined {
+    public getModel(nameOrAlias: string, capabilityRequirements?: CapabilityRequirement): ModelInfo | undefined {
         try {
             const modelName = ModelSelector.selectModel(
                 Array.from(this.models.values()),
-                nameOrAlias as ModelAlias
+                nameOrAlias as ModelAlias,
+                capabilityRequirements
             );
             return this.models.get(modelName);
         } catch {
@@ -103,11 +104,12 @@ export class ModelManager {
         if (model.maxResponseTokens < 0) throw new Error('Invalid model configuration');
     }
 
-    public resolveModel(nameOrAlias: string): string {
+    public resolveModel(nameOrAlias: string, capabilityRequirements?: CapabilityRequirement): string {
         try {
             return ModelSelector.selectModel(
                 Array.from(this.models.values()),
-                nameOrAlias as ModelAlias
+                nameOrAlias as ModelAlias,
+                capabilityRequirements
             );
         } catch {
             if (!this.models.has(nameOrAlias)) {
