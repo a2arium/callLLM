@@ -324,7 +324,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 }
             } else if (tool.type === 'web_search_preview') {
                 // No specific validation needed for web search at this time
-            } else if (tool.type === 'computer-preview') {
+            } else if (tool.type === 'computer_use_preview') {
                 // No specific validation needed for computer-preview at this time
             } else {
                 // Handle potentially unknown tool types

@@ -614,7 +614,7 @@ export class LLMCaller implements MCPDirectAccess {
     }
 
     // Basic chat completion method - internal helper
-    private async internalChatCall<T extends z.ZodType<any, z.ZodTypeDef, any>>(
+    private async internalChatCall<T extends z.ZodTypeAny>(
         params: UniversalChatParams
     ): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'LLMCaller.internalChatCall' });
@@ -1120,10 +1120,10 @@ export class LLMCaller implements MCPDirectAccess {
      * @param input A string message or options object containing prompt and/or file 
      * @param options Optional settings for the call
      */
-    public async *stream<T extends z.ZodType<any, z.ZodTypeDef, any> = z.ZodType<any, z.ZodTypeDef, any>>(
+    public async *stream<T extends z.ZodTypeAny = z.ZodTypeAny>(
         input: string | LLMCallOptions,
         options: LLMCallOptions = {}
-    ): AsyncGenerator<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>> {
+    ): AsyncGenerator<UniversalStreamResponse<T extends z.ZodTypeAny ? z.infer<T> : unknown>> {
         const log = logger.createLogger({ prefix: 'LLMCaller.stream' });
 
         try {
@@ -1222,7 +1222,7 @@ export class LLMCaller implements MCPDirectAccess {
 
             if (finalProcessedMessages.length <= 1) {
                 const stream = await this.internalStreamCall(chatParams);
-                for await (const chunk of stream as AsyncIterable<UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown>>) {
+                for await (const chunk of stream as AsyncIterable<UniversalStreamResponse<T extends z.ZodTypeAny ? z.infer<T> : unknown>>) {
                     // Image output processing is handled within the adapters when outputPath is provided
                     // No additional processing needed here as the adapter handles outputPath automatically
                     yield chunk;
@@ -1259,10 +1259,10 @@ export class LLMCaller implements MCPDirectAccess {
                 for (let i = 0; i < responses.length; i++) {
                     const response = responses[i];
                     const isLast = i === responses.length - 1;
-                    const streamResponseChunk: UniversalStreamResponse<T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown> = {
+                    const streamResponseChunk: UniversalStreamResponse<T extends z.ZodTypeAny ? z.infer<T> : unknown> = {
                         content: response.content || '',
                         contentText: isLast ? response.content || '' : undefined,
-                        contentObject: isLast ? response.contentObject as T extends z.ZodType<any, z.ZodTypeDef, any> ? z.TypeOf<T> : unknown : undefined,
+                        contentObject: isLast ? response.contentObject as T extends z.ZodTypeAny ? z.infer<T> : unknown : undefined,
                         role: response.role,
                         isComplete: isLast,
                         messages: chatParams.messages,
@@ -1293,7 +1293,7 @@ export class LLMCaller implements MCPDirectAccess {
      * Processes a message and returns the response(s).
      * This is the standardized public API for getting responses.
      */
-    public async call<T extends z.ZodType<any, z.ZodTypeDef, any> = z.ZodType<any, z.ZodTypeDef, any>>(
+    public async call<T extends z.ZodTypeAny = z.ZodTypeAny>(
         message: string | LLMCallOptions,
         options: LLMCallOptions = {}
     ): Promise<UniversalChatResponse[]> {
