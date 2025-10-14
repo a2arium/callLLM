@@ -6,6 +6,7 @@ import type { CapabilityRequirement } from '../src/core/models/ModelSelector.ts'
 export type ScenarioResult = {
     outputText?: string;
     contentObject?: unknown;
+    strictContentObject?: unknown;
     streamed?: boolean;
     usage?: Usage;
     metadata?: Record<string, unknown>;

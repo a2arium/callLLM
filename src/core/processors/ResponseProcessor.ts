@@ -1,6 +1,9 @@
 import type { UniversalChatResponse, UniversalChatParams, JSONSchemaDefinition, ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
 import { FinishReason } from '../../interfaces/UniversalInterfaces.ts';
 import { SchemaValidator, SchemaValidationError } from '../schema/SchemaValidator.ts';
+import { coerceDataToZodSchema } from '../schema/ZodCoercion.ts';
+import { coerceDataToJsonSchema } from '../schema/JsonSchemaCoercion.ts';
+import { enforceZodLiterals, enforceJsonLiterals } from '../schema/SchemaEnforcer.ts';
 import { z } from 'zod';
 import { jsonrepair } from 'jsonrepair';
 import { logger } from '../../utils/logger.ts';
@@ -28,28 +31,92 @@ export class ResponseProcessor {
 
         // For JSON responses, parse and validate
         try {
-            const parsedResponse = await this.parseJson(response);
+            let parsedResponse = await this.parseJson(response);
 
             // If schema validation is needed
             if (params.jsonSchema) {
+                const isRecord = (v: unknown): v is Record<string, unknown> => (
+                    typeof v === 'object' && v !== null && !Array.isArray(v)
+                );
+                let contentToValidate: unknown = parsedResponse.contentObject;
+                // Unflatten union options back into original structure using mapping derived from original schema
+                try {
+                    const { unflattenData, flattenUnions } = await import('../schema/UnionTransformer.js');
+                    if (isRecord(contentToValidate)) {
+                        const originalSchemaObject = SchemaValidator.getSchemaObject(params.jsonSchema.schema) as unknown;
+                        const originalObj: Record<string, unknown> = typeof originalSchemaObject === 'object' && originalSchemaObject !== null ? (originalSchemaObject as Record<string, unknown>) : {};
+                        const { mapping } = flattenUnions(originalObj);
+                        if (mapping.length > 0) {
+                            const restored = unflattenData(contentToValidate, mapping as any);
+                            parsedResponse = {
+                                ...parsedResponse,
+                                contentObject: restored,
+                                content: JSON.stringify(restored)
+                            } as typeof parsedResponse;
+                            contentToValidate = restored;
+                        }
+                    }
+                } catch { }
                 const schemaName = params.jsonSchema.name;
-                let contentToValidate = parsedResponse.contentObject;
 
                 // Check if content is wrapped in a named object
-                if (schemaName && typeof contentToValidate === 'object' && contentToValidate !== null) {
-                    const matchingKey = Object.keys(contentToValidate).find(
+                if (schemaName && isRecord(contentToValidate)) {
+                    const obj = contentToValidate;
+                    const matchingKey = Object.keys(obj).find(
                         key => key.toLowerCase() === schemaName.toLowerCase()
                     );
                     if (matchingKey) {
-                        contentToValidate = (contentToValidate as Record<string, unknown>)[matchingKey];
+                        contentToValidate = obj[matchingKey];
                         // For tests that expect the contentObject to be unwrapped
-                        parsedResponse.contentObject = contentToValidate;
+                        parsedResponse = { ...parsedResponse, contentObject: contentToValidate } as typeof parsedResponse;
                     }
                 }
 
-                // Validate against schema
+                // Coerce content to better match Zod/JSON Schema expectations
                 try {
-                    SchemaValidator.validate(contentToValidate, params.jsonSchema.schema);
+                    // Check if schema is Zod by looking for Zod-specific methods
+                    const hasZodMethods = params.jsonSchema.schema && typeof (params.jsonSchema.schema as any).parse === 'function';
+
+                    // Always work with JSON Schema for enforcement
+                    let jsonSchemaForEnforcement: Record<string, unknown>;
+
+                    if (hasZodMethods) {
+                        const zodSchema = params.jsonSchema.schema as unknown as z.ZodType;
+                        // First apply Zod-specific coercion
+                        contentToValidate = coerceDataToZodSchema(contentToValidate, zodSchema);
+                        // Then convert to JSON Schema for enforcement
+                        jsonSchemaForEnforcement = SchemaValidator.getSchemaObject(zodSchema) as unknown as Record<string, unknown>;
+                    } else if (typeof (params.jsonSchema.schema as unknown) === 'object') {
+                        jsonSchemaForEnforcement = params.jsonSchema.schema as unknown as Record<string, unknown>;
+                        contentToValidate = coerceDataToJsonSchema(contentToValidate, jsonSchemaForEnforcement);
+                    } else {
+                        // No valid schema, skip enforcement
+                        jsonSchemaForEnforcement = {} as Record<string, unknown>;
+                    }
+
+                    // Prune nulls for optional fields to avoid invalid types when omitted
+                    contentToValidate = this.pruneNullOptionals(contentToValidate, jsonSchemaForEnforcement);
+
+                    contentToValidate = enforceJsonLiterals(contentToValidate, jsonSchemaForEnforcement);
+                    try {
+                        SchemaValidator.validate(contentToValidate, params.jsonSchema.schema as JSONSchemaDefinition);
+                        // Persist coerced/enforced content back to parsedResponse so callers see the fixed object
+                        parsedResponse = {
+                            ...parsedResponse,
+                            content: JSON.stringify(contentToValidate),
+                            contentObject: contentToValidate
+                        } as typeof parsedResponse;
+                    } catch (e) {
+                        // If strict literal-only fields are missing, enforce and validate again
+                        contentToValidate = enforceJsonLiterals(contentToValidate, jsonSchemaForEnforcement);
+                        SchemaValidator.validate(contentToValidate, params.jsonSchema.schema as JSONSchemaDefinition);
+                        // Persist enforced content after second pass
+                        parsedResponse = {
+                            ...parsedResponse,
+                            content: JSON.stringify(contentToValidate),
+                            contentObject: contentToValidate
+                        } as typeof parsedResponse;
+                    }
                 } catch (validationError) {
                     if (validationError instanceof SchemaValidationError) {
                         return {
@@ -141,6 +208,21 @@ export class ResponseProcessor {
     private async parseJson<T>(
         response: UniversalChatResponse & { contentText?: string }
     ): Promise<UniversalChatResponse<T>> {
+        // If provider already supplied a parsed object, prefer it
+        if (response.contentObject && typeof response.contentObject === 'object') {
+            return {
+                ...response,
+                content: JSON.stringify(response.contentObject),
+                contentObject: response.contentObject as T,
+                metadata: {
+                    ...response.metadata,
+                    jsonRepaired: false,
+                    originalContent: response.content === null ? undefined : response.content,
+                    finishReason: response.metadata?.finishReason || FinishReason.STOP
+                }
+            };
+        }
+
         let sourceContent = response.content; // Keep original response.content for originalContent metadata
         let contentToParse = response.content?.trim() || '';
 
@@ -205,6 +287,33 @@ export class ResponseProcessor {
                 finishReason: response.metadata?.finishReason || FinishReason.STOP // Preserve existing finishReason if any
             }
         };
+    }
+
+    private pruneNullOptionals(data: unknown, schema: Record<string, unknown>): unknown {
+        if (!schema || typeof schema !== 'object') return data;
+        const type = (schema as any).type as string | undefined;
+        if (type === 'object' && data && typeof data === 'object' && !Array.isArray(data)) {
+            const result: Record<string, unknown> = { ...(data as Record<string, unknown>) };
+            const props = (schema as any).properties as Record<string, unknown> | undefined;
+            const required = Array.isArray((schema as any).required) ? ((schema as any).required as string[]) : [];
+            if (props && typeof props === 'object') {
+                for (const [k, sub] of Object.entries(props)) {
+                    // If field is null and not required, drop it
+                    if (result[k] === null && !required.includes(k)) {
+                        delete result[k];
+                        continue;
+                    }
+                    result[k] = this.pruneNullOptionals(result[k], sub as Record<string, unknown>);
+                }
+            }
+            return result;
+        }
+        if (type === 'array' && Array.isArray(data)) {
+            const itemSchema = (schema as any).items as Record<string, unknown> | undefined;
+            if (itemSchema) return (data as unknown[]).map(v => this.pruneNullOptionals(v, itemSchema));
+            return data;
+        }
+        return data;
     }
 
     private async validateWithSchema<T extends z.ZodType | undefined = undefined>(

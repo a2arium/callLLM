@@ -55,7 +55,7 @@
     "example:imageGenerate": "tsx examples/imageGenerationAndEditing.ts",
     "example:embeddings": "tsx examples/embeddings-example.ts",
     "adapters:e2e": "tsx adapters-e2e/run.ts",
-    "adapters:e2e:fast": "tsx adapters-e2e/run.ts --providers=openai --scenarios=simple-chat,streaming-chat",
+    "adapters:e2e:fast": "tsx adapters-e2e/run.ts --providers=cerebras --scenarios=simple-chat,streaming-chat",
     "lint": "eslint . --ext .ts"
   },
   "engines": {
@@ -84,6 +84,7 @@
   ],
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.18",
+    "@cerebras/cerebras_cloud_sdk": "^1.50.0",
     "@modelcontextprotocol/sdk": "^1.10.2",
     "@types/jest": "^29.5.14",
     "@types/sharp": "^0.32.0",

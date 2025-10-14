@@ -6,6 +6,7 @@ import type { ToolDefinition, ToolParameters, ToolCall } from '../../types/tooli
 import { logger } from '../../utils/logger.ts';
 import { SchemaValidator } from '../../core/schema/SchemaValidator.ts';
 import { SchemaFormatter, isZodSchema } from '../../core/schema/SchemaFormatter.ts';
+import { SchemaSanitizer } from '../../core/schema/SchemaSanitizer.ts';
 import { z } from 'zod';
 import type {
     ResponseCreateParams,
@@ -462,13 +463,29 @@ export class Converter {
                 if (isZodSchema(params.jsonSchema.schema)) {
                     // Convert Zod schema to JSON Schema object, then prepare for OpenAI
                     const jsonSchema = SchemaValidator.getSchemaObject(params.jsonSchema.schema);
-                    formatConfig.schema = this.prepareResponseSchemaForOpenAI(jsonSchema as Record<string, unknown>);
+                    const { flattenUnions } = await import('../../core/schema/UnionTransformer.js');
+                    const { schema: flattenedSchema, mapping } = flattenUnions(jsonSchema as Record<string, unknown>);
+                    const sanitized = SchemaSanitizer.sanitize(flattenedSchema as Record<string, unknown>, {
+                        addHintsToDescriptions: true,
+                        // For unions, do not force all required to avoid forcing unused branches
+                        forceAllRequired: mapping.length === 0,
+                        forceNoAdditionalProps: true,
+                        normalizeDefs: true,
+                        stripMetaKeys: true
+                    });
+                    formatConfig.schema = this.prepareResponseSchemaForOpenAI(sanitized as Record<string, unknown>);
                 } else if (typeof params.jsonSchema.schema === 'string') {
                     try {
                         // Parse JSON string and ensure additionalProperties: false is set at all levels
                         const parsedSchema = JSON.parse(params.jsonSchema.schema);
-                        const schemaWithAdditionalProps = SchemaFormatter.addAdditionalPropertiesFalse(parsedSchema);
-                        formatConfig.schema = this.prepareResponseSchemaForOpenAI(schemaWithAdditionalProps as Record<string, unknown>);
+                        const sanitized = SchemaSanitizer.sanitize(SchemaFormatter.addAdditionalPropertiesFalse(parsedSchema) as Record<string, unknown>, {
+                            addHintsToDescriptions: true,
+                            forceAllRequired: true,
+                            forceNoAdditionalProps: true,
+                            normalizeDefs: true,
+                            stripMetaKeys: true
+                        });
+                        formatConfig.schema = this.prepareResponseSchemaForOpenAI(sanitized as Record<string, unknown>);
                     } catch (error) {
                         log.info('Failed to parse JSON schema string');
                         // Fallback to simple JSON object format
@@ -478,7 +495,14 @@ export class Converter {
                 } else {
                     // Handle object schema directly and ensure additionalProperties: false is set
                     const schemaWithAdditionalProps = SchemaFormatter.addAdditionalPropertiesFalse(params.jsonSchema.schema);
-                    formatConfig.schema = this.prepareResponseSchemaForOpenAI(schemaWithAdditionalProps as Record<string, unknown>);
+                    const sanitized = SchemaSanitizer.sanitize(schemaWithAdditionalProps as Record<string, unknown>, {
+                        addHintsToDescriptions: true,
+                        forceAllRequired: true,
+                        forceNoAdditionalProps: true,
+                        normalizeDefs: true,
+                        stripMetaKeys: true
+                    });
+                    formatConfig.schema = this.prepareResponseSchemaForOpenAI(sanitized as Record<string, unknown>);
                 }
 
                 // Decide if schema is safe to attach for OpenAI
@@ -939,6 +963,38 @@ export class Converter {
             (preparedSchema as any).additionalProperties = false;
             log.info('Wrapped root schema under properties.data due to OpenAI root limitations', { reasons });
         }
+
+        // Strip validation keywords that Responses API constrained decoding can reject in strict mode
+        // Only strip at schema node level, not inside 'properties' or 'items'
+        const stripValidation = (node: any, parentKey?: string): void => {
+            if (!node || typeof node !== 'object') return;
+            if (Array.isArray(node)) {
+                node.forEach((item, idx) => stripValidation(item, String(idx)));
+                return;
+            }
+
+            // Only strip validation keywords at schema node level, not property names inside 'properties'
+            if (parentKey !== 'properties') {
+                delete node.minLength;
+                delete node.maxLength;
+                delete node.pattern;
+                delete node.format;  // This is the JSON Schema 'format' keyword (e.g., format: "email")
+                delete node.minimum;
+                delete node.maximum;
+                delete node.exclusiveMinimum;
+                delete node.exclusiveMaximum;
+                delete node.multipleOf;
+                delete node.minItems;
+                delete node.maxItems;
+                delete node.uniqueItems;
+            }
+
+            // Recursively process child nodes
+            for (const k of Object.keys(node)) {
+                stripValidation(node[k], k);
+            }
+        };
+        stripValidation(preparedSchema);
 
         // Process the schema recursively
         this.processSchemaForOpenAI(preparedSchema);

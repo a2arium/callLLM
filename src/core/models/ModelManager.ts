@@ -1,6 +1,7 @@
 import type { ModelInfo, ModelAlias, ModelCapabilities } from '../../interfaces/UniversalInterfaces.ts';
 import { ModelSelector, type CapabilityRequirement } from './ModelSelector.ts';
 import { defaultModels as openAIResponseModels } from '../../adapters/openai/models.ts';
+import { defaultModels as cerebrasModels } from '../../adapters/cerebras/models.ts';
 import type { RegisteredProviders } from '../../adapters/index.ts';
 
 export class ModelManager {
@@ -43,7 +44,9 @@ export class ModelManager {
             case 'openai':
                 openAIResponseModels.forEach(model => this.models.set(model.name, model));
                 break;
-            // Add other providers here when implemented
+            case 'cerebras':
+                cerebrasModels.forEach(model => this.models.set(model.name, model));
+                break;
             default:
                 throw new Error(`Unsupported provider: ${providerName}`);
         }

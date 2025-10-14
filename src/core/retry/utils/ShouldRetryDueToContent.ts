@@ -85,6 +85,19 @@ export function shouldRetryDueToContent(response: string | ResponseWithToolCalls
         return true;
     }
 
+    // If model indicates tool_calls finish reason, do not retry based on content
+    // This allows the tool orchestration loop to proceed without spurious retries
+    try {
+        const meta: any = (response as any).metadata;
+        const finishReason = meta?.finishReason || meta?.finish_reason;
+        if (finishReason === 'tool_calls') {
+            log.debug('Finish reason is tool_calls, not triggering retry');
+            return false;
+        }
+    } catch {
+        // ignore metadata parsing errors
+    }
+
     // If we have tool calls, the response is valid regardless of content
     if (response.toolCalls && response.toolCalls.length > 0) {
         log.debug('Response has tool calls, not triggering retry');

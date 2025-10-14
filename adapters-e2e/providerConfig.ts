@@ -1,7 +1,8 @@
 import type { RegisteredProviders } from '../src/adapters/index.ts';
 
 export const providerEnv: Record<string, { apiKeyEnv: string }> = {
-    openai: { apiKeyEnv: 'OPENAI_API_KEY' }
+    openai: { apiKeyEnv: 'OPENAI_API_KEY' },
+    cerebras: { apiKeyEnv: 'CEREBRAS_API_KEY' }
     // Extend as new providers are added
 };
 

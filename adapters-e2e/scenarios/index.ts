@@ -13,6 +13,7 @@ import { imageMaskedEdit } from './imageMaskedEdit.ts';
 import { historyDynamic } from './historyDynamic.ts';
 import { streamingTools } from './streamingTools.ts';
 import { streamingJson } from './streamingJson.ts';
+import { complexZod } from './complexZod.ts';
 
 export const allScenarios: Scenario[] = [
     simpleChat,
@@ -29,6 +30,7 @@ export const allScenarios: Scenario[] = [
     historyDynamic,
     streamingTools,
     streamingJson
+    , complexZod
 ];
 
 
