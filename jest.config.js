@@ -12,6 +12,8 @@ export default {
   moduleNameMapper: {
     // Alias for src directory (mimics tsconfig @/*)
     '^@/(.*)$': '<rootDir>/src/$1',
+    // Handle .js extensions in imports (resolve to .ts files)
+    '^(\\.{1,2}/.*)\\.js$': '$1',
     // Mock tiktoken for all tests
     '^@dqbd/tiktoken$': '<rootDir>/src/tests/__mocks__/@dqbd/tiktoken.ts'
   },

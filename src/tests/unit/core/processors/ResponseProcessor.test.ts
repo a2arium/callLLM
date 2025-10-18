@@ -18,6 +18,7 @@ const mockValidate_13 = jest.fn();
 const mockValidate_14 = jest.fn();
 const mockValidate_15 = jest.fn();
 const mockValidate_16 = jest.fn();
+const mockGetSchemaObject = jest.fn();
 
 // Mock SchemaValidator (MUST be before any imports that use it)
 class MockSchemaValidationError extends Error {
@@ -34,9 +35,22 @@ jest.unstable_mockModule('@/core/schema/SchemaValidator', () => {
   return {
     __esModule: true,
     SchemaValidator: {
-      validate: mockValidate_1
+      validate: mockValidate_1,
+      getSchemaObject: mockGetSchemaObject
     },
     SchemaValidationError: MockSchemaValidationError
+  };
+});
+
+// Mock UnionTransformer (MUST be before any imports that use it)
+const mockFlattenUnions = jest.fn((schema) => ({ schema, mapping: [] }));
+const mockUnflattenData = jest.fn((data) => data);
+
+jest.unstable_mockModule('@/core/schema/UnionTransformer', () => {
+  return {
+    __esModule: true,
+    flattenUnions: mockFlattenUnions,
+    unflattenData: mockUnflattenData
   };
 });
 
@@ -67,6 +81,17 @@ describe('ResponseProcessor', () => {
     processor = new ResponseProcessor();
     // Default: SchemaValidator.validate returns the first argument (valid content)
     mockValidate_1.mockImplementation((...args) => args[0]);
+    // Default: getSchemaObject returns a basic object representation
+    mockGetSchemaObject.mockImplementation((schema) => {
+      if (typeof schema === 'string') {
+        return JSON.parse(schema);
+      }
+      // For Zod schemas, return a simple object structure
+      return { type: 'object', properties: {}, additionalProperties: false };
+    });
+    // Default: UnionTransformer functions return data unchanged
+    mockFlattenUnions.mockImplementation((schema) => ({ schema, mapping: [] }));
+    mockUnflattenData.mockImplementation((data) => data);
   });
 
   describe('validateResponse', () => {
@@ -177,7 +202,8 @@ describe('ResponseProcessor', () => {
       });
 
       const invalidContent = { name: 'test' };
-      mockValidate_1.mockImplementationOnce(() => {
+      // Mock must throw BOTH times (validation tries twice: initial + retry with enforcement)
+      mockValidate_1.mockImplementation(() => {
         throw new SchemaValidationError('Validation failed', [
           { path: 'age', message: 'Required' }]
         );
@@ -222,7 +248,8 @@ describe('ResponseProcessor', () => {
         name: z.string()
       });
 
-      mockValidate_1.mockImplementationOnce(() => {
+      // Mock must throw BOTH times (validation tries twice: initial + retry with enforcement)
+      mockValidate_1.mockImplementation(() => {
         throw new Error('Unexpected validation error');
       });
 
@@ -263,7 +290,8 @@ describe('ResponseProcessor', () => {
         name: z.string()
       });
 
-      mockValidate_1.mockImplementationOnce(() => {
+      // Mock must throw BOTH times (validation tries twice: initial + retry with enforcement)
+      mockValidate_1.mockImplementation(() => {
         throw { custom: 'error' }; // Not an Error instance
       });
 
@@ -932,7 +960,8 @@ describe('ResponseProcessor', () => {
         });
 
         const malformedJson = '{ name: "test" }'; // Missing age field
-        mockValidate_1.mockImplementationOnce(() => {
+        // Mock must throw BOTH times (validation tries twice: initial + retry with enforcement)
+        mockValidate_1.mockImplementation(() => {
           throw new SchemaValidationError('Validation failed', [
             { path: 'age', message: 'Required' }
           ]);
@@ -982,7 +1011,8 @@ describe('ResponseProcessor', () => {
         });
 
         const validContent = { name: 'test', age: 30 };
-        mockValidate_1.mockImplementationOnce(() => {
+        // Mock must throw BOTH times (validation tries twice: initial + retry with enforcement)
+        mockValidate_1.mockImplementation(() => {
           throw new Error('Some validation error occurred');
         });
 
@@ -1022,7 +1052,8 @@ describe('ResponseProcessor', () => {
           name: z.string()
         });
 
-        mockValidate_1.mockImplementationOnce(() => {
+        // Mock must throw BOTH times (validation tries twice: initial + retry with enforcement)
+        mockValidate_1.mockImplementation(() => {
           throw { custom: 'error' }; // Not an Error instance
         });
 
