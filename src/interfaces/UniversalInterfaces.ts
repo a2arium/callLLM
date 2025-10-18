@@ -206,6 +206,18 @@ export type ImageOutputOpts = {
     style?: string
 }
 
+// Options for video output generation
+export type VideoOutputOpts = {
+    /** Target resolution, e.g., '1280x720' | '720x1280' */
+    size?: string;
+    /** Duration in seconds (provider-specific constraints apply) */
+    seconds?: number;
+    /** When to wait for completion: 'none' (default) or 'poll' */
+    wait?: 'none' | 'poll';
+    /** Which asset to download if wait is 'poll' and outputPath provided */
+    variant?: 'video' | 'thumbnail' | 'spritesheet';
+}
+
 // Define the new options structure for call/stream methods
 export type LLMCallOptions = {
     /** Optional text prompt (alternative to passing string directly) */
@@ -223,6 +235,8 @@ export type LLMCallOptions = {
     /** Optional settings for image output */
     output?: {
         image?: ImageOutputOpts
+        /** Optional settings for video output */
+        video?: VideoOutputOpts
     };
     /** Optional path where to save generated image */
     outputPath?: string;
@@ -311,6 +325,8 @@ export type Usage = {
             reasoning: number;
             /** Tokens attributable to image generation/editing in output (if any) */
             image?: number;
+            /** Seconds attributable to video generation in output (if any) */
+            videoSeconds?: number;
         },
         total: number;
     };
@@ -324,6 +340,8 @@ export type Usage = {
             reasoning: number;
             /** Costs attributable to image generation/editing in output (if any) */
             image?: number;
+            /** Costs attributable to video generation in output (if any) */
+            video?: number;
         },
         total: number;
     };
@@ -358,6 +376,12 @@ export type Metadata = {
     toolResult?: string;
     toolError?: string;
     stream?: boolean; // Added to support stream indication in metadata
+    // Video job information (for async video generation)
+    videoJobId?: string;
+    videoStatus?: 'queued' | 'in_progress' | 'completed' | 'failed';
+    videoProgress?: number;
+    videoSavedPath?: string;
+    videoError?: string | object; // Error/failure reason if video generation failed
 };
 
 export interface UniversalChatResponse<T = unknown> {
@@ -480,13 +504,25 @@ export type ModelCapabilities = {
      * When false, any tool/function call requests will be rejected.
      * @default false
      */
-    toolCalls?: boolean;
+    // Tool calling capability
+    // Backward-compatible: boolean true means nonStreaming supported, streaming tool-calls via deltas, parallel supported
+    toolCalls?:
+    | boolean
+    | {
+        /** Supports tool calls in non-streaming calls */
+        nonStreaming: boolean;
+        /** How tool-call information is surfaced during streaming */
+        streamingMode: 'none' | 'onComplete' | 'deltas';
+        /** Whether parallel tool calls are supported */
+        parallel?: boolean;
+    };
 
     /**
      * Whether the model supports parallel tool/function calls.
      * When false, only sequential tool calls are allowed.
      * @default false
      */
+    // Deprecated in favor of toolCalls.parallel; kept for backward-compat checks in selectors
     parallelToolCalls?: boolean;
 
     /**
@@ -593,6 +629,19 @@ export type ModelCapabilities = {
             /** Maximum output duration in seconds */
             maxDuration?: number;
         };
+
+        /**
+         * Video output capability (e.g., Sora).
+         * Boolean true indicates basic support, object provides configuration options.
+         */
+        video?: true | {
+            /** Supported sizes, e.g., ['1280x720','720x1280'] */
+            sizes?: string[];
+            /** Maximum output duration in seconds */
+            maxSeconds?: number;
+            /** Supported downloadable variants */
+            variants?: Array<'video' | 'thumbnail' | 'spritesheet'>;
+        };
     };
 };
 
@@ -601,6 +650,8 @@ export type ModelInfo = {
     inputPricePerMillion: number;
     inputCachedPricePerMillion?: number;
     outputPricePerMillion: number;
+    /** Price per second for video generation if applicable */
+    outputPricePerSecond?: number;
     maxRequestTokens: number;
     maxResponseTokens: number;
     tokenizationModel?: string;

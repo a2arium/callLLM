@@ -117,10 +117,15 @@ export class ModelSelector {
 
             // Check tool calling requirements
             if (requirements.toolCalls?.required) {
-                if (!capabilities.toolCalls) {
+                const tc = capabilities.toolCalls;
+                const hasToolCalls = typeof tc === 'boolean' ? tc : Boolean(tc?.nonStreaming);
+                if (!hasToolCalls) {
                     return false;
                 }
-                if (requirements.toolCalls.parallel && !capabilities.parallelToolCalls) {
+                const parallelCap = typeof tc === 'object' && tc?.parallel !== undefined
+                    ? Boolean(tc.parallel)
+                    : Boolean(capabilities.parallelToolCalls);
+                if (requirements.toolCalls.parallel && !parallelCap) {
                     return false;
                 }
             }

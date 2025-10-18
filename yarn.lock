@@ -3000,7 +3000,7 @@ __metadata:
     eslint: "npm:^9.25.1"
     jest: "npm:^29.7.0"
     jsonrepair: "npm:^3.12.0"
-    openai: "npm:^6.2.0"
+    openai: "npm:^6.3.0"
     opik: "npm:^1.8.70"
     sharp: "npm:^0.34.1"
     tree-kill: "npm:^1.2.2"
@@ -5803,9 +5803,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"openai@npm:^6.2.0":
-  version: 6.2.0
-  resolution: "openai@npm:6.2.0"
+"openai@npm:^6.3.0":
+  version: 6.3.0
+  resolution: "openai@npm:6.3.0"
   peerDependencies:
     ws: ^8.18.0
     zod: ^3.25 || ^4.0
@@ -5816,7 +5816,7 @@ __metadata:
       optional: true
   bin:
     openai: bin/cli
-  checksum: 10c0/3aea45eeb4055b6daf179d13e4bac170992eded94d684a59c75af40ca985999e6e1682eb666f308d83d6d6423d57d3ca18eed27966ccf2a8f8ef5b86e0559387
+  checksum: 10c0/192304069a75b9b0d71ee6e1b719544ec31f6f64cd750e1837cff9cc00187c023c80dd2c6d3049627b3b74721dd0a463a8fed230443003e4ab72c705c0d540dc
   languageName: node
   linkType: hard
 

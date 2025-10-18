@@ -59,6 +59,7 @@ const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assista
 
 - [Function Folders](docs/function-folders.md) - Learn how to organize tools in separate files
 - [Working with Images](docs/images.md) - Guide to using multimodal models with image inputs and generating images
+- Video generation with OpenAI Sora (see below)
 - [GPT-5, Reasoning & Verbosity](docs/gpt5.md) - Using GPT-5 features, reasoning effort (incl. 'minimal'), and verbosity
 - More documentation coming soon
 
@@ -321,6 +322,55 @@ capabilities: {
     }
   }
 }
+```
+
+### Video Generation 
+
+Video creation is asynchronous. You can either block until completion or create a job and poll it later.  
+
+Blocking (poll + auto‑download):
+```typescript
+const caller = new LLMCaller('openai', 'sora-2');
+const result = await caller.call({
+  text: "A video of the words 'Thank you' in sparkling letters",
+  output: { video: { size: '1280x720', seconds: 8, wait: 'poll' } },
+  outputPath: './output/video.mp4' // auto-download final MP4 when complete
+});
+
+console.log('Status:', result[0].metadata?.videoStatus);
+console.log('Saved:', result[0].metadata?.videoSavedPath);
+console.log('Usage:', result[0].metadata?.usage); // includes videoSeconds and cost
+```
+
+Non‑blocking (create + manual retrieve/download):
+```typescript
+const res = await caller.call({
+  text: 'A cool cat on a motorcycle in the night',
+  output: { video: { size: '1280x720', seconds: 8, wait: 'none' } }
+});
+
+const jobId = res[0].metadata?.videoJobId!;
+let job = await caller.retrieveVideo(jobId);
+while (job.status === 'queued' || job.status === 'in_progress') {
+  await new Promise(r => setTimeout(r, 2000));
+  job = await caller.retrieveVideo(jobId);
+}
+if (job.status === 'completed') {
+  await caller.downloadVideo(jobId, { variant: 'video', outputPath: './output/video2.mp4' });
+}
+```
+
+Models and capabilities:
+- `sora-2`, `sora-2-pro` support `input.text`, `input.image`, `output.video`, and `output.audio` (synced audio with video).
+- `output.video` options: `size` (`'1280x720' | '720x1280'`), `seconds` (number, provider-specific; OpenAI accepts 1-60), `wait` (`'none' | 'poll'`), `variant` (`'video' | 'thumbnail' | 'spritesheet'`).
+
+Pricing and usage:
+- Video cost is computed as `seconds × model.outputPricePerSecond` and exposed in `metadata.usage.costs.output.video`.
+- `usageCallback` (if provided) is invoked with usage after a video call completes.
+
+Example script:
+```bash
+yarn example:video
 ```
 
 ## Token Counting and Pricing
@@ -1901,6 +1951,124 @@ const response = await caller.call(
 
 Tools from MCP servers are exposed with names in the format `${serverKey}.${toolName}` to avoid name collisions.
 
+### Video Generation
+
+callLLM supports video generation with OpenAI's Sora models (`sora-2` and `sora-2-pro`). Video generation can be done in two modes:
+- **Non-blocking mode** (`wait: 'none'`): Creates a video job and immediately returns with the job ID
+- **Blocking mode** (`wait: 'poll'`): Automatically polls until the video is complete and optionally downloads it
+
+#### Basic Video Generation (Blocking)
+
+```typescript
+import { LLMCaller } from 'callllm';
+import path from 'path';
+
+const caller = new LLMCaller('openai', 'sora-2-pro');
+
+// Generate video and auto-download when complete
+const response = await caller.call({
+    text: "A serene mountain landscape with a cabin",
+    output: { 
+        video: { 
+            size: '1280x720',     // '1280x720' | '720x1280'
+            seconds: 8,            // Duration (OpenAI accepts 1-60 seconds)
+            wait: 'poll'           // Poll until complete
+        } 
+    },
+    outputPath: path.join(__dirname, 'output', 'video.mp4')
+});
+
+console.log('Video status:', response[0].metadata?.videoStatus);
+console.log('Video saved to:', response[0].metadata?.videoSavedPath);
+console.log('Cost:', response[0].metadata?.usage?.costs.total);
+```
+
+#### Video Generation with Image Input
+
+You can provide an image to guide the video generation (first frame reference):
+
+```typescript
+const response = await caller.call({
+    text: "Transform this into a flowing river scene",
+    file: path.join(__dirname, 'landscape.jpg'),  // Image input
+    output: { 
+        video: { 
+            size: '1280x720', 
+            seconds: 4,
+            wait: 'poll'
+        } 
+    },
+    outputPath: path.join(__dirname, 'output', 'river.mp4')
+});
+```
+
+#### Non-Blocking Video Generation
+
+For long-running videos, you can create the job and retrieve it later:
+
+```typescript
+// Start video generation
+const response = await caller.call({
+    text: "Epic space battle scene",
+    output: { 
+        video: { 
+            size: '1280x720', 
+            seconds: 30,
+            wait: 'none'  // Don't wait, return immediately
+        } 
+    }
+});
+
+const jobId = response[0].metadata?.videoJobId;
+console.log('Video job started:', jobId);
+
+// Later, check status
+const status = await caller.retrieveVideo(jobId);
+console.log('Status:', status.status, 'Progress:', status.progress);
+
+// When complete, download the video
+if (status.status === 'completed') {
+    await caller.downloadVideo(jobId, {
+        variant: 'video',  // 'video' | 'thumbnail' | 'spritesheet'
+        outputPath: './output/battle.mp4'
+    });
+}
+```
+
+#### Cost Tracking
+
+Video generation costs are tracked per second of video:
+- `sora-2`: $0.10 per second
+- `sora-2-pro`: $0.30 per second
+
+The cost is calculated based on:
+- **Completed videos**: Full duration is charged
+- **Failed videos**: If the video fails after >50% progress, the full duration is charged; otherwise, no charge
+
+```typescript
+const response = await caller.call({
+    text: "Generate a video",
+    output: { video: { seconds: 10, wait: 'poll' } },
+    outputPath: './video.mp4'
+});
+
+// Cost information in usage metadata
+const usage = response[0].metadata?.usage;
+console.log('Video duration:', usage?.tokens.output.videoSeconds, 'seconds');
+console.log('Video cost:', usage?.costs.output.video);
+console.log('Total cost:', usage?.costs.total);
+```
+
+#### Telemetry Support
+
+Video generation is fully integrated with telemetry providers (Opik, OpenTelemetry):
+- Input prompt and image references are logged
+- Output includes video job status, file path, and error details (if failed)
+- Cost and duration metrics are tracked
+- Failed generations include error reasons
+
+For more details, see the [videoGeneration.ts](examples/videoGeneration.ts) example.
+
 ### More Examples
 
 Find more examples in the [examples/](examples/) directory:
@@ -1909,6 +2077,7 @@ Find more examples in the [examples/](examples/) directory:
 - [toolCalling.ts](examples/toolCalling.ts) - Using tools with an LLM
 - [historyModes.ts](examples/historyModes.ts) - Different ways to manage conversation history
 - [jsonOutput.ts](examples/jsonOutput.ts) - Getting structured JSON responses from LLMs
+- [videoGeneration.ts](examples/videoGeneration.ts) - Generating videos with Sora models
 - [mcpClient.ts](examples/mcpClient.ts) - Using Model Context Protocol (MCP) servers
 - [mcpDirectTools.ts](examples/mcpDirectTools.ts) - Direct access to MCP tools
 - [aliasChat.ts](examples/aliasChat.ts) - Using model aliases

@@ -35,7 +35,7 @@ import { ModelManager } from '../../core/models/ModelManager.ts';
 import { defaultModels } from './models.ts';
 import type { RegisteredProviders } from '../index.ts';
 import { TokenCalculator } from '../../core/models/TokenCalculator.ts';
-import type { LLMProviderImage, LLMProviderEmbedding, ImageOp } from '../../interfaces/LLMProvider.ts';
+import type { LLMProviderImage, LLMProviderEmbedding, ImageOp, LLMProviderVideo, VideoCallParams } from '../../interfaces/LLMProvider.ts';
 import { saveBase64ToFile } from '../../core/file-data/fileData.ts';
 import * as fs from 'fs';
 import type { UrlSource, Base64Source, FilePathSource } from '../../interfaces/UniversalInterfaces.ts';
@@ -61,7 +61,7 @@ interface ExtendedImageCallParams extends BaseImageCallParams {
 /**
  * OpenAI Response Adapter implementing the OpenAI /v1/responses API endpoint
  */
-export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderImage, LLMProviderEmbedding {
+export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderImage, LLMProviderEmbedding, LLMProviderVideo {
     private client: OpenAI;
     private converter: Converter;
     private streamHandler: StreamHandler;
@@ -169,6 +169,219 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             }
 
             throw new OpenAIResponseAdapterError(`OpenAI API error: ${error?.message || String(error)}`);
+        }
+    }
+
+    async videoCall(model: string, params: VideoCallParams): Promise<UniversalChatResponse> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.videoCall' });
+        log.debug('Starting video call', { model, params });
+
+        try {
+            const waitMode = params.wait || 'none';
+            const size = params.size;
+            const seconds = params.seconds;
+
+            // OpenAI expects seconds as a string for Sora-2 (e.g., '4', '8', '12')
+            // Convert number to string for compatibility
+            let secondsParam: string | undefined = undefined;
+            if (seconds !== undefined) {
+                secondsParam = String(seconds);
+            }
+
+            // Handle image input if provided (for seeding video first frame)
+            let inputReference: any = undefined;
+            if (params.image) {
+                const imageSource = this.stringToImageSource(params.image);
+                inputReference = await this.toOpenAIImageArg(imageSource);
+            }
+
+            // Create video
+            if (waitMode === 'poll') {
+                // Create the video job
+                const videoJob = await (this.client as any).videos.create({
+                    model,
+                    prompt: params.prompt,
+                    ...(size ? { size } : {}),
+                    ...(secondsParam !== undefined ? { seconds: secondsParam } : {}),
+                    ...(inputReference ? { input_reference: inputReference } : {}),
+                } as any);
+
+                log.info('[OpenAIResponseAdapter.videoCall] Video job created, polling for completion:', {
+                    jobId: videoJob.id,
+                    status: videoJob.status
+                });
+
+                // Poll until completed or failed
+                let video = videoJob;
+                while (video.status !== 'completed' && video.status !== 'failed') {
+                    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between polls
+                    video = await (this.client as any).videos.retrieve(video.id);
+                    log.info('[OpenAIResponseAdapter.videoCall] Polling video status:', {
+                        jobId: video.id,
+                        status: video.status,
+                        progress: video.progress
+                    });
+                }
+
+                log.info('[OpenAIResponseAdapter.videoCall] Video generation finished:', {
+                    jobId: video.id,
+                    status: video.status,
+                    error: video.error || video.failure_reason
+                });
+
+                const metadata: UniversalChatResponse['metadata'] = {
+                    model,
+                    videoJobId: video.id,
+                    videoStatus: video.status,
+                    videoProgress: video.progress,
+                };
+
+                // Include error/failure reason if video failed
+                if (video.status === 'failed' && (video.error || video.failure_reason)) {
+                    metadata.videoError = video.error || video.failure_reason;
+                    log.error('[OpenAIResponseAdapter.videoCall] Video generation failed:', {
+                        jobId: video.id,
+                        error: video.error || video.failure_reason
+                    });
+                }
+
+                // If completed and outputPath provided, download
+                if (video.status === 'completed' && params.outputPath) {
+                    const variant = params.variant || 'video';
+                    log.info('[OpenAIResponseAdapter.videoCall] Downloading video:', {
+                        jobId: video.id,
+                        variant,
+                        outputPath: params.outputPath
+                    });
+                    const content = await (this.client as any).videos.downloadContent(video.id, { variant } as any);
+                    const arrayBuffer = await content.arrayBuffer();
+                    await fs.promises.writeFile(params.outputPath, Buffer.from(arrayBuffer));
+                    metadata.videoSavedPath = params.outputPath;
+                    log.info('[OpenAIResponseAdapter.videoCall] Video downloaded successfully');
+                }
+
+                // Compute usage costs based on seconds and model pricing (per second)
+                // For completed videos, charge for full duration
+                // For failed videos, charge based on progress (if >50% complete)
+                const modelInfo = this.modelManager.getModel(model);
+                let secs = 0;
+
+                if (video.status === 'completed') {
+                    secs = Number(video.seconds || seconds || 0);
+                } else if (video.status === 'failed' && video.progress && video.progress > 50) {
+                    // If failed but was more than 50% complete, charge full price
+                    // Note: OpenAI charges the full video price if generation progressed beyond 50%
+                    secs = Number(video.seconds || seconds || 0);
+                    log.info('[OpenAIResponseAdapter.videoCall] Charging full price for >50% completion:', {
+                        progress: video.progress,
+                        requestedSeconds: seconds,
+                        chargedSeconds: secs
+                    });
+                }
+
+                const videoCost = secs > 0 ? (modelInfo?.outputPricePerSecond || 0) * secs : 0;
+                const usage: Usage = {
+                    tokens: {
+                        input: { total: 0, cached: 0 },
+                        output: { total: 0, reasoning: 0, videoSeconds: secs },
+                        total: 0
+                    },
+                    costs: {
+                        input: { total: 0, cached: 0 },
+                        output: { total: videoCost, reasoning: 0, video: videoCost },
+                        total: videoCost
+                    }
+                };
+
+                return {
+                    content: null,
+                    role: 'assistant',
+                    metadata: { ...metadata, usage },
+                };
+            } else {
+                const video = await (this.client as any).videos.create({
+                    model,
+                    prompt: params.prompt,
+                    ...(size ? { size } : {}),
+                    ...(secondsParam !== undefined ? { seconds: secondsParam } : {}),
+                    ...(inputReference ? { input_reference: inputReference } : {}),
+                } as any);
+
+                // For non-blocking mode, estimate cost based on requested duration
+                // Actual cost will depend on whether the job completes successfully
+                const modelInfo = this.modelManager.getModel(model);
+                const secs = Number((video as any).seconds || seconds || 0);
+                const videoCost = secs > 0 ? (modelInfo?.outputPricePerSecond || 0) * secs : 0;
+                const usage: Usage = {
+                    tokens: {
+                        input: { total: 0, cached: 0 },
+                        output: { total: 0, reasoning: 0, videoSeconds: secs },
+                        total: 0
+                    },
+                    costs: {
+                        input: { total: 0, cached: 0 },
+                        output: { total: videoCost, reasoning: 0, video: videoCost },
+                        total: videoCost
+                    }
+                };
+
+                return {
+                    content: null,
+                    role: 'assistant',
+                    metadata: {
+                        model,
+                        videoJobId: (video as any).id,
+                        videoStatus: (video as any).status,
+                        videoProgress: (video as any).progress,
+                        usage
+                    }
+                };
+            }
+        } catch (error: any) {
+            const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.videoCall' });
+            log.error('Video call failed:', error);
+            if (error instanceof OpenAI.APIError) {
+                if (error.status === 401) {
+                    throw new OpenAIResponseAuthError('Invalid API key or authentication error');
+                } else if (error.status === 429) {
+                    const retryAfter = error.headers?.['retry-after'];
+                    throw new OpenAIResponseRateLimitError('Rate limit exceeded', retryAfter ? parseInt(retryAfter, 10) : 60);
+                } else if (error.status >= 500) {
+                    throw new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`);
+                } else if (error.status === 400) {
+                    throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
+                }
+            }
+            throw new OpenAIResponseAdapterError(`OpenAI video API error: ${error?.message || String(error)}`);
+        }
+    }
+
+    async retrieveVideo(videoId: string): Promise<{ id: string; status: 'queued' | 'in_progress' | 'completed' | 'failed'; progress?: number; model?: string; seconds?: number; size?: string }> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.retrieveVideo' });
+        try {
+            const video = await (this.client as any).videos.retrieve(videoId as any);
+            return {
+                id: (video as any).id,
+                status: (video as any).status,
+                progress: (video as any).progress,
+                model: (video as any).model,
+                seconds: (video as any).seconds,
+                size: (video as any).size,
+            };
+        } catch (error: any) {
+            log.error('Retrieve video failed:', error);
+            throw new OpenAIResponseAdapterError(`Retrieve video failed: ${error?.message || String(error)}`);
+        }
+    }
+
+    async downloadVideo(videoId: string, variant: 'video' | 'thumbnail' | 'spritesheet' = 'video'): Promise<ArrayBuffer> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.downloadVideo' });
+        try {
+            const content = await (this.client as any).videos.downloadContent(videoId as any, { variant } as any);
+            return await content.arrayBuffer();
+        } catch (error: any) {
+            log.error('Download video failed:', error);
+            throw new OpenAIResponseAdapterError(`Download video failed: ${error?.message || String(error)}`);
         }
     }
 
@@ -1260,6 +1473,29 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             log.error('Image variation operation failed:', error);
             throw new OpenAIResponseAdapterError(`Image variation operation failed: ${error.message || String(error)}`);
         }
+    }
+
+    /**
+     * Convert a string (file path, URL, or base64) to an ImageSource object
+     * @param imageString The image string to convert
+     * @returns An ImageSource object
+     */
+    private stringToImageSource(imageString: string): ImageSource {
+        // Check if it's a URL
+        if (imageString.startsWith('http://') || imageString.startsWith('https://')) {
+            return { type: 'url', url: imageString };
+        }
+
+        // Check if it's base64
+        if (imageString.startsWith('data:')) {
+            const match = imageString.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+                return { type: 'base64', data: match[2], mime: match[1] };
+            }
+        }
+
+        // Assume it's a file path
+        return { type: 'file_path', path: imageString };
     }
 
     /**

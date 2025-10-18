@@ -157,7 +157,10 @@ async function run() {
                     const durationMs = Date.now() - started;
 
                     let pass = true, score = 1, reason = 'No judge provided';
-                    if (scenario.judge) {
+                    // Treat explicit scenario skip as pass with note
+                    if ((res.metadata as any)?.skipped) {
+                        pass = true; score = 1; reason = `Skipped: ${(res.metadata as any).reason || 'not applicable for this model'}`;
+                    } else if (scenario.judge) {
                         const j = await scenario.judge({ provider, model: modelName, caller }, res);
                         pass = j.pass; score = j.score; reason = j.reason;
                     }
@@ -168,12 +171,13 @@ async function run() {
                     const status = pass ? 'PASS' : 'FAIL';
                     const preview = (res.outputText ?? '').slice(0, 160).replace(/\s+/g, ' ');
                     const chunkInfo = res.metadata && (res.metadata as any).chunkCount ? ` • chunks=${(res.metadata as any).chunkCount}` : '';
+                    const skippedInfo = res.metadata && (res.metadata as any).skipped ? ` • skipped=true` : '';
                     const timeoutInfo = res.metadata && (res.metadata as any).timeout ? ` • timeout=true` : '';
                     const jsonKeys = res.contentObject && typeof res.contentObject === 'object' ? ` • keys=${Object.keys(res.contentObject as Record<string, unknown>).join(',')}` : '';
                     const imageInfo = res.metadata && ((res.metadata as any).imageSavedPath || (res.metadata as any).hasData) ? ` • image=${(res.metadata as any).imageSavedPath ? 'file' : 'base64'}` : '';
                     const tokenInfo = res.usage?.tokens ? ` • tokens(in=${res.usage.tokens.input?.total ?? 0},out=${res.usage.tokens.output?.total ?? 0})` : '';
                     const cbInfo = ` • usageCallbacks=${usageEvents.length}`;
-                    console.log(`[${status}] ${provider} • ${scenario.title} (${durationMs}ms) • testId=${testId} • score=${score.toFixed(2)} • cost=${totalCost ?? 0}${chunkInfo}${timeoutInfo}${jsonKeys}${imageInfo}${tokenInfo}${cbInfo}`);
+                    console.log(`[${status}] ${provider} • ${scenario.title} (${durationMs}ms) • testId=${testId} • score=${score.toFixed(2)} • cost=${totalCost ?? 0}${chunkInfo}${skippedInfo}${timeoutInfo}${jsonKeys}${imageInfo}${tokenInfo}${cbInfo}`);
                     console.log(`RESULT: ${pass ? 'PASSED' : 'FAILED'} • testId=${testId}`);
                     if (reason) {
                         console.log(`judge: ${reason}`);

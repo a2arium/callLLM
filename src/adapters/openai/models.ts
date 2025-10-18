@@ -30,6 +30,67 @@ export const defaultModels: ModelInfo[] = [
             firstTokenLatency: 74150,
         },
     },
+    // Sora 2 models
+    {
+        name: 'sora-2',
+        maxRequestTokens: 0,
+        maxResponseTokens: 0,
+        inputPricePerMillion: 0,
+        outputPricePerMillion: 0,
+        outputPricePerSecond: 0.10,
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: false,
+                audio: true,
+                video: {
+                    sizes: ['1280x720', '720x1280'],
+                    maxSeconds: 60,
+                    variants: ['video', 'thumbnail', 'spritesheet']
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 0,
+            outputSpeed: 0,
+            firstTokenLatency: 0,
+        },
+    },
+    {
+        name: 'sora-2-pro',
+        maxRequestTokens: 0,
+        maxResponseTokens: 0,
+        inputPricePerMillion: 0,
+        outputPricePerMillion: 0,
+        outputPricePerSecond: 0.30,
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: false,
+                audio: true,
+                video: {
+                    sizes: ['1280x720', '720x1280'],
+                    maxSeconds: 60,
+                    variants: ['video', 'thumbnail', 'spritesheet']
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 0,
+            outputSpeed: 0,
+            firstTokenLatency: 0,
+        },
+    },
     {
         name: 'gpt-5-mini',
         maxRequestTokens: 400000,

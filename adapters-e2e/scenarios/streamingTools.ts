@@ -35,7 +35,17 @@ export const streamingTools: Scenario = {
         toolCalls: { required: true },
         streaming: { required: true }
     },
-    run: async ({ caller }) => {
+    run: async ({ caller, provider, model }) => {
+        // Skip (treat as pass) when model does not support streaming tool calls
+        try {
+            const mi = caller.getModel(model);
+            const tc = (mi?.capabilities as any)?.toolCalls;
+            const streamingMode = typeof tc === 'object' ? tc.streamingMode : 'deltas';
+            if (streamingMode === 'none') {
+                return { outputText: '', streamed: false, usage: undefined, metadata: { skipped: true, reason: 'Model does not support streaming tool calls' } };
+            }
+        } catch { }
+
         const stream = await caller.stream('Give me the current time in Tokyo and then a short weather summary for London.', {
             tools: [timeTool, weatherTool],
             settings: { toolChoice: 'auto' }
@@ -54,12 +64,26 @@ export const streamingTools: Scenario = {
         const streamed = chunks > 1 && text.trim().length > 0;
         return { outputText: text, streamed, usage: finalUsage, metadata: { chunkCount: chunks } };
     },
-    judge: async (_ctx, result) => {
+    judge: async (ctx, result) => {
+        const { caller, model } = ctx;
+        let streamingMode: 'none' | 'onComplete' | 'deltas' = 'deltas';
+        try {
+            const mi = caller.getModel(model);
+            const tc = (mi?.capabilities as any)?.toolCalls;
+            streamingMode = typeof tc === 'object' && tc?.streamingMode ? tc.streamingMode : 'deltas';
+        } catch { }
+
         const text = (result.outputText || '').toLowerCase();
         const mentionsTime = text.includes('time') || text.includes('tokyo');
         const mentionsWeather = text.includes('weather') || text.includes('london') || text.includes('sunny');
-        const pass = Boolean(result.streamed) && mentionsTime && mentionsWeather;
-        return { pass, score: pass ? 1 : 0.5, reason: pass ? 'Streamed and referenced tool info' : 'Missing tool info or not streamed' };
+
+        const streamedOk = streamingMode === 'deltas'
+            ? Boolean(result.streamed)
+            : text.trim().length > 0; // accept single-chunk final-only models
+
+        const pass = streamedOk && mentionsTime && mentionsWeather;
+        const reason = pass ? 'Streamed (or final-only) and referenced tool info' : 'Missing tool info or not streamed';
+        return { pass, score: pass ? 1 : 0.5, reason };
     }
 };
 

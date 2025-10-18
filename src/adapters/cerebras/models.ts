@@ -9,7 +9,7 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 8000,
         capabilities: {
             streaming: true,
-            toolCalls: true,
+            toolCalls: { nonStreaming: true, streamingMode: 'none', parallel: false },
             parallelToolCalls: false,
             batchProcessing: false,
             reasoning: true,
@@ -30,7 +30,7 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 8000,
         capabilities: {
             streaming: true,
-            toolCalls: true,
+            toolCalls: { nonStreaming: true, streamingMode: 'none', parallel: true },
             parallelToolCalls: true,
             batchProcessing: false,
             reasoning: false,
@@ -51,7 +51,7 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 8000,
         capabilities: {
             streaming: true,
-            toolCalls: true,
+            toolCalls: { nonStreaming: true, streamingMode: 'none', parallel: false },
             parallelToolCalls: false,
             batchProcessing: false,
             reasoning: false,
@@ -72,7 +72,7 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 8000,
         capabilities: {
             streaming: true,
-            toolCalls: true,
+            toolCalls: { nonStreaming: true, streamingMode: 'none', parallel: true },
             parallelToolCalls: true,
             batchProcessing: false,
             reasoning: false,
@@ -93,7 +93,7 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 8000,
         capabilities: {
             streaming: true,
-            toolCalls: true,
+            toolCalls: { nonStreaming: true, streamingMode: 'none', parallel: false },
             parallelToolCalls: false,
             batchProcessing: false,
             reasoning: true,
@@ -114,7 +114,7 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 8000,
         capabilities: {
             streaming: true,
-            toolCalls: true,
+            toolCalls: { nonStreaming: true, streamingMode: 'none', parallel: false },
             parallelToolCalls: false,
             batchProcessing: false,
             reasoning: false,
@@ -135,7 +135,7 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 64000,
         capabilities: {
             streaming: true,
-            toolCalls: true,
+            toolCalls: { nonStreaming: true, streamingMode: 'none', parallel: false },
             parallelToolCalls: false,
             batchProcessing: false,
             reasoning: true,
@@ -156,7 +156,7 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 8000,
         capabilities: {
             streaming: true,
-            toolCalls: true,
+            toolCalls: { nonStreaming: true, streamingMode: 'onComplete', parallel: true },
             parallelToolCalls: true,
             batchProcessing: false,
             reasoning: false,

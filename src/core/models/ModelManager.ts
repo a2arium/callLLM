@@ -94,8 +94,15 @@ export class ModelManager {
         if (!model.name) throw new Error('Model name is required');
         if (model.inputPricePerMillion === undefined) throw new Error('Input price is required');
         if (model.outputPricePerMillion === undefined) throw new Error('Output price is required');
-        if (!model.maxRequestTokens) throw new Error('Max request tokens is required');
-        if (model.maxResponseTokens === undefined) throw new Error('Max response tokens is required');
+        // For video-only output models (e.g., Sora), token limits are not applicable
+        const outputsText = Boolean(model.capabilities?.output?.text);
+        const outputsVideo = Boolean(model.capabilities?.output?.video);
+        const isVideoOnlyOutput = outputsVideo && !outputsText;
+
+        if (!isVideoOnlyOutput) {
+            if (!model.maxRequestTokens) throw new Error('Max request tokens is required');
+            if (model.maxResponseTokens === undefined) throw new Error('Max response tokens is required');
+        }
         if (!model.characteristics) throw new Error('Model characteristics are required');
 
         // Check for negative prices
@@ -103,8 +110,8 @@ export class ModelManager {
         if (model.outputPricePerMillion < 0) throw new Error('Invalid model configuration');
 
         // Check for negative token values
-        if (model.maxRequestTokens < 0) throw new Error('Invalid model configuration');
-        if (model.maxResponseTokens < 0) throw new Error('Invalid model configuration');
+        if (!isVideoOnlyOutput && model.maxRequestTokens < 0) throw new Error('Invalid model configuration');
+        if (!isVideoOnlyOutput && model.maxResponseTokens < 0) throw new Error('Invalid model configuration');
     }
 
     public resolveModel(nameOrAlias: string, capabilityRequirements?: CapabilityRequirement): string {

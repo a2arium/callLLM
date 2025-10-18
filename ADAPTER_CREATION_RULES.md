@@ -621,6 +621,70 @@ export const mapProviderError = (error: unknown): OpenAIResponseAdapterError => 
 ```
 - Each `ModelInfo` should declare pricing, token limits, and capabilities (streaming, toolCalls, parallelToolCalls, reasoning, input/output formats). The capability map drives features like tool calling and JSON mode decisions across controllers.
 
+### Video generation support (Sora-like models)
+
+If your provider supports asynchronous video generation, implement it in a provider-agnostic way mirroring OpenAI Sora:
+
+1) Capabilities and pricing
+- In your adapter’s `models.ts`, add models with:
+  - `capabilities.input.text = true` (and optionally `input.image = true` if images can seed first frame)
+  - `capabilities.output.video = true | { sizes?: string[]; maxSeconds?: number; variants?: ('video'|'thumbnail'|'spritesheet')[] }
+  - `capabilities.output.audio = true` if audio is emitted with the video
+  - `outputPricePerSecond` set to per-second price
+
+2) Provider interface
+- Implement `LLMProviderVideo` in your adapter:
+  - `videoCall(model, { prompt, size, seconds, wait, variant, outputPath })`:
+    - `seconds` is a number (provider-specific constraints; e.g., OpenAI accepts 1-60). Validate or convert as needed for your provider's API.
+    - `wait: 'none'` → create job, return `metadata.videoJobId`, `videoStatus`, `videoProgress`, and computed `usage`
+    - `wait: 'poll'` → create-and-poll until complete, compute `usage`, and if `outputPath` provided, download requested `variant` and set `metadata.videoSavedPath`
+  - `retrieveVideo(videoId)` → return `{ id, status, progress?, model?, seconds?, size? }`
+  - `downloadVideo(videoId, variant)` → return binary (ArrayBuffer) for `video|thumbnail|spritesheet`
+
+3) Usage and cost
+- Compute usage for video as:
+  - `usage.tokens.output.videoSeconds = seconds`
+  - `usage.costs.output.video = seconds * model.outputPricePerSecond`
+  - Ensure `usage.costs.total` includes the video cost
+- Attach `usage` to `UniversalChatResponse.metadata`
+- The framework will invoke `usageCallback` if configured; streaming is not applicable to video creation itself (it’s async by job status)
+
+4) LLMCaller routing
+- The core caller checks `output.video` and routes to `provider.videoCall` with capability validation. New adapters only need to implement the interface above; no core edits required.
+
+5) Error mapping
+- Map auth, rate limit, network, and validation errors to your adapter’s error types; include retry-after when available. For long jobs, `wait: 'poll'` should propagate provider failures clearly.
+
+6) Examples and docs
+- Provide an example demonstrating:
+  - Blocking (poll + auto-download to `outputPath`)
+  - Non-blocking (create → retrieve loop → download)
+- Print `metadata.usage` so per-second pricing is visible.
+
+### Tool calling capabilities (granular)
+
+- For simple providers, `capabilities.toolCalls` can be a boolean `true` (interpreted as full support: non‑streaming tool calls, streaming tool call deltas, parallel enabled), or `false`.
+- For nuanced model behavior, use the structured form:
+
+```
+capabilities: {
+  toolCalls: {
+    nonStreaming: boolean,                  // supports tool calls in non‑streaming completion calls
+    streamingMode: 'none' | 'deltas',       // 'none' = unsupported in streaming; 'deltas' = mid‑stream tool_call deltas
+    parallel?: boolean                      // supports parallel tool calls
+  },
+  // parallelToolCalls (deprecated) is still read for backwards compatibility
+}
+```
+
+- Guidance:
+  - Prefer structured `toolCalls` per model when behavior differs.
+  - Keep `parallelToolCalls` in sync or omit it; selection code reads `toolCalls.parallel` first and falls back to `parallelToolCalls`.
+
+### Streaming tools in e2e scenarios
+
+- Some models do not support streaming tool calls (`streamingMode: 'none'`). For these, the `streaming-tools` e2e scenario will skip execution (treated as pass) and annotate the result with a skip reason. This is expected and ensures providers/models that only support non‑streaming tools still pass the suite.
+
 ### Implementation blueprint (recommended files)
 
 - `src/adapters/<provider>/adapter.ts`

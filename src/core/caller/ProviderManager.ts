@@ -1,8 +1,9 @@
-import type { LLMProvider, LLMProviderImage, LLMProviderEmbedding, ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.ts';
+import type { LLMProvider, LLMProviderImage, LLMProviderEmbedding, ImageOp, ImageCallParams, LLMProviderVideo, VideoCallParams } from '../../interfaces/LLMProvider.ts';
 import type { AdapterConfig } from '../../adapters/base/baseAdapter.ts';
 import { adapterRegistry, type RegisteredProviders } from '../../adapters/index.ts';
 import { ProviderNotFoundError } from '../../adapters/types.ts';
 import type { UniversalChatResponse, EmbeddingParams, EmbeddingResponse } from '../../interfaces/UniversalInterfaces.ts';
+import { logger } from '../../utils/logger.ts';
 
 export class ProviderManager {
     private provider: LLMProvider;
@@ -101,6 +102,36 @@ export class ProviderManager {
         }
 
         return embeddingProvider.embeddingCall(model, params);
+    }
+
+    /** Video support checks */
+    public supportsVideoGeneration(): boolean {
+        return 'videoCall' in this.provider;
+    }
+
+    public getVideoProvider(): LLMProviderVideo | null {
+        if (this.supportsVideoGeneration()) {
+            return this.provider as unknown as LLMProviderVideo;
+        }
+        return null;
+    }
+
+    public async callVideoOperation(model: string, params: VideoCallParams): Promise<UniversalChatResponse> {
+        const log = logger.createLogger({ prefix: 'ProviderManager.callVideoOperation' });
+        log.info('Invoking provider videoCall', { model, params: { ...params, prompt: params.prompt?.slice(0, 40) } });
+        const videoProvider = this.getVideoProvider();
+        if (!videoProvider) {
+            throw new Error(`Provider '${this.currentProviderName}' does not support video generation`);
+        }
+        const resp = await videoProvider.videoCall(model, params);
+        log.info('Provider videoCall returned', {
+            model,
+            status: resp.metadata?.videoStatus,
+            jobId: resp.metadata?.videoJobId,
+            progress: resp.metadata?.videoProgress,
+            savedPath: resp.metadata?.videoSavedPath
+        });
+        return resp;
     }
 
     public switchProvider(providerName: RegisteredProviders, apiKey?: string): void {

@@ -54,6 +54,7 @@
     "example:image": "tsx examples/imageInput.ts",
     "example:imageGenerate": "tsx examples/imageGenerationAndEditing.ts",
     "example:embeddings": "tsx examples/embeddings-example.ts",
+    "example:video": "tsx examples/videoGeneration.ts",
     "adapters:e2e": "tsx adapters-e2e/run.ts",
     "adapters:e2e:fast": "tsx adapters-e2e/run.ts --providers=cerebras --scenarios=simple-chat,streaming-chat",
     "lint": "eslint . --ext .ts"
@@ -83,15 +84,15 @@
     "universal"
   ],
   "dependencies": {
-    "@dqbd/tiktoken": "^1.0.18",
     "@cerebras/cerebras_cloud_sdk": "^1.50.0",
+    "@dqbd/tiktoken": "^1.0.18",
     "@modelcontextprotocol/sdk": "^1.10.2",
     "@types/jest": "^29.5.14",
     "@types/sharp": "^0.32.0",
     "dotenv": "^16.4.7",
     "jest": "^29.7.0",
     "jsonrepair": "^3.12.0",
-    "openai": "^6.2.0",
+    "openai": "^6.3.0",
     "opik": "^1.8.70",
     "sharp": "^0.34.1",
     "tree-kill": "^1.2.2",

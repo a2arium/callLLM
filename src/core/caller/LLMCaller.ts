@@ -44,6 +44,9 @@ import { StreamingService } from '../streaming/StreamingService.ts';
 import type { ToolDefinition, ToolCall } from '../../types/tooling.ts';
 import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
 import { StreamController } from '../streaming/StreamController.ts';
+import type { LLMProviderVideo } from '../../interfaces/LLMProvider.ts';
+import * as fs from 'fs';
+import * as path from 'path';
 import { HistoryManager } from '../history/HistoryManager.ts';
 import { logger } from '../../utils/logger.ts';
 import { PromptEnhancer } from '../prompt/PromptEnhancer.ts';
@@ -355,6 +358,28 @@ export class LLMCaller implements MCPDirectAccess {
                     }
                 }
             }
+        }
+    }
+
+    // Convenience helpers for video jobs
+    public async retrieveVideo(videoId: string): Promise<{ id: string; status: 'queued' | 'in_progress' | 'completed' | 'failed'; progress?: number; model?: string; seconds?: number; size?: string }> {
+        const provider = this.providerManager.getVideoProvider();
+        if (!provider) {
+            throw new Error(`Provider '${this.providerManager.getCurrentProviderName()}' does not support video generation`);
+        }
+        return provider.retrieveVideo(videoId);
+    }
+
+    public async downloadVideo(videoId: string, options?: { variant?: 'video' | 'thumbnail' | 'spritesheet'; outputPath?: string }): Promise<void> {
+        const provider = this.providerManager.getVideoProvider();
+        if (!provider) {
+            throw new Error(`Provider '${this.providerManager.getCurrentProviderName()}' does not support video generation`);
+        }
+        const variant = options?.variant || 'video';
+        const data = await provider.downloadVideo(videoId, variant);
+        if (options?.outputPath) {
+            await fs.promises.mkdir(path.dirname(options.outputPath), { recursive: true });
+            await fs.promises.writeFile(options.outputPath, Buffer.from(data));
         }
     }
 
@@ -1320,11 +1345,15 @@ export class LLMCaller implements MCPDirectAccess {
                 const capabilities = ModelManager.getCapabilities(modelToUse);
                 const hasImageInput = actualOptions.file || (actualOptions.files && actualOptions.files.length > 0);
                 const hasImageOutput = Boolean(actualOptions.output?.image);
+                const hasVideoOutput = Boolean(actualOptions.output?.video);
                 if (hasImageInput && !capabilities.input.image) {
                     throw new CapabilityError(`Model "${modelToUse}" does not support image inputs.`);
                 }
                 if (hasImageOutput && !capabilities.output.image) {
                     throw new CapabilityError(`Model "${modelToUse}" does not support image outputs.`);
+                }
+                if (hasVideoOutput && !capabilities.output.video) {
+                    throw new CapabilityError(`Model "${modelToUse}" does not support video outputs.`);
                 }
 
                 // If this is going to be an image operation, determine which one and check capability
@@ -1353,6 +1382,35 @@ export class LLMCaller implements MCPDirectAccess {
                             }
                         }
                     }
+                }
+
+                // If this is a video output request, route to provider video API
+                if (hasVideoOutput) {
+                    const videoOpts = actualOptions.output?.video;
+                    const wait = videoOpts?.wait || 'none';
+                    const providerResponse = await this.providerManager.callVideoOperation(modelToUse, {
+                        prompt: actualOptions.text || '',
+                        size: (videoOpts?.size as any) || undefined,
+                        seconds: videoOpts?.seconds,
+                        wait,
+                        variant: videoOpts?.variant,
+                        outputPath: actualOptions.outputPath
+                    });
+
+                    // Trigger usage callback if available
+                    const usage = providerResponse.metadata?.usage;
+                    if (usage && this.usageCallback && this.callerId) {
+                        try {
+                            await Promise.resolve(this.usageCallback({
+                                callerId: this.callerId,
+                                usage,
+                                timestamp: Date.now()
+                            }));
+                        } catch (_) {
+                            // ignore callback errors
+                        }
+                    }
+                    return [providerResponse];
                 }
             }
 
@@ -1480,6 +1538,122 @@ export class LLMCaller implements MCPDirectAccess {
             const opts: LLMCallOptions = typeof message === 'string'
                 ? { text: message, ...options }
                 : { ...message };
+
+            // Early logging for video routing intent
+            if (opts.output?.video) {
+                log.info('Detected video output request; will attempt to route to videoCall', {
+                    requestedModel: this.getResolvedModel(),
+                    size: opts.output.video.size,
+                    seconds: opts.output.video.seconds,
+                    wait: opts.output.video.wait,
+                    variant: opts.output.video.variant
+                });
+
+                // Short-circuit routing to provider videoCall (bypass chat path entirely)
+                const initialModel = (opts.settings?.providerOptions?.model as string) || this.getResolvedModel();
+                const videoOpts = opts.output.video;
+                log.info('Routing to provider videoCall (short-circuit)', {
+                    model: initialModel,
+                    size: videoOpts.size,
+                    seconds: videoOpts.seconds,
+                    wait: videoOpts.wait || 'none',
+                    variant: videoOpts.variant
+                });
+
+                // Start telemetry for video call
+                let llmCtx;
+                let conversationCtx;
+                if (this.telemetryCollector) {
+                    conversationCtx = this.telemetryCollector.startConversation('call', {
+                        callerId: this.callerId,
+                        hasTools: false
+                    });
+                    const providerName = (this.providerManager.getCurrentProviderName?.() as unknown as string)
+                        || this.providerManager.getProvider().constructor.name
+                        || 'unknown';
+                    llmCtx = this.telemetryCollector.startLLM(conversationCtx, {
+                        provider: String(providerName).toLowerCase(),
+                        model: initialModel,
+                        streaming: false,
+                        responseFormat: undefined, // video is not a standard format, leave undefined
+                        toolsEnabled: false
+                    });
+                    // Add the prompt as a message
+                    this.telemetryCollector.addPrompt(llmCtx, [{
+                        role: 'user',
+                        content: opts.text || '',
+                        sequence: 1,
+                        ...(opts.file ? { images: [{ source: 'file_path' as const, path: opts.file }] } : {})
+                    }]);
+                }
+
+                const providerResponse = await this.providerManager.callVideoOperation(initialModel, {
+                    prompt: opts.text || '',
+                    image: opts.file || (opts.files && opts.files[0]) || undefined,
+                    size: (videoOpts.size as any) || undefined,
+                    seconds: videoOpts.seconds,
+                    wait: videoOpts.wait || 'none',
+                    variant: videoOpts.variant,
+                    outputPath: opts.outputPath
+                });
+
+                log.info('videoCall completed', {
+                    model: initialModel,
+                    status: providerResponse.metadata?.videoStatus,
+                    jobId: providerResponse.metadata?.videoJobId,
+                    progress: providerResponse.metadata?.videoProgress,
+                    savedPath: providerResponse.metadata?.videoSavedPath
+                });
+
+                // End telemetry with video output info
+                if (this.telemetryCollector && llmCtx) {
+                    const videoStatus = providerResponse.metadata?.videoStatus;
+                    const videoPath = providerResponse.metadata?.videoSavedPath;
+                    const videoError = providerResponse.metadata?.videoError;
+
+                    this.telemetryCollector.addChoice(llmCtx, {
+                        index: 0,
+                        finishReason: videoStatus === 'completed' ? 'stop' : 'error',
+                        content: videoStatus === 'completed'
+                            ? `Video generated successfully: ${videoPath || providerResponse.metadata?.videoJobId}`
+                            : `Video generation failed: ${JSON.stringify(videoError)}`,
+                        contentLength: 0,
+                        toolCalls: []
+                    });
+
+                    this.telemetryCollector.endLLM(llmCtx, providerResponse.metadata?.usage);
+                }
+
+                if (this.telemetryCollector && conversationCtx) {
+                    await this.telemetryCollector.endConversation(conversationCtx, undefined, {
+                        initialMessages: [{
+                            role: 'user',
+                            content: opts.text || '',
+                            sequence: 1,
+                            ...(opts.file ? { images: [{ source: 'file_path' as const, path: opts.file }] } : {})
+                        }],
+                        finalResponse: providerResponse.metadata?.videoStatus === 'completed'
+                            ? `Video: ${providerResponse.metadata?.videoSavedPath || providerResponse.metadata?.videoJobId}`
+                            : `Failed: ${JSON.stringify(providerResponse.metadata?.videoError)}`
+                    });
+                }
+
+                // Trigger usage callback if available
+                const usage = providerResponse.metadata?.usage;
+                if (usage && this.usageCallback && this.callerId) {
+                    try {
+                        await Promise.resolve(this.usageCallback({
+                            callerId: this.callerId,
+                            usage,
+                            timestamp: Date.now()
+                        }));
+                    } catch (_) {
+                        // ignore callback errors
+                    }
+                }
+
+                return [providerResponse];
+            }
 
             let modelToUse = opts.settings?.providerOptions?.model as string || this.getResolvedModel();
             if (typeof ModelManager.getCapabilities === 'function') {

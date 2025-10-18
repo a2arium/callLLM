@@ -14,7 +14,7 @@ export const toolFolderScenario: Scenario = {
     run: async ({ caller }) => {
         const toolsDir = path.join(__dirname, '../../examples/functions');
         // With toolsDir configured in caller constructor, pass tool names only
-        const resp = await caller.call('Call get_time for Tokyo and get_weather for London, then summarize.', {
+        const resp = await caller.call('Call get_time for Tokyo and get_weather for London. Then write a one-sentence summary that explicitly mentions both Tokyo and London and uses the outputs.', {
             tools: ['getTime', 'getWeather'],
             settings: { toolChoice: 'auto' }
         });
