@@ -361,7 +361,8 @@ export class OpikProvider implements TelemetryProvider {
     }
 
     async init(config: ProviderInit): Promise<void> {
-        this.enabled = /^(1|true)$/i.test(String(config.env.CALLLLM_OPIK_ENABLED || ''));
+        const explicitlyEnabled = /^(1|true)$/i.test(String(config.env.CALLLLM_OPIK_ENABLED || ''));
+        this.enabled = explicitlyEnabled;
         this.redaction = config.redaction || {
             redactPrompts: false,
             redactResponses: false,
@@ -420,7 +421,13 @@ export class OpikProvider implements TelemetryProvider {
             // Avoid registering beforeExit async flush hooks which can keep the event loop alive
         } catch (e) {
             this.enabled = false;
-            this.log.warn('Failed to initialize Opik client; provider disabled', e as Error);
+            // Only log warning if Opik was explicitly enabled by user
+            // Silent failure if not explicitly configured (avoid noise from optional dependency issues)
+            if (explicitlyEnabled) {
+                this.log.warn('Failed to initialize Opik client; provider disabled', e as Error);
+            } else {
+                this.log.debug('Opik not available (optional dependency)', e as Error);
+            }
         }
     }
 

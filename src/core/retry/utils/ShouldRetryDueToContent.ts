@@ -70,6 +70,11 @@ export function shouldRetryDueToContent(response: string | ResponseWithToolCalls
             return true;
         }
 
+        // Skip forbidden phrase check for long responses
+        if (response.length > 1000) {
+            return false;
+        }
+
         const lowerCaseResponse = response.toLowerCase();
         const hasBlockingPhrase = FORBIDDEN_PHRASES.some(phrase => lowerCaseResponse.includes(phrase.toLowerCase()));
         if (hasBlockingPhrase) {

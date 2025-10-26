@@ -1851,24 +1851,23 @@ Model Context Protocol (MCP) is a standard protocol for providing AI models acce
 
 ```typescript
 import { LLMCaller } from 'callllm';
+import type { MCPServersMap } from 'callllm';
 
 // Initialize the caller as usual
 const caller = new LLMCaller('openai', 'gpt-4o', 'You are a helpful assistant.');
 
 // Create an MCP config object
-const mcpConfig = {
-  mcpServers: {
+const mcpConfig: MCPServersMap = {
+  filesystem: {
     // A filesystem server with access to the current directory
-    filesystem: {
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
-    },
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
+  },
+  github: {
     // A GitHub server with auth via environment variable
-    github: {
-      url: 'https://api.mcp-example.com/github',
-      headers: {
-        'Authorization': 'Bearer ${GITHUB_TOKEN}'
-      }
+    url: 'https://api.mcp-example.com/github',
+    headers: {
+      'Authorization': 'Bearer ${GITHUB_TOKEN}'
     }
   }
 };
@@ -1877,7 +1876,7 @@ const mcpConfig = {
 const response = await caller.call(
   'List files in the current directory and create a README.md',
   {
-    tools: [mcpConfig], // Pass the MCP config as a tool
+    tools: [{ mcpServers: mcpConfig }], // Wrap in mcpServers object
     settings: { toolChoice: 'auto' }
   }
 );
@@ -1887,9 +1886,11 @@ console.log(response.content);
 
 #### MCP Server Configuration
 
-You can configure MCP servers using the following options:
+You can configure MCP servers using the following options (these types are exported from `callllm`):
 
 ```typescript
+import type { MCPServerConfig, MCPServersMap } from 'callllm';
+
 type MCPServerConfig = {
   // Transport type: 'stdio', 'http', or 'custom'
   // Automatically inferred if not specified
@@ -1910,6 +1911,8 @@ type MCPServerConfig = {
   disabled?: boolean;
   autoApprove?: string[];
 };
+
+type MCPServersMap = Record<string, MCPServerConfig>;
 ```
 
 #### Environment Variable Substitution
@@ -1917,17 +1920,17 @@ type MCPServerConfig = {
 You can reference environment variables in the `env` and `headers` fields using the `${ENV_VAR}` syntax:
 
 ```typescript
-{
-  mcpServers: {
-    github: {
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-github'],
-      env: {
-        GITHUB_TOKEN: '${GITHUB_PAT}' // Will be replaced with process.env.GITHUB_PAT
-      }
+import type { MCPServersMap } from 'callllm';
+
+const mcpConfig: MCPServersMap = {
+  github: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-github'],
+    env: {
+      GITHUB_TOKEN: '${GITHUB_PAT}' // Will be replaced with process.env.GITHUB_PAT
     }
   }
-}
+};
 ```
 
 #### Mixing Tool Types

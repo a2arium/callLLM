@@ -40,3 +40,12 @@ export { ModelManager } from './core/models/ModelManager.ts';
 export { TokenCalculator } from './core/models/TokenCalculator.ts';
 export { ToolsManager } from './core/tools/ToolsManager.ts';
 export { HistoryManager } from './core/history/HistoryManager.ts';
+
+// MCP functionality (most commonly used exports)
+export { MCPServiceAdapter } from './core/mcp/MCPServiceAdapter.ts';
+export type {
+    MCPServerConfig,
+    MCPServersMap,
+    McpToolSchema,
+    MCPDirectAccess
+} from './core/index.ts';

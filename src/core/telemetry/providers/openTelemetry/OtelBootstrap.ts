@@ -1,10 +1,12 @@
 // Physically moved implementation into provider directory to fully encapsulate OTel specifics
 import { logger } from '../../../../utils/logger.ts';
-import { OtelService, type EmbeddingConfig } from './OtelService.ts';
-import type { Context } from '@opentelemetry/api';
+import type { EmbeddingConfig } from './OtelService.ts';
+
+// Lazy-loaded to avoid hard dependency on @opentelemetry/api
+let OtelService: any;
 
 let initialized = false;
-let otelServiceInstance: OtelService | undefined;
+let otelServiceInstance: any | undefined;
 let shutdownFn: (() => Promise<void>) | undefined;
 let sdkReadyResolve: (() => void) | undefined;
 // Resolves once the SDK is started (or immediately if disabled / on failure)
@@ -16,7 +18,7 @@ const sdkReadyPromise: Promise<void> = new Promise<void>((resolve) => {
  * Auto-initialize OpenTelemetry (Node SDK + OTLP HTTP exporter) from env, if enabled.
  * Safe to call multiple times; initializes once.
  */
-export function getAutoOtelService(): OtelService | undefined {
+export function getAutoOtelService(): any | undefined {
     if (initialized) return otelServiceInstance;
     initialized = true;
 
@@ -56,6 +58,10 @@ export function getAutoOtelService(): OtelService | undefined {
     // Dynamically import SDK; if unavailable, continue without telemetry
     (async () => {
         try {
+            // Lazy load OtelService to avoid triggering @opentelemetry/api import at module level
+            const otelServiceModule = await import('./OtelService.ts');
+            OtelService = otelServiceModule.OtelService;
+
             const opentelemetry = await import('@opentelemetry/sdk-node');
             const exporters = await import('@opentelemetry/exporter-trace-otlp-http');
             const traceBase = await import('@opentelemetry/sdk-trace-base');
@@ -91,8 +97,7 @@ export function getAutoOtelService(): OtelService | undefined {
         }
     })().catch(() => { /* noop */ });
 
-    // Return a service immediately; it will become effective once SDK starts
-    otelServiceInstance = otelServiceInstance || new OtelService();
+    // Return undefined immediately; service will be available once SDK starts
     return otelServiceInstance;
 }
 
@@ -114,7 +119,7 @@ export async function awaitOtelReady(): Promise<void> {
  * Create an embedded OtelService for use in higher-order projects
  * This allows parent projects to provide their own context and configuration
  */
-export function createEmbeddedOtelService(config: EmbeddingConfig): OtelService {
+export async function createEmbeddedOtelService(config: EmbeddingConfig): Promise<any> {
     const log = logger.createLogger({ prefix: 'OtelBootstrap.createEmbeddedOtelService' });
 
     log.debug('Creating embedded OtelService', {
@@ -124,6 +129,12 @@ export function createEmbeddedOtelService(config: EmbeddingConfig): OtelService 
         hasRedactionPolicy: Boolean(config.redactionPolicy)
     });
 
+    // Lazy load OtelService
+    if (!OtelService) {
+        const otelServiceModule = await import('./OtelService.ts');
+        OtelService = otelServiceModule.OtelService;
+    }
+
     return new OtelService(config);
 }
 
@@ -131,10 +142,10 @@ export function createEmbeddedOtelService(config: EmbeddingConfig): OtelService 
  * Get or create OtelService with enhanced configuration support
  * This is a more flexible version of getAutoOtelService
  */
-export function getOtelService(config?: EmbeddingConfig): OtelService | undefined {
+export async function getOtelService(config?: EmbeddingConfig): Promise<any | undefined> {
     if (config) {
         // If specific configuration is provided, create a new instance
-        return createEmbeddedOtelService(config);
+        return await createEmbeddedOtelService(config);
     }
 
     // Otherwise, use the auto-initialized instance
@@ -152,7 +163,7 @@ export function isOtelEnabled(): boolean {
 /**
  * Get current OtelService instance without auto-initialization
  */
-export function getCurrentOtelService(): OtelService | undefined {
+export function getCurrentOtelService(): any | undefined {
     return otelServiceInstance;
 }
 

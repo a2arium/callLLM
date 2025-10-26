@@ -7,15 +7,19 @@ The Model Context Protocol (MCP) allows callllm to use tools provided by externa
 The primary way to use MCP servers is through LLM interaction. In addition to function folders and explicit `ToolDefinition` objects, you can pass MCP server configurations:
 
 ```typescript
+import { LLMCaller } from 'callllm';
+import type { MCPServersMap } from 'callllm';
+
 // MCP server configuration
-const mcpConfig = {
-  mcpServers: {
-    filesystem: {
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
-    }
+const mcpConfig: MCPServersMap = {
+  filesystem: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
   }
 };
+
+// Initialize caller
+const caller = new LLMCaller('openai', 'fast');
 
 // Use MCP servers as tools in a call
 const response = await caller.call("List the files in the current directory", {
@@ -50,11 +54,14 @@ interface MCPDirectAccess {
 You can leverage the direct access calls to MCP servers whenever it's needed:
 
 ```typescript
+import { LLMCaller } from 'callllm';
+import type { MCPServersMap } from 'callllm';
+
 // Initialize LLMCaller and set up MCP for LLM usage
 const caller = new LLMCaller('openai', 'fast');
 
 // Define your MCP server configuration
-const mcpConfig = {
+const mcpConfig: MCPServersMap = {
   filesystem: {
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
@@ -89,6 +96,16 @@ This prevents duplicate server instances when using direct MCP tool calls togeth
 For more advanced cases where you need explicit connection management:
 
 ```typescript
+import { LLMCaller, MCPServiceAdapter } from 'callllm';
+import type { MCPServersMap } from 'callllm';
+
+const mcpConfig: MCPServersMap = {
+  filesystem: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
+  }
+};
+
 // Create and initialize the MCP service adapter with the SDK
 const adapter = new MCPServiceAdapter(mcpConfig);
 
@@ -147,6 +164,12 @@ const fileContent = await caller.callMcpTool(
 Handle potential errors when working with MCP tools:
 
 ```typescript
+import { 
+  MCPConnectionError, 
+  MCPToolCallError, 
+  MCPAuthenticationError 
+} from 'callllm/core';
+
 try {
   const result = await caller.callMcpTool('filesystem', 'read_file', { path: 'non_existent_file.txt' });
   console.log('Success:', result);
@@ -191,41 +214,37 @@ CallLLM uses the official MCP SDK to connect to MCP servers. The implementation 
 ### Transport Configuration Examples
 
 ```typescript
+import type { MCPServersMap } from 'callllm';
+
 // Stdio transport (local process)
-const mcpConfig = {
-  mcpServers: {
-    filesystem: {
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-filesystem', '.'],
-      env: { 'DEBUG': 'true' }  // Optional environment variables
-    }
+const mcpConfig: MCPServersMap = {
+  filesystem: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '.'],
+    env: { 'DEBUG': 'true' }  // Optional environment variables
   }
 };
 
 // HTTP transport with Streamable HTTP mode
-const mcpHttpConfig = {
-  mcpServers: {
-    remoteServer: {
-      url: 'https://api.example.com/mcp',
-      type: 'http',  // Explicitly specify transport type
-      mode: 'streamable',  // Use streamable HTTP mode
-      headers: {  // Optional headers
-        'Authorization': 'Bearer your-token'
-      }
+const mcpHttpConfig: MCPServersMap = {
+  remoteServer: {
+    url: 'https://api.example.com/mcp',
+    type: 'http',  // Explicitly specify transport type
+    mode: 'streamable',  // Use streamable HTTP mode
+    headers: {  // Optional headers
+      'Authorization': 'Bearer your-token'
     }
   }
 };
 
 // HTTP transport with SSE mode and OAuth
-const mcpOAuthConfig = {
-  mcpServers: {
-    oauthServer: {
-      url: 'https://api.secure.example.com/mcp',
-      type: 'http',
-      mode: 'sse',  // Use SSE mode
-      auth: {  // Authentication configuration
-        provider: oauthProvider  // OAuthProvider instance
-      }
+const mcpOAuthConfig: MCPServersMap = {
+  oauthServer: {
+    url: 'https://api.secure.example.com/mcp',
+    type: 'http',
+    mode: 'sse',  // Use SSE mode
+    auth: {  // Authentication configuration
+      provider: oauthProvider  // OAuthProvider instance
     }
   }
 };
@@ -262,12 +281,12 @@ Setting `mode: 'sse'` explicitly:
 For example, if you know a server requires SSE mode:
 
 ```typescript
-const config = {
-  mcpServers: {
-    knownSseServer: {
-      url: 'https://api.example.com/mcp',
-      mode: 'sse'  // Skip StreamableHTTP and use SSE directly
-    }
+import type { MCPServersMap } from 'callllm';
+
+const config: MCPServersMap = {
+  knownSseServer: {
+    url: 'https://api.example.com/mcp',
+    mode: 'sse'  // Skip StreamableHTTP and use SSE directly
   }
 };
 ```

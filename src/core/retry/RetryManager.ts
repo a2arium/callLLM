@@ -47,7 +47,16 @@ export class RetryManager {
         // Loop until a successful operation or until retries are exhausted.
         while (attempt <= (this.config.maxRetries ?? 3)) {
             try {
-                if (attempt > 0) { console.log(`RetryManager: Attempt ${attempt + 1}`); }
+                if (attempt > 0) {
+                    // Extract retry reason from the error
+                    let retryReason = 'Unknown reason';
+                    if (lastError instanceof Error) {
+                        retryReason = lastError.message;
+                    } else if (typeof lastError === 'string') {
+                        retryReason = lastError;
+                    }
+                    console.log(`RetryManager: Attempt ${attempt + 1} - Reason: ${retryReason}`);
+                }
                 // Execute and return the successful result from the operation.
                 return await operation();
             } catch (error) {

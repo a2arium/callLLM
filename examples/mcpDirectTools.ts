@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { MCPServerConfig, MCPServersMap, McpToolSchema } from '../src/core/mcp/MCPConfigTypes.ts';
-import { MCPServiceAdapter } from '../src/core/mcp/MCPServiceAdapter.ts';
+import { MCPServiceAdapter } from 'callllm';
+import type { MCPServerConfig, MCPServersMap, McpToolSchema } from 'callllm';
 
 /**
  * Example: Directly using MCP tools without an LLM

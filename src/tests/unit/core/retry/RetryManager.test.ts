@@ -159,9 +159,9 @@ describe('RetryManager Logging', () => {
     expect(result).toBe('success');
     expect(operation).toHaveBeenCalledTimes(3);
 
-    // Check that log messages have been output for each attempt.
-    expect(logSpy).toHaveBeenCalledWith('RetryManager: Attempt 2');
-    expect(logSpy).toHaveBeenCalledWith('RetryManager: Attempt 3');
+    // Check that log messages have been output for each attempt with retry reason.
+    expect(logSpy).toHaveBeenCalledWith('RetryManager: Attempt 2 - Reason: fail 1');
+    expect(logSpy).toHaveBeenCalledWith('RetryManager: Attempt 3 - Reason: fail 2');
 
     logSpy.mockRestore();
     jest.useRealTimers();

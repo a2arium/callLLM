@@ -38,8 +38,43 @@ export type { TelemetryProvider, RedactionPolicy } from './telemetry/collector/t
 export { OpenTelemetryProvider } from './telemetry/providers/openTelemetry/OpenTelemetryProvider.ts'
 
 // Core MCP exports
-export type { MCPServerConfig, MCPServersMap, MCPToolConfig } from './mcp/MCPConfigTypes.ts';
+export { MCPServiceAdapter } from './mcp/MCPServiceAdapter.ts';
+export { MCPToolLoader } from './mcp/MCPToolLoader.ts';
+export type { IMCPToolLoader } from './mcp/MCPToolLoader.ts';
+
+export type {
+    MCPServerConfig,
+    MCPServersMap,
+    MCPToolConfig,
+    McpToolSchema,
+    MCPToolDescriptor,
+    MCPProgressNotification,
+    MCPTransportType,
+    MCPHttpMode,
+    MCPAuthConfig,
+    MCPToolError
+} from './mcp/MCPConfigTypes.ts';
+
+export {
+    MCPConnectionError,
+    MCPToolCallError,
+    MCPAuthenticationError,
+    MCPTimeoutError,
+    isMCPToolConfig
+} from './mcp/MCPConfigTypes.ts';
+
 export type { MCPDirectAccess } from './mcp/MCPDirectAccess.ts';
+
+export type {
+    MCPRequestOptions,
+    Resource,
+    ReadResourceParams,
+    ReadResourceResult,
+    ResourceTemplate,
+    Prompt,
+    GetPromptParams,
+    GetPromptResult
+} from './mcp/MCPInterfaces.ts';
 
 // Error types
 export { CapabilityError } from './models/CapabilityError.ts'; 

@@ -114,6 +114,11 @@ describe('ShouldRetryDueToLLMError', () => {
             expect(shouldRetryDueToLLMError(error)).toBe(true);
         });
 
+        test('should retry for content-triggered retry errors with content snippet', () => {
+            const error = new Error('Response content triggered retry. First 255 chars: Lorem ipsum dolor sit amet...');
+            expect(shouldRetryDueToLLMError(error)).toBe(true);
+        });
+
         test('should retry for network errors including premature close', () => {
             const networkErrors = [
                 'Invalid response body while trying to fetch https://api.openai.com/v1/responses: Premature close',

@@ -78,7 +78,7 @@ export function shouldRetryDueToLLMError(error: unknown): boolean {
 
         // Check for content-triggered retry (already handled in separate function,
         // but included here for completeness)
-        if (error.message === "Response content triggered retry") {
+        if (error.message.startsWith("Response content triggered retry")) {
             log.debug(`Found content-triggered retry message`);
             return true;
         }

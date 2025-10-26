@@ -1,4 +1,3 @@
-import { context, SpanKind, trace, type Attributes } from '@opentelemetry/api';
 import { awaitOtelReady, getAutoOtelService } from './OtelBootstrap.ts';
 import { logger } from '../../../../utils/logger.ts';
 import type { Usage } from '../../../../interfaces/UniversalInterfaces.ts';
@@ -15,15 +14,20 @@ import type {
     ToolCallContext
 } from '../../collector/types.ts';
 
+// Lazy-loaded OpenTelemetry API imports to make them optional peer dependencies
+let otelApi: any;
+let SpanKind: any;
+
 export class OpenTelemetryProvider implements TelemetryProvider {
     public readonly name = 'opentelemetry';
-    private tracer = trace.getTracer('callllm', '1.0.0');
+    private tracer: any = undefined;
     private enabled = false;
     private redaction!: RedactionPolicy;
     private readonly log = logger.createLogger({ prefix: 'OpenTelemetryProvider' });
 
     async init(config: ProviderInit): Promise<void> {
-        this.enabled = /^(1|true)$/i.test(String(config.env.CALLLLM_OTEL_ENABLED || ''));
+        const explicitlyEnabled = /^(1|true)$/i.test(String(config.env.CALLLLM_OTEL_ENABLED || ''));
+        this.enabled = explicitlyEnabled;
         this.redaction = config.redaction || {
             redactPrompts: false,
             redactResponses: false,
@@ -41,9 +45,28 @@ export class OpenTelemetryProvider implements TelemetryProvider {
             this.log.debug('OpenTelemetry disabled by env');
             return;
         }
-        // Ensure SDK autostart
-        getAutoOtelService();
-        try { await awaitOtelReady(); this.log.debug('OTel SDK ready'); } catch (e) { this.log.warn('awaitOtelReady failed', e as Error); }
+
+        try {
+            // Lazy import to avoid hard dep for users not using OpenTelemetry
+            otelApi = await import('@opentelemetry/api');
+            SpanKind = otelApi.SpanKind;
+
+            // Initialize tracer after successful import
+            this.tracer = otelApi.trace.getTracer('callllm', '1.0.0');
+
+            // Ensure SDK autostart
+            getAutoOtelService();
+            try { await awaitOtelReady(); this.log.debug('OTel SDK ready'); } catch (e) { this.log.warn('awaitOtelReady failed', e as Error); }
+        } catch (e) {
+            this.enabled = false;
+            // Only log warning if OpenTelemetry was explicitly enabled by user
+            // Silent failure if not explicitly configured (avoid noise from optional dependency issues)
+            if (explicitlyEnabled) {
+                this.log.warn('Failed to initialize OpenTelemetry; provider disabled', e as Error);
+            } else {
+                this.log.debug('OpenTelemetry not available (optional dependency)', e as Error);
+            }
+        }
     }
 
     private truncate(text: string): string {
@@ -53,13 +76,13 @@ export class OpenTelemetryProvider implements TelemetryProvider {
     }
 
     startConversation(ctx: ConversationContext): void {
-        if (!this.enabled) return;
+        if (!this.enabled || !this.tracer) return;
         const span = this.tracer.startSpan(`conversation.${ctx.type}`, {
             kind: SpanKind.SERVER, attributes: {
                 'gen_ai.conversation.id': ctx.conversationId,
                 'gen_ai.conversation.type': ctx.type
-            } as Attributes
-        }, context.active());
+            } as any
+        }, otelApi.context.active());
         (span as any).__callllm_id = ctx.conversationId;
         (span as any).__callllm_kind = 'conversation';
         (span as any).end = (span.end).bind(span);
@@ -78,7 +101,7 @@ export class OpenTelemetryProvider implements TelemetryProvider {
         const span = (globalThis as any)[`__callllm_conv_${ctx.conversationId}`];
         if (!span) return;
         try {
-            const attrs: Attributes = {};
+            const attrs: any = {};
             if (summary?.totalTokens !== undefined) (attrs as any)['gen_ai.conversation.tokens.total'] = summary.totalTokens;
             if (summary?.totalCost !== undefined) (attrs as any)['gen_ai.conversation.cost.total'] = summary.totalCost;
             if (summary?.llmCallsCount !== undefined) (attrs as any)['gen_ai.conversation.llm_calls'] = summary.llmCallsCount;
@@ -107,7 +130,7 @@ export class OpenTelemetryProvider implements TelemetryProvider {
     }
 
     startLLM(ctx: LLMCallContext): void {
-        if (!this.enabled) return;
+        if (!this.enabled || !this.tracer) return;
         const parent = (globalThis as any)[`__callllm_conv_${ctx.conversationId}`];
         const span = this.tracer.startSpan(`${ctx.provider.toLowerCase()}.chat.completions`, {
             kind: SpanKind.CLIENT,
@@ -119,8 +142,8 @@ export class OpenTelemetryProvider implements TelemetryProvider {
                 'gen_ai.output.type': ctx.responseFormat === 'json' ? 'json' : 'text',
                 'gen_ai.tools.enabled': Boolean(ctx.toolsEnabled),
                 ...(Array.isArray((ctx as any).toolsAvailable) ? { 'gen_ai.tools.available': JSON.stringify((ctx as any).toolsAvailable).slice(0, 4000) } : {})
-            } as Attributes
-        }, parent ? trace.setSpan(context.active(), parent) : context.active());
+            } as any
+        }, parent ? otelApi.trace.setSpan(otelApi.context.active(), parent) : otelApi.context.active());
         (span as any).__callllm_id = ctx.llmCallId;
         (globalThis as any)[`__callllm_llm_${ctx.llmCallId}`] = span;
         try {
@@ -193,7 +216,7 @@ export class OpenTelemetryProvider implements TelemetryProvider {
         const span = (globalThis as any)[`__callllm_llm_${ctx.llmCallId}`];
         if (!span) return;
         try {
-            const attrs: Attributes = {};
+            const attrs: any = {};
             if (responseModel) (attrs as any)['gen_ai.response.model'] = responseModel;
             if (usage) {
                 (attrs as any)['gen_ai.usage.input_tokens'] = usage.tokens.input.total;
@@ -213,7 +236,7 @@ export class OpenTelemetryProvider implements TelemetryProvider {
     }
 
     startTool(ctx: ToolCallContext): void {
-        if (!this.enabled) return;
+        if (!this.enabled || !this.tracer) return;
         const parent = (globalThis as any)[`__callllm_conv_${ctx.conversationId}`];
         const span = this.tracer.startSpan(`execute_tool ${ctx.name}`, {
             kind: SpanKind.CLIENT,
@@ -225,8 +248,8 @@ export class OpenTelemetryProvider implements TelemetryProvider {
                 ...(ctx.args ? { 'gen_ai.tool.arguments': JSON.stringify(ctx.args).slice(0, 4000) } : {}),
                 'gen_ai.tool.execution.index': ctx.executionIndex ?? 0,
                 'gen_ai.tool.execution.parallel': Boolean(ctx.parallel)
-            } as Attributes
-        }, parent ? trace.setSpan(context.active(), parent) : context.active());
+            } as any
+        }, parent ? otelApi.trace.setSpan(otelApi.context.active(), parent) : otelApi.context.active());
         (span as any).__callllm_id = ctx.toolCallId;
         (globalThis as any)[`__callllm_tool_${ctx.toolCallId}`] = span;
         try {
