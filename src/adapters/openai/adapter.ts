@@ -44,7 +44,9 @@ import { UsageTracker } from '../../core/telemetry/UsageTracker.ts';
 import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
 
 // Use the paths utility to get the directory name for resolving .env
-const adapterProjectRootForEnv = getDirname();
+// Pass import.meta.url so the path resolves relative to this file rather than
+// src/utils, preventing incorrect resolution when bundled.
+const adapterProjectRootForEnv = getDirname(import.meta.url);
 
 // Load environment variables
 dotenv.config({ path: path.resolve(adapterProjectRootForEnv, '../../../.env') });
