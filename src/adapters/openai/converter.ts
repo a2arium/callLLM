@@ -471,7 +471,8 @@ export class Converter {
                         forceAllRequired: mapping.length === 0,
                         forceNoAdditionalProps: true,
                         normalizeDefs: true,
-                        stripMetaKeys: true
+                        stripMetaKeys: true,
+                        stripCompositionKeywords: true
                     });
                     formatConfig.schema = this.prepareResponseSchemaForOpenAI(sanitized as Record<string, unknown>);
                 } else if (typeof params.jsonSchema.schema === 'string') {
@@ -483,7 +484,8 @@ export class Converter {
                             forceAllRequired: true,
                             forceNoAdditionalProps: true,
                             normalizeDefs: true,
-                            stripMetaKeys: true
+                            stripMetaKeys: true,
+                            stripCompositionKeywords: true
                         });
                         formatConfig.schema = this.prepareResponseSchemaForOpenAI(sanitized as Record<string, unknown>);
                     } catch (error) {
@@ -500,7 +502,8 @@ export class Converter {
                         forceAllRequired: true,
                         forceNoAdditionalProps: true,
                         normalizeDefs: true,
-                        stripMetaKeys: true
+                        stripMetaKeys: true,
+                        stripCompositionKeywords: true
                     });
                     formatConfig.schema = this.prepareResponseSchemaForOpenAI(sanitized as Record<string, unknown>);
                 }

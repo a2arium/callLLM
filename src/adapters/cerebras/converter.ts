@@ -76,7 +76,8 @@ export class CerebrasConverter {
                 forceAllRequired: mapping.length === 0,
                 forceNoAdditionalProps: true,
                 normalizeDefs: true,
-                stripMetaKeys: true
+                stripMetaKeys: true,
+                stripCompositionKeywords: true
             });
 
             log.debug('Sanitized schema being sent to Cerebras:', JSON.stringify(sanitized, null, 2));
@@ -265,5 +266,3 @@ export class CerebrasConverter {
     }
 
 }
-
-

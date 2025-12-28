@@ -126,9 +126,14 @@ export interface UniversalChatResponse<T = unknown> {
     messages?: UniversalMessage[];  // May include history or context messages
     // Use imported ToolCall type
     toolCalls?: ToolCall[];
-    metadata?: Metadata;
+metadata?: Metadata;
 }
 ```
+
+### Schema sanitization expectations
+
+- All adapters should pass any JSON Schema or Zod-based `jsonSchema` through the shared `SchemaSanitizer` (in `src/core/schema`) before attaching it to provider payloads. That sanitizer clones the schema, normalizes `$defs`, enforces object rules, and strips unsupported constraints (and can append hints).
+- When a provider cannot handle JSON Schema composition keywords (`allOf`, `anyOf`, `oneOf`), enable the `stripCompositionKeywords` option, which removes those properties and documents the removal in descriptions when hints are enabled. OpenAI and Cerebras already use that toggle, so follow their example for new adapters that need composition-free schemas.
 - Stream responses/chunks:
 ```399:465:src/interfaces/UniversalInterfaces.ts
 export interface UniversalStreamResponse<T = unknown> {

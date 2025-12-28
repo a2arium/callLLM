@@ -11,6 +11,8 @@ export type SanitizeOptions = {
     normalizeDefs?: boolean;
     // Remove vendor/meta keys like $schema, $anchor and ~*
     stripMetaKeys?: boolean;
+    // When true, remove JSON Schema composition keywords (allOf/anyOf/oneOf)
+    stripCompositionKeywords?: boolean;
 };
 
 const DEFAULT_OPTIONS: SanitizeOptions = {
@@ -19,6 +21,7 @@ const DEFAULT_OPTIONS: SanitizeOptions = {
     forceNoAdditionalProps: true,
     normalizeDefs: true,
     stripMetaKeys: true,
+    stripCompositionKeywords: false,
 };
 
 export class SchemaSanitizer {
@@ -29,6 +32,7 @@ export class SchemaSanitizer {
         if (options.normalizeDefs) this.normalizeDefs(clone);
         if (options.stripMetaKeys) this.stripMeta(clone);
         this.stripConstraints(clone, options);
+        if (options.stripCompositionKeywords) this.stripCompositions(clone, options);
         // Ensure all nodes have a type and object nodes meet provider requirements
         this.ensureTypes(clone);
         this.normalizeByType(clone);
@@ -110,6 +114,28 @@ export class SchemaSanitizer {
         for (const k of Object.keys(node)) this.stripConstraints(node[k], options);
     }
 
+    private static stripCompositions(node: any, options: SanitizeOptions): void {
+        if (!node || typeof node !== 'object') return;
+        if (Array.isArray(node)) { node.forEach(n => this.stripCompositions(n, options)); return; }
+
+        const compositionKeys: Array<'allOf' | 'anyOf' | 'oneOf'> = ['allOf', 'anyOf', 'oneOf'];
+        const removed: string[] = [];
+        for (const key of compositionKeys) {
+            if (key in node) {
+                removed.push(key);
+                delete node[key];
+            }
+        }
+
+        if (removed.length > 0 && options.addHintsToDescriptions) {
+            const suffix = ` (composition keywords removed: ${removed.join(', ')})`;
+            if (typeof node.description === 'string') node.description += suffix;
+            else node.description = suffix.trim();
+        }
+
+        for (const k of Object.keys(node)) this.stripCompositions(node[k], options);
+    }
+
     private static enforceObjectRules(node: any, options: SanitizeOptions): void {
         if (!node || typeof node !== 'object') return;
         if (Array.isArray(node)) { node.forEach(n => this.enforceObjectRules(n, options)); return; }
@@ -186,5 +212,4 @@ export class SchemaSanitizer {
         if (node.additionalProperties && typeof node.additionalProperties === 'object') this.normalizeByType(node.additionalProperties);
     }
 }
-
 

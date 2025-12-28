@@ -305,8 +305,9 @@ export class ChatController {
                         }
 
                         // Pass the complete response object to consider tool calls in the retry decision
-                        if (shouldRetryDueToContent(resp)) {
-                            throw new Error("Response content triggered retry");
+                        const contentRetryResult = shouldRetryDueToContent(resp);
+                        if (contentRetryResult.shouldRetry) {
+                            throw new Error(`Response content triggered retry: ${contentRetryResult.reason}. First 255 chars: ${resp.content?.substring(0, 255)}`);
                         }
                         return resp;
                     };

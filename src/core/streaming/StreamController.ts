@@ -344,10 +344,12 @@ export class StreamController {
                     // Use the last chunk's contentText if available (it should have the complete content)
                     // Otherwise, use our accumulated content
                     const contentToCheck = accumulatedContent;
-                    const shouldRetry = shouldRetryDueToContent({ content: contentToCheck });
+                    const retryResult = shouldRetryDueToContent({ content: contentToCheck });
+                    const shouldRetry = retryResult.shouldRetry;
 
                     log.debug('Content retry check', {
                         shouldRetry,
+                        reason: retryResult.reason,
                         contentLength: contentToCheck.length,
                         attempt: attempt + 1,
                         requestId
@@ -356,13 +358,14 @@ export class StreamController {
                     if (shouldRetry) {
                         log.warn('Triggering retry due to content', {
                             attempt: attempt + 1,
+                            reason: retryResult.reason,
                             contentLength: contentToCheck.length,
                             model,
                             callerId: params.callerId,
                             requestId,
                             totalProcessingTimeMs: Date.now() - startTime
                         });
-                        throw new Error("Stream response content triggered retry due to unsatisfactory answer");
+                        throw new Error(`Stream response content triggered retry due to unsatisfactory answer: ${retryResult.reason}`);
                     }
                 }
                 return;
