@@ -11,5 +11,11 @@
  * In CJS, this is replaced with an implementation that provides similar functionality
  */
 export function getImportMetaUrl(): string {
-    return import.meta.url;
-} 
+    try {
+        return import.meta.url;
+    } catch (e) {
+        // This might happen if loaded in an environment that doesn't support import.meta
+        // but is still trying to run as ESM (e.g. some older bundlers or misconfigured workers)
+        return '';
+    }
+}

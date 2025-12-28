@@ -12,15 +12,28 @@ import { getImportMetaUrl } from './importMetaUrl.ts';
  * @param importMetaUrl Optional import.meta.url of the calling file, will use current module's import.meta.url if not provided
  */
 export function getDirname(importMetaUrl?: string): string {
+    let metaUrl = '';
     try {
         // Use provided importMetaUrl or get current module's import.meta.url
-        const metaUrl = importMetaUrl || getImportMetaUrl();
-        // ESM
+        metaUrl = importMetaUrl || getImportMetaUrl();
+
+        if (!metaUrl) {
+            // Check if __dirname global exists (CJS fallback)
+            // @ts-ignore
+            if (typeof __dirname !== 'undefined') {
+                // @ts-ignore
+                return __dirname;
+            }
+            throw new Error('import.meta.url is empty and __dirname is not defined');
+        }
+
+        // ESM path resolution
         const __filename = fileURLToPath(metaUrl);
         return path.dirname(__filename);
-    } catch (e) {
-        // Fallback for CJS (should not happen in ESM)
-        throw new Error('getDirname() requires import.meta.url in ESM context');
+    } catch (e: any) {
+        // Provide more detailed error message
+        const errorMsg = e?.message || String(e);
+        throw new Error(`getDirname() failed in ESM context (metaUrl: "${metaUrl}"): ${errorMsg}`);
     }
 }
 
@@ -31,14 +44,27 @@ export function getDirname(importMetaUrl?: string): string {
  * @param importMetaUrl Optional import.meta.url of the calling file, will use current module's import.meta.url if not provided
  */
 export function getFilename(importMetaUrl?: string): string {
+    let metaUrl = '';
     try {
         // Use provided importMetaUrl or get current module's import.meta.url
-        const metaUrl = importMetaUrl || getImportMetaUrl();
+        metaUrl = importMetaUrl || getImportMetaUrl();
+
+        if (!metaUrl) {
+            // Check if __filename global exists (CJS fallback)
+            // @ts-ignore
+            if (typeof __filename !== 'undefined') {
+                // @ts-ignore
+                return __filename;
+            }
+            throw new Error('import.meta.url is empty and __filename is not defined');
+        }
+
         // ESM
         return fileURLToPath(metaUrl);
-    } catch (e) {
-        // Fallback for CJS (should not happen in ESM)
-        throw new Error('getFilename() requires import.meta.url in ESM context');
+    } catch (e: any) {
+        // Provide more detailed error message
+        const errorMsg = e?.message || String(e);
+        throw new Error(`getFilename() failed in ESM context (metaUrl: "${metaUrl}"): ${errorMsg}`);
     }
 }
 
