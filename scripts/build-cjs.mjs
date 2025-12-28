@@ -26,12 +26,12 @@ const CJS_DIR = path.join(rootDir, 'dist', 'cjs');
 async function buildCJS() {
   try {
     console.log('Building CJS version...');
-    
+
     // Temporary replace ESM-specific files with CJS-compatible versions
     // This is primarily for importMetaUrl.ts to have a benign placeholder 
     // during the initial tsc pass, ensuring the .cjs.ts version is distinctly handled.
     await createTemporaryFiles();
-    
+
     try {
       // Run TypeScript compiler with CJS configuration
       // This will compile all .ts files, including the .cjs.ts files.
@@ -40,10 +40,10 @@ async function buildCJS() {
       // Restore the original files
       await restoreOriginalFiles();
     }
-    
+
     // Post-process the CJS build
     await processCJSBuild();
-    
+
     console.log('CJS build completed successfully!');
   } catch (error) {
     console.error('Error in CJS build:', error);
@@ -56,10 +56,12 @@ async function buildCJS() {
  */
 async function runTSC() {
   return new Promise((resolve, reject) => {
-    const tsc = spawn('node_modules/.bin/tsc', ['--project', 'tsconfig.cjs.json'], {
-      stdio: 'inherit'
+    const tscCommand = process.platform === 'win32' ? 'tsc.cmd' : 'tsc';
+    const tsc = spawn(tscCommand, ['--project', 'tsconfig.cjs.json'], {
+      stdio: 'inherit',
+      shell: process.platform === 'win32'
     });
-    
+
     tsc.on('close', (code) => {
       if (code === 0) {
         resolve(undefined);
@@ -75,7 +77,7 @@ async function runTSC() {
  */
 async function createTemporaryFiles() {
   console.log('Creating temporary CJS-compatible files...');
-  
+
   const files = [
     {
       path: path.join(SRC_DIR, 'utils', 'importMetaUrl.ts'),
@@ -96,7 +98,7 @@ export function getImportMetaUrl(){
 }`
     }
   ];
-  
+
   for (const file of files) {
     if (await fileExists(file.path)) {
       await fs.copyFile(file.path, file.backup);
@@ -112,14 +114,14 @@ export function getImportMetaUrl(){
  */
 async function restoreOriginalFiles() {
   console.log('Restoring original files...');
-  
+
   const files = [
     {
       path: path.join(SRC_DIR, 'utils', 'importMetaUrl.ts'),
       backup: path.join(SRC_DIR, 'utils', 'importMetaUrl.ts.bak')
     }
   ];
-  
+
   for (const file of files) {
     if (await fileExists(file.backup)) {
       await fs.copyFile(file.backup, file.path);
@@ -135,12 +137,12 @@ async function restoreOriginalFiles() {
 async function processCJSBuild() {
   try {
     console.log('Post-processing CJS build output...');
-    
+
     await renameJsToCjs(CJS_DIR);
     await renameCompiledCJSTSFiles(path.join(CJS_DIR, 'utils'));
     await updateRequirePaths(CJS_DIR);
     await fixOpenAIDirnameConflict();
-    
+
     console.log('CJS build post-processing completed successfully!');
   } catch (error) {
     console.error('Error in CJS build post-processing:', error);
@@ -167,10 +169,10 @@ async function fileExists(filePath) {
 async function renameJsToCjs(dir) {
   console.log(`Renaming .js files to .cjs in ${dir}...`);
   const entries = await fs.readdir(dir, { withFileTypes: true });
-  
+
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
-    
+
     if (entry.isDirectory()) {
       await renameJsToCjs(fullPath);
     } else if (entry.name.endsWith('.cjs.js')) { // Files compiled from .cjs.ts (e.g., importMetaUrl.cjs.js)
@@ -216,10 +218,10 @@ async function renameCompiledCJSTSFiles(dir) {
 async function updateRequirePaths(dir) {
   console.log(`Updating require paths in ${dir} to use .cjs extension...`);
   const entries = await fs.readdir(dir, { withFileTypes: true });
-  
+
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
-    
+
     if (entry.isDirectory()) {
       await updateRequirePaths(fullPath);
     } else if (entry.name.endsWith('.cjs')) {
@@ -229,12 +231,12 @@ async function updateRequirePaths(dir) {
       try {
         let content = await fs.readFile(fullPath, 'utf8');
         let originalContent = content; // For logging changes
-        
+
         content = content.replace(/\.js\.cjs/g, '.cjs'); // Clean up any .js.cjs occurrences
-        
+
         const requireRegex = /require\((['"])((?:\.{1,2}\/)?(?:[^\'"\n\r]+\/)*[^\'"\n\r]+?)(\.js)?(\1)\)/g;
         let matchFound = false;
-        
+
         content = content.replace(requireRegex, (match, quote, capturedModulePath, capturedJsExtension) => {
           matchFound = true;
           if (entry.name === 'index.cjs') {
@@ -242,7 +244,7 @@ async function updateRequirePaths(dir) {
           }
           if (!capturedModulePath.startsWith('.') || capturedModulePath.endsWith('.cjs')) {
             if (entry.name === 'index.cjs') console.log(`    Skipping (not relative or already .cjs): ${capturedModulePath}`);
-            return match; 
+            return match;
           }
           // capturedModulePath is the path part, capturedJsExtension is either '.ts' or undefined.
           // We always want to transform to .cjs.
@@ -252,12 +254,12 @@ async function updateRequirePaths(dir) {
           }
           return `require(${quote}${newModulePath}${quote})`;
         });
-        
+
         if (entry.name === 'index.cjs' && !matchFound) {
-            console.log(`  No require paths matched regex in ${fullPath}`);
+          console.log(`  No require paths matched regex in ${fullPath}`);
         }
         if (entry.name === 'index.cjs' && content !== originalContent) {
-            console.log(`  Content of index.cjs was modified.`);
+          console.log(`  Content of index.cjs was modified.`);
         }
 
         await fs.writeFile(fullPath, content, 'utf8');
@@ -286,10 +288,10 @@ async function fixOpenAIDirnameConflict() {
     if (match) {
       const importAlias = match[1]; // e.g., paths_js_1
       console.log(`Found conflicting __dirname declaration in OpenAI adapter using alias: ${importAlias}`);
-      
+
       // Replace the declaration
       content = content.replace(dirnameDeclarationPattern, `const customDirname = (0, ${importAlias}.getDirname)();`);
-      
+
       // Replace usages of __dirname that were intended to use this new customDirname
       // This regex specifically targets path.resolve(__dirname, '../../../.env')
       // It assumes __dirname in this specific context was the one we just replaced.
@@ -298,12 +300,12 @@ async function fixOpenAIDirnameConflict() {
         console.log(`Replacing dotenv path usage of __dirname with customDirname.`);
         return `path.resolve(customDirname, ${quote1}../../../.env${quote2})`;
       });
-      
+
       modified = true;
     } else {
       console.log('Conflicting __dirname declaration pattern not found in OpenAI adapter.');
     }
-    
+
     if (modified) {
       if (content === originalContent) {
         console.warn('OpenAI adapter: __dirname fix was attempted, but content did not change. Check patterns.');
