@@ -22,7 +22,7 @@ coverage/
 
 # Yarn
 .yarn/
-.yarnrc.yml
+#.yarnrc.yml
 
 # Others
 .idea/
