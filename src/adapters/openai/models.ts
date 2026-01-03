@@ -3,6 +3,34 @@ import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
 export const defaultModels: ModelInfo[] = [
     // GPT-5 family
     {
+        name: 'gpt-5.2',
+        maxRequestTokens: 400000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 1.75,
+        inputCachedPricePerMillion: 0.175,
+        outputPricePerMillion: 14.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json']
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 70,
+            outputSpeed: 152,
+            firstTokenLatency: 29800,
+        },
+    },
+    {
         name: 'gpt-5.1',
         maxRequestTokens: 400000,
         maxResponseTokens: 128000,
@@ -28,34 +56,6 @@ export const defaultModels: ModelInfo[] = [
             qualityIndex: 70,
             outputSpeed: 152,
             firstTokenLatency: 29800,
-        },
-    },
-    {
-        name: 'gpt-5.1-mini',
-        maxRequestTokens: 400000,
-        maxResponseTokens: 128000,
-        inputPricePerMillion: 0.25,
-        inputCachedPricePerMillion: 0.03,
-        outputPricePerMillion: 2.0,
-        capabilities: {
-            streaming: true,
-            toolCalls: true,
-            parallelToolCalls: true,
-            reasoning: true,
-            input: {
-                text: true,
-                image: true
-            },
-            output: {
-                text: {
-                    textOutputFormats: ['text', 'json']
-                }
-            }
-        },
-        characteristics: {
-            qualityIndex: 64,
-            outputSpeed: 160.9,
-            firstTokenLatency: 15760,
         },
     },
     {
