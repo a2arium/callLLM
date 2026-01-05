@@ -36,7 +36,7 @@ describe('SchemaValidator', () => {
 
       try {
         SchemaValidator.validate(invalidData, schema);
-        fail('Expected validation to fail');
+        throw new Error('Expected validation to fail');
       } catch (error) {
         expect(error).toBeInstanceOf(SchemaValidationError);
         if (error instanceof SchemaValidationError) {
@@ -93,7 +93,7 @@ describe('SchemaValidator', () => {
 
       try {
         SchemaValidator.validate(data, schema);
-        fail('Expected validation to fail');
+        throw new Error('Expected validation to fail');
       } catch (error) {
         expect(error).toBeInstanceOf(SchemaValidationError);
         if (error instanceof SchemaValidationError) {
@@ -261,6 +261,38 @@ describe('SchemaValidator', () => {
         },
         required: ['name'],
         additionalProperties: false
+      });
+    });
+  });
+
+  describe('robustness', () => {
+    it('should correctly identify duck-typed Zod objects', () => {
+      // Simulate an object that looks like a ZodObject but fails instanceof check
+      const duckTypedSchema = {
+        _def: {
+          typeName: 'ZodObject',
+          shape: () => ({
+            name: {
+              _def: { typeName: 'ZodString' },
+              description: 'The user\'s name'
+            }
+          })
+        },
+        description: 'A duck-typed schema'
+      };
+
+      const result = JSON.parse(SchemaValidator.zodToJsonSchemaString(duckTypedSchema as any));
+      expect(result).toEqual({
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: 'The user\'s name'
+          }
+        },
+        required: ['name'],
+        additionalProperties: false,
+        description: 'A duck-typed schema'
       });
     });
   });

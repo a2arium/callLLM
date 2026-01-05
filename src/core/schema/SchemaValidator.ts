@@ -184,9 +184,10 @@ export class SchemaValidator {
 
     private static legacyZodToJsonSchema(zodType: z.ZodType): Record<string, unknown> {
         const t: any = zodType as any;
+        const typeName = t?._def?.typeName;
 
         // Optional/Nullable wrappers
-        if (t instanceof z.ZodOptional) {
+        if (t instanceof z.ZodOptional || typeName === 'ZodOptional') {
             const inner = (t as z.ZodOptional<any>)._def.innerType as z.ZodType;
             const innerSchema = this.legacyZodToJsonSchema(inner);
             if (zodType.description && !innerSchema.description) {
@@ -194,13 +195,13 @@ export class SchemaValidator {
             }
             return innerSchema;
         }
-        if (t instanceof z.ZodNullable) {
+        if (t instanceof z.ZodNullable || typeName === 'ZodNullable') {
             const inner = (t as z.ZodNullable<any>)._def.innerType as z.ZodType;
             return this.legacyZodToJsonSchema(inner);
         }
 
         // Objects
-        if (t instanceof z.ZodObject) {
+        if (t instanceof z.ZodObject || typeName === 'ZodObject') {
             // shape can be on _def.shape (fn or object) or on instance as .shape
             const def: any = t._def;
             const rawShape = typeof def?.shape === 'function' ? def.shape() : (def?.shape ?? (t as any).shape);
@@ -213,7 +214,8 @@ export class SchemaValidator {
                 const v: any = value as any;
                 properties[key] = this.legacyZodToJsonSchema(value as z.ZodType);
                 // Consider optional wrapper
-                if (!(v instanceof z.ZodOptional)) {
+                const isOptional = v instanceof z.ZodOptional || v?._def?.typeName === 'ZodOptional';
+                if (!isOptional) {
                     required.push(key);
                 }
             }
@@ -228,7 +230,7 @@ export class SchemaValidator {
         }
 
         // Primitives
-        if (t instanceof z.ZodString || t?._def?.typeName === 'ZodString') {
+        if (t instanceof z.ZodString || typeName === 'ZodString') {
             const def: any = t?._def;
             const obj: Record<string, unknown> = { type: 'string' };
             const checks = Array.isArray(def?.checks) ? def.checks : [];
@@ -245,19 +247,19 @@ export class SchemaValidator {
             if (zodType.description) obj.description = zodType.description;
             return obj;
         }
-        if (t instanceof z.ZodNumber) {
+        if (t instanceof z.ZodNumber || typeName === 'ZodNumber') {
             const obj: Record<string, unknown> = { type: 'number' };
             if (zodType.description) obj.description = zodType.description;
             return obj;
         }
-        if (t instanceof z.ZodBoolean) {
+        if (t instanceof z.ZodBoolean || typeName === 'ZodBoolean') {
             const obj: Record<string, unknown> = { type: 'boolean' };
             if (zodType.description) obj.description = zodType.description;
             return obj;
         }
 
         // Arrays
-        if (t instanceof z.ZodArray) {
+        if (t instanceof z.ZodArray || typeName === 'ZodArray') {
             const def: any = t._def;
             const itemType: z.ZodType = def?.type as z.ZodType;
             const obj: Record<string, unknown> = {
@@ -270,8 +272,8 @@ export class SchemaValidator {
 
         // Enums
         const ZodNativeEnumCtor: any = (z as any).ZodNativeEnum;
-        const isNativeEnum = ZodNativeEnumCtor && typeof ZodNativeEnumCtor === 'function' ? (t instanceof ZodNativeEnumCtor) : (t?._def?.typeName === 'ZodNativeEnum');
-        if (t instanceof z.ZodEnum || isNativeEnum || t?._def?.typeName === 'ZodEnum') {
+        const isNativeEnum = ZodNativeEnumCtor && typeof ZodNativeEnumCtor === 'function' ? (t instanceof ZodNativeEnumCtor) : (typeName === 'ZodNativeEnum');
+        if (t instanceof z.ZodEnum || isNativeEnum || typeName === 'ZodEnum') {
             const def: any = t?._def;
             const obj: Record<string, unknown> = { type: 'string' };
             let values = Array.isArray(def?.values) ? def.values : (Array.isArray(def?.options) ? def.options : undefined);
@@ -289,7 +291,7 @@ export class SchemaValidator {
         }
 
         // Records
-        if (t instanceof z.ZodRecord) {
+        if (t instanceof z.ZodRecord || typeName === 'ZodRecord') {
             const def: any = t._def;
             const valueType: z.ZodType = def?.valueType as z.ZodType;
             const obj: Record<string, unknown> = {
