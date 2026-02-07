@@ -25,6 +25,21 @@ export type {
     UsageData
 } from './interfaces/UsageInterfaces.ts';
 
+// Telemetry system (for custom provider implementations)
+export { TelemetryCollector } from './core/telemetry/collector/TelemetryCollector.ts';
+export type {
+    TelemetryProvider,
+    ProviderInit,
+    ConversationContext,
+    LLMCallContext,
+    ToolCallContext,
+    PromptMessage,
+    ChoiceEvent,
+    ConversationSummary,
+    ConversationInputOutput,
+    RedactionPolicy
+} from './core/telemetry/collector/types.ts';
+
 // Tool-related types
 export type {
     ToolDefinition,

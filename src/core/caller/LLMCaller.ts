@@ -190,35 +190,41 @@ export class LLMCaller implements MCPDirectAccess {
         this.toolsManager = options?.toolsManager || new ToolsManager();
         this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
         this.requestProcessor = new RequestProcessor();
-        // Initialize TelemetryCollector with providers upfront to avoid readiness races
-        const providers = [
-            (() => {
-                try {
-                    const provider = new OpenTelemetryProvider();
-                    this.log.debug('OpenTelemetryProvider created successfully');
-                    return provider;
-                } catch (err) {
-                    this.log.debug('OpenTelemetryProvider creation failed', err as Error);
-                    return undefined as any;
-                }
-            })(),
-            (() => {
-                try {
-                    const provider = new OpikProvider();
-                    this.log.debug('OpikProvider created successfully');
-                    return provider;
-                } catch (err) {
-                    this.log.debug('OpikProvider creation failed', err as Error);
-                    return undefined as any;
-                }
-            })()
-        ].filter(Boolean) as any;
+        // Initialize TelemetryCollector: use passed collector OR create default with built-in providers
+        if (options?.telemetryCollector) {
+            this.telemetryCollector = options.telemetryCollector;
+            this.log.debug('Using provided TelemetryCollector');
+        } else {
+            // Create default providers only when no custom collector is passed
+            const providers = [
+                (() => {
+                    try {
+                        const provider = new OpenTelemetryProvider();
+                        this.log.debug('OpenTelemetryProvider created successfully');
+                        return provider;
+                    } catch (err) {
+                        this.log.debug('OpenTelemetryProvider creation failed', err as Error);
+                        return undefined as any;
+                    }
+                })(),
+                (() => {
+                    try {
+                        const provider = new OpikProvider();
+                        this.log.debug('OpikProvider created successfully');
+                        return provider;
+                    } catch (err) {
+                        this.log.debug('OpikProvider creation failed', err as Error);
+                        return undefined as any;
+                    }
+                })()
+            ].filter(Boolean) as any;
 
-        this.log.debug('Telemetry providers created', { count: providers.length });
-        this.telemetryCollector = new TelemetryCollector({
-            providers,
-            env: process.env
-        });
+            this.log.debug('Telemetry providers created', { count: providers.length });
+            this.telemetryCollector = new TelemetryCollector({
+                providers,
+                env: process.env
+            });
+        }
         // Initialize ToolController with only ToolsManager and maxIterations
         this.toolController = new ToolController(
             this.toolsManager,

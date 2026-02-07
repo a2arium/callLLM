@@ -34,7 +34,18 @@ export { RetryManager } from './retry/RetryManager.ts';
 // Core telemetry exports
 export { UsageTracker } from './telemetry/UsageTracker.ts';
 export { TelemetryCollector } from './telemetry/collector/TelemetryCollector.ts'
-export type { TelemetryProvider, RedactionPolicy } from './telemetry/collector/types.ts'
+export type {
+    TelemetryProvider,
+    ProviderInit,
+    ConversationContext,
+    LLMCallContext,
+    ToolCallContext,
+    PromptMessage,
+    ChoiceEvent,
+    ConversationSummary,
+    ConversationInputOutput,
+    RedactionPolicy
+} from './telemetry/collector/types.ts'
 export { OpenTelemetryProvider } from './telemetry/providers/openTelemetry/OpenTelemetryProvider.ts'
 
 // Core MCP exports

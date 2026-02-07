@@ -33,7 +33,7 @@ async function main() {
     };
 
     // Initialize LLMCaller with OpenAI, you can pass tools in the constructor
-    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant that can call tools.', {
+    const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are a helpful assistant that can call tools.', {
         tools: [weatherTool]
     });
 
