@@ -144,7 +144,7 @@ export class ChatController {
             if (!modelInfo) throw new Error(`Model ${model} not found`);
 
             // Validate JSON mode capability if needed and get injection flag
-            const { usePromptInjection } = this.responseProcessor.validateJsonMode(modelInfo, params) || { usePromptInjection: false };
+            const { usePromptInjection, useSchemaInjection } = this.responseProcessor.validateJsonMode(modelInfo, params) || { usePromptInjection: false, useSchemaInjection: false };
 
             // Get message list according to history mode
             let messagesForProvider = messages;
@@ -184,7 +184,8 @@ export class ChatController {
                     {
                         responseFormat: 'json',
                         jsonSchema: jsonSchema,
-                        isNativeJsonMode: !usePromptInjection
+                        isNativeJsonMode: !usePromptInjection,
+                        isStructuredOutput: !useSchemaInjection
                     })
                 : messagesForProvider;
 
@@ -309,6 +310,37 @@ export class ChatController {
                         if (contentRetryResult.shouldRetry) {
                             throw new Error(`Response content triggered retry: ${contentRetryResult.reason}. First 255 chars: ${resp.content?.substring(0, 255)}`);
                         }
+
+                        // NEW: Validate/Parse JSON response inside the retry loop to trigger retries on failure
+                        // But ONLY if there are no tool calls, as tool calls move to the next phase
+                        const hasToolCallsInner = Boolean(
+                            (resp.toolCalls?.length ?? 0) > 0 ||
+                            resp.metadata?.finishReason === FinishReason.TOOL_CALLS
+                        );
+
+                        if (!hasToolCallsInner) {
+                            log.debug('Validating response inside retry loop');
+                            const validationParams: UniversalChatParams = {
+                                messages: [],
+                                model: model,
+                                settings: mergedSettings,
+                                jsonSchema: jsonSchema,
+                                responseFormat: effectiveResponseFormat
+                            };
+
+                            // This will throw if parsing/validation fails, triggering a retry
+                            const validated = await this.responseProcessor.validateResponse<T>(
+                                resp,
+                                validationParams,
+                                modelInfo,
+                                { usePromptInjection, useSchemaInjection }
+                            );
+                            if (!validated || (validated.metadata?.validationErrors?.length ?? 0) > 0) {
+                                throw new Error('Failed to validate response');
+                            }
+                            return validated;
+                        }
+
                         return resp;
                     };
 
@@ -391,25 +423,13 @@ export class ChatController {
                 log.warn('Tool calls detected but ToolController, ToolOrchestrator, or HistoryManager is missing. Cannot process tools.');
             }
 
-            // Validate the FINAL response (original or from recursion)
-            const validationParams: UniversalChatParams = {
-                messages: [],  // Not used in validation
-                model: model,
-                settings: mergedSettings,
-                jsonSchema: jsonSchema, // Use the original schema for validation
-                responseFormat: effectiveResponseFormat // Use the original format for validation
-            };
-
-            const validatedResponse = await this.responseProcessor.validateResponse<T>(
-                finalResponse,
-                validationParams,
-                modelInfo,
-                { usePromptInjection }
-            );
+            // The response is already validated if it didn't have tool calls
+            // If it had tool calls, it was added to history and execution continued recursively
+            const validatedResponse = finalResponse as UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>;
 
             // Ensure we have a valid response after validation
             if (!validatedResponse) {
-                throw new Error('Response validation failed or returned null/undefined');
+                throw new Error('Failed to validate response');
             }
 
             // Ensure the final assistant message is in history if not already added during tool call flow

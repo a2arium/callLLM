@@ -77,13 +77,17 @@ export class SchemaFormatter {
     /**
      * Converts a schema definition to a readable string format
      */
-    public static schemaToString(schema: JSONSchemaDefinition): string {
+    public static schemaToString(schema: JSONSchemaDefinition | Record<string, unknown>): string {
         if (typeof schema === 'string') {
             return schema;
         }
 
         if (isZodSchema(schema)) {
             return this.zodSchemaToString(schema as z.ZodType);
+        }
+
+        if (typeof schema === 'object' && schema !== null) {
+            return JSON.stringify(schema);
         }
 
         throw new Error('Unsupported schema type');

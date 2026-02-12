@@ -9,7 +9,8 @@ import type {
     UniversalChatResponse,
     UniversalChatSettings,
     UniversalMessage,
-    UniversalStreamResponse
+    UniversalStreamResponse,
+    HistoryMode
 } from '../../interfaces/UniversalInterfaces.ts';
 import { ChatController } from '../chat/ChatController.ts';
 // Use StreamControllerInterface or StreamController based on what's passed
@@ -55,6 +56,9 @@ export type ChunkProcessingParams = {
     tools?: ToolDefinition[];
     callerId?: string; // Add callerId for usage tracking
     maxCharsPerChunk?: number; // New: max characters per chunk
+    historyMode?: HistoryMode; // New: history mode for chunk processing
+    maxIterations?: number; // New: max iterations for this sequence
+    maxParallelRequests?: number; // New: max parallel requests (batch size)
 };
 
 /**
@@ -64,14 +68,22 @@ export type ChunkProcessingParams = {
 export class ChunkController {
     private iterationCount: number = 0;
     private maxIterations: number;
+    private tokenCalculator: TokenCalculator;
+    private chatController: ChatController;
+    private streamController: StreamController;
+    private historyManager: HistoryManager;
 
     constructor(
-        private tokenCalculator: TokenCalculator, // Needed for token calculations
-        private chatController: ChatController,
-        private streamController: StreamController, // Or StreamControllerInterface
-        private historyManager: HistoryManager, // Main history manager (might not be directly needed here)
-        maxIterations: number = 20
+        tokenCalculator: TokenCalculator,
+        chatController: ChatController,
+        streamController: StreamController,
+        historyManager: HistoryManager,
+        maxIterations: number = 70 // Updated default to 70
     ) {
+        this.tokenCalculator = tokenCalculator;
+        this.chatController = chatController;
+        this.streamController = streamController;
+        this.historyManager = historyManager;
         this.maxIterations = maxIterations;
         const log = logger.createLogger({
             level: process.env.LOG_LEVEL as any || 'info',
@@ -123,13 +135,15 @@ export class ChunkController {
                 chunkPreview: chunkContent.substring(0, 100) + (chunkContent.length > 100 ? '...' : '')
             });
 
-            if (this.iterationCount >= this.maxIterations) {
-                log.warn(`Chunk iteration limit exceeded: ${this.maxIterations}`, {
+            const effectiveMaxIterations = params.maxIterations ?? this.maxIterations;
+
+            if (this.iterationCount >= effectiveMaxIterations) {
+                log.warn(`Chunk iteration limit exceeded: ${effectiveMaxIterations}`, {
                     currentIteration: this.iterationCount,
                     totalChunks: messages.length,
                     processedChunks: responses.length
                 });
-                throw new ChunkIterationLimitError(this.maxIterations);
+                throw new ChunkIterationLimitError(effectiveMaxIterations);
             }
             this.iterationCount++;
 
@@ -172,8 +186,14 @@ export class ChunkController {
                 toolCallCount: response?.toolCalls?.length || 0
             });
 
-            // Check if response exists before accessing properties
-            if (response) {
+            // If stateless, clear history for next chunk (except system message)
+            if (params.historyMode === 'stateless') {
+                log.debug('Stateless mode: clearing history for next chunk');
+                chunkProcessingHistory.setMessages([]);
+                if (currentSystemMessage) {
+                    chunkProcessingHistory.updateSystemMessage(currentSystemMessage, false);
+                }
+            } else if (response) {
                 // Update temporary history - Safely access content
                 if (response.content) { // Check if content exists and is not null/undefined
                     chunkProcessingHistory.addMessage('assistant', response.content);
@@ -181,9 +201,9 @@ export class ChunkController {
                     // If no content but tool calls exist, add an empty assistant message with tool calls
                     chunkProcessingHistory.addMessage('assistant', '', { toolCalls: response.toolCalls });
                 }
-                // If neither content nor tool calls exist, we might not add anything to history, or add an empty message depending on desired behavior.
-                // Current logic implicitly does nothing in that case.
+            }
 
+            if (response) {
                 responses.push(response);
             } else {
                 // Handle the case where chatController.execute returns undefined/null
@@ -250,9 +270,11 @@ export class ChunkController {
 
         for (let i = 0; i < messages.length; i++) {
             const chunkContent = messages[i];
-            if (this.iterationCount >= this.maxIterations) {
-                logger.warn(`Chunk iteration limit exceeded: ${this.maxIterations}`);
-                throw new ChunkIterationLimitError(this.maxIterations);
+            const effectiveMaxIterations = params.maxIterations ?? this.maxIterations;
+
+            if (this.iterationCount >= effectiveMaxIterations) {
+                logger.warn(`Chunk iteration limit exceeded: ${effectiveMaxIterations}`);
+                throw new ChunkIterationLimitError(effectiveMaxIterations);
             }
             this.iterationCount++;
 
@@ -286,15 +308,20 @@ export class ChunkController {
                 yield chunk;
             }
 
-            // Update temporary history - Safely access contentText
-            if (finalChunkData) {
+            // If stateless, clear history for next chunk (except system message)
+            if (params.historyMode === 'stateless') {
+                chunkProcessingHistory.setMessages([]);
+                if (currentSystemMessage) {
+                    chunkProcessingHistory.updateSystemMessage(currentSystemMessage, false);
+                }
+            } else if (finalChunkData) {
+                // Update temporary history - Safely access contentText
                 if (finalChunkData.contentText) { // Check if contentText exists
                     chunkProcessingHistory.addMessage('assistant', finalChunkData.contentText);
                 } else if (finalChunkData.toolCalls && finalChunkData.toolCalls.length > 0) {
                     // If no content but tool calls exist, add an empty assistant message with tool calls
                     chunkProcessingHistory.addMessage('assistant', '', { toolCalls: finalChunkData.toolCalls });
                 }
-                // Consider if an empty message should be added if neither content nor tool calls are present in the final chunk
             } else {
                 // Handle case where the stream finished without a final data chunk
                 logger.debug('Stream finished without a final chunk containing content or tool calls.');
@@ -326,7 +353,7 @@ export class ChunkController {
      * This is much faster than sequential processing but may use more resources.
      */
     async processChunksParallel(
-        messages: string[],
+        messages: (string | UniversalMessage)[],
         params: ChunkProcessingParams
     ): Promise<UniversalChatResponse[]> {
         this.resetIterationCount();
@@ -334,97 +361,94 @@ export class ChunkController {
         log.debug('Starting parallel chunk processing', {
             messageCount: messages.length,
             maxIterations: this.maxIterations,
-            maxCharsPerChunk: params.maxCharsPerChunk
+            maxCharsPerChunk: params.maxCharsPerChunk,
+            maxParallelRequests: params.maxParallelRequests
         });
 
         // Check iteration limit upfront
-        if (messages.length > this.maxIterations) {
-            log.warn(`Chunk count exceeds iteration limit: ${messages.length} > ${this.maxIterations}`);
-            throw new ChunkIterationLimitError(this.maxIterations);
+        const effectiveMaxIterations = params.maxIterations ?? this.maxIterations;
+        if (messages.length > effectiveMaxIterations) {
+            log.warn(`Chunk count exceeds iteration limit: ${messages.length} > ${effectiveMaxIterations}`);
+            throw new ChunkIterationLimitError(effectiveMaxIterations);
         }
 
-        // Create separate history managers for each chunk to avoid conflicts
-        const createChunkHistory = (): HistoryManager => {
-            const chunkHistory = new HistoryManager();
-            if (params.historicalMessages) {
-                const systemMsg = params.historicalMessages.find((m: UniversalMessage) => m.role === 'system');
-                if (systemMsg) {
-                    chunkHistory.updateSystemMessage(systemMsg.content, false);
-                    params.historicalMessages.filter((m: UniversalMessage) => m.role !== 'system')
-                        .forEach(m => chunkHistory.addMessage(m.role, m.content, m));
-                } else {
-                    chunkHistory.setMessages(params.historicalMessages);
+        // Process chunks in batches
+        const maxParallelRequests = params.maxParallelRequests ?? 8; // Default batch size 8
+        const results: UniversalChatResponse[] = new Array(messages.length);
+
+        log.debug(`Processing ${messages.length} chunks in batches of ${maxParallelRequests}`);
+
+        for (let i = 0; i < messages.length; i += maxParallelRequests) {
+            const batch = messages.slice(i, i + maxParallelRequests);
+
+            log.debug(`Processing batch ${Math.floor(i / maxParallelRequests) + 1}/${Math.ceil(messages.length / maxParallelRequests)}`, {
+                startIndex: i,
+                batchSize: batch.length
+            });
+
+            const batchPromises = batch.map(async (chunkContent, relativeIndex) => {
+                const globalIndex = i + relativeIndex;
+                const chunkLog = logger.createLogger({ prefix: `ChunkController.processChunksParallel.chunk${globalIndex + 1}` });
+
+                // Create a separate history manager for this chunk
+                const chunkHistory = new HistoryManager();
+
+                // Add historical messages if provided
+                if (params.historicalMessages) {
+                    const systemMsg = params.historicalMessages.find((m: UniversalMessage) => m.role === 'system');
+                    if (systemMsg) {
+                        chunkHistory.updateSystemMessage(systemMsg.content, false);
+                        params.historicalMessages.filter((m: UniversalMessage) => m.role !== 'system')
+                            .forEach(m => chunkHistory.addMessage(m.role, m.content, m));
+                    } else {
+                        chunkHistory.setMessages(params.historicalMessages);
+                    }
                 }
-            }
-            return chunkHistory;
-        };
 
-        // Create promises for all chunks
-        const chunkPromises = messages.map(async (chunkContent, index) => {
-            const chunkLog = logger.createLogger({ prefix: `ChunkController.processChunksParallel.chunk${index + 1}` });
-            chunkLog.debug('Processing chunk in parallel', {
-                chunkIndex: index + 1,
-                chunkLength: chunkContent.length,
-                chunkPreview: chunkContent.substring(0, 100) + (chunkContent.length > 100 ? '...' : '')
+                // Add the specific chunk message
+                if (typeof chunkContent === 'string') {
+                    chunkHistory.addMessage('user', chunkContent);
+                } else {
+                    chunkHistory.addMessage(chunkContent.role, chunkContent.content, chunkContent);
+                }
+
+                // Prepare chat params for this chunk
+                const chunkChatParams: UniversalChatParams = {
+                    model: params.model,
+                    messages: chunkHistory.getMessages(),
+                    settings: params.settings,
+                    jsonSchema: params.jsonSchema,
+                    responseFormat: params.responseFormat,
+                    tools: params.tools
+                };
+
+                try {
+                    const response = await this.chatController.execute(chunkChatParams);
+
+                    // Store result in the correct position
+                    results[globalIndex] = response;
+
+                    chunkLog.debug(`Chunk ${globalIndex + 1}/${messages.length} completed`);
+                    return response;
+                } catch (error) {
+                    chunkLog.error(`Error processing chunk ${globalIndex + 1}`, { error });
+                    throw error; // Re-throw to fail the batch/process
+                }
             });
 
-            // Create dedicated history for this chunk
-            const chunkHistory = createChunkHistory();
-            chunkHistory.addMessage('user', chunkContent);
-
-            // Construct parameters for ChatController.execute
-            const chatParams: UniversalChatParams = {
-                model: params.model,
-                messages: this.getMessagesFromHistory(chunkHistory),
-                settings: params.settings,
-                jsonSchema: params.jsonSchema,
-                responseFormat: params.responseFormat,
-                tools: params.tools,
-            };
-
-            chunkLog.debug('Calling ChatController.execute for parallel chunk', {
-                chunkIndex: index + 1,
-                messageCount: chatParams.messages.length,
-                hasJsonSchema: Boolean(params.jsonSchema),
-                hasTools: Boolean(params.tools && params.tools.length > 0)
-            });
-
-            try {
-                const response = await this.chatController.execute(chatParams);
-
-                chunkLog.debug('Received response from ChatController for parallel chunk', {
-                    chunkIndex: index + 1,
-                    hasContent: Boolean(response?.content),
-                    contentLength: response?.content?.length || 0,
-                    hasToolCalls: Boolean(response?.toolCalls && response.toolCalls.length > 0),
-                    toolCallCount: response?.toolCalls?.length || 0
-                });
-
-                return { response, index };
-            } catch (error) {
-                chunkLog.error('Error processing parallel chunk', { chunkIndex: index + 1, error });
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                throw new Error(`Chunk ${index + 1} failed: ${errorMessage}`);
-            }
-        });
-
-        // Wait for all chunks to complete
-        log.debug('Waiting for all parallel chunks to complete');
-        const chunkResults = await Promise.all(chunkPromises);
-
-        // Sort results by original index to maintain order
-        chunkResults.sort((a, b) => a.index - b.index);
-        const responses = chunkResults.map(result => result.response).filter(Boolean);
+            // Wait for the current batch to complete
+            await Promise.all(batchPromises);
+        }
 
         // Update iteration count to reflect actual work done
         this.iterationCount = messages.length;
 
         log.debug('Parallel chunk processing completed', {
             totalChunks: messages.length,
-            responseCount: responses.length,
-            successfulChunks: responses.length
+            responseCount: results.length
         });
 
-        return responses;
+        // Filter out any undefined results (though strict error handling above prevents gaps)
+        return results.filter(Boolean);
     }
 } 

@@ -76,10 +76,11 @@ export function shouldRetryDueToLLMError(error: unknown): boolean {
             return true;
         }
 
-        // Check for content-triggered retry (already handled in separate function,
-        // but included here for completeness)
-        if (error.message.startsWith("Response content triggered retry")) {
-            log.debug(`Found content-triggered retry message`);
+        // Check for content-triggered retry
+        if (error.message.startsWith("Response content triggered retry") ||
+            error.message.includes("Failed to parse JSON response") ||
+            error.message.includes("Failed to validate response")) {
+            log.debug(`Found content-triggered or JSON retry message: ${error.message}`);
             return true;
         }
 

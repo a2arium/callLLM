@@ -11,6 +11,8 @@ import { getDirname } from '../src/utils/paths.ts';
 
 const __dirname = getDirname(import.meta.url);
 
+import { ModelSelector } from '../src/core/models/ModelSelector.ts';
+
 type RunOpts = {
     onlyProviders?: string[];
     onlyScenarios?: string[];
@@ -78,10 +80,22 @@ async function run() {
             // Build the list of models to run for this provider
             let modelsToTest: string[] = [];
             if (opts.onlyModels && opts.onlyModels.length > 0) {
-                modelsToTest = opts.onlyModels;
+                modelsToTest = opts.onlyModels.filter(name => {
+                    try {
+                        const mi = selectorCaller.getModel(name);
+                        if (!mi) return false;
+                        if (!ModelSelector.meetsRequirements(mi, scenario.requirements)) {
+                            console.warn(`[WARNING] Model '${name}' does not strictly meet requirements for scenario '${scenario.id}', but including it anyway as it was explicitly requested.`);
+                        }
+                        return true;
+                    } catch {
+                        return false;
+                    }
+                });
             } else if (opts.allModels) {
                 try {
-                    modelsToTest = selectorCaller.getAvailableModels().map(m => m.name);
+                    const allModels = selectorCaller.getAvailableModels();
+                    modelsToTest = ModelSelector.filterModelsByCapabilities(allModels, scenario.requirements).map(m => m.name);
                 } catch {
                     modelsToTest = [];
                 }

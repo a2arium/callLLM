@@ -1,8 +1,9 @@
-import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
+import type { ModelInfo, JSONSchemaDefinition, UniversalMessage } from '../../interfaces/UniversalInterfaces.ts';
 import { TokenCalculator } from '../models/TokenCalculator.ts';
 import { RecursiveObjectSplitter } from './RecursiveObjectSplitter.ts';
 import { StringSplitter } from './StringSplitter.ts';
 import { MarkdownSplitter } from './MarkdownSplitter.ts';
+import { SchemaFormatter } from '../schema/SchemaFormatter.ts';
 import { logger } from '../../utils/logger.ts';
 
 /**
@@ -55,7 +56,9 @@ export class DataSplitter {
         endingMessage,
         modelInfo,
         maxResponseTokens,
-        maxCharsPerChunk
+        maxCharsPerChunk,
+        jsonSchema,
+        historicalMessages
     }: {
         message: string;
         data?: any;
@@ -63,6 +66,9 @@ export class DataSplitter {
         modelInfo: ModelInfo;
         maxResponseTokens: number;
         maxCharsPerChunk?: number;
+        jsonSchema?: { name?: string; schema: JSONSchemaDefinition };
+
+        historicalMessages?: UniversalMessage[];
     }): Promise<DataChunk[]> {
         const log = logger.createLogger({ prefix: 'DataSplitter.splitIfNeeded' });
         log.debug('Called with', {
@@ -96,12 +102,38 @@ export class DataSplitter {
             }];
         }
 
-        // Calculate available tokens
         const messageTokens = this.tokenCalculator.calculateTokens(message);
         const endingTokens = endingMessage ? this.tokenCalculator.calculateTokens(endingMessage) : 0;
-        const overheadTokens = 50;
 
-        const availableTokens = Math.max(1, modelInfo.maxRequestTokens - messageTokens - endingTokens - maxResponseTokens - overheadTokens);
+        // Calculate tokens for schema, instructions, and historical messages
+        let contextTokens = 0;
+
+        // 1. JSON Schema tokens if present
+        if (jsonSchema) {
+            try {
+                const schemaStr = SchemaFormatter.schemaToString(jsonSchema.schema);
+
+                // Also account for the instruction text that PromptEnhancer adds
+                const instructionOverhead = 200; // conservative buffer for instructions
+                contextTokens += this.tokenCalculator.calculateTokens(schemaStr) + instructionOverhead;
+            } catch (err) {
+                // If schema parsing fails, use a large fallback
+                contextTokens += 500;
+            }
+        }
+
+        // 2. Historical messages tokens (e.g. System message)
+        if (historicalMessages && historicalMessages.length > 0) {
+            contextTokens += this.tokenCalculator.calculateTotalTokens(historicalMessages);
+        }
+
+        // Use a more conservative overhead and safety margin for tokenization discrepancies
+        // Especially critical when using tiktoken (GPT-4) to estimate for Llama/other models
+        const overheadTokens = 150;
+        const CAUTION_FACTOR = 0.90; // 10% safety margin for tokenizer mismatch
+
+        const effectiveWindow = Math.floor(modelInfo.maxRequestTokens * CAUTION_FACTOR);
+        const availableTokens = Math.max(1, effectiveWindow - messageTokens - endingTokens - maxResponseTokens - overheadTokens - contextTokens);
 
         // Check if data fits without splitting
         const dataString = typeof data === 'object' ? JSON.stringify(data) : data.toString();
@@ -110,6 +142,7 @@ export class DataSplitter {
         log.debug('Token and char analysis', {
             messageTokens,
             endingTokens,
+            contextTokens,
             overheadTokens,
             maxRequestTokens: modelInfo.maxRequestTokens,
             maxResponseTokens,

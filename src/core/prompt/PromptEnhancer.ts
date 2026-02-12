@@ -8,25 +8,23 @@ export type PromptEnhancementOptions = {
     };
     responseFormat?: 'json' | 'text';
     isNativeJsonMode?: boolean;
+    isStructuredOutput?: boolean;
 };
 
 export class PromptEnhancer {
     private static readonly JSON_INSTRUCTION = `
-You must respond with valid JSON that matches the following requirements:
-1. The response must be parseable as JSON
-2. Do not include any explanatory text outside the JSON
-3. Do not include markdown code blocks or formatting
-4. Do not include the word "json" or any other descriptors
-5. Just respond with the raw JSON content`;
+You must respond with a valid JSON OBJECT.
+1. The response MUST be a single JSON object.
+2. DO NOT wrap the response in an array [].
+3. DO NOT include any explanatory text, markdown code blocks, or formatting.
+4. Respond ONLY with the raw JSON content.`;
 
     private static readonly JSON_WITH_SCHEMA_INSTRUCTION = `
-You must respond with valid JSON that matches the following schema and requirements:
-1. The response must be parseable as JSON
-2. The JSON must exactly match the schema provided below
-3. Do not include any explanatory text outside the JSON
-4. Do not include markdown code blocks or formatting
-5. Do not include the word "json" or any other descriptors
-6. Just respond with the raw JSON content
+You must respond with a valid JSON OBJECT that matches the following schema:
+1. The response MUST be a single JSON object matching the schema below.
+2. DO NOT wrap the response in an array [].
+3. DO NOT include any explanatory text, markdown code blocks, or formatting.
+4. Respond ONLY with the raw JSON content.
 
 Schema:
 `;
@@ -62,11 +60,11 @@ Schema:
             }
         };
 
-        // Ensure system messages come first, then instruction message, then other messages
+        // Ensure system messages come first, then other messages, then instruction message at the end
         return [
             ...systemMessages,
-            instructionMessage,
-            ...nonSystemMessages
+            ...nonSystemMessages,
+            instructionMessage
         ];
     }
 
@@ -74,7 +72,9 @@ Schema:
      * Generates the instruction string based on options
      */
     private static generateInstructionString(options: PromptEnhancementOptions): string {
-        if (options.isNativeJsonMode) {
+        const isStructuredOutput = options.isStructuredOutput ?? true;
+
+        if (options.isNativeJsonMode && isStructuredOutput) {
             return 'Provide your response in valid JSON format.';
         }
 

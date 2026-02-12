@@ -19,7 +19,7 @@ export class ResponseProcessor {
         response: UniversalChatResponse,
         params: UniversalChatParams,
         model: ModelInfo,
-        options?: { usePromptInjection?: boolean }
+        options?: { usePromptInjection?: boolean, useSchemaInjection?: boolean }
     ): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
         const log = logger.createLogger({ prefix: 'ResponseProcessor.validateResponse' });
 
@@ -420,18 +420,21 @@ export class ResponseProcessor {
     public validateJsonMode(
         modelInfo: ModelInfo,
         params: UniversalChatParams
-    ): { usePromptInjection: boolean } {
+    ): { usePromptInjection: boolean, useSchemaInjection: boolean } {
         const isJsonRequested = params.responseFormat === 'json' || params.jsonSchema ||
             (params.responseFormat && typeof params.responseFormat === 'object' && params.responseFormat.type === 'json_object');
 
-        // Check if model supports JSON output format with the new structure
-        const hasNativeJsonSupport = typeof modelInfo.capabilities?.output?.text === 'object' &&
-            modelInfo.capabilities.output.text.textOutputFormats?.includes('json');
+        const outputText = modelInfo.capabilities?.output?.text;
+        const hasNativeJsonSupport = typeof outputText === 'object' &&
+            outputText.textOutputFormats?.includes('json');
+
+        const hasStructuredOutputSupport = typeof outputText === 'object' &&
+            Boolean(outputText.structuredOutputs);
 
         const jsonMode = params.settings?.jsonMode ?? 'fallback';
 
         if (!isJsonRequested) {
-            return { usePromptInjection: false };
+            return { usePromptInjection: false, useSchemaInjection: false };
         }
 
         if (jsonMode === 'native-only' && !hasNativeJsonSupport) {
@@ -439,6 +442,11 @@ export class ResponseProcessor {
         }
 
         const usePromptInjection = jsonMode === 'force-prompt' || (jsonMode === 'fallback' && !hasNativeJsonSupport);
-        return { usePromptInjection };
+
+        // Use schema injection if prompt injection is used, 
+        // OR if the model supports native JSON mode but NOT structured outputs (e.g. Venice's json_object mode)
+        const useSchemaInjection = usePromptInjection || !hasStructuredOutputSupport;
+
+        return { usePromptInjection, useSchemaInjection };
     }
 } 

@@ -189,8 +189,14 @@ describe('SchemaFormatter', () => {
       });
     });
 
-    it('should throw error for unsupported schema type', () => {
-      const invalidSchema = { type: 'object' };
+    it('should support plain object schemas by stringifying them', () => {
+      const plainSchema = { type: 'object', properties: { foo: { type: 'string' } } };
+      const result = SchemaFormatter.schemaToString(plainSchema as any);
+      expect(result).toBe(JSON.stringify(plainSchema));
+    });
+
+    it('should throw error for unsupported schema types (non-object, non-string)', () => {
+      const invalidSchema = 123;
       expect(() => SchemaFormatter.schemaToString(invalidSchema as any)).
         toThrow('Unsupported schema type');
     });

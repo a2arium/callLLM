@@ -185,7 +185,7 @@ export class LLMCaller implements MCPDirectAccess {
         this.historyMode = options?.historyMode || 'stateless';
         this.systemMessage = systemMessage;
         this.maxIterations = options?.maxIterations ?? 5; // Initialize maxIterations
-        this.maxChunkIterations = options?.maxChunkIterations ?? 20; // Initialize maxChunkIterations
+        this.maxChunkIterations = options?.maxChunkIterations ?? 70; // Updated default to 70
         this.historyManager = options?.historyManager || new HistoryManager(systemMessage);
         this.toolsManager = options?.toolsManager || new ToolsManager();
         this.usageTracker = new UsageTracker(this.tokenCalculator, this.usageCallback, this.callerId);
@@ -311,7 +311,7 @@ export class LLMCaller implements MCPDirectAccess {
         }
 
         // Initialize ChunkController with parallel options
-        this.parallelChunking = options?.parallelChunking ?? true;
+        this.parallelChunking = options?.parallelChunking ?? true; // Default to parallel
         this.chunkController = new ChunkController(
             this.tokenCalculator,
             this.chatController,
@@ -365,6 +365,15 @@ export class LLMCaller implements MCPDirectAccess {
                 }
             }
         }
+    }
+
+    /**
+     * Sets whether to process chunks in parallel or sequentially.
+     * @param enabled True for parallel, false for sequential
+     */
+    public setParallelChunking(enabled: boolean): void {
+        this.parallelChunking = enabled;
+        this.log.debug(`Parallel chunking set to ${enabled}`);
     }
 
     // Convenience helpers for video jobs
@@ -1450,7 +1459,9 @@ export class LLMCaller implements MCPDirectAccess {
                 endingMessage: actualOptions.endingMessage,
                 model: this.modelManager.getModel(this.model) || (() => { throw new Error(`Model ${this.model} not found`); })(),
                 maxResponseTokens: actualOptions.settings?.maxTokens,
-                maxCharsPerChunk: actualOptions.maxCharsPerChunk
+                maxCharsPerChunk: actualOptions.maxCharsPerChunk,
+                jsonSchema: actualOptions.jsonSchema,
+                historicalMessages: this.historyManager.getMessages() || []
             });
             log.debug('Processed messages', { count: processedMessages.length });
 
@@ -1470,7 +1481,9 @@ export class LLMCaller implements MCPDirectAccess {
                 }
             } else {
                 const chunkStreamParams = { ...chatParams, historicalMessages: chatParams.messages };
-                const responses = this.parallelChunking
+                // Enable parallel chunking if explicitly set OR if maxParallelRequests is provided
+                const shouldUseParallel = this.parallelChunking || (actualOptions.maxParallelRequests !== undefined);
+                const responses = shouldUseParallel
                     ? await this.chunkController.processChunksParallel(finalProcessedMessages, {
                         model: this.model,
                         historicalMessages: chatParams.messages,
@@ -1479,7 +1492,10 @@ export class LLMCaller implements MCPDirectAccess {
                         responseFormat: actualOptions.responseFormat,
                         tools: chatParams.tools,
                         callerId: this.callerId,
-                        maxCharsPerChunk: actualOptions.maxCharsPerChunk
+                        maxCharsPerChunk: actualOptions.maxCharsPerChunk,
+                        historyMode: chatParams.historyMode,
+                        maxIterations: actualOptions.maxChunkIterations,
+                        maxParallelRequests: actualOptions.maxParallelRequests
                     })
                     : await this.chunkController.processChunks(finalProcessedMessages, {
                         model: this.model,
@@ -1489,7 +1505,9 @@ export class LLMCaller implements MCPDirectAccess {
                         responseFormat: actualOptions.responseFormat,
                         tools: chatParams.tools,
                         callerId: this.callerId,
-                        maxCharsPerChunk: actualOptions.maxCharsPerChunk
+                        maxCharsPerChunk: actualOptions.maxCharsPerChunk,
+                        historyMode: chatParams.historyMode,
+                        maxIterations: actualOptions.maxChunkIterations
                     });
                 responses.forEach(response => {
                     if (response.content && (!response.toolCalls || response.toolCalls.length === 0) && response.metadata?.finishReason !== 'tool_calls') {
@@ -1982,7 +2000,9 @@ export class LLMCaller implements MCPDirectAccess {
                 endingMessage: opts.endingMessage,
                 model: this.modelManager.getModel(this.model) || (() => { throw new Error(`Model ${this.model} not found`); })(),
                 maxResponseTokens: opts.settings?.maxTokens,
-                maxCharsPerChunk: opts.maxCharsPerChunk
+                maxCharsPerChunk: opts.maxCharsPerChunk,
+                jsonSchema: opts.jsonSchema,
+                historicalMessages: this.historyManager.getMessages() || []
             });
             log.debug('Processed messages', { count: processedMessages.length });
 
@@ -2039,7 +2059,10 @@ export class LLMCaller implements MCPDirectAccess {
                             responseFormat: opts.responseFormat,
                             tools: chatParams.tools,
                             callerId: this.callerId,
-                            maxCharsPerChunk: opts.maxCharsPerChunk
+                            maxCharsPerChunk: opts.maxCharsPerChunk,
+                            historyMode: chatParams.historyMode,
+                            maxIterations: opts.maxChunkIterations,
+                            maxParallelRequests: opts.maxParallelRequests
                         })
                         : await this.chunkController.processChunks(finalProcessedMessages, {
                             model: this.model,
@@ -2049,7 +2072,9 @@ export class LLMCaller implements MCPDirectAccess {
                             responseFormat: opts.responseFormat,
                             tools: chatParams.tools,
                             callerId: this.callerId,
-                            maxCharsPerChunk: opts.maxCharsPerChunk
+                            maxCharsPerChunk: opts.maxCharsPerChunk,
+                            historyMode: chatParams.historyMode,
+                            maxIterations: opts.maxChunkIterations
                         });
                     responses = await execChunks();
                     llmCallsCount = responses.length;

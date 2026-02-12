@@ -2,6 +2,7 @@ import type { ModelInfo, ModelAlias, ModelCapabilities } from '../../interfaces/
 import { ModelSelector, type CapabilityRequirement } from './ModelSelector.ts';
 import { defaultModels as openAIResponseModels } from '../../adapters/openai/models.ts';
 import { defaultModels as cerebrasModels } from '../../adapters/cerebras/models.ts';
+import { defaultModels as veniceModels } from '../../adapters/venice/models.ts';
 import type { RegisteredProviders } from '../../adapters/index.ts';
 
 export class ModelManager {
@@ -46,6 +47,9 @@ export class ModelManager {
                 break;
             case 'cerebras':
                 cerebrasModels.forEach(model => this.models.set(model.name, model));
+                break;
+            case 'venice':
+                veniceModels.forEach(model => this.models.set(model.name, model));
                 break;
             default:
                 throw new Error(`Unsupported provider: ${providerName}`);

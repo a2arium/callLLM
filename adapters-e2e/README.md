@@ -17,6 +17,10 @@ Capability-driven end-to-end scenarios for adapter conformance. This suite runs 
   - `yarn adapters:e2e --providers=openai,my-provider`
 - Filter by scenario(s):
   - `yarn adapters:e2e --scenarios=simple-chat,streaming-chat`
+- Filter by model(s):
+  - `yarn adapters:e2e --provider=venice --models=qwen3-4b,venice-uncensored`
+- Run all models for a provider:
+  - `yarn adapters:e2e --provider=venice --all-models`
 - Choose judge:
   - `yarn adapters:e2e --judgeProvider=openai --judgeModelAlias=premium`
 - Tools filter (available to scenarios via `E2E_TOOLS` env):

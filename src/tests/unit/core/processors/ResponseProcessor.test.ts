@@ -1157,7 +1157,7 @@ describe('ResponseProcessor', () => {
         model: 'test-model',
         responseFormat: 'json'
       };
-      expect(processor.validateJsonMode(model, params)).toEqual({ usePromptInjection: false });
+      expect(processor.validateJsonMode(model, params)).toEqual({ usePromptInjection: false, useSchemaInjection: true });
     });
 
     it('should throw error when model does not have native JSON support and fallback is disabled', () => {
@@ -1227,7 +1227,7 @@ describe('ResponseProcessor', () => {
           jsonMode: 'fallback'
         }
       };
-      expect(processor.validateJsonMode(model, params)).toEqual({ usePromptInjection: true });
+      expect(processor.validateJsonMode(model, params)).toEqual({ usePromptInjection: true, useSchemaInjection: true });
     });
 
     it('should handle force-prompt JSON mode', async () => {
@@ -1261,7 +1261,7 @@ describe('ResponseProcessor', () => {
           jsonMode: 'force-prompt'
         }
       };
-      expect(processor.validateJsonMode(model, params)).toEqual({ usePromptInjection: true });
+      expect(processor.validateJsonMode(model, params)).toEqual({ usePromptInjection: true, useSchemaInjection: true });
     });
 
     it('should return false when no JSON is requested', () => {
@@ -1291,7 +1291,7 @@ describe('ResponseProcessor', () => {
         messages: [],
         model: 'test-model'
       };
-      expect(processor.validateJsonMode(model, params)).toEqual({ usePromptInjection: false });
+      expect(processor.validateJsonMode(model, params)).toEqual({ usePromptInjection: false, useSchemaInjection: false });
     });
   });
 

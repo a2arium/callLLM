@@ -20,7 +20,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -48,7 +49,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -76,7 +78,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -104,7 +107,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -193,7 +197,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -221,7 +226,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -276,7 +282,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -304,7 +311,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -332,7 +340,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -359,7 +368,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -387,7 +397,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 },
                 audio: true
             }
@@ -447,7 +458,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -478,7 +490,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         }
@@ -501,7 +514,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         },
@@ -533,7 +547,8 @@ export const defaultModels: ModelInfo[] = [
             },
             output: {
                 text: {
-                    textOutputFormats: ['text', 'json']
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
                 }
             }
         }

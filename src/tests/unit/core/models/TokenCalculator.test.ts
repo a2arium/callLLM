@@ -25,6 +25,7 @@ describe('TokenCalculator', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    TokenCalculator.clearCache();
     calculator = new TokenCalculator();
     mockFree = jest.fn(); // Initialize mockFree for each test
   });
@@ -139,7 +140,6 @@ describe('TokenCalculator', () => {
 
       expect(tokens).toBe(3);
       expect(mockEncode).toHaveBeenCalledWith(text);
-      expect(mockFree).toHaveBeenCalled();
     });
 
     it('should handle empty string', () => {

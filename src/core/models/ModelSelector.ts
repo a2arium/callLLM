@@ -88,77 +88,82 @@ export class ModelSelector {
     }
 
     /**
+     * Checks if a model meets the given capability requirements.
+     */
+    public static meetsRequirements(model: ModelInfo, requirements: CapabilityRequirement): boolean {
+        const capabilities = model.capabilities || this.getDefaultCapabilities();
+
+        // Check text output requirements
+        if (requirements.textOutput?.required) {
+            if (!this.supportsTextOutput(capabilities, requirements.textOutput.formats)) {
+                return false;
+            }
+        }
+
+        // Check image input requirements
+        if (requirements.imageInput?.required) {
+            if (!this.supportsImageInput(capabilities, requirements.imageInput.formats)) {
+                return false;
+            }
+        }
+
+        // Check image output requirements
+        if (requirements.imageOutput?.required) {
+            if (!this.supportsImageOutput(capabilities, requirements.imageOutput.operations)) {
+                return false;
+            }
+        }
+
+        // Check tool calling requirements
+        if (requirements.toolCalls?.required) {
+            const tc = capabilities.toolCalls;
+            const hasToolCalls = typeof tc === 'boolean' ? tc : Boolean(tc?.nonStreaming);
+            if (!hasToolCalls) {
+                return false;
+            }
+            const parallelCap = typeof tc === 'object' && tc?.parallel !== undefined
+                ? Boolean(tc.parallel)
+                : Boolean(capabilities.parallelToolCalls);
+            if (requirements.toolCalls.parallel && !parallelCap) {
+                return false;
+            }
+        }
+
+        // Check streaming requirements
+        if (requirements.streaming?.required) {
+            if (!capabilities.streaming) {
+                return false;
+            }
+        }
+
+        // Check embedding requirements
+        if (requirements.embeddings?.required) {
+            if (!this.supportsEmbeddings(capabilities, requirements.embeddings)) {
+                return false;
+            }
+        }
+
+        // Check reasoning requirements
+        if (requirements.reasoning?.required) {
+            if (!capabilities.reasoning) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Filters models based on capability requirements
      */
-    private static filterModelsByCapabilities(models: ModelInfo[], requirements: CapabilityRequirement): ModelInfo[] {
-        return models.filter(model => {
-            const capabilities = model.capabilities || this.getDefaultCapabilities();
-
-            // Check text output requirements
-            if (requirements.textOutput?.required) {
-                if (!this.supportsTextOutput(capabilities, requirements.textOutput.formats)) {
-                    return false;
-                }
-            }
-
-            // Check image input requirements
-            if (requirements.imageInput?.required) {
-                if (!this.supportsImageInput(capabilities, requirements.imageInput.formats)) {
-                    return false;
-                }
-            }
-
-            // Check image output requirements
-            if (requirements.imageOutput?.required) {
-                if (!this.supportsImageOutput(capabilities, requirements.imageOutput.operations)) {
-                    return false;
-                }
-            }
-
-            // Check tool calling requirements
-            if (requirements.toolCalls?.required) {
-                const tc = capabilities.toolCalls;
-                const hasToolCalls = typeof tc === 'boolean' ? tc : Boolean(tc?.nonStreaming);
-                if (!hasToolCalls) {
-                    return false;
-                }
-                const parallelCap = typeof tc === 'object' && tc?.parallel !== undefined
-                    ? Boolean(tc.parallel)
-                    : Boolean(capabilities.parallelToolCalls);
-                if (requirements.toolCalls.parallel && !parallelCap) {
-                    return false;
-                }
-            }
-
-            // Check streaming requirements
-            if (requirements.streaming?.required) {
-                if (!capabilities.streaming) {
-                    return false;
-                }
-            }
-
-            // Check embedding requirements
-            if (requirements.embeddings?.required) {
-                if (!this.supportsEmbeddings(capabilities, requirements.embeddings)) {
-                    return false;
-                }
-            }
-
-            // Check reasoning requirements
-            if (requirements.reasoning?.required) {
-                if (!capabilities.reasoning) {
-                    return false;
-                }
-            }
-
-            return true;
-        });
+    public static filterModelsByCapabilities(models: ModelInfo[], requirements: CapabilityRequirement): ModelInfo[] {
+        return models.filter(model => this.meetsRequirements(model, requirements));
     }
 
     /**
      * Checks if model supports text output with specified formats
      */
-    private static supportsTextOutput(capabilities: ModelCapabilities, formats?: ('text' | 'json')[]): boolean {
+    public static supportsTextOutput(capabilities: ModelCapabilities, formats?: ('text' | 'json')[]): boolean {
         const textCapability = capabilities.output.text;
 
         // If text output is completely disabled
@@ -184,7 +189,7 @@ export class ModelSelector {
     /**
      * Checks if model supports image input with specified formats
      */
-    private static supportsImageInput(capabilities: ModelCapabilities, formats?: string[]): boolean {
+    public static supportsImageInput(capabilities: ModelCapabilities, formats?: string[]): boolean {
         const imageCapability = capabilities.input.image;
 
         // If image input is not supported
@@ -209,7 +214,7 @@ export class ModelSelector {
     /**
      * Checks if model supports image output with specified operations
      */
-    private static supportsImageOutput(capabilities: ModelCapabilities, operations?: ('generate' | 'edit' | 'editWithMask')[]): boolean {
+    public static supportsImageOutput(capabilities: ModelCapabilities, operations?: ('generate' | 'edit' | 'editWithMask')[]): boolean {
         const imageCapability = capabilities.output.image;
 
         // If image output is not supported
@@ -249,7 +254,7 @@ export class ModelSelector {
     /**
      * Checks if model supports embeddings with specified requirements
      */
-    private static supportsEmbeddings(capabilities: ModelCapabilities, requirements?: {
+    public static supportsEmbeddings(capabilities: ModelCapabilities, requirements?: {
         dimensions?: number[];
         encodingFormat?: 'float' | 'base64';
     }): boolean {

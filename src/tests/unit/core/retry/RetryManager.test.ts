@@ -56,7 +56,7 @@ describe('RetryManager', () => {
     const promise = retryManager.executeWithRetry(operation as any, () => true);
     // Optionally, wait a little longer than the expected total delay (e.g. 10ms)
     await new Promise((resolve) => setTimeout(resolve, 10));
-    await expect(promise).rejects.toThrow('Failed after 2 retries. Last error: persistent error');
+    await expect(promise).rejects.toThrow(/Failed after 2 retries. Last error: persistent error/);
     expect(operation).toHaveBeenCalledTimes(3);
   });
 
@@ -110,7 +110,7 @@ describe('RetryManager', () => {
     try {
       await retryManager.executeWithRetry(operation as any, shouldRetry);
     } catch (err) {
-      expect(err).toEqual(new Error("Failed after 2 retries. Last error: primitive error"));
+      expect((err as Error).message).toContain("Failed after 2 retries. Last error: primitive error");
     }
   }, 10000); // Increase timeout to 10 seconds
 
@@ -120,7 +120,7 @@ describe('RetryManager', () => {
     const operation = jest.fn().mockRejectedValue(new Error('error') as unknown as never);
 
     await expect(retryManager.executeWithRetry(operation as any, () => true)).
-      rejects.toThrow('Failed after 0 retries');
+      rejects.toThrow(/Failed after 0 retries/);
     expect(operation).toHaveBeenCalledTimes(1);
   }, 10000); // Increase timeout to 10 seconds
 });

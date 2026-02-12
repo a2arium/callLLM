@@ -136,13 +136,12 @@ describe('ChatController', () => {
       }))
     } as unknown as ToolOrchestrator;
     mockHistoryManager = {
-      getMessages: jest.fn().mockReturnValue([]),
-      addMessage: jest.fn(),
-      getSystemMessage: jest.fn().mockReturnValue({ role: 'system', content: 'Test system message' }),
       getMessages: jest.fn().mockReturnValue([
         { role: 'system', content: 'System prompt' },
         { role: 'user', content: 'User query with image placeholder' }]
-      )
+      ),
+      addMessage: jest.fn(),
+      getSystemMessage: jest.fn().mockReturnValue({ role: 'system', content: 'Test system message' }),
     } as unknown as HistoryManager;
 
     chatController = new ChatController(
@@ -599,7 +598,7 @@ describe('ChatController', () => {
     await expect(chatController.execute({
       model: 'test-model',
       messages: [{ role: 'user', content: '' }] // Empty content
-    })).rejects.toThrow('Message from role');
+    })).rejects.toThrow(/Message from role/);
   });
 
   it('should throw error when model is not found', async () => {
@@ -610,18 +609,19 @@ describe('ChatController', () => {
     await expect(chatController.execute({
       model: 'nonexistent-model',
       messages: [{ role: 'user', content: 'Hello' }]
-    })).rejects.toThrow('Model nonexistent-model not found');
+    })).rejects.toThrow(/Model nonexistent-model not found/);
   });
 
   it('should properly handle validation failures in responseProcessor', async () => {
     // Mock validation to fail
-    (mockResponseProcessor.validateResponse as any).mockResolvedValueOnce(null);
+    // Mock validation to fail persistently
+    (mockResponseProcessor.validateResponse as any).mockResolvedValue(null);
 
     // Should throw error when validation fails
     await expect(chatController.execute({
       model: 'test-model',
       messages: [{ role: 'user', content: 'Hello' }]
-    })).rejects.toThrow('Response validation failed');
+    })).rejects.toThrow(/Failed to validate response/);
   });
 
   it('should update history with assistant message when no tool calls', async () => {
@@ -848,7 +848,7 @@ describe('ChatController', () => {
     await expect(chatController.execute({
       model: 'invalid-model',
       messages: [{ role: 'user', content: 'Hello' }]
-    })).rejects.toThrow('Model invalid-model not found');
+    })).rejects.toThrow(/Model invalid-model not found/);
   });
 
   it('should track usage metrics properly', async () => {
@@ -937,7 +937,7 @@ describe('ChatController', () => {
     await expect(chatController.execute({
       model: 'test-model',
       messages: [{ role: '' as any, content: 'Test content' }]
-    })).rejects.toThrow('Message missing role');
+    })).rejects.toThrow(/Message missing role/);
 
     // Test with model that doesn't exist
     jest.spyOn(mockModelManager, 'getModel').mockImplementation(() => null as any);
@@ -945,7 +945,7 @@ describe('ChatController', () => {
     await expect(chatController.execute({
       model: 'nonexistent-model',
       messages: [{ role: 'user', content: 'Test content' }]
-    })).rejects.toThrow('Model nonexistent-model not found');
+    })).rejects.toThrow(/Model nonexistent-model not found/);
   });
 
   it('should execute recursive tool calls and correctly handle resubmission', async () => {

@@ -286,6 +286,15 @@ export type LLMCallOptions = {
      * Maximum number of characters allowed per chunk (for splitting)
      */
     maxCharsPerChunk?: number;
+    /**
+     * Maximum number of chunk iterations allowed
+     */
+    maxChunkIterations?: number;
+    /**
+     * Maximum number of requests to run in parallel during chunk processing.
+     * @default 5
+     */
+    maxParallelRequests?: number;
 };
 
 export type UniversalChatParams = {
@@ -611,6 +620,12 @@ export type ModelCapabilities = {
              * @default ['text']
              */
             textOutputFormats: ('text' | 'json')[];
+            /**
+             * Whether the model supports native structured outputs (e.g. OpenAI's json_schema mode).
+             * When true, the model handles the schema natively and doesn't require schema injection in the prompt.
+             * @default false
+             */
+            structuredOutputs?: boolean;
         };
 
         /**

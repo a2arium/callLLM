@@ -80,7 +80,7 @@ export class RetryManager {
             throw new Error(`Operation failed without retrying (non-retryable error). Error: ${(lastError instanceof Error) ? lastError.message : lastError}`);
         } else {
             // Retries were attempted but still failed
-            throw new Error(`Failed after ${attempt - 1} retries. Last error: ${(lastError instanceof Error) ? lastError.message : lastError}`);
+            throw new Error(`Failed after ${attempt - 1} retries. Last error: ${(lastError instanceof Error) ? lastError.message : lastError}. (Hint: Increase 'maxRetries' in settings if needed)`);
         }
     }
 }

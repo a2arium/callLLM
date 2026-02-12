@@ -56,7 +56,7 @@
     "example:embeddings": "tsx examples/embeddings-example.ts",
     "example:video": "tsx examples/videoGeneration.ts",
     "adapters:e2e": "tsx adapters-e2e/run.ts",
-    "adapters:e2e:fast": "tsx adapters-e2e/run.ts --providers=cerebras --scenarios=simple-chat,streaming-chat",
+    "adapters:e2e:fast": "tsx adapters-e2e/run.ts --providers=venice --scenarios=simple-chat,streaming-chat",
     "lint": "eslint . --ext .ts"
   },
   "engines": {

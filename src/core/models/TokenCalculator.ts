@@ -92,11 +92,14 @@ export class TokenCalculator {
      * @param text The text to count tokens for
      * @returns Estimated token count
      */
+    private static encoder: any;
+
     public calculateTokens(text: string): number {
         try {
-            const enc = encoding_for_model('gpt-4');
-            const tokens = enc.encode(text);
-            enc.free();
+            if (!TokenCalculator.encoder) {
+                TokenCalculator.encoder = encoding_for_model('gpt-4');
+            }
+            const tokens = TokenCalculator.encoder.encode(text);
             return tokens.length;
         } catch (error) {
             console.warn('Failed to calculate tokens, using approximate count:', error);
@@ -117,6 +120,20 @@ export class TokenCalculator {
             const newlineCount = (text.match(/\n/g) || []).length;
             return Math.ceil(charCount / 2) + whitespaceCount + (specialCharCount * 2) + jsonTokens + newlineCount;
         }
+    }
+
+    /**
+     * Clears the cached encoder. Useful for testing.
+     */
+    public static clearCache(): void {
+        if (TokenCalculator.encoder && typeof TokenCalculator.encoder.free === 'function') {
+            try {
+                TokenCalculator.encoder.free();
+            } catch (e) {
+                // Ignore errors during free
+            }
+        }
+        TokenCalculator.encoder = undefined;
     }
 
     public calculateTotalTokens(messages: { role: string; content: string }[]): number {

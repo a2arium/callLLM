@@ -52,7 +52,7 @@ OPENAI_API_KEY=your-api-key-here
 
 Or provide the API key directly when initializing:
 ```typescript
-const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', 'your-api-key-here');
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are a helpful assistant.', 'your-api-key-here');
 ```
 
 ## Documentation
@@ -280,7 +280,7 @@ Default OpenAI Models:
 | Model | Input Price (per 1M) | Cached Input Price (per 1M) | Output Price (per 1M) | Quality Index | Output Speed (t/s) | First Token Latency (ms) |
 |-------|---------------------|---------------------------|---------------------|---------------|-----------------|----------------------|
 | gpt-4o | $2.50 | $1.25 | $10.00 | 78 | 109.3 | 720 |
-| gpt-4o-mini | $0.15 | $0.075 | $0.60 | 73 | 183.8 | 730 |
+| gpt-5-mini | $0.15 | $0.075 | $0.60 | 73 | 183.8 | 730 |
 | o1 | $15.00 | $7.50 | $60.00 | 85 | 151.2 | 22490 |
 | o1-mini | $3.00 | $1.50 | $12.00 | 82 | 212.1 | 10890 |
 
@@ -837,6 +837,28 @@ If you encounter a `ChunkIterationLimitError`, you can:
 - Bulk data analysis tasks
 - Processing datasets with many small items
 - Working with verbose JSON structures
+
+### Parallel Batching
+
+To speed up processing of large datasets with independent chunks, you can enable parallel batching by providing the `maxParallelRequests` option.
+
+1.  **Configure Batch Size**:
+    Use the `maxParallelRequests` option in your `call()` to control how many chunks are processed concurrently (default batch size: 8). This helps manage rate limits while improving throughput.
+
+    ```typescript
+    const response = await caller.call(
+        'Analyze each item:',
+        {
+            data: largeDataset,
+            maxParallelRequests: 10, // Process 10 items concurrently
+            settings: { 
+                maxTokens: 500 
+            }
+        }
+    );
+    ```
+
+    Note: `maxChunkIterations` (total chunk limit) still applies as a safety mechanism. If your parallel processing requires more total chunks than the default limit (70), remember to increase `maxChunkIterations` as well.
 
 ## JSON Mode and Schema Validation
 
@@ -1408,7 +1430,7 @@ The library provides three different history management modes that control how c
 
 ```typescript
 // Initialize with specific history mode
-const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are a helpful assistant.', {
     apiKey: process.env.OPENAI_API_KEY,
     historyMode: 'full' // One of: 'full', 'dynamic', 'stateless'
 });
@@ -1446,7 +1468,7 @@ caller.updateSettings({
 
 ```typescript
 // 1. Full mode example - maintains complete context
-const fullModeCaller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+const fullModeCaller = new LLMCaller('openai', 'gpt-5-mini', 'You are a helpful assistant.', {
     apiKey: process.env.OPENAI_API_KEY,
     historyMode: 'full'
 });
@@ -1457,7 +1479,7 @@ const response = await fullModeCaller.call('What is its population?');
 // Model understands 'its' refers to Paris from previous context
 
 // 2. Dynamic mode example - handles long conversations
-const truncateCaller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+const truncateCaller = new LLMCaller('openai', 'gpt-5-mini', 'You are a helpful assistant.', {
     apiKey: process.env.OPENAI_API_KEY,
     historyMode: 'dynamic'
 });
@@ -1466,7 +1488,7 @@ const truncateCaller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful
 // but recent context is preserved
 
 // 3. Stateless mode example - for independent questions
-const statelessCaller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+const statelessCaller = new LLMCaller('openai', 'gpt-5-mini', 'You are a helpful assistant.', {
     apiKey: process.env.OPENAI_API_KEY,
     historyMode: 'stateless'
 });
@@ -1483,7 +1505,7 @@ All three history modes work seamlessly with streaming:
 
 ```typescript
 // Streaming with history modes
-const streamingCaller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+const streamingCaller = new LLMCaller('openai', 'gpt-5-mini', 'You are a helpful assistant.', {
     apiKey: process.env.OPENAI_API_KEY,
     historyMode: 'full' // or 'dynamic' or 'stateless'
 });
@@ -1517,7 +1539,7 @@ const weatherTool = { /* ... definition ... */ };
 const timeTool = { /* ... definition ... */ };
 
 // Initialize LLMCaller with tools
-const caller = new LLMCaller('openai', 'gpt-4o-mini', 'System message', {
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'System message', {
     tools: [weatherTool, timeTool]
 });
 ```
@@ -1597,7 +1619,7 @@ const weatherTool = {
 };
 
 // Initialize caller with the tool
-const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.', {
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are a helpful assistant.', {
     tools: [weatherTool]
 });
 

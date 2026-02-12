@@ -246,6 +246,30 @@ describe('ChunkController', () => {
       expect(results).toEqual([]);
       expect(mockChatExecute).not.toHaveBeenCalled();
     });
+
+    it('should respect per-call maxIterations override', async () => {
+      // Instance maxIterations is 5 (set in beforeEach)
+      const messages = ['chunk1', 'chunk2', 'chunk3'];
+      const params = {
+        model: 'model-id',
+        systemMessage: 'system message',
+        maxIterations: 2 // Override to 2
+      };
+
+      mockChatExecute.mockResolvedValue({
+        content: 'response',
+        role: 'assistant',
+        metadata: {
+          finishReason: FinishReason.STOP
+        }
+      });
+
+      await expect(chunkController.processChunks(messages, params)).
+        rejects.toThrow(ChunkIterationLimitError);
+
+      // Should only process up to the overridden limit (2)
+      expect(mockChatExecute).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('streamChunks', () => {
@@ -353,13 +377,76 @@ describe('ChunkController', () => {
       // Function to consume generator until error
       const consumeUntilError = async () => {
         for await (const _ of streamGenerator) {
-
-
-
           // Just consume the generator
         }
       }; await expect(consumeUntilError()).rejects.toThrow(ChunkIterationLimitError);
       expect(mockCreateStream).toHaveBeenCalledTimes(5);
+    });
+
+    it('should respect per-call maxIterations override in streaming', async () => {
+      // Instance maxIterations is 5
+      const messages = ['chunk1', 'chunk2', 'chunk3'];
+      const params = {
+        model: 'model-id',
+        systemMessage: 'system message',
+        maxIterations: 2 // Override to 2
+      };
+
+      mockCreateStream.mockResolvedValue({
+        [Symbol.asyncIterator]: async function* () {
+          yield { content: 'response', isComplete: true, role: 'assistant' };
+        }
+      });
+
+      const streamGenerator = chunkController.streamChunks(messages, params);
+      const consumeUntilError = async () => {
+        for await (const _ of streamGenerator) {
+          // Just consume
+        }
+      };
+
+      await expect(consumeUntilError()).rejects.toThrow(ChunkIterationLimitError);
+      expect(mockCreateStream).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('processChunksParallel', () => {
+    it('should respect per-call maxIterations override in parallel processing', async () => {
+      // Instance maxIterations is 5
+      const messages = ['chunk1', 'chunk2', 'chunk3'];
+      const params = {
+        model: 'model-id',
+        systemMessage: 'system message',
+        maxIterations: 2 // Override to 2
+      };
+
+      await expect(chunkController.processChunksParallel(messages, params)).
+        rejects.toThrow(ChunkIterationLimitError);
+
+      // Should fail upfront without calling chatExecute (it checks length > maxIterations)
+      expect(mockChatExecute).not.toHaveBeenCalled();
+    });
+
+    it('should process chunks in batches according to maxParallelRequests', async () => {
+      // 5 messages, batch size 2 -> 3 batches (2, 2, 1)
+      const messages = ['1', '2', '3', '4', '5'];
+      const params = {
+        model: 'model-id',
+        maxParallelRequests: 2
+      };
+
+      // Mock implementation to track execution order/concurrency if possible, 
+      // or just ensure all get processed.
+      // For simplicity, we just return a response.
+      mockChatExecute.mockResolvedValue({
+        content: 'response',
+        role: 'assistant'
+      });
+
+      const results = await chunkController.processChunksParallel(messages, params);
+
+      expect(results).toHaveLength(5);
+      expect(mockChatExecute).toHaveBeenCalledTimes(5);
     });
   });
 

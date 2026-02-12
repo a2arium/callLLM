@@ -1,4 +1,4 @@
-import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
+import type { ModelInfo, JSONSchemaDefinition, UniversalMessage } from '../../interfaces/UniversalInterfaces.ts';
 import { TokenCalculator } from '../models/TokenCalculator.ts';
 import { DataSplitter } from './DataSplitter.ts';
 import { logger } from '../../utils/logger.ts';
@@ -18,7 +18,9 @@ export class RequestProcessor {
         endingMessage,
         model,
         maxResponseTokens,
-        maxCharsPerChunk
+        maxCharsPerChunk,
+        jsonSchema,
+        historicalMessages
     }: {
         message: string;
         data?: any;
@@ -26,6 +28,8 @@ export class RequestProcessor {
         model: ModelInfo;
         maxResponseTokens?: number;
         maxCharsPerChunk?: number;
+        jsonSchema?: { name?: string; schema: JSONSchemaDefinition };
+        historicalMessages?: UniversalMessage[];
     }): Promise<string[]> {
         const log = logger.createLogger({ prefix: 'RequestProcessor.processRequest' });
         log.debug('Processing request', {
@@ -56,7 +60,9 @@ export class RequestProcessor {
             endingMessage,
             modelInfo: model,
             maxResponseTokens: maxResponseTokens || model.maxResponseTokens,
-            maxCharsPerChunk
+            maxCharsPerChunk,
+            jsonSchema,
+            historicalMessages
         });
 
         log.debug('DataSplitter returned chunks', {

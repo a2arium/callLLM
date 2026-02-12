@@ -622,7 +622,7 @@ describe('LLMCaller', () => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       for await (const chunk of llmCaller.stream('test message')) { }
 
-      expect(mockHistoryManager.getMessages).toHaveBeenCalledTimes(1);
+      expect(mockHistoryManager.getMessages).toHaveBeenCalledTimes(2);
       expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
     });
   });

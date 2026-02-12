@@ -28,11 +28,12 @@ describe('PromptEnhancer', () => {
       // Should have one more message than original
       expect(result.length).toBe(simpleMessages.length + 1);
 
-      // The inserted message should be at position 1 (after system message)
-      expect(result[1].role).toBe('user');
-      expect(result[1].content).toContain('Format instructions:');
-      expect(result[1].content).toContain('You must respond with valid JSON');
-      expect(result[1].metadata?.isFormatInstruction).toBe(true);
+      // The inserted message should be at the end
+      const instructionIndex = result.length - 1;
+      expect(result[instructionIndex].role).toBe('user');
+      expect(result[instructionIndex].content).toContain('Format instructions:');
+      expect(result[instructionIndex].content).toContain('You must respond with a valid JSON OBJECT');
+      expect(result[instructionIndex].metadata?.isFormatInstruction).toBe(true);
     });
 
     it('should add instruction after system message when present', () => {
@@ -49,14 +50,15 @@ describe('PromptEnhancer', () => {
 
       const result = PromptEnhancer.enhanceMessages(messagesWithSystem, options);
 
-      // Should insert at index 1 (after system message)
+      // Should be at the end
       expect(result.length).toBe(messagesWithSystem.length + 1);
       expect(result[0].role).toBe('system');
+      const instructionIndex = result.length - 1;
+      expect(result[instructionIndex].role).toBe('user');
+      expect(result[instructionIndex].content).toContain('Format instructions:');
+      expect(result[instructionIndex].metadata?.isFormatInstruction).toBe(true);
       expect(result[1].role).toBe('user');
-      expect(result[1].content).toContain('Format instructions:');
-      expect(result[1].metadata?.isFormatInstruction).toBe(true);
-      expect(result[2].role).toBe('user');
-      expect(result[2].content).toBe('User message 1');
+      expect(result[1].content).toBe('User message 1');
     });
 
     it('should add instruction at beginning when no system message is present', () => {
@@ -71,13 +73,14 @@ describe('PromptEnhancer', () => {
 
       const result = PromptEnhancer.enhanceMessages(messagesWithoutSystem, options);
 
-      // Should insert at index 0 (at the beginning)
+      // Should insert at the end
       expect(result.length).toBe(messagesWithoutSystem.length + 1);
+      const instructionIndex = result.length - 1;
+      expect(result[instructionIndex].role).toBe('user');
+      expect(result[instructionIndex].content).toContain('Format instructions:');
+      expect(result[instructionIndex].metadata?.isFormatInstruction).toBe(true);
       expect(result[0].role).toBe('user');
-      expect(result[0].content).toContain('Format instructions:');
-      expect(result[0].metadata?.isFormatInstruction).toBe(true);
-      expect(result[1].role).toBe('user');
-      expect(result[1].content).toBe('User message 1');
+      expect(result[0].content).toBe('User message 1');
     });
 
     it('should include schema when jsonSchema is provided', () => {
@@ -99,9 +102,10 @@ describe('PromptEnhancer', () => {
       const result = PromptEnhancer.enhanceMessages(simpleMessages, options);
 
       expect(result.length).toBe(simpleMessages.length + 1);
-      expect(result[1].content).toContain('Schema:');
-      expect(result[1].content).toContain('"properties"');
-      expect(result[1].content).toContain('"required"');
+      const instructionIndex = result.length - 1;
+      expect(result[instructionIndex].content).toContain('Schema:');
+      expect(result[instructionIndex].content).toContain('"properties"');
+      expect(result[instructionIndex].content).toContain('"required"');
     });
 
     it('should include schema name when jsonSchema.name is provided', () => {
@@ -123,7 +127,8 @@ describe('PromptEnhancer', () => {
       const result = PromptEnhancer.enhanceMessages(simpleMessages, options);
 
       expect(result.length).toBe(simpleMessages.length + 1);
-      expect(result[1].content).toContain('wrapped in an object with a single key "response"');
+      const instructionIndex = result.length - 1;
+      expect(result[instructionIndex].content).toContain('wrapped in an object with a single key "response"');
     });
 
     it('should use simplified instruction when isNativeJsonMode is true', () => {
@@ -135,9 +140,10 @@ describe('PromptEnhancer', () => {
       const result = PromptEnhancer.enhanceMessages(simpleMessages, options);
 
       expect(result.length).toBe(simpleMessages.length + 1);
-      expect(result[1].content).toContain('Provide your response in valid JSON format');
+      const instructionIndex = result.length - 1;
+      expect(result[instructionIndex].content).toContain('Provide your response in valid JSON format');
       // Should not contain the detailed instructions for non-native JSON mode
-      expect(result[1].content).not.toContain('You must respond with valid JSON');
+      expect(result[instructionIndex].content).not.toContain('You must respond with valid JSON');
     });
 
     it('should work with Zod schemas by using their JSON schema representation', () => {
@@ -161,7 +167,8 @@ describe('PromptEnhancer', () => {
       const result = PromptEnhancer.enhanceMessages(simpleMessages, options);
 
       expect(result.length).toBe(simpleMessages.length + 1);
-      expect(result[1].content).toContain('Schema:');
+      const instructionIndex = result.length - 1;
+      expect(result[instructionIndex].content).toContain('Schema:');
     });
 
     it('should not modify the original messages array', () => {

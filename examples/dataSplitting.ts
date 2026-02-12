@@ -217,6 +217,36 @@ async function main() {
         }
     });
     console.log('\n');
+
+    // Example 5: Parallel Batching
+    console.log('\n=== Example 5: Parallel Batching ===');
+    {
+        console.log('Debug: Processing 10 chunks with batch size 3');
+        const batchingData = Array.from({ length: 10 }, (_, i) => `Chunk ${i + 1}`);
+
+        // Explicitly set parallelChunking
+        caller.setParallelChunking(true);
+
+        const startTime = Date.now();
+        const batchingResponses = await caller.call(
+            'Echo this chunk:',
+            {
+                data: batchingData,
+                maxCharsPerChunk: 10,
+                maxParallelRequests: 3,
+                settings: { maxTokens: 50 },
+            }
+        );
+        const duration = Date.now() - startTime;
+
+        console.log(`Debug: Processed ${batchingResponses.length} chunks in ${duration}ms`);
+
+        batchingResponses.forEach((response, index) => {
+            if (response.content) {
+                console.log(`[Response ${index + 1}] ${response.content.substring(0, 50)}...`);
+            }
+        });
+    }
 }
 
-main().catch(console.error); 
+main().catch(console.error);

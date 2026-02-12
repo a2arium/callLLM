@@ -144,9 +144,12 @@ export class MarkdownSplitter {
             log.debug(`Processing section: ${section.heading.title}`, {
                 depth: section.heading.depth,
                 contentLength: section.content.length,
-                childrenCount: section.children.length
+                childrenCount: section.children.length,
+                maxTokens
             });
-            const sectionChunks = await this.splitSection(section, maxTokens);
+            // Use a safety margin for token estimates (30% buffer)
+            const safeMaxTokens = Math.floor(maxTokens * 0.7);
+            const sectionChunks = await this.splitSection(section, safeMaxTokens);
             log.debug(`Section produced ${sectionChunks.length} chunks`);
             chunks.push(...sectionChunks);
         }
@@ -285,6 +288,7 @@ export class MarkdownSplitter {
      * Splits a large section while preserving semantic elements
      */
     private async splitLargeSection(section: MarkdownSection, maxTokens: number): Promise<DataChunk[]> {
+        const log = logger.createLogger({ prefix: 'MarkdownSplitter.splitLargeSection' });
         const chunks: DataChunk[] = [];
         const lines = section.content.split('\n');
         let currentChunk = '';
@@ -333,9 +337,15 @@ export class MarkdownSplitter {
 
             // If adding this line would exceed token limit and we have content, create a chunk
             if (currentTokens + lineTokens > maxTokens && currentChunk.trim() && !isSemanticBoundary) {
+                const finalChunkTokens = this.tokenCalculator.calculateTokens(currentChunk.trim());
+                log.debug(`Pushing large section chunk`, {
+                    contentLength: currentChunk.trim().length,
+                    tokenCount: finalChunkTokens,
+                    maxTokens
+                });
                 chunks.push({
                     content: currentChunk.trim(),
-                    tokenCount: this.tokenCalculator.calculateTokens(currentChunk.trim()),
+                    tokenCount: finalChunkTokens,
                     chunkIndex: 0, // Will be updated later
                     totalChunks: 0, // Will be updated later
                     metadata: {
@@ -350,7 +360,7 @@ export class MarkdownSplitter {
             }
 
             currentChunk += lineWithNewline;
-            currentTokens = this.tokenCalculator.calculateTokens(currentChunk);
+            currentTokens += lineTokens;
         }
 
         // Add final chunk if there's content
@@ -401,7 +411,7 @@ export class MarkdownSplitter {
             }
 
             currentChunk += wordWithSpace;
-            currentTokens = this.tokenCalculator.calculateTokens(currentChunk);
+            currentTokens += wordTokens;
         }
 
         if (currentChunk.trim()) {
