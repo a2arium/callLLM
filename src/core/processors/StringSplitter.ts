@@ -236,7 +236,15 @@ export class StringSplitter {
         const log = logger.createLogger({ prefix: 'StringSplitter.splitByCharacters' });
         log.debug('Splitting word by characters', { wordLength: word.length, maxTokensPerChunk, maxCharsPerChunk });
         const chunks: string[] = [];
-        const CHAR_BATCH_SIZE = 100;
+
+        // Dynamic batch size based on maxTokensPerChunk.
+        // A realistic estimate is 4 characters per token.
+        // We cap the batch size by maxCharsPerChunk if specified.
+        const dynamicBatchSize = Math.max(10, maxTokensPerChunk * 4);
+        const CHAR_BATCH_SIZE = maxCharsPerChunk ? Math.min(dynamicBatchSize, maxCharsPerChunk) : dynamicBatchSize;
+
+        log.debug('Calculated dynamic batch size', { CHAR_BATCH_SIZE, maxTokensPerChunk, maxCharsPerChunk });
+
         let start = 0;
         while (start < word.length) {
             let end = Math.min(start + CHAR_BATCH_SIZE, word.length);
@@ -260,7 +268,28 @@ export class StringSplitter {
                 }
                 currentChunk = word.slice(start, start + bestSize);
                 end = start + bestSize;
+            } else if (tokens < maxTokensPerChunk && (!maxCharsPerChunk || currentChunk.length < maxCharsPerChunk) && end < word.length) {
+                // Optimization: If we have room, let's try to jump further instead of settling for the estimate
+                // This is useful if the estimate (2 chars/token) was too conservative
+                let left = end;
+                let right = Math.min(start + CHAR_BATCH_SIZE * 4, word.length, start + (maxCharsPerChunk || word.length));
+                let bestEnd = end;
+
+                while (left <= right) {
+                    const mid = Math.floor((left + right) / 2);
+                    const testChunk = word.slice(start, mid);
+                    tokens = this.tokenCalculator.calculateTokens(testChunk);
+                    if (tokens <= maxTokensPerChunk && (!maxCharsPerChunk || testChunk.length <= maxCharsPerChunk)) {
+                        bestEnd = mid;
+                        left = mid + 1;
+                    } else {
+                        right = mid - 1;
+                    }
+                }
+                currentChunk = word.slice(start, bestEnd);
+                end = bestEnd;
             }
+
             chunks.push(currentChunk);
             start = end;
         }

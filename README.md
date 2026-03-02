@@ -1439,6 +1439,12 @@ const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are a helpful assistan
 caller.updateSettings({
     historyMode: 'dynamic'
 });
+
+// Inspect the current history mode
+const mode = caller.getHistoryMode(); // 'full', 'dynamic', or 'stateless'
+
+// Clear all history (resets to initial system message)
+caller.clearHistory();
 ```
 
 #### Available History Modes

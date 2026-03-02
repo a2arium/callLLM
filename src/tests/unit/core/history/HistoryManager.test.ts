@@ -989,7 +989,7 @@ describe('HistoryManager', () => {
       const messageWithNullTimestamp = summary[0];
       expect(messageWithNullTimestamp.role).toBe('user');
       expect(messageWithNullTimestamp.contentPreview).toBe('Message with null timestamp');
-      expect(messageWithNullTimestamp.timestamp).toBeUndefined();
+      expect(messageWithNullTimestamp.timestamp).toBeNull();
     });
 
     it('should handle different tool call formats properly', () => {

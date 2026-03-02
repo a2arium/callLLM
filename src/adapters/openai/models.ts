@@ -125,7 +125,7 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 0,
         inputPricePerMillion: 0,
         outputPricePerMillion: 0,
-        outputPricePerSecond: 0.10,
+        videoPricePerSecond: 0.10,
         capabilities: {
             streaming: false,
             toolCalls: false,
@@ -155,7 +155,7 @@ export const defaultModels: ModelInfo[] = [
         maxResponseTokens: 0,
         inputPricePerMillion: 0,
         outputPricePerMillion: 0,
-        outputPricePerSecond: 0.30,
+        videoPricePerSecond: 0.30,
         capabilities: {
             streaming: false,
             toolCalls: false,

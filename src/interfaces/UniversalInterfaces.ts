@@ -662,13 +662,33 @@ export type ModelCapabilities = {
 
 export type ModelInfo = {
     name: string;
+    /**
+     * Canonical slug for the model, used for deduplication.
+     * e.g. 'openai/gpt-4o' might have canonical slug 'gpt-4o'
+     */
+    canonicalSlug?: string;
+    /**
+     * Whether the model is uncensored/unfiltered.
+     * Typically derived from moderation flags (e.g. !is_moderated).
+     */
+    isUncensored?: boolean;
     inputPricePerMillion: number;
     inputCachedPricePerMillion?: number;
+    /** Price per million tokens for image input (if different from text) */
+    imageInputPricePerMillion?: number;
     outputPricePerMillion: number;
+    /** Price per million tokens for image output (if different from text) */
+    imageOutputPricePerMillion?: number;
     /** Price per second for video generation if applicable */
-    outputPricePerSecond?: number;
+    videoPricePerSecond?: number;
+    /** Price per generated image (e.g. DALL-E) */
+    imagePricePerImage?: number;
     maxRequestTokens: number;
     maxResponseTokens: number;
+    /**
+     * The tokenizer ID used by this model (e.g. 'cl100k_base', 'llama3').
+     * Used for accurate local token counting.
+     */
     tokenizationModel?: string;
     /**
      * Model capabilities configuration.

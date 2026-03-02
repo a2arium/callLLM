@@ -58,17 +58,18 @@ export class DataSplitter {
         maxResponseTokens,
         maxCharsPerChunk,
         jsonSchema,
-        historicalMessages
+        historicalMessages,
+        historyMode
     }: {
         message: string;
         data?: any;
         endingMessage?: string;
         modelInfo: ModelInfo;
-        maxResponseTokens: number;
+        maxResponseTokens?: number;
         maxCharsPerChunk?: number;
         jsonSchema?: { name?: string; schema: JSONSchemaDefinition };
-
         historicalMessages?: UniversalMessage[];
+        historyMode?: string;
     }): Promise<DataChunk[]> {
         const log = logger.createLogger({ prefix: 'DataSplitter.splitIfNeeded' });
         log.debug('Called with', {
@@ -125,34 +126,75 @@ export class DataSplitter {
         // 2. Historical messages tokens (e.g. System message)
         if (historicalMessages && historicalMessages.length > 0) {
             contextTokens += this.tokenCalculator.calculateTotalTokens(historicalMessages);
+
+            // EMERGENCY DIAGNOSTIC LOG for history content sizes
+            log.info('Historical Messages Breakdown', {
+                count: historicalMessages.length,
+                messages: historicalMessages.map(m => ({
+                    role: m.role,
+                    contentLength: typeof m.content === 'string' ? m.content.length : (Array.isArray(m.content) ? 'array:' + (m.content as any).length : JSON.stringify(m.content).length),
+                    contentSnippet: typeof m.content === 'string' ? m.content.substring(0, 50) : 'obj/array',
+                    hasArrayContent: Array.isArray(m.content)
+                }))
+            });
         }
 
-        // Use a more conservative overhead and safety margin for tokenization discrepancies
-        // Especially critical when using tiktoken (GPT-4) to estimate for Llama/other models
-        const overheadTokens = 150;
-        const CAUTION_FACTOR = 0.90; // 10% safety margin for tokenizer mismatch
+        // EMERGENCY DIAGNOSTIC LOG
+        if (process.env.LOG_LEVEL === 'debug') {
+            console.log(`[DIAGNOSTIC] DataSplitter.availableTokens input:`, {
+                modelName: modelInfo.name,
+                maxRequestTokens: modelInfo.maxRequestTokens,
+                maxResponseTokens: maxResponseTokens,
+                messageTokens,
+                endingTokens,
+                contextTokens
+            });
+        }
 
+        // Adaptive safety margin based on model context size. 
+        // Larger models allow for smaller margins (less impact from tokenizer mismatch).
+        let CAUTION_FACTOR = 0.90; // Default 10% safety margin
+        if (modelInfo.maxRequestTokens > 100000) {
+            CAUTION_FACTOR = 0.98; // 2% margin for large models
+        } else if (modelInfo.maxRequestTokens >= 10000) {
+            CAUTION_FACTOR = 0.95; // 5% margin for mid-sized models
+        }
+
+        // Smarter available tokens calculation. 
+        // We don't want to sacrifice too much of the input window for a theoretical 
+        // response size that might never be reached, especially in small context models.
+        let responseBuffer = maxResponseTokens || 1000;
+        const maxResponseRatio = (maxResponseTokens || 1000) / modelInfo.maxRequestTokens;
+        if (maxResponseRatio > 0.3) {
+            // If response is >30% of window, cap the buffer at 1500 tokens 
+            // for the sake of larger input chunks.
+            responseBuffer = Math.max(1000, Math.min(maxResponseTokens || 1000, 1500));
+        }
+
+        const overheadTokens = 150;
         const effectiveWindow = Math.floor(modelInfo.maxRequestTokens * CAUTION_FACTOR);
-        const availableTokens = Math.max(1, effectiveWindow - messageTokens - endingTokens - maxResponseTokens - overheadTokens - contextTokens);
+        let availableTokens = Math.max(1, effectiveWindow - messageTokens - endingTokens - responseBuffer - overheadTokens - contextTokens);
 
         // Check if data fits without splitting
         const dataString = typeof data === 'object' ? JSON.stringify(data) : data.toString();
         const dataTokens = this.tokenCalculator.calculateTokens(dataString);
 
-        log.debug('Token and char analysis', {
+        log.info('Token and char analysis', {
             messageTokens,
             endingTokens,
             contextTokens,
             overheadTokens,
             maxRequestTokens: modelInfo.maxRequestTokens,
-            maxResponseTokens,
+            maxResponseTokens: responseBuffer,
             availableTokens,
             dataTokens,
             dataStringLength: dataString.length,
-            maxCharsPerChunk,
+            maxCharsPerChunk: maxCharsPerChunk || 'unlimited',
             fitsInTokens: dataTokens <= availableTokens,
             fitsInChars: !maxCharsPerChunk || dataString.length <= maxCharsPerChunk,
-            willSplit: !(dataTokens <= availableTokens && (!maxCharsPerChunk || dataString.length <= maxCharsPerChunk))
+            willSplit: !(dataTokens <= availableTokens && (!maxCharsPerChunk || dataString.length <= maxCharsPerChunk)),
+            historicalMessageCount: historicalMessages?.length || 0,
+            historyMode: historyMode || 'unknown'
         });
 
         if (dataTokens <= availableTokens && (!maxCharsPerChunk || dataString.length <= maxCharsPerChunk)) {
@@ -180,7 +222,7 @@ export class DataSplitter {
             }];
         }
 
-        log.debug('Data needs to be split, determining strategy', {
+        log.info('Data needs to be split, determining strategy', {
             dataType: typeof data,
             isString: typeof data === 'string',
             isArray: Array.isArray(data),

@@ -64,7 +64,6 @@ describe('LLMCaller - Model Management', () => {
       getLastMessages: jest.fn(),
       serializeHistory: jest.fn(),
       getHistorySummary: jest.fn(),
-      getMessages: jest.fn().mockReturnValue([]),
       deserializeHistory: jest.fn(),
       initializeWithSystemMessage: jest.fn(),
       captureStreamResponse: jest.fn()
@@ -139,13 +138,13 @@ describe('LLMCaller - Model Management', () => {
         content: message
       }]);
 
-      const stream = await llmCaller.stream(message);
+      const stream = await llmCaller.stream(message, { historyMode: 'full' });
       const responses: UniversalStreamResponse[] = [];
       for await (const response of stream) {
         responses.push(response);
       }
 
-      expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message, expect.anything());
+      expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message, {});
 
       expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
       expect(mockStreamingService.createStream).toHaveBeenCalledWith(
@@ -249,9 +248,9 @@ describe('LLMCaller - Model Management', () => {
       mockHistoryManager.addMessage.mockClear();
       mockChatController.execute.mockClear();
 
-      const responses = await llmCaller.call(message);
+      const responses = await llmCaller.call(message, { historyMode: 'full' });
 
-      expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message, expect.anything());
+      expect(mockHistoryManager.addMessage).toHaveBeenNthCalledWith(1, 'user', message, {});
       expect(mockChatController.execute).toHaveBeenCalledTimes(1);
       expect(responses).toHaveLength(1);
       expect(responses[0].content).toBe('response1');
@@ -274,13 +273,13 @@ describe('LLMCaller - Model Management', () => {
       mockHistoryManager.addMessage.mockClear();
       mockStreamingService.createStream.mockClear();
 
-      const stream = await llmCaller.stream(message);
+      const stream = await llmCaller.stream(message, { historyMode: 'full' });
       const responses: UniversalStreamResponse[] = [];
       for await (const response of stream) {
         responses.push(response);
       }
 
-      expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message, expect.anything());
+      expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message, {});
       expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
       expect(responses).toHaveLength(2);
       expect(responses).toEqual([mockStreamChunk, mockFinalStreamChunk]);
@@ -434,10 +433,9 @@ describe('LLMCaller - Model Management', () => {
         toolCalls: [{ id: 'tool1', name: 'test-tool', arguments: { param1: 'value1' } }]
       });
 
-      await llmCaller.call(message);
+      await llmCaller.call(message, { historyMode: 'full' });
 
-      // Verify that the user message is added to history
-      expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message, expect.anything());
+      expect(mockHistoryManager.addMessage).toHaveBeenNthCalledWith(1, 'user', message, {});
 
       // The behavior has changed - we now only call addMessage once with the user message
       // The assistant message with tool calls is handled differently in the implementation

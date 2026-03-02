@@ -279,7 +279,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                     });
                 }
 
-                const videoCost = secs > 0 ? (modelInfo?.outputPricePerSecond || 0) * secs : 0;
+                const videoCost = secs > 0 ? (modelInfo?.videoPricePerSecond || 0) * secs : 0;
                 const usage: Usage = {
                     tokens: {
                         input: { total: 0, cached: 0 },
@@ -311,7 +311,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 // Actual cost will depend on whether the job completes successfully
                 const modelInfo = this.modelManager.getModel(model);
                 const secs = Number((video as any).seconds || seconds || 0);
-                const videoCost = secs > 0 ? (modelInfo?.outputPricePerSecond || 0) * secs : 0;
+                const videoCost = secs > 0 ? (modelInfo?.videoPricePerSecond || 0) * secs : 0;
                 const usage: Usage = {
                     tokens: {
                         input: { total: 0, cached: 0 },

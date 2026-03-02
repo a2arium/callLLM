@@ -78,7 +78,7 @@ export class ChunkController {
         chatController: ChatController,
         streamController: StreamController,
         historyManager: HistoryManager,
-        maxIterations: number = 70 // Updated default to 70
+        maxIterations: number = 70 // Reverted default to 70
     ) {
         this.tokenCalculator = tokenCalculator;
         this.chatController = chatController;
@@ -127,7 +127,16 @@ export class ChunkController {
             }
         }
 
+        if (messages.length > 1) {
+            log.info(`Processing ${messages.length} sequential chunks...`);
+        }
+
+        let chunkIndex = 0;
         for (const chunkContent of messages) {
+            chunkIndex++;
+            if (messages.length > 1) {
+                log.info(`Processing chunk ${chunkIndex}/${messages.length}...`);
+            }
             log.debug('Processing chunk', {
                 chunkIndex: this.iterationCount + 1,
                 maxIterations: this.maxIterations,
@@ -372,19 +381,22 @@ export class ChunkController {
             throw new ChunkIterationLimitError(effectiveMaxIterations);
         }
 
-        // Process chunks in batches
         const maxParallelRequests = params.maxParallelRequests ?? 8; // Default batch size 8
         const results: UniversalChatResponse[] = new Array(messages.length);
 
-        log.debug(`Processing ${messages.length} chunks in batches of ${maxParallelRequests}`);
+        const totalChunks = messages.length;
+        if (totalChunks > 1) {
+            log.info(`Processing ${totalChunks} parallel chunks in batches of ${maxParallelRequests}...`);
+        }
 
-        for (let i = 0; i < messages.length; i += maxParallelRequests) {
+        for (let i = 0; i < totalChunks; i += maxParallelRequests) {
             const batch = messages.slice(i, i + maxParallelRequests);
+            const batchNum = Math.floor(i / maxParallelRequests) + 1;
+            const totalBatches = Math.ceil(totalChunks / maxParallelRequests);
 
-            log.debug(`Processing batch ${Math.floor(i / maxParallelRequests) + 1}/${Math.ceil(messages.length / maxParallelRequests)}`, {
-                startIndex: i,
-                batchSize: batch.length
-            });
+            if (totalChunks > maxParallelRequests) {
+                log.info(`Processing batch ${batchNum}/${totalBatches} (${batch.length} chunks)...`);
+            }
 
             const batchPromises = batch.map(async (chunkContent, relativeIndex) => {
                 const globalIndex = i + relativeIndex;
@@ -393,15 +405,13 @@ export class ChunkController {
                 // Create a separate history manager for this chunk
                 const chunkHistory = new HistoryManager();
 
-                // Add historical messages if provided
+                // Optimization: In parallel mode, we ONLY send the system message.
+                // Sending full history with every parallel chunk duplicates the history tokens
+                // across all requests, often exceeding the context window (400 Bad Request).
                 if (params.historicalMessages) {
                     const systemMsg = params.historicalMessages.find((m: UniversalMessage) => m.role === 'system');
                     if (systemMsg) {
-                        chunkHistory.updateSystemMessage(systemMsg.content, false);
-                        params.historicalMessages.filter((m: UniversalMessage) => m.role !== 'system')
-                            .forEach(m => chunkHistory.addMessage(m.role, m.content, m));
-                    } else {
-                        chunkHistory.setMessages(params.historicalMessages);
+                        chunkHistory.addMessage('system', systemMsg.content, systemMsg);
                     }
                 }
 
@@ -442,6 +452,10 @@ export class ChunkController {
 
         // Update iteration count to reflect actual work done
         this.iterationCount = messages.length;
+
+        if (messages.length > 1) {
+            log.info(`Parallel chunk processing completed. Total chunks: ${messages.length}`);
+        }
 
         log.debug('Parallel chunk processing completed', {
             totalChunks: messages.length,

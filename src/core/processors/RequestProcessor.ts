@@ -20,7 +20,8 @@ export class RequestProcessor {
         maxResponseTokens,
         maxCharsPerChunk,
         jsonSchema,
-        historicalMessages
+        historicalMessages,
+        historyMode
     }: {
         message: string;
         data?: any;
@@ -30,6 +31,7 @@ export class RequestProcessor {
         maxCharsPerChunk?: number;
         jsonSchema?: { name?: string; schema: JSONSchemaDefinition };
         historicalMessages?: UniversalMessage[];
+        historyMode?: string;
     }): Promise<string[]> {
         const log = logger.createLogger({ prefix: 'RequestProcessor.processRequest' });
         log.debug('Processing request', {
@@ -45,9 +47,74 @@ export class RequestProcessor {
             modelMaxRequestTokens: model.maxRequestTokens
         });
 
-        // If no data or null data, return single message
+        // If no data or null data
         if (data === undefined || data === null) {
-            log.debug('No data provided, returning single message');
+            // Filter out the current message from historicalMessages if it's the last one
+            // This prevents double-counting the message as both "context" and "data to split"
+            let contextMessages = historicalMessages;
+            if (historicalMessages && historicalMessages.length > 0) {
+                const lastMsg = historicalMessages[historicalMessages.length - 1];
+                if (lastMsg.role === 'user' && lastMsg.content === message) {
+                    contextMessages = historicalMessages.slice(0, -1);
+                }
+            }
+
+            // Calculate if the message itself needs splitting
+            const messageTokens = this.tokenCalculator.calculateTokens(message);
+            const endingTokens = endingMessage ? this.tokenCalculator.calculateTokens(endingMessage) : 0;
+            const contextTokens = contextMessages ? this.tokenCalculator.calculateTotalTokens(contextMessages) : 0;
+            const overhead = 500; // Conservative overhead for protocol/system message
+
+            // Check if message exceeds safe limits (using 90% of maxRequestTokens as safety margin like DataSplitter)
+            // We must subtract contextTokens here to get the true available space
+            // Ensure safeLimit is at least a small positive value to avoid premature splitting for tiny models
+            const responseTokens = (maxResponseTokens || model.maxResponseTokens || 1000);
+            const dynamicOverhead = Math.min(overhead, Math.floor(model.maxRequestTokens * 0.1));
+            const safeLimit = Math.max(
+                100, // Absolute minimum of 100 tokens for the message itself
+                (model.maxRequestTokens * 0.9) - responseTokens - dynamicOverhead - contextTokens
+            );
+
+            if (messageTokens + endingTokens > safeLimit) {
+                log.info(`Message exceeds token limit (${messageTokens + endingTokens} > ${Math.floor(safeLimit)}), splitting into chunks...`, {
+                    messageTokens,
+                    safeLimit,
+                    contextTokens,
+                    maxRequestTokens: model.maxRequestTokens
+                });
+
+                // Treat the message as data to be split
+                // We pass an empty message string so DataSplitter calculates available space correctly based on the 'data' (which is our message)
+                const chunks = await this.dataSplitter.splitIfNeeded({
+                    message: '', // No prefix for the chunks
+                    data: message, // The message becomes the data
+                    endingMessage,
+                    modelInfo: model,
+                    maxResponseTokens: maxResponseTokens || model.maxResponseTokens,
+                    maxCharsPerChunk,
+                    jsonSchema,
+                    historicalMessages: contextMessages, // Pass the context WITHOUT the current message
+                    historyMode
+                });
+
+                log.info(`Split large message into ${chunks.length} chunks`, { count: chunks.length });
+
+                // Convert chunks to messages
+                return chunks.map((chunk, index) => {
+                    const chunkContent = typeof chunk.content === 'object'
+                        ? JSON.stringify(chunk.content, null, 2)
+                        : String(chunk.content);
+
+                    // Direct construction to avoid leading newlines that createMessage would add if message is empty
+                    let result = chunkContent;
+                    if (endingMessage) {
+                        result += '\n\n' + endingMessage;
+                    }
+                    return result;
+                });
+            }
+
+            log.debug('No data provided and message fits, returning single message');
             return [this.createMessage(message, undefined, endingMessage)];
         }
 
@@ -62,8 +129,13 @@ export class RequestProcessor {
             maxResponseTokens: maxResponseTokens || model.maxResponseTokens,
             maxCharsPerChunk,
             jsonSchema,
-            historicalMessages
+            historicalMessages,
+            historyMode
         });
+
+        if (chunks.length > 1) {
+            log.info(`Data split into ${chunks.length} chunks`, { chunkCount: chunks.length });
+        }
 
         log.debug('DataSplitter returned chunks', {
             chunkCount: chunks.length,
@@ -110,4 +182,4 @@ export class RequestProcessor {
         }
         return result;
     }
-} 
+}

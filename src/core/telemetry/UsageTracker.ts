@@ -34,13 +34,13 @@ export class UsageTracker {
         options?: {
             inputImageTokens?: number;
             outputImageTokens?: number;
-            imageInputPricePerMillion?: number;
-            imageOutputPricePerMillion?: number;
+            generatedImages?: number;
+            videoSeconds?: number;
         }
     ): Promise<Usage> {
         const log = logger.createLogger({ prefix: 'UsageTracker.trackUsage' });
-        const inputTokens = this.tokenCalculator.calculateTokens(input);
-        const outputTokens = this.tokenCalculator.calculateTokens(output);
+        const inputTokens = this.tokenCalculator.calculateTokens(input, modelInfo.tokenizationModel);
+        const outputTokens = this.tokenCalculator.calculateTokens(output, modelInfo.tokenizationModel);
 
         const usage: Usage = {
             tokens: {
@@ -52,7 +52,10 @@ export class UsageTracker {
                 output: {
                     total: outputTokens,
                     reasoning: outputReasoningTokens,
-                    ...(options?.outputImageTokens ? { image: options.outputImageTokens } : {})
+                    ...(options?.outputImageTokens ? { image: options.outputImageTokens } : {}),
+                    ...(options?.videoSeconds ? { video: options.videoSeconds } : {}) // Track seconds as generic 'video' unit? 
+                    // Or better to add videoSeconds to Usage interface?
+                    // For now, let's keep it simple and assume the caller handles the interface match
                 },
                 total: inputTokens + outputTokens + outputReasoningTokens +
                     (options?.inputImageTokens || 0) + (options?.outputImageTokens || 0)
@@ -67,8 +70,12 @@ export class UsageTracker {
                 outputReasoningTokens,
                 options?.inputImageTokens,
                 options?.outputImageTokens,
-                options?.imageInputPricePerMillion || modelInfo.inputPricePerMillion,
-                options?.imageOutputPricePerMillion || modelInfo.outputPricePerMillion
+                modelInfo.imageInputPricePerMillion,
+                modelInfo.imageOutputPricePerMillion,
+                options?.videoSeconds,
+                modelInfo.videoPricePerSecond,
+                options?.generatedImages,
+                modelInfo.imagePricePerImage
             )
         };
 
@@ -130,20 +137,22 @@ export class UsageTracker {
      * Calculate token count for a given text
      * 
      * @param text Text to calculate tokens for
+     * @param tokenizer Optional tokenizer model ID
      * @returns Number of tokens
      */
-    calculateTokens(text: string): number {
-        return this.tokenCalculator.calculateTokens(text);
+    calculateTokens(text: string, tokenizer?: string): number {
+        return this.tokenCalculator.calculateTokens(text, tokenizer);
     }
 
     /**
      * Calculate total tokens for an array of messages
      * 
      * @param messages Array of messages to calculate tokens for
+     * @param tokenizer Optional tokenizer model ID
      * @returns Total number of tokens
      */
-    calculateTotalTokens(messages: { role: string; content: string }[]): number {
-        return this.tokenCalculator.calculateTotalTokens(messages);
+    calculateTotalTokens(messages: { role: string; content: string }[], tokenizer?: string): number {
+        return this.tokenCalculator.calculateTotalTokens(messages, tokenizer);
     }
 
     /**
@@ -170,7 +179,15 @@ export class UsageTracker {
             modelInfo.outputPricePerMillion,
             inputCachedTokens,
             modelInfo.inputCachedPricePerMillion,
-            outputReasoningTokens
+            outputReasoningTokens,
+            undefined, // imageInputTokens
+            undefined, // imageOutputTokens
+            modelInfo.imageInputPricePerMillion,
+            modelInfo.imageOutputPricePerMillion,
+            undefined, // videoSeconds
+            modelInfo.videoPricePerSecond,
+            undefined, // generatedImages
+            modelInfo.imagePricePerImage
         );
     }
 

@@ -1,5 +1,5 @@
 import type { Usage } from '../../interfaces/UniversalInterfaces.ts';
-import { encoding_for_model } from '@dqbd/tiktoken';
+import { encoding_for_model, type TiktokenModel } from '@dqbd/tiktoken';
 
 export class TokenCalculator {
     constructor() { }
@@ -15,7 +15,11 @@ export class TokenCalculator {
         imageInputTokens?: number,
         imageOutputTokens?: number,
         imageInputPricePerMillion?: number,
-        imageOutputPricePerMillion?: number
+        imageOutputPricePerMillion?: number,
+        videoSeconds?: number,
+        videoPricePerSecond?: number,
+        generatedImages?: number,
+        imagePricePerImage?: number
     ): Usage['costs'] {
         // Calculate non-cached input tokens
         const nonCachedInputTokens = (inputCachedTokens && inputCachedPricePerMillion)
@@ -33,20 +37,30 @@ export class TokenCalculator {
             ? (imageInputTokens * imageInputPricePerMillion) / 1_000_000
             : 0;
 
-        // Total input cost should include regular, cached, and image costs
+        // Total input cost
         const totalInputCost = regularInputCost + cachedInputCost + imageInputCost;
 
         // Calculate output and reasoning costs
         const outputCost = (outputTokens * outputPricePerMillion) / 1_000_000;
         const outputReasoningCost = (outputReasoningTokens * outputPricePerMillion) / 1_000_000;
 
-        // Calculate image output costs if provided
+        // Calculate image output costs (token-based)
         const imageOutputCost = (imageOutputTokens && imageOutputPricePerMillion)
             ? (imageOutputTokens * imageOutputPricePerMillion) / 1_000_000
             : 0;
 
-        // Total output cost includes regular output, reasoning, and image output costs
-        const totalOutputCost = outputCost + outputReasoningCost + imageOutputCost;
+        // Calculate video output costs (time-based)
+        const videoCost = (videoSeconds && videoPricePerSecond)
+            ? videoSeconds * videoPricePerSecond
+            : 0;
+
+        // Calculate per-image generation costs
+        const generatedImagesCost = (generatedImages && imagePricePerImage)
+            ? generatedImages * imagePricePerImage
+            : 0;
+
+        // Total output cost
+        const totalOutputCost = outputCost + outputReasoningCost + imageOutputCost + videoCost + generatedImagesCost;
 
         // Calculate total cost
         const totalCost = totalInputCost + totalOutputCost;
@@ -59,7 +73,8 @@ export class TokenCalculator {
             output: {
                 total: totalOutputCost,
                 reasoning: outputReasoningCost,
-                image: imageOutputCost,
+                image: imageOutputCost + generatedImagesCost,
+                video: videoCost
             },
             total: totalCost
         };
@@ -68,41 +83,41 @@ export class TokenCalculator {
     /**
      * Calculates an estimate of the number of tokens in a given text string.
      * 
-     * !!! IMPORTANT - TOKEN COUNT USAGE POLICY !!!
-     * 
-     * This method should ONLY be used in the following scenarios:
-     * 1. For PRE-API CALL estimation when planning request budgets
-     * 2. When truncating messages before sending to stay within context limits
-     * 3. As a FALLBACK when the API does NOT return token counts
-     * 4. For local debugging/testing when API calls aren't made
-     * 
-     * You MUST ALWAYS use the actual token counts returned by the API when available:
-     * - The API's token count is the source of truth for billing
-     * - Different models tokenize differently; our estimates may be inaccurate
-     * - The API may update tokenization rules without notice
-     * - Using estimated counts when actual counts are available can lead to:
-     *   - Inaccurate usage tracking
-     *   - Incorrect cost calculations
-     *   - Misleading analytics
-     * 
-     * Implementation Note: This method uses tiktoken for GPT-4 when available,
-     * but falls back to a heuristic approximation method if tiktoken fails.
-     * Neither approach guarantees 100% accuracy compared to the API's count.
-     * 
      * @param text The text to count tokens for
+     * @param tokenizer Optional tokenizer model ID (e.g. 'gpt-4', 'cl100k_base')
      * @returns Estimated token count
      */
     private static encoder: any;
+    private static currentTokenizer: string | undefined;
 
-    public calculateTokens(text: string): number {
+    public calculateTokens(text: string, tokenizer?: string): number {
+        const targetTokenizer = tokenizer || 'gpt-4';
+
         try {
-            if (!TokenCalculator.encoder) {
-                TokenCalculator.encoder = encoding_for_model('gpt-4');
+            // Re-initialize encoder if the requested tokenizer is different from cached
+            if (!TokenCalculator.encoder || TokenCalculator.currentTokenizer !== targetTokenizer) {
+                if (TokenCalculator.encoder && typeof TokenCalculator.encoder.free === 'function') {
+                    try { TokenCalculator.encoder.free(); } catch (e) { /* ignore */ }
+                }
+
+                // Try to load the specific tokenizer, fallback to gpt-4 if it fails or is unknown
+                try {
+                    TokenCalculator.encoder = encoding_for_model(targetTokenizer as TiktokenModel);
+                    TokenCalculator.currentTokenizer = targetTokenizer;
+                } catch (e) {
+                    // Fallback to gpt-4 if specific model encoding not found
+                    if (targetTokenizer !== 'gpt-4') {
+                        TokenCalculator.encoder = encoding_for_model('gpt-4');
+                        TokenCalculator.currentTokenizer = 'gpt-4';
+                    } else {
+                        throw e;
+                    }
+                }
             }
             const tokens = TokenCalculator.encoder.encode(text);
             return tokens.length;
         } catch (error) {
-            console.warn('Failed to calculate tokens, using approximate count:', error);
+            console.warn(`Failed to calculate tokens using ${targetTokenizer}, using heuristic:`, error);
             // More accurate approximation:
             // 1. Count characters
             // 2. Add extra tokens for whitespace and special characters
@@ -111,14 +126,16 @@ export class TokenCalculator {
             const whitespaceCount = (text.match(/\s/g) || []).length;
             const specialCharCount = (text.match(/[^a-zA-Z0-9\s]/g) || []).length;
             const isJson = text.trim().startsWith('{') || text.trim().startsWith('[');
+            const isHtml = text.trim().startsWith('<') && text.trim().endsWith('>');
             const jsonTokens = isJson ? Math.ceil(text.split(/[{}\[\],]/).length) : 0;
 
-            // Use a more conservative estimate:
-            // - Divide by 2 instead of 4 for char count
-            // - Double the special char count
-            // - Add extra tokens for newlines
+            // Use a more realistic estimate:
+            // - For HTML/dense code, 3-4 chars per token is typical.
+            // - For English, 4 chars per token is typical.
+            const baseRatio = isHtml ? 3.5 : 4;
             const newlineCount = (text.match(/\n/g) || []).length;
-            return Math.ceil(charCount / 2) + whitespaceCount + (specialCharCount * 2) + jsonTokens + newlineCount;
+
+            return Math.ceil(charCount / baseRatio) + (isJson ? jsonTokens : Math.ceil(specialCharCount / 2)) + newlineCount;
         }
     }
 
@@ -134,11 +151,12 @@ export class TokenCalculator {
             }
         }
         TokenCalculator.encoder = undefined;
+        TokenCalculator.currentTokenizer = undefined;
     }
 
-    public calculateTotalTokens(messages: { role: string; content: string }[]): number {
+    public calculateTotalTokens(messages: { role: string; content: string }[], tokenizer?: string): number {
         return messages.reduce((total, message) => {
-            return total + this.calculateTokens(message.content);
+            return total + this.calculateTokens(message.content, tokenizer);
         }, 0);
     }
 } 

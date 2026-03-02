@@ -154,9 +154,10 @@ export class HistoryManager {
         // Make sure this works for edge case testing of missing roles
         const role = msg.role !== undefined ? msg.role : 'user';
 
-        const base = {
+        const base: Partial<UniversalMessage> = {
             role,
-            content: msg.content || ''
+            content: msg.content || '',
+            ...(msg.metadata ? { metadata: msg.metadata } : {})
         };
 
         // Handle specialized message types with their required fields
@@ -218,6 +219,24 @@ export class HistoryManager {
                 this.historicalMessages.push(validatedMsg);
             }
         });
+    }
+
+    /**
+     * Truncates the historical messages array to a specific length.
+     * Useful for rolling back temporary messages (e.g. during stateless tool execution).
+     * @param length The exact length to truncate the history array to.
+     */
+    public truncateToLength(length: number): void {
+        const log = logger.createLogger({ prefix: 'HistoryManager.truncateToLength' });
+        if (length < 0) {
+            log.warn(`Invalid truncate length ${length}. Keeping current history.`);
+            return;
+        }
+
+        if (length < this.historicalMessages.length) {
+            log.debug(`Truncating history from ${this.historicalMessages.length} to ${length} messages`);
+            this.historicalMessages.length = length;
+        }
     }
 
     /**

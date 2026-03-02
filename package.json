@@ -87,6 +87,7 @@
     "@cerebras/cerebras_cloud_sdk": "^1.50.0",
     "@dqbd/tiktoken": "^1.0.18",
     "@modelcontextprotocol/sdk": "^1.10.2",
+    "@openrouter/sdk": "^0.8.0",
     "@types/jest": "^29.5.14",
     "@types/sharp": "^0.32.0",
     "dotenv": "^16.4.7",
@@ -99,7 +100,7 @@
     "ts-jest": "^29.2.5",
     "ts-morph": "^25.0.1",
     "uuid": "^10.0.0",
-    "zod": "^4.1.12"
+    "zod": "4.3.6"
   },
   "devDependencies": {
     "@babel/core": "^7.27.1",

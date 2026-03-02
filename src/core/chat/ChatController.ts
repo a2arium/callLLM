@@ -146,8 +146,11 @@ export class ChatController {
             // Validate JSON mode capability if needed and get injection flag
             const { usePromptInjection, useSchemaInjection } = this.responseProcessor.validateJsonMode(modelInfo, params) || { usePromptInjection: false, useSchemaInjection: false };
 
-            // Get message list according to history mode
-            let messagesForProvider = messages;
+            // Get message list according to history mode and filter out any existing format instructions
+            // from previous loops to prevent duplication before PromptEnhancer re-applies them.
+            let messagesForProvider = messages.filter(m =>
+                !(m.role === 'user' && (m.metadata?.isFormatInstruction || String(m.content).startsWith('Format instructions:')))
+            );
             // Determine effective history mode from top-level only (default to 'stateless')
             const effectiveHistoryMode: HistoryMode = historyMode ?? 'stateless';
 
@@ -176,7 +179,7 @@ export class ChatController {
             // Use PromptEnhancer for adding JSON instructions
             const enhancedMessages = effectiveResponseFormat === 'json'
                 ? PromptEnhancer.enhanceMessages(
-                    // Ensure system message is first, followed by all other messages
+                    // Ensure system message is first, followed by all other messages, excluding existing format instructions
                     [
                         { role: 'system', content: systemMessageContent },
                         ...messagesForProvider.filter(m => m.role !== 'system')
@@ -390,11 +393,28 @@ export class ChatController {
 
                 this.historyManager.addMessage('assistant', response.content ?? '', { toolCalls: response.toolCalls });
 
+                // We need to build the next iteration's messages based on what we sent THIS time
+                // to avoid losing the user message when historyMode is 'stateless'
+                let loopMessages = [...messagesForProvider];
+                loopMessages.push({
+                    role: 'assistant',
+                    content: response.content ?? '',
+                    toolCalls: response.toolCalls
+                });
+
+                // Track how many messages we had before tool execution
+                const historyCountBeforeTools = this.historyManager.getMessages(true).length;
+
                 const { requiresResubmission } = await this.toolOrchestrator.processToolCalls(
                     response,
                     params.tools || [], // Pass original tools
                     this.mcpAdapterProvider // Pass the provider function
                 );
+
+                // Fetch exactly the new tool messages added by ToolOrchestrator
+                const currentHistoryMessages = this.historyManager.getMessages(true);
+                const newToolMessages = currentHistoryMessages.slice(historyCountBeforeTools);
+                loopMessages = [...loopMessages, ...newToolMessages];
 
                 if (requiresResubmission) {
                     log.debug('Tool results require resubmission to model.');
@@ -403,7 +423,9 @@ export class ChatController {
                     // Call execute recursively, explicitly passing necessary context
                     finalResponse = await this.execute<T>({
                         ...params, // Spread original params
-                        messages: this.historyManager.getMessages(true), // Use updated history
+                        messages: loopMessages.filter(m =>
+                            !(m.role === 'user' && (m.metadata?.isFormatInstruction || String(m.content).startsWith('Format instructions:')))
+                        ), // Use updated history, filtering out existing format instructions
                         tools: undefined, // No tools needed for resubmission
                         settings: {
                             ...params.settings,

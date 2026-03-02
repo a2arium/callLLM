@@ -122,13 +122,13 @@ describe('UsageTracker', () => {
     const usage = await tracker.trackUsage('input', 'output', modelInfo);
 
     // Verify the tokenCalculator functions were called with the expected inputs.
-    expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('input');
-    expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('output');
+    expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('input', 'test');
+    expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('output', 'test');
 
     // Use a more flexible matcher for calculateUsage that checks the first 7 args only
     expect(dummyTokenCalculator.calculateUsage).toHaveBeenCalledWith(
       10, 20, 1000, 2000, 0, 500, 0,
-      undefined, undefined, 1000, 2000
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined
     );
 
     // Verify the usage object returned.
@@ -229,13 +229,13 @@ describe('UsageTracker', () => {
     const usage = await tracker.trackUsage('input', 'output', modelInfo, 5);
 
     // Verify the tokenCalculator functions were called with the expected inputs.
-    expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('input');
-    expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('output');
+    expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('input', 'test');
+    expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('output', 'test');
 
     // Use a more flexible matcher for calculateUsage that checks the first 7 args only
     expect(dummyTokenCalculator.calculateUsage).toHaveBeenCalledWith(
       10, 20, 1000, 2000, 5, 500, 0,
-      undefined, undefined, 1000, 2000
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined
     );
 
     // Verify the usage object returned with flexible cost matching
@@ -321,7 +321,7 @@ describe('UsageTracker', () => {
       const tracker = new UsageTracker(dummyTokenCalculator);
       const result = tracker.calculateTokens('sample text');
 
-      expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('sample text');
+      expect(dummyTokenCalculator.calculateTokens).toHaveBeenCalledWith('sample text', undefined);
       expect(result).toBe(0); // returns 0 for text that isn't 'input' or 'output'
     });
 
@@ -344,7 +344,7 @@ describe('UsageTracker', () => {
 
       const result = tracker.calculateTotalTokens(messages);
 
-      expect(dummyTokenCalculator.calculateTotalTokens).toHaveBeenCalledWith(messages);
+      expect(dummyTokenCalculator.calculateTotalTokens).toHaveBeenCalledWith(messages, undefined);
       expect(result).toBe(30); // 10 + 20
     });
 
@@ -352,7 +352,7 @@ describe('UsageTracker', () => {
       const tracker = new UsageTracker(dummyTokenCalculator);
       const result = tracker.calculateTotalTokens([]);
 
-      expect(dummyTokenCalculator.calculateTotalTokens).toHaveBeenCalledWith([]);
+      expect(dummyTokenCalculator.calculateTotalTokens).toHaveBeenCalledWith([], undefined);
       expect(result).toBe(0);
     });
   });

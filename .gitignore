@@ -42,3 +42,8 @@ examples/output/
 
 test-venice-manual.ts
 test-vinice-manual*
+
+test-*.*
+test-output.mp4
+test-output.mp4
+test_*

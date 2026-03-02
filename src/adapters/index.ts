@@ -1,6 +1,7 @@
 import { OpenAIResponseAdapter } from './openai/adapter.ts';
 import { CerebrasAdapter } from './cerebras/adapter.ts';
 import { VeniceAdapter } from './venice/adapter.ts';
+import { OpenRouterAdapter } from './openrouter/adapter.ts';
 import type { AdapterConstructor } from './types.ts';
 import { ProviderNotFoundError } from './types.ts';
 
@@ -14,6 +15,7 @@ const ADAPTER_REGISTRY = {
     'openai': OpenAIResponseAdapter as AdapterConstructor,
     'cerebras': CerebrasAdapter as AdapterConstructor,
     'venice': VeniceAdapter as AdapterConstructor,
+    'openrouter': OpenRouterAdapter as AdapterConstructor,
 } as const;
 
 export const adapterRegistry = new Map<string, AdapterConstructor>(

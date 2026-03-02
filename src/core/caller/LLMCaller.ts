@@ -806,6 +806,13 @@ export class LLMCaller implements MCPDirectAccess {
         return methodHistoryMode || this.historyMode;
     }
 
+    /**
+     * Get the default history mode for this instance
+     */
+    public getHistoryMode(): HistoryMode {
+        return this.historyMode;
+    }
+
     // Basic chat completion method - internal helper
     private async internalChatCall<T extends z.ZodTypeAny>(
         params: UniversalChatParams
@@ -1453,6 +1460,7 @@ export class LLMCaller implements MCPDirectAccess {
             const originalUserText = actualOptions.text;
             if (originalUserText) this.historyManager.addMessage('user', originalUserText, {});
 
+            const effHistoryMode = this.mergeHistoryMode(actualOptions.historyMode);
             const processedMessages = await this.requestProcessor.processRequest({
                 message: actualOptions.text || '',
                 data: actualOptions.data,
@@ -1461,7 +1469,8 @@ export class LLMCaller implements MCPDirectAccess {
                 maxResponseTokens: actualOptions.settings?.maxTokens,
                 maxCharsPerChunk: actualOptions.maxCharsPerChunk,
                 jsonSchema: actualOptions.jsonSchema,
-                historicalMessages: this.historyManager.getMessages() || []
+                historicalMessages: this.historyManager.getMessages() || [],
+                historyMode: effHistoryMode
             });
             log.debug('Processed messages', { count: processedMessages.length });
 
@@ -1562,6 +1571,11 @@ export class LLMCaller implements MCPDirectAccess {
             const opts: LLMCallOptions = typeof message === 'string'
                 ? { text: message, ...options }
                 : { ...message };
+
+            const effHistoryMode = this.mergeHistoryMode(opts.historyMode);
+            if (effHistoryMode.toLowerCase() === 'stateless') {
+                this.historyManager.initializeWithSystemMessage();
+            }
 
             // Early logging for video routing intent
             if (opts.output?.video) {
@@ -2002,7 +2016,8 @@ export class LLMCaller implements MCPDirectAccess {
                 maxResponseTokens: opts.settings?.maxTokens,
                 maxCharsPerChunk: opts.maxCharsPerChunk,
                 jsonSchema: opts.jsonSchema,
-                historicalMessages: this.historyManager.getMessages() || []
+                historicalMessages: this.historyManager.getMessages() || [],
+                historyMode: effHistoryMode
             });
             log.debug('Processed messages', { count: processedMessages.length });
 

@@ -46,7 +46,7 @@ Here are the primary ways you can add, manage, and influence the history used in
     ```
 
 3.  **Clearing History**:
-    To start a fresh conversation, you can clear all previous messages using `clearHistory`. By default, this method also re-initializes the history with the initial `systemMessage` provided during the `LLMCaller` constructor.
+    To start a fresh conversation, you can clear all previous messages using `clearHistory`. This method re-initializes the history with the initial `systemMessage` provided during the `LLMCaller` constructor.
 
     ```typescript
     import { LLMCaller } from 'callllm';
@@ -62,7 +62,18 @@ Here are the primary ways you can add, manage, and influence the history used in
     console.log('History size after clear:', caller.getMessages().length); // Will be 1 (system message)
     ```
 
-4.  **Updating the System Message**:
+4.  **Inspecting History Mode**:
+    Frameworks or higher-level logic can check the current `historyMode` to decide if they should persist or restore state. Use `getHistoryMode()` to retrieve the active mode.
+
+    ```typescript
+    const mode = caller.getHistoryMode();
+    
+    if (mode === 'stateless') {
+        console.log('History persistence skipped');
+    }
+    ```
+
+5.  **Updating the System Message**:
     The initial system message is crucial for setting the AI's persona and instructions. You can update it using `updateSystemMessage`. You can choose whether to preserve the existing conversation history (`preserveHistory = true`, default) or clear it (`preserveHistory = false`).
 
     ```typescript
@@ -77,7 +88,7 @@ Here are the primary ways you can add, manage, and influence the history used in
     caller.updateSystemMessage('You are now a creative writer.', false);
     ```
 
-5.  **Controlling History Behavior (`historyMode`)**:
+6.  **Controlling History Behavior (`historyMode`)**:
     The library offers different modes to control how the historical messages stored in the `HistoryManager` are included in the actual API call requests sent to the LLM provider. This is managed by the `historyMode` setting.
 
     You can set the `historyMode` during `LLMCaller` initialization or override it for specific `call` or `stream` requests:
@@ -105,7 +116,7 @@ Here are the primary ways you can add, manage, and influence the history used in
     *   `'dynamic'`: Intelligently truncates the history to fit within the model's `maxRequestTokens`. It prioritizes the system message, the first user message, and the most recent messages. Useful for long conversations to avoid hitting token limits while retaining recent context.
     *   `'stateless'`: Only sends the current user message and the system message (if one is set in `HistoryManager`) to the model. No previous conversation turns are included. Each call is independent. Most token-efficient.
 
-6.  **Accessing History**:
+7.  **Accessing History**:
     You can retrieve the current message history using methods like `getMessages()` (excluding the initial system message unless it was explicitly added back) or `getMessages(true)` (includes the initial system message). `getHistorySummary()` provides a condensed view.
 
     ```typescript
