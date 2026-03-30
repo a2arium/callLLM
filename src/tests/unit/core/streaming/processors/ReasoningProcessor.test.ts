@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals"; import { ReasoningProcessor } from '../../../../../core/streaming/processors/ReasoningProcessor.ts';
-import type { StreamChunk } from '../../../../../core/streaming/types.d.ts';
+import type { StreamChunk } from '../../../../../core/streaming/types.ts';
 import type { UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces.ts';
 
 describe('ReasoningProcessor', () => {

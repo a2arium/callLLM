@@ -29,6 +29,12 @@ jobs:
       - name: Build ESM and CJS
         run: yarn build
 
+      - name: Verify ESM declaration graph (skipLibCheck off)
+        run: yarn verify:dist-types
+
+      - name: Verify published types (arethetypeswrong, packed tarball)
+        run: yarn verify:attw
+
       - name: Verify dual output structure
         run: |
           echo "Checking build output structure..."

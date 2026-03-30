@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { jest, describe, it, expect, afterEach, beforeEach } from '@jest/globals';
 import { ContentAccumulator } from '../../../../../core/streaming/processors/ContentAccumulator.ts';
-import type { StreamChunk, ToolCallChunk } from '../../../../../core/streaming/types.d.ts';
+import type { StreamChunk, ToolCallChunk } from '../../../../../core/streaming/types.ts';
 import { FinishReason } from '../../../../../interfaces/UniversalInterfaces.ts';
 import type { UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces.ts';
 import type { ToolCall } from '../../../../../types/tooling.ts';

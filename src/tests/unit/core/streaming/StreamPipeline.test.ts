@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { StreamPipeline } from '../../../../core/streaming/StreamPipeline.ts';
-import type { StreamChunk, IStreamProcessor } from '../../../../core/streaming/types.d.ts';
+import type { StreamChunk, IStreamProcessor } from '../../../../core/streaming/types.ts';
 import type { ToolCall } from '../../../../types/tooling.ts';
 import { logger } from '../../../../utils/logger.ts';
 

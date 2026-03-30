@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import type { StreamChunk, IStreamProcessor, IRetryPolicy } from '../../../../../core/streaming/types.d.ts';
+import type { StreamChunk, IStreamProcessor, IRetryPolicy } from '../../../../../core/streaming/types.ts';
 
 // Mocked logger methods
 const mockLoggerSetConfig = jest.fn();

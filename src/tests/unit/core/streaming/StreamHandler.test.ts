@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 // import { StreamHandler } from '../../../../core/streaming/StreamHandler.ts'; // SUT will be dynamically imported
-// import { IStreamProcessor } from '../../../../core/streaming/types.d.ts'; // Type, no need to mock
+// import { IStreamProcessor } from '../../../../core/streaming/types.ts'; // Type, no need to mock
 import type { UniversalMessage, UniversalStreamResponse, Usage, ModelInfo, UniversalChatParams } from '../../../../interfaces/UniversalInterfaces.ts';
 import { FinishReason } from '../../../../interfaces/UniversalInterfaces.ts';
 import { z } from 'zod';

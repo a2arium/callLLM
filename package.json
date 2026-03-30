@@ -35,10 +35,10 @@
   ],
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "tsc && yarn build:cjs",
+    "build": "tsc && node scripts/rewrite-esm-dts-import-extensions.mjs && yarn build:cjs",
     "build:cjs": "node scripts/build-cjs.mjs",
     "test": "NODE_OPTIONS=--experimental-vm-modules TS_CONFIG=tsconfig.test.json jest --coverage",
-    "prepublishOnly": "yarn clean && yarn build && yarn test",
+    "prepublishOnly": "yarn clean && yarn build && yarn verify:dist-types && yarn verify:attw && yarn test",
     "example:simple": "tsx examples/simpleChat.ts",
     "example:dataSplitting": "tsx examples/dataSplitting.ts",
     "example:usage": "tsx examples/usageTracking.ts",
@@ -57,7 +57,9 @@
     "example:video": "tsx examples/videoGeneration.ts",
     "adapters:e2e": "tsx adapters-e2e/run.ts",
     "adapters:e2e:fast": "tsx adapters-e2e/run.ts --providers=venice --scenarios=simple-chat,streaming-chat",
-    "lint": "eslint . --ext .ts"
+    "lint": "eslint . --ext .ts",
+    "verify:dist-types": "tsc --project verification/tsconfig.json",
+    "verify:attw": "attw --pack ."
   },
   "engines": {
     "node": ">=18"
@@ -103,6 +105,7 @@
     "zod": "4.3.6"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
     "@babel/core": "^7.27.1",
     "@babel/preset-typescript": "^7.27.1",
     "@opentelemetry/api": "^1.9.0",

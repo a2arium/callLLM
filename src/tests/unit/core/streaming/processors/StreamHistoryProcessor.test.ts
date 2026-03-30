@@ -1,7 +1,7 @@
 import { jest, beforeAll } from '@jest/globals';
 // Declare variables for modules to be dynamically imported
 let HistoryManager;
-import type { StreamChunk } from '../../../../../core/streaming/types.d.ts';
+import type { StreamChunk } from '../../../../../core/streaming/types.ts';
 import type { UniversalStreamResponse } from '../../../../../interfaces/UniversalInterfaces.ts';
 
 // Import logger to mock it

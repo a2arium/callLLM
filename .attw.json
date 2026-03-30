@@ -1,0 +1,7 @@
+{
+  "ignoreRules": [
+    "no-resolution",
+    "fallback-condition",
+    "false-esm"
+  ]
+}

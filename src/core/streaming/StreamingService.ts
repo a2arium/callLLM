@@ -353,22 +353,21 @@ export class StreamingService {
                 }
                 yield chunk;
             }
-        } catch (err) {
-            throw err;
+        } finally {
+            if (this.telemetryCollector && this.llmCtx && !llmSpanEnded) {
+                // Ensure we pass full text output and final usage to providers that need it (e.g., Opik)
+                const finalText = (last as any)?.contentText || (last as any)?.content || '';
+                // Add final choice event so non-stream span has complete output
+                this.telemetryCollector.addChoice(this.llmCtx, {
+                    content: finalText,
+                    contentLength: String(finalText).length,
+                    index: 0,
+                    finishReason: (last as any)?.metadata?.finishReason || 'stop'
+                });
+                this.telemetryCollector.endLLM(this.llmCtx, (last as any)?.metadata?.usage as any, (last as any)?.metadata?.model);
+            }
         }
 
-        if (this.telemetryCollector && this.llmCtx && !llmSpanEnded) {
-            // Ensure we pass full text output and final usage to providers that need it (e.g., Opik)
-            const finalText = (last as any)?.contentText || (last as any)?.content || '';
-            // Add final choice event so non-stream span has complete output
-            this.telemetryCollector.addChoice(this.llmCtx, {
-                content: finalText,
-                contentLength: String(finalText).length,
-                index: 0,
-                finishReason: (last as any)?.metadata?.finishReason || 'stop'
-            });
-            this.telemetryCollector.endLLM(this.llmCtx, (last as any)?.metadata?.usage as any, (last as any)?.metadata?.model);
-        }
     }
 
     /**
