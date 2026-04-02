@@ -409,6 +409,202 @@ export const defaultModels: ModelInfo[] = [
             firstTokenLatency: 0,
         },
     },
+
+    // Standalone speech-to-text / TTS models (OpenAI Audio API)
+    {
+        name: 'gpt-4o-transcribe',
+        maxRequestTokens: 0,
+        maxResponseTokens: 0,
+        inputPricePerMillion: 0,
+        outputPricePerMillion: 0,
+        transcriptionMaxFileBytes: 25 * 1024 * 1024,
+        transcriptionMaxDurationSeconds: 1500,
+        audioInputPricePerMillion: 2.5,
+        audioOutputPricePerMillion: 10.0,
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            audio: {
+                transcribe: true,
+                supportedInputFormats: ['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm']
+            },
+            input: { text: true },
+            output: { text: true }
+        },
+        characteristics: { qualityIndex: 0, outputSpeed: 0, firstTokenLatency: 0 }
+    },
+    {
+        name: 'gpt-4o-mini-transcribe',
+        maxRequestTokens: 0,
+        maxResponseTokens: 0,
+        inputPricePerMillion: 0,
+        outputPricePerMillion: 0,
+        transcriptionMaxFileBytes: 25 * 1024 * 1024,
+        transcriptionMaxDurationSeconds: 1500,
+        audioInputPricePerMillion: 1.25,
+        audioOutputPricePerMillion: 5.0,
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            audio: {
+                transcribe: true,
+                supportedInputFormats: ['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm']
+            },
+            input: { text: true },
+            output: { text: true }
+        },
+        characteristics: { qualityIndex: 0, outputSpeed: 0, firstTokenLatency: 0 }
+    },
+    {
+        name: 'gpt-4o-mini-transcribe-2025-12-15',
+        maxRequestTokens: 0,
+        maxResponseTokens: 0,
+        inputPricePerMillion: 0,
+        outputPricePerMillion: 0,
+        transcriptionMaxFileBytes: 25 * 1024 * 1024,
+        transcriptionMaxDurationSeconds: 1500,
+        audioInputPricePerMillion: 3,
+        audioOutputPricePerMillion: 6,
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            audio: {
+                transcribe: true,
+                supportedInputFormats: ['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm']
+            },
+            input: { text: true },
+            output: { text: true }
+        },
+        characteristics: { qualityIndex: 0, outputSpeed: 0, firstTokenLatency: 0 }
+    },
+    {
+        name: 'gpt-4o-transcribe-diarize',
+        maxRequestTokens: 0,
+        maxResponseTokens: 0,
+        inputPricePerMillion: 0,
+        outputPricePerMillion: 0,
+        transcriptionMaxFileBytes: 25 * 1024 * 1024,
+        transcriptionMaxDurationSeconds: 1500,
+        audioInputPricePerMillion: 6,
+        audioOutputPricePerMillion: 10,
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            audio: {
+                transcribe: true,
+                supportedInputFormats: ['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm']
+            },
+            input: { text: true },
+            output: { text: true }
+        },
+        characteristics: { qualityIndex: 0, outputSpeed: 0, firstTokenLatency: 0 }
+    },
+    {
+        name: 'whisper-1',
+        maxRequestTokens: 0,
+        maxResponseTokens: 0,
+        inputPricePerMillion: 0,
+        outputPricePerMillion: 0,
+        transcriptionMaxFileBytes: 25 * 1024 * 1024,
+        audioPricePerSecond: 0.006 / 60,
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            audio: {
+                transcribe: true,
+                translate: true,
+                supportedInputFormats: ['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm']
+            },
+            input: { text: true },
+            output: { text: true }
+        },
+        characteristics: { qualityIndex: 0, outputSpeed: 0, firstTokenLatency: 0 }
+    },
+    {
+        name: 'tts-1',
+        maxRequestTokens: 0,
+        maxResponseTokens: 0,
+        inputPricePerMillion: 0,
+        outputPricePerMillion: 0,
+        ttsPricePerMillionChars: 15,
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            audio: {
+                synthesize: true,
+                supportedOutputFormats: ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'],
+                voices: ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer', 'verse', 'marin', 'cedar'],
+                maxOutputChars: 4096
+            },
+            input: { text: true },
+            output: { text: false }
+        },
+        characteristics: { qualityIndex: 0, outputSpeed: 0, firstTokenLatency: 0 }
+    },
+    {
+        name: 'tts-1-hd',
+        maxRequestTokens: 0,
+        maxResponseTokens: 0,
+        inputPricePerMillion: 0,
+        outputPricePerMillion: 0,
+        ttsPricePerMillionChars: 30,
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            audio: {
+                synthesize: true,
+                supportedOutputFormats: ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'],
+                voices: ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer', 'verse', 'marin', 'cedar'],
+                maxOutputChars: 4096
+            },
+            input: { text: true },
+            output: { text: false }
+        },
+        characteristics: { qualityIndex: 0, outputSpeed: 0, firstTokenLatency: 0 }
+    },
+    {
+        name: 'gpt-4o-mini-tts',
+        maxRequestTokens: 0,
+        maxResponseTokens: 0,
+        inputPricePerMillion: 0.6,
+        outputPricePerMillion: 0,
+        ttsPricePerMillionChars: 12,
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            audio: {
+                synthesize: true,
+                supportedOutputFormats: ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'],
+                voices: ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer', 'verse', 'marin', 'cedar'],
+                maxOutputChars: 4096
+            },
+            input: { text: true },
+            output: { text: false }
+        },
+        characteristics: { qualityIndex: 0, outputSpeed: 0, firstTokenLatency: 0 }
+    },
+    {
+        name: 'gpt-4o-mini-tts-2025-12-15',
+        maxRequestTokens: 0,
+        maxResponseTokens: 0,
+        inputPricePerMillion: 0,
+        outputPricePerMillion: 0,
+        ttsPricePerMillionChars: 12,
+        capabilities: {
+            streaming: false,
+            toolCalls: false,
+            audio: {
+                synthesize: true,
+                supportedOutputFormats: ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'],
+                voices: ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer', 'verse', 'marin', 'cedar'],
+                maxOutputChars: 4096
+            },
+            input: { text: true },
+            output: { text: false }
+        },
+        characteristics: { qualityIndex: 0, outputSpeed: 0, firstTokenLatency: 0 }
+    },
+
     {
         name: 'gpt-image-1',
         maxRequestTokens: 128000,

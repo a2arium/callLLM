@@ -373,6 +373,62 @@ Example script:
 yarn example:video
 ```
 
+### Audio (speech-to-text and text-to-speech)
+
+Standalone audio uses dedicated `LLMCaller` methods (similar to `embeddings()`), not the chat `call()` path. OpenAI models such as `gpt-4o-mini-transcribe`, `whisper-1`, and `gpt-4o-mini-tts` are registered with a top-level `capabilities.audio` flag (`transcribe`, `translate`, `synthesize`).
+
+Transcription (`file` may be a local path, `https` URL, or `data:` URI):
+
+```typescript
+const caller = new LLMCaller('openai', 'gpt-4o-mini-transcribe', 'You are a helpful assistant.');
+const transcription = await caller.transcribe({
+  file: './speech.wav',
+  language: 'en'
+});
+console.log(transcription.text);
+console.log(transcription.usage);
+```
+
+**Large local files (`splitLargeFile`)**
+
+Provider STT endpoints cap each request. The library reads those limits from each model’s `ModelInfo` (`transcriptionMaxFileBytes` or `transcriptionMaxDurationSeconds`). 
+
+When you pass **`splitLargeFile: true`**, the caller checks the resolved model thresholds against the local file (size via `stat`; duration via **`ffprobe`** when a duration cap exists). If the file must be chunked, it runs **`ffmpeg`** to produce time-bounded segments, transcribes each chunk, then merges text (see `metadata.transcriptionChunkCount` on the merged result). **`splitChunkSeconds`** defaults to **600** and is capped so segments stay under the model’s duration limit when one applies.
+
+**Requirements:** **`ffmpeg`** and **`ffprobe`** must be on the process `PATH`. If either is missing or not executable, the library throws **`TranscriptionFfmpegError`** (exported from the package root) with a long, platform-specific install and verification checklist (not a one-line `ENOENT`). Example: `import { TranscriptionFfmpegError } from 'callllm'`.
+
+**Constraints:** `splitLargeFile` applies only to **local file paths** (not `https:` or `data:` URLs). Remote audio must be downloaded first.
+
+Translate spoken audio to English (typically `whisper-1`):
+
+```typescript
+const tr = await caller.translateAudio({ file: './clip.mp3', model: 'whisper-1' });
+console.log(tr.text);
+```
+
+Text-to-speech:
+
+```typescript
+const tts = new LLMCaller('openai', 'gpt-4o-mini-tts', 'You are a helpful assistant.');
+const speech = await tts.synthesizeSpeech({
+  input: 'Hello world!',
+  voice: 'alloy',
+  outputPath: './output.mp3'
+});
+console.log(speech.metadata?.audioSavedPath);
+console.log(speech.audio.mime, speech.audio.sizeBytes);
+```
+
+Helpers: `getAvailableAudioModels()` and `checkAudioCapabilities(modelName)` mirror embedding discovery APIs.
+
+E2E (requires `OPENAI_API_KEY`):
+
+```bash
+yarn adapters:e2e --providers=openai --scenarios=audio-transcribe,audio-speech
+```
+
+The `audio-transcribe` scenario synthesizes speech to a temp MP3, then transcribes that file (round-trip). `audio-speech` only checks TTS output.
+
 ## Token Counting and Pricing
 
 The library automatically tracks token usage and calculates costs for each request:

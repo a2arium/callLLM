@@ -1,4 +1,17 @@
-import type { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, EmbeddingParams, EmbeddingResponse } from '../../interfaces/UniversalInterfaces.ts';
+import type {
+    UniversalChatParams,
+    UniversalChatResponse,
+    UniversalStreamResponse,
+    EmbeddingParams,
+    EmbeddingResponse,
+    AudioOp,
+    TranscriptionParams,
+    TranslationParams,
+    SpeechParams,
+    TranscriptionResponse,
+    TranslationResponse,
+    SpeechResponse
+} from '../../interfaces/UniversalInterfaces.ts';
 import type { LLMProvider } from '../../interfaces/LLMProvider.ts';
 
 export class AdapterError extends Error {
@@ -44,6 +57,15 @@ export abstract class BaseAdapter implements LLMProvider {
      * Should be implemented by providers that support embeddings.
      */
     convertFromProviderEmbeddingResponse?(response: unknown): EmbeddingResponse;
+
+    /**
+     * Optional standalone audio support (transcription, translation, TTS).
+     */
+    audioCall?(
+        model: string,
+        op: AudioOp,
+        params: TranscriptionParams | TranslationParams | SpeechParams
+    ): Promise<TranscriptionResponse | TranslationResponse | SpeechResponse>;
 
     protected validateConfig(config: AdapterConfig): void {
         if (!config.apiKey) {

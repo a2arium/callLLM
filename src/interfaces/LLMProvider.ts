@@ -1,5 +1,24 @@
-import type { UniversalChatParams, UniversalChatResponse, UniversalStreamResponse, UrlSource, Base64Source, ImageInputOpts, ImageOutputOpts, FilePathSource, ImageSource, EmbeddingParams, EmbeddingResponse, VideoOutputOpts } from './UniversalInterfaces.ts';
 import type { UsageCallback } from './UsageInterfaces.ts';
+import type {
+    UniversalChatParams,
+    UniversalChatResponse,
+    UniversalStreamResponse,
+    UrlSource,
+    Base64Source,
+    FilePathSource,
+    ImageSource,
+    EmbeddingParams,
+    EmbeddingResponse,
+    AudioOp,
+    TranscriptionParams,
+    TranslationParams,
+    SpeechParams,
+    TranscriptionResponse,
+    TranslationResponse,
+    SpeechResponse
+} from './UniversalInterfaces.ts';
+
+export type { AudioOp } from './UniversalInterfaces.ts';
 
 export interface LLMProvider {
     // Basic chat methods
@@ -75,4 +94,15 @@ export interface LLMProviderVideo {
  */
 export interface LLMProviderEmbedding {
     embeddingCall(model: string, params: EmbeddingParams): Promise<EmbeddingResponse>;
+}
+
+/**
+ * Interface for providers that support standalone audio APIs (STT, translation, TTS).
+ */
+export interface LLMProviderAudio {
+    audioCall(
+        model: string,
+        op: AudioOp,
+        params: TranscriptionParams | TranslationParams | SpeechParams
+    ): Promise<TranscriptionResponse | TranslationResponse | SpeechResponse>;
 }

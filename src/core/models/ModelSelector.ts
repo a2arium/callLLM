@@ -57,6 +57,14 @@ export type CapabilityRequirement = {
         /** Whether reasoning is required */
         required: boolean;
     };
+
+    /** Standalone audio API requirements (transcription, translation, TTS) */
+    audio?: {
+        /** Whether audio API support is required */
+        required: boolean;
+        /** Specific audio operations required */
+        operations?: ('transcribe' | 'translate' | 'synthesize')[];
+    };
 };
 
 export class ModelSelector {
@@ -146,6 +154,13 @@ export class ModelSelector {
         // Check reasoning requirements
         if (requirements.reasoning?.required) {
             if (!capabilities.reasoning) {
+                return false;
+            }
+        }
+
+        // Check standalone audio API requirements
+        if (requirements.audio?.required) {
+            if (!this.supportsAudio(capabilities, requirements.audio)) {
                 return false;
             }
         }
@@ -292,6 +307,46 @@ export class ModelSelector {
         }
 
         // Default to false for unexpected structures
+        return false;
+    }
+
+    /**
+     * Checks if model supports standalone audio APIs with optional operation constraints.
+     */
+    public static supportsAudio(
+        capabilities: ModelCapabilities,
+        requirements?: { operations?: ('transcribe' | 'translate' | 'synthesize')[] }
+    ): boolean {
+        const audioCapability = capabilities.audio;
+
+        if (!audioCapability) {
+            return false;
+        }
+
+        if (typeof audioCapability === 'boolean') {
+            if (!requirements?.operations?.length) {
+                return true;
+            }
+            return true;
+        }
+
+        if (typeof audioCapability === 'object') {
+            const ops = requirements?.operations;
+            if (!ops || ops.length === 0) {
+                return (
+                    audioCapability.transcribe === true ||
+                    audioCapability.translate === true ||
+                    audioCapability.synthesize === true
+                );
+            }
+            return ops.every(op => {
+                if (op === 'transcribe') return audioCapability.transcribe === true;
+                if (op === 'translate') return audioCapability.translate === true;
+                if (op === 'synthesize') return audioCapability.synthesize === true;
+                return false;
+            });
+        }
+
         return false;
     }
 

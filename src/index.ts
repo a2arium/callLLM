@@ -56,6 +56,9 @@ export { TokenCalculator } from './core/models/TokenCalculator.ts';
 export { ToolsManager } from './core/tools/ToolsManager.ts';
 export { HistoryManager } from './core/history/HistoryManager.ts';
 
+/** Thrown when chunked transcription cannot run ffmpeg/ffprobe (see README Audio section). */
+export { TranscriptionFfmpegError } from './core/audio/transcriptionFfmpegError.ts';
+
 // MCP functionality (most commonly used exports)
 export { MCPServiceAdapter } from './core/mcp/MCPServiceAdapter.ts';
 export type {

@@ -106,8 +106,11 @@ export class ModelManager {
         const outputsText = Boolean(model.capabilities?.output?.text);
         const outputsVideo = Boolean(model.capabilities?.output?.video);
         const isVideoOnlyOutput = outputsVideo && !outputsText;
+        const isStandaloneAudioOnly = Boolean(model.capabilities?.audio)
+            && model.maxRequestTokens === 0
+            && model.maxResponseTokens === 0;
 
-        if (!isVideoOnlyOutput) {
+        if (!isVideoOnlyOutput && !isStandaloneAudioOnly) {
             if (!model.maxRequestTokens) throw new Error('Max request tokens is required');
             if (model.maxResponseTokens === undefined) throw new Error('Max response tokens is required');
         }
@@ -118,8 +121,12 @@ export class ModelManager {
         if (model.outputPricePerMillion < 0) throw new Error('Invalid model configuration');
 
         // Check for negative token values
-        if (!isVideoOnlyOutput && model.maxRequestTokens < 0) throw new Error('Invalid model configuration');
-        if (!isVideoOnlyOutput && model.maxResponseTokens < 0) throw new Error('Invalid model configuration');
+        if (!isVideoOnlyOutput && !isStandaloneAudioOnly && model.maxRequestTokens < 0) {
+            throw new Error('Invalid model configuration');
+        }
+        if (!isVideoOnlyOutput && !isStandaloneAudioOnly && model.maxResponseTokens < 0) {
+            throw new Error('Invalid model configuration');
+        }
     }
 
     public resolveModel(nameOrAlias: string, capabilityRequirements?: CapabilityRequirement): string {

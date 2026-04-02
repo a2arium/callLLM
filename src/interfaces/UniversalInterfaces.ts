@@ -33,6 +33,9 @@ export type FilePathSource = {
 
 export type ImageSource = UrlSource | Base64Source | FilePathSource;
 
+/** Same shape as {@link ImageSource}; alias for audio file inputs (path, URL, or base64 data URI). */
+export type AudioSource = ImageSource;
+
 // A simpler type for image data source in responses
 export type ImageResponseDataSource = 'url' | 'base64' | 'file'
 
@@ -328,12 +331,16 @@ export type Usage = {
             cached: number;
             /** Tokens attributable to file/image inputs (if any) */
             image?: number;
+            /** Tokens attributable to audio inputs (e.g. speech-to-text) */
+            audio?: number;
         },
         output: {
             total: number;
             reasoning: number;
             /** Tokens attributable to image generation/editing in output (if any) */
             image?: number;
+            /** Tokens attributable to audio output (e.g. transcription text tokens) */
+            audio?: number;
             /** Seconds attributable to video generation in output (if any) */
             videoSeconds?: number;
         },
@@ -343,6 +350,8 @@ export type Usage = {
         input: {
             total: number;
             cached: number;
+            /** Cost attributable to audio input processing */
+            audio?: number;
         },
         output: {
             total: number;
@@ -351,8 +360,14 @@ export type Usage = {
             image?: number;
             /** Costs attributable to video generation in output (if any) */
             video?: number;
+            /** Costs attributable to audio output (e.g. TTS) */
+            audio?: number;
         },
         total: number;
+    };
+    /** Duration-based billing (e.g. Whisper per-second) */
+    durations?: {
+        inputAudioSeconds?: number;
     };
 };
 
@@ -391,6 +406,10 @@ export type Metadata = {
     videoProgress?: number;
     videoSavedPath?: string;
     videoError?: string | object; // Error/failure reason if video generation failed
+    /** Path where synthesized audio was saved (TTS) */
+    audioSavedPath?: string;
+    /** Set when a long file was transcribed in multiple ffmpeg-sized segments */
+    transcriptionChunkCount?: number;
 };
 
 export interface UniversalChatResponse<T = unknown> {
@@ -565,6 +584,20 @@ export type ModelCapabilities = {
     };
 
     /**
+     * Standalone audio API support (transcription, translation, TTS), distinct from chat multimodal input.audio/output.audio.
+     */
+    audio?: boolean | {
+        transcribe?: boolean;
+        translate?: boolean;
+        synthesize?: boolean;
+        supportedInputFormats?: string[];
+        supportedOutputFormats?: string[];
+        maxInputDuration?: number;
+        maxOutputChars?: number;
+        voices?: string[];
+    };
+
+    /**
      * Capabilities related to model input.
      * The presence of a modality key indicates support for that input type.
      */
@@ -683,6 +716,24 @@ export type ModelInfo = {
     videoPricePerSecond?: number;
     /** Price per generated image (e.g. DALL-E) */
     imagePricePerImage?: number;
+    /** Price per million audio input tokens (speech-to-text) */
+    audioInputPricePerMillion?: number;
+    /** Price per million audio-related output tokens */
+    audioOutputPricePerMillion?: number;
+    /** Price per second of input audio for duration-billed STT models */
+    audioPricePerSecond?: number;
+    /** Price per million characters for TTS (provider-specific) */
+    ttsPricePerMillionChars?: number;
+    /**
+     * Provider maximum audio file size (bytes) for a single transcription HTTP request.
+     * Used with {@link TranscriptionParams.splitLargeFile} to decide when to pre-split (e.g. OpenAI 25 MiB).
+     */
+    transcriptionMaxFileBytes?: number;
+    /**
+     * Provider maximum input duration (seconds) for a single transcription request, when enforced.
+     * Omit for APIs that only cap file size (e.g. whisper-1). GPT‑4o transcribe family: 1500.
+     */
+    transcriptionMaxDurationSeconds?: number;
     maxRequestTokens: number;
     maxResponseTokens: number;
     /**
@@ -821,4 +872,159 @@ export type EmbeddingCallOptions = {
     usageCallback?: UsageCallback;
     /** Batch size for usage callbacks when processing multiple inputs */
     usageBatchSize?: number;
-}; 
+};
+
+/** Operations routed through {@link LLMProviderAudio.audioCall}. */
+export type AudioOp = 'transcribe' | 'translate' | 'synthesize';
+
+export type TranscriptionChunkingStrategy =
+    | 'auto'
+    | {
+        type: 'server_vad';
+        threshold?: number;
+        silenceDurationMs?: number;
+        prefixPaddingMs?: number;
+    };
+
+export type TranscriptionResponseFormat =
+    | 'json'
+    | 'text'
+    | 'srt'
+    | 'verbose_json'
+    | 'vtt'
+    | 'diarized_json';
+
+export type TranslationResponseFormat =
+    | 'json'
+    | 'text'
+    | 'srt'
+    | 'verbose_json'
+    | 'vtt';
+
+export type SpeechResponseFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm';
+
+export type TranscriptionSegment = {
+    id: number | string;
+    start: number;
+    end: number;
+    text: string;
+    speaker?: string;
+    tokens?: number[];
+    temperature?: number;
+    avgLogprob?: number;
+    compressionRatio?: number;
+    noSpeechProb?: number;
+    seek?: number;
+    segmentType?: string;
+};
+
+export type TranscriptionWord = {
+    word: string;
+    start: number;
+    end: number;
+};
+
+export type TranscriptionLogprob = {
+    token: string;
+    bytes?: number[];
+    logprob: number;
+};
+
+export type TranscriptionParams = {
+    /** Local path, http(s) URL, or data URI for the audio file */
+    file: string;
+    model: string;
+    language?: string;
+    prompt?: string;
+    temperature?: number;
+    responseFormat?: TranscriptionResponseFormat;
+    timestampGranularities?: ('word' | 'segment')[];
+    chunkingStrategy?: TranscriptionChunkingStrategy | null;
+    include?: ('logprobs')[];
+    knownSpeakerNames?: string[];
+    knownSpeakerReferences?: string[];
+    callerId?: string;
+    usageCallback?: UsageCallback;
+    /**
+     * Local file paths only. When true, uses ffmpeg/ffprobe to re-encode (mono, 16 kHz, compact MP3)
+     * and split into segments so each request stays within typical OpenAI limits (~25 MB file,
+     * ~25 min for GPT‑4o transcribe family). Requires `ffmpeg` and `ffprobe` on PATH.
+     */
+    splitLargeFile?: boolean;
+    /** Segment length in seconds when {@link splitLargeFile} is true (default 600). */
+    splitChunkSeconds?: number;
+};
+
+export type TranslationParams = {
+    file: string;
+    model: string;
+    prompt?: string;
+    temperature?: number;
+    responseFormat?: TranslationResponseFormat;
+    callerId?: string;
+    usageCallback?: UsageCallback;
+};
+
+export type SpeechVoice = string | { id: string };
+
+export type SpeechParams = {
+    input: string;
+    model: string;
+    voice: SpeechVoice;
+    instructions?: string;
+    responseFormat?: SpeechResponseFormat;
+    speed?: number;
+    outputPath?: string;
+    callerId?: string;
+    usageCallback?: UsageCallback;
+};
+
+export type TranscriptionResponse = {
+    text: string;
+    language?: string;
+    duration?: number;
+    segments?: TranscriptionSegment[];
+    words?: TranscriptionWord[];
+    logprobs?: TranscriptionLogprob[];
+    usage: Usage;
+    model: string;
+    metadata?: Metadata;
+};
+
+export type TranslationResponse = {
+    text: string;
+    language?: string;
+    duration?: number;
+    segments?: TranscriptionSegment[];
+    usage: Usage;
+    model: string;
+    metadata?: Metadata;
+};
+
+export type SpeechResponse = {
+    audio: {
+        data: string;
+        mime: string;
+        format: string;
+        sizeBytes: number;
+    };
+    usage: Usage;
+    model: string;
+    metadata?: Metadata;
+};
+
+export type TranscriptionCallOptions = Omit<TranscriptionParams, 'model'> & {
+    model?: string;
+};
+
+export type TranslationCallOptions = Omit<TranslationParams, 'model'> & {
+    model?: string;
+};
+
+export type SpeechCallOptions = Omit<SpeechParams, 'model'> & {
+    model?: string;
+};
+
+export type AudioCallParams = TranscriptionParams | TranslationParams | SpeechParams;
+
+export type AudioCallResponse = TranscriptionResponse | TranslationResponse | SpeechResponse;

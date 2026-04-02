@@ -1,8 +1,28 @@
-import type { LLMProvider, LLMProviderImage, LLMProviderEmbedding, ImageOp, ImageCallParams, LLMProviderVideo, VideoCallParams } from '../../interfaces/LLMProvider.ts';
+import type {
+    LLMProvider,
+    LLMProviderImage,
+    LLMProviderEmbedding,
+    ImageOp,
+    ImageCallParams,
+    LLMProviderVideo,
+    VideoCallParams,
+    LLMProviderAudio,
+    AudioOp
+} from '../../interfaces/LLMProvider.ts';
 import type { AdapterConfig } from '../../adapters/base/baseAdapter.ts';
 import { adapterRegistry, type RegisteredProviders } from '../../adapters/index.ts';
 import { ProviderNotFoundError } from '../../adapters/types.ts';
-import type { UniversalChatResponse, EmbeddingParams, EmbeddingResponse } from '../../interfaces/UniversalInterfaces.ts';
+import type {
+    UniversalChatResponse,
+    EmbeddingParams,
+    EmbeddingResponse,
+    TranscriptionParams,
+    TranslationParams,
+    SpeechParams,
+    TranscriptionResponse,
+    TranslationResponse,
+    SpeechResponse
+} from '../../interfaces/UniversalInterfaces.ts';
 import { logger } from '../../utils/logger.ts';
 
 export class ProviderManager {
@@ -132,6 +152,31 @@ export class ProviderManager {
             savedPath: resp.metadata?.videoSavedPath
         });
         return resp;
+    }
+
+    public supportsAudio(): boolean {
+        return 'audioCall' in this.provider;
+    }
+
+    public getAudioProvider(): LLMProviderAudio | null {
+        if (this.supportsAudio()) {
+            return this.provider as unknown as LLMProviderAudio;
+        }
+        return null;
+    }
+
+    public async callAudioOperation(
+        model: string,
+        op: AudioOp,
+        params: TranscriptionParams | TranslationParams | SpeechParams
+    ): Promise<TranscriptionResponse | TranslationResponse | SpeechResponse> {
+        const log = logger.createLogger({ prefix: 'ProviderManager.callAudioOperation' });
+        log.debug('Invoking provider audioCall', { model, op });
+        const audioProvider = this.getAudioProvider();
+        if (!audioProvider) {
+            throw new Error(`Provider '${this.currentProviderName}' does not support audio operations`);
+        }
+        return audioProvider.audioCall(model, op, params);
     }
 
     public switchProvider(providerName: RegisteredProviders, apiKey?: string): void {

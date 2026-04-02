@@ -11,7 +11,18 @@ import type {
     ImageCallParams as BaseImageCallParams,
     Usage,
     EmbeddingParams,
-    EmbeddingResponse
+    EmbeddingResponse,
+    AudioOp,
+    TranscriptionParams,
+    TranslationParams,
+    SpeechParams,
+    TranscriptionResponse,
+    TranslationResponse,
+    SpeechResponse,
+    TranscriptionSegment,
+    TranscriptionWord,
+    TranscriptionLogprob,
+    TranscriptionChunkingStrategy
 } from '../../interfaces/UniversalInterfaces.ts';
 import { FinishReason } from '../../interfaces/UniversalInterfaces.ts';
 import { OpenAIResponseAdapterError, OpenAIResponseValidationError, OpenAIResponseAuthError, OpenAIResponseRateLimitError, OpenAIResponseNetworkError, OpenAIResponseServiceError } from './errors.ts';
@@ -35,7 +46,14 @@ import { ModelManager } from '../../core/models/ModelManager.ts';
 import { defaultModels } from './models.ts';
 import type { RegisteredProviders } from '../index.ts';
 import { TokenCalculator } from '../../core/models/TokenCalculator.ts';
-import type { LLMProviderImage, LLMProviderEmbedding, ImageOp, LLMProviderVideo, VideoCallParams } from '../../interfaces/LLMProvider.ts';
+import type {
+    LLMProviderImage,
+    LLMProviderEmbedding,
+    ImageOp,
+    LLMProviderVideo,
+    VideoCallParams,
+    LLMProviderAudio
+} from '../../interfaces/LLMProvider.ts';
 import { saveBase64ToFile } from '../../core/file-data/fileData.ts';
 import * as fs from 'fs';
 import type { UrlSource, Base64Source, FilePathSource } from '../../interfaces/UniversalInterfaces.ts';
@@ -61,7 +79,7 @@ interface ExtendedImageCallParams extends BaseImageCallParams {
 /**
  * OpenAI Response Adapter implementing the OpenAI /v1/responses API endpoint
  */
-export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderImage, LLMProviderEmbedding, LLMProviderVideo {
+export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderImage, LLMProviderEmbedding, LLMProviderVideo, LLMProviderAudio {
     private client: OpenAI;
     private converter: Converter;
     private streamHandler: StreamHandler;
@@ -1864,6 +1882,390 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             },
             total: inputCost,
         };
+    }
+
+    async audioCall(
+        model: string,
+        op: AudioOp,
+        params: TranscriptionParams | TranslationParams | SpeechParams
+    ): Promise<TranscriptionResponse | TranslationResponse | SpeechResponse> {
+        if (op === 'transcribe') {
+            return this.handleTranscription(model, params as TranscriptionParams);
+        }
+        if (op === 'translate') {
+            return this.handleTranslation(model, params as TranslationParams);
+        }
+        if (op === 'synthesize') {
+            return this.handleSpeechSynthesis(model, params as SpeechParams);
+        }
+        throw new OpenAIResponseValidationError(`Unsupported audio operation: ${String(op)}`);
+    }
+
+    private mapChunkingForOpenAI(strategy: TranscriptionChunkingStrategy | null | undefined): unknown {
+        if (strategy === undefined || strategy === null) {
+            return undefined;
+        }
+        if (strategy === 'auto') {
+            return 'auto';
+        }
+        return {
+            type: 'server_vad' as const,
+            threshold: strategy.threshold,
+            silence_duration_ms: strategy.silenceDurationMs,
+            prefix_padding_ms: strategy.prefixPaddingMs
+        };
+    }
+
+    private audioMimeFromExt(ext: string): string {
+        const e = ext.toLowerCase();
+        if (e === '.mp3' || e === '.mpeg' || e === '.mpga') return 'audio/mpeg';
+        if (e === '.wav') return 'audio/wav';
+        if (e === '.webm') return 'audio/webm';
+        if (e === '.m4a' || e === '.mp4') return 'audio/mp4';
+        if (e === '.ogg') return 'audio/ogg';
+        if (e === '.flac') return 'audio/flac';
+        return 'application/octet-stream';
+    }
+
+    private async resolveAudioUploadable(fileRef: string): Promise<Awaited<ReturnType<typeof toFile>>> {
+        if (fileRef.startsWith('data:')) {
+            const match = /^data:([^;]+);base64,(.+)$/i.exec(fileRef);
+            if (!match) {
+                throw new OpenAIResponseValidationError('Invalid audio data URI');
+            }
+            const mime = match[1];
+            const buffer = Buffer.from(match[2], 'base64');
+            const ext = mime.split('/')[1] || 'mp3';
+            return toFile(buffer, `upload.${ext}`, { type: mime });
+        }
+        if (fileRef.startsWith('http://') || fileRef.startsWith('https://')) {
+            const res = await fetch(fileRef);
+            if (!res.ok) {
+                throw new OpenAIResponseNetworkError(`Failed to fetch audio URL: HTTP ${res.status}`);
+            }
+            const buf = Buffer.from(await res.arrayBuffer());
+            const ct = res.headers.get('content-type') || 'application/octet-stream';
+            return toFile(buf, 'audio', { type: ct });
+        }
+        const resolved = path.resolve(fileRef);
+        if (!fs.existsSync(resolved)) {
+            throw new OpenAIResponseValidationError(`Audio file not found: ${fileRef}`);
+        }
+        const buf = await fs.promises.readFile(resolved);
+        const ext = path.extname(resolved);
+        const mime = this.audioMimeFromExt(ext || '.mp3');
+        return toFile(buf, path.basename(resolved), { type: mime });
+    }
+
+    private mapTranscriptionUsage(raw: unknown, modelName: string): Usage {
+        const modelInfo = this.modelManager.getModel(modelName);
+        const u = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+        const typeField = u.type;
+
+        if (typeField === 'duration' && typeof u.seconds === 'number') {
+            const seconds = u.seconds;
+            const pricePerSec = modelInfo?.audioPricePerSecond ?? 0.006 / 60;
+            const inputCost = seconds * pricePerSec;
+            return {
+                tokens: {
+                    input: { total: 0, cached: 0 },
+                    output: { total: 0, reasoning: 0 },
+                    total: 0
+                },
+                costs: {
+                    input: { total: inputCost, cached: 0, audio: inputCost },
+                    output: { total: 0, reasoning: 0 },
+                    total: inputCost
+                },
+                durations: { inputAudioSeconds: seconds }
+            };
+        }
+
+        const inputTokens = typeof u.input_tokens === 'number' ? u.input_tokens : 0;
+        const outputTokens = typeof u.output_tokens === 'number' ? u.output_tokens : 0;
+        const totalTokens = typeof u.total_tokens === 'number' ? u.total_tokens : inputTokens + outputTokens;
+        const details = u.input_token_details && typeof u.input_token_details === 'object'
+            ? (u.input_token_details as Record<string, unknown>)
+            : {};
+        const audioTok = typeof details.audio_tokens === 'number' ? details.audio_tokens : undefined;
+        const textTok = typeof details.text_tokens === 'number' ? details.text_tokens : undefined;
+
+        const inAudioPrice = modelInfo?.audioInputPricePerMillion ?? modelInfo?.inputPricePerMillion ?? 0;
+        const outAudioPrice = modelInfo?.audioOutputPricePerMillion ?? modelInfo?.outputPricePerMillion ?? 0;
+        const inputAudioCost = audioTok !== undefined ? (audioTok * inAudioPrice) / 1_000_000 : 0;
+        const inputTextCost = textTok !== undefined ? (textTok * (modelInfo?.inputPricePerMillion ?? 0)) / 1_000_000 : 0;
+        const outputCost = (outputTokens * outAudioPrice) / 1_000_000;
+        const inputCostTotal = inputAudioCost + inputTextCost;
+
+        return {
+            tokens: {
+                input: {
+                    total: inputTokens,
+                    cached: 0,
+                    audio: audioTok
+                },
+                output: {
+                    total: outputTokens,
+                    reasoning: 0,
+                    audio: outputTokens > 0 ? outputTokens : undefined
+                },
+                total: totalTokens
+            },
+            costs: {
+                input: {
+                    total: inputCostTotal,
+                    cached: 0,
+                    audio: inputAudioCost > 0 ? inputAudioCost : undefined
+                },
+                output: {
+                    total: outputCost,
+                    reasoning: 0,
+                    audio: outputCost > 0 ? outputCost : undefined
+                },
+                total: inputCostTotal + outputCost
+            }
+        };
+    }
+
+    private mapTtsUsage(charCount: number, modelName: string): Usage {
+        const modelInfo = this.modelManager.getModel(modelName);
+        const pricePerMillion = modelInfo?.ttsPricePerMillionChars ?? 15;
+        const cost = (charCount * pricePerMillion) / 1_000_000;
+        return {
+            tokens: {
+                input: { total: 0, cached: 0 },
+                output: { total: 0, reasoning: 0 },
+                total: 0
+            },
+            costs: {
+                input: { total: 0, cached: 0 },
+                output: { total: cost, reasoning: 0, audio: cost },
+                total: cost
+            }
+        };
+    }
+
+    private rethrowAudioApiError(error: unknown, label: string): never {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.audio' });
+        log.error(`${label} failed:`, error);
+        if (error instanceof OpenAI.APIError) {
+            if (error.status === 401) {
+                throw new OpenAIResponseAuthError('Invalid API key or authentication error');
+            }
+            if (error.status === 429) {
+                const retryAfter = error.headers?.['retry-after'];
+                throw new OpenAIResponseRateLimitError(
+                    'Rate limit exceeded',
+                    retryAfter ? parseInt(String(retryAfter), 10) : 60
+                );
+            }
+            if (error.status !== undefined && error.status >= 500) {
+                throw new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`);
+            }
+            if (error.status === 400) {
+                throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
+            }
+        }
+        const msg = error instanceof Error ? error.message : String(error);
+        throw new OpenAIResponseAdapterError(`OpenAI audio API error: ${msg}`);
+    }
+
+    private parseTranscriptionSegments(raw: unknown): TranscriptionSegment[] | undefined {
+        if (!Array.isArray(raw)) return undefined;
+        return raw.map((item): TranscriptionSegment => {
+            const s = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+            const idVal = s.id;
+            const id: number | string = typeof idVal === 'string' || typeof idVal === 'number' ? idVal : '';
+            return {
+                id,
+                start: Number(s.start),
+                end: Number(s.end),
+                text: String(s.text ?? ''),
+                speaker: typeof s.speaker === 'string' ? s.speaker : undefined,
+                tokens: Array.isArray(s.tokens) ? s.tokens.filter((t): t is number => typeof t === 'number') : undefined,
+                temperature: typeof s.temperature === 'number' ? s.temperature : undefined,
+                avgLogprob: typeof s.avg_logprob === 'number' ? s.avg_logprob : undefined,
+                compressionRatio: typeof s.compression_ratio === 'number' ? s.compression_ratio : undefined,
+                noSpeechProb: typeof s.no_speech_prob === 'number' ? s.no_speech_prob : undefined,
+                seek: typeof s.seek === 'number' ? s.seek : undefined,
+                segmentType: typeof s.type === 'string' ? s.type : undefined
+            };
+        });
+    }
+
+    private parseTranscriptionWords(raw: unknown): TranscriptionWord[] | undefined {
+        if (!Array.isArray(raw)) return undefined;
+        return raw.map((item): TranscriptionWord => {
+            const w = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+            return {
+                word: String(w.word ?? ''),
+                start: Number(w.start),
+                end: Number(w.end)
+            };
+        });
+    }
+
+    private parseTranscriptionLogprobs(raw: unknown): TranscriptionLogprob[] | undefined {
+        if (!Array.isArray(raw)) return undefined;
+        return raw.map((item): TranscriptionLogprob => {
+            const l = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+            const bytes = Array.isArray(l.bytes)
+                ? l.bytes.filter((b): b is number => typeof b === 'number')
+                : undefined;
+            return {
+                token: String(l.token ?? ''),
+                bytes,
+                logprob: typeof l.logprob === 'number' ? l.logprob : 0
+            };
+        });
+    }
+
+    private async handleTranscription(model: string, params: TranscriptionParams): Promise<TranscriptionResponse> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.handleTranscription' });
+        log.debug('Transcription request', { model });
+        try {
+            const file = await this.resolveAudioUploadable(params.file);
+            const body: Record<string, unknown> = {
+                file,
+                model,
+                language: params.language,
+                prompt: params.prompt,
+                temperature: params.temperature,
+                response_format: params.responseFormat,
+                timestamp_granularities: params.timestampGranularities,
+                chunking_strategy: this.mapChunkingForOpenAI(params.chunkingStrategy ?? undefined),
+                include: params.include,
+                stream: false
+            };
+            if (params.knownSpeakerNames?.length) {
+                body.known_speaker_names = params.knownSpeakerNames;
+            }
+            if (params.knownSpeakerReferences?.length) {
+                body.known_speaker_references = params.knownSpeakerReferences;
+            }
+            const resp = await this.client.audio.transcriptions.create(
+                body as unknown as Parameters<OpenAI['audio']['transcriptions']['create']>[0]
+            );
+            const r = resp as unknown as Record<string, unknown>;
+            const text = typeof r.text === 'string' ? r.text : '';
+            const usage = this.mapTranscriptionUsage(r.usage, model);
+            const segments = this.parseTranscriptionSegments(r.segments);
+            const words = this.parseTranscriptionWords(r.words);
+            const logprobs = this.parseTranscriptionLogprobs(r.logprobs);
+            const duration = typeof r.duration === 'number' ? r.duration : undefined;
+            const language = typeof r.language === 'string' ? r.language : undefined;
+
+            return {
+                text,
+                language,
+                duration,
+                segments,
+                words,
+                logprobs,
+                usage,
+                model,
+                metadata: { model, usage }
+            };
+        } catch (error) {
+            this.rethrowAudioApiError(error, 'Transcription');
+        }
+    }
+
+    private async handleTranslation(model: string, params: TranslationParams): Promise<TranslationResponse> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.handleTranslation' });
+        log.debug('Audio translation request', { model });
+        try {
+            const file = await this.resolveAudioUploadable(params.file);
+            const resp = await this.client.audio.translations.create({
+                file,
+                model,
+                prompt: params.prompt,
+                temperature: params.temperature,
+                response_format: params.responseFormat
+            });
+            const r = resp as unknown as Record<string, unknown>;
+            const text = typeof r.text === 'string' ? r.text : '';
+            const usage = this.mapTranscriptionUsage(r.usage, model);
+            const segments = this.parseTranscriptionSegments(r.segments);
+            const duration = typeof r.duration === 'number' ? r.duration : undefined;
+            const language = typeof r.language === 'string' ? r.language : undefined;
+
+            return {
+                text,
+                language,
+                duration,
+                segments,
+                usage,
+                model,
+                metadata: { model, usage }
+            };
+        } catch (error) {
+            this.rethrowAudioApiError(error, 'Audio translation');
+        }
+    }
+
+    private speechMimeFromFormat(fmt: string | undefined): string {
+        const f = (fmt || 'mp3').toLowerCase();
+        const map: Record<string, string> = {
+            mp3: 'audio/mpeg',
+            opus: 'audio/opus',
+            aac: 'audio/aac',
+            flac: 'audio/flac',
+            wav: 'audio/wav',
+            pcm: 'audio/pcm'
+        };
+        return map[f] || 'application/octet-stream';
+    }
+
+    private async handleSpeechSynthesis(model: string, params: SpeechParams): Promise<SpeechResponse> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.handleSpeechSynthesis' });
+        log.debug('TTS request', { model, inputLength: params.input.length });
+        try {
+            const voiceParam = typeof params.voice === 'string'
+                ? params.voice
+                : { id: params.voice.id };
+
+            const resp = await this.client.audio.speech.create({
+                model,
+                input: params.input,
+                voice: voiceParam as Parameters<OpenAI['audio']['speech']['create']>[0]['voice'],
+                instructions: params.instructions,
+                response_format: params.responseFormat,
+                speed: params.speed
+            });
+
+            const buf = Buffer.from(await resp.arrayBuffer());
+            const format = params.responseFormat || 'mp3';
+            const mime = this.speechMimeFromFormat(format);
+            const b64 = buf.toString('base64');
+
+            let audioSavedPath: string | undefined;
+            if (params.outputPath) {
+                await fs.promises.mkdir(path.dirname(params.outputPath), { recursive: true });
+                await fs.promises.writeFile(params.outputPath, buf);
+                audioSavedPath = params.outputPath;
+            }
+
+            const usage = this.mapTtsUsage(params.input.length, model);
+
+            return {
+                audio: {
+                    data: b64,
+                    mime,
+                    format,
+                    sizeBytes: buf.length
+                },
+                usage,
+                model,
+                metadata: {
+                    model,
+                    usage,
+                    audioSavedPath
+                }
+            };
+        } catch (error) {
+            this.rethrowAudioApiError(error, 'Speech synthesis');
+        }
     }
 }
 

@@ -14,6 +14,8 @@ import { historyDynamic } from './historyDynamic.ts';
 import { streamingTools } from './streamingTools.ts';
 import { streamingJson } from './streamingJson.ts';
 import { complexZod } from './complexZod.ts';
+import { audioTranscribe } from './audioTranscribe.ts';
+import { audioSpeech } from './audioSpeech.ts';
 
 export const allScenarios: Scenario[] = [
     simpleChat,
@@ -29,8 +31,10 @@ export const allScenarios: Scenario[] = [
     embeddingsScenario,
     historyDynamic,
     streamingTools,
-    streamingJson
-    , complexZod
+    streamingJson,
+    complexZod,
+    audioTranscribe,
+    audioSpeech
 ];
 
 

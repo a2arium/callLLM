@@ -18,7 +18,13 @@ import type {
     UrlSource,
     FilePathSource,
     EmbeddingCallOptions,
-    EmbeddingResponse
+    EmbeddingResponse,
+    TranscriptionCallOptions,
+    TranscriptionResponse,
+    TranslationCallOptions,
+    TranslationResponse,
+    SpeechCallOptions,
+    SpeechResponse
 } from '../../interfaces/UniversalInterfaces.ts';
 import { toMessageParts } from '../../interfaces/UniversalInterfaces.ts';
 import { z } from 'zod';
@@ -68,6 +74,7 @@ import {
 import { BaseAdapter } from '../../adapters/base/baseAdapter.ts';
 import type { ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.ts';
 import { EmbeddingController } from '../embeddings/EmbeddingController.ts';
+import { AudioController } from '../audio/AudioController.ts';
 import { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts'
 import { OpenTelemetryProvider } from '../telemetry/providers/openTelemetry/OpenTelemetryProvider.ts'
 import { OpikProvider } from '../telemetry/providers/opik/OpikProvider.ts'
@@ -153,6 +160,7 @@ export class LLMCaller implements MCPDirectAccess {
     private parallelChunking: boolean; // Whether to process chunks in parallel
     // Embedding controller
     private embeddingController?: EmbeddingController;
+    private audioController?: AudioController;
     private telemetryCollector?: TelemetryCollector;
 
     // Cached resolved model name
@@ -488,6 +496,196 @@ export class LLMCaller implements MCPDirectAccess {
         };
     }
 
+    /**
+     * Transcribe audio to text using a supported speech-to-text model.
+     */
+    public async transcribe(options: TranscriptionCallOptions): Promise<TranscriptionResponse> {
+        if (!this.audioController) {
+            const adapter = this.providerManager.getProvider() as unknown as BaseAdapter;
+            this.audioController = new AudioController(
+                adapter,
+                this.modelManager,
+                this.tokenCalculator,
+                this.usageCallback,
+                this.callerId
+            );
+        }
+
+        let modelName = options.model || this.model;
+        if (!this.modelSupportsAudioOp(modelName, 'transcribe')) {
+            const requirements = this.buildCapabilityRequirements({
+                needsTextOutput: false,
+                needsStreaming: false,
+                needsAudioTranscription: true
+            });
+            try {
+                const resolved = this.getModel(modelName, requirements);
+                if (resolved && resolved.name !== modelName) {
+                    this.log.info(`Resolved to transcription model ${resolved.name}`);
+                    modelName = resolved.name;
+                }
+            } catch (error) {
+                this.log.warn(`Could not resolve transcription model: ${error}`);
+            }
+            if (!this.modelSupportsAudioOp(modelName, 'transcribe')) {
+                throw new CapabilityError(`Model "${modelName}" does not support transcription`);
+            }
+        }
+
+        return this.audioController.transcribe({
+            ...options,
+            model: modelName,
+            callerId: this.callerId,
+            usageCallback: options.usageCallback ?? this.usageCallback
+        });
+    }
+
+    /**
+     * Translate spoken audio to English text (provider-specific; typically Whisper).
+     */
+    public async translateAudio(options: TranslationCallOptions): Promise<TranslationResponse> {
+        if (!this.audioController) {
+            const adapter = this.providerManager.getProvider() as unknown as BaseAdapter;
+            this.audioController = new AudioController(
+                adapter,
+                this.modelManager,
+                this.tokenCalculator,
+                this.usageCallback,
+                this.callerId
+            );
+        }
+
+        let modelName = options.model || this.model;
+        if (!this.modelSupportsAudioOp(modelName, 'translate')) {
+            const requirements = this.buildCapabilityRequirements({
+                needsTextOutput: false,
+                needsStreaming: false,
+                needsAudioTranslation: true
+            });
+            try {
+                const resolved = this.getModel(modelName, requirements);
+                if (resolved && resolved.name !== modelName) {
+                    this.log.info(`Resolved to audio translation model ${resolved.name}`);
+                    modelName = resolved.name;
+                }
+            } catch (error) {
+                this.log.warn(`Could not resolve audio translation model: ${error}`);
+            }
+            if (!this.modelSupportsAudioOp(modelName, 'translate')) {
+                throw new CapabilityError(`Model "${modelName}" does not support audio translation`);
+            }
+        }
+
+        return this.audioController.translate({
+            ...options,
+            model: modelName,
+            callerId: this.callerId,
+            usageCallback: options.usageCallback ?? this.usageCallback
+        });
+    }
+
+    /**
+     * Synthesize speech from text (TTS).
+     */
+    public async synthesizeSpeech(options: SpeechCallOptions): Promise<SpeechResponse> {
+        if (!this.audioController) {
+            const adapter = this.providerManager.getProvider() as unknown as BaseAdapter;
+            this.audioController = new AudioController(
+                adapter,
+                this.modelManager,
+                this.tokenCalculator,
+                this.usageCallback,
+                this.callerId
+            );
+        }
+
+        let modelName = options.model || this.model;
+        if (!this.modelSupportsAudioOp(modelName, 'synthesize')) {
+            const requirements = this.buildCapabilityRequirements({
+                needsTextOutput: false,
+                needsStreaming: false,
+                needsAudioSpeech: true
+            });
+            try {
+                const resolved = this.getModel(modelName, requirements);
+                if (resolved && resolved.name !== modelName) {
+                    this.log.info(`Resolved to TTS model ${resolved.name}`);
+                    modelName = resolved.name;
+                }
+            } catch (error) {
+                this.log.warn(`Could not resolve TTS model: ${error}`);
+            }
+            if (!this.modelSupportsAudioOp(modelName, 'synthesize')) {
+                throw new CapabilityError(`Model "${modelName}" does not support speech synthesis`);
+            }
+        }
+
+        return this.audioController.synthesize({
+            ...options,
+            model: modelName,
+            callerId: this.callerId,
+            usageCallback: options.usageCallback ?? this.usageCallback
+        });
+    }
+
+    /**
+     * Models registered for the current provider that expose standalone {@link ModelCapabilities.audio}.
+     */
+    public getAvailableAudioModels(): string[] {
+        return this.modelManager
+            .getAvailableModels()
+            .filter(m => Boolean(m.capabilities?.audio))
+            .map(m => m.name);
+    }
+
+    /**
+     * Inspect standalone audio API support for a model.
+     */
+    public checkAudioCapabilities(modelName: string): {
+        supported: boolean;
+        transcribe?: boolean;
+        translate?: boolean;
+        synthesize?: boolean;
+        supportedInputFormats?: string[];
+        supportedOutputFormats?: string[];
+        voices?: string[];
+    } {
+        const capabilities = ModelManager.getCapabilities(modelName);
+        const audioCap = capabilities.audio;
+        if (!audioCap) {
+            return { supported: false };
+        }
+        if (typeof audioCap === 'boolean') {
+            return {
+                supported: true,
+                transcribe: true,
+                translate: true,
+                synthesize: true
+            };
+        }
+        return {
+            supported: true,
+            transcribe: audioCap.transcribe === true,
+            translate: audioCap.translate === true,
+            synthesize: audioCap.synthesize === true,
+            supportedInputFormats: audioCap.supportedInputFormats,
+            supportedOutputFormats: audioCap.supportedOutputFormats,
+            voices: audioCap.voices
+        };
+    }
+
+    private modelSupportsAudioOp(
+        modelName: string,
+        op: 'transcribe' | 'translate' | 'synthesize'
+    ): boolean {
+        const audioCap = ModelManager.getCapabilities(modelName).audio;
+        if (!audioCap) return false;
+        if (typeof audioCap === 'boolean') return true;
+        if (op === 'transcribe') return audioCap.transcribe === true;
+        if (op === 'translate') return audioCap.translate === true;
+        return audioCap.synthesize === true;
+    }
+
     // Model management methods - delegated to ModelManager
     public getAvailableModels() {
         return this.modelManager.getAvailableModels();
@@ -550,6 +748,9 @@ export class LLMCaller implements MCPDirectAccess {
         needsStreaming?: boolean;
         needsEmbeddings?: boolean;
         needsReasoning?: boolean;
+        needsAudioTranscription?: boolean;
+        needsAudioTranslation?: boolean;
+        needsAudioSpeech?: boolean;
     }): CapabilityRequirement | undefined {
         if (!options) return undefined;
 
@@ -612,6 +813,18 @@ export class LLMCaller implements MCPDirectAccess {
             };
         }
 
+        // Standalone audio API requirements
+        if (options.needsAudioTranscription || options.needsAudioTranslation || options.needsAudioSpeech) {
+            const operations: ('transcribe' | 'translate' | 'synthesize')[] = [];
+            if (options.needsAudioTranscription) operations.push('transcribe');
+            if (options.needsAudioTranslation) operations.push('translate');
+            if (options.needsAudioSpeech) operations.push('synthesize');
+            requirements.audio = {
+                required: true,
+                operations: operations.length > 0 ? operations : undefined
+            };
+        }
+
         // Return undefined if no requirements
         return Object.keys(requirements).length > 0 ? requirements : undefined;
     }
@@ -664,6 +877,8 @@ export class LLMCaller implements MCPDirectAccess {
 
     // Helper to re-initialize controllers after major changes (e.g., provider switch)
     private reinitializeControllers(): void {
+        this.embeddingController = undefined;
+        this.audioController = undefined;
         // Re-initialize ToolController
         this.toolController = new ToolController(
             this.toolsManager,
