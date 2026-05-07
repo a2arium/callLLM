@@ -889,11 +889,98 @@ describe('executeMcpTool', () => {
 
     const result = await adapter.executeMcpTool('test', 'test_tool', { param1: 'value' });
 
-    // Verify executeTool was called with stream=false
-    expect(executeToolSpy).toHaveBeenCalledWith('test', 'test_tool', { param1: 'value' }, false);
+    // Verify executeTool was called with stream=false and forwarded options
+    expect(executeToolSpy).toHaveBeenCalledWith('test', 'test_tool', { param1: 'value' }, false, undefined);
 
     // Verify the result is passed through
     expect(result).toEqual({ result: 'success' });
+  });
+
+  it('forwards MCPRequestOptions to executeTool', async () => {
+    adapter = await setupConnectedClient();
+
+    const executeToolSpy = jest.spyOn(adapter as any, 'executeTool').mockResolvedValue({ result: 'ok' });
+    const opts = { timeout: 123 };
+
+    const result = await adapter.executeMcpTool('test', 'test_tool', { param1: 'value' }, opts);
+
+    expect(executeToolSpy).toHaveBeenCalledWith('test', 'test_tool', { param1: 'value' }, false, opts);
+    expect(result).toEqual({ result: 'ok' });
+    executeToolSpy.mockRestore();
+  });
+});
+
+describe('MCP tools/call request timeout', () => {
+  const ENV_KEY = 'MCP_TOOL_CALL_TIMEOUT_MS';
+  let prevEnv: string | undefined;
+
+  beforeEach(() => {
+    prevEnv = process.env[ENV_KEY];
+  });
+
+  afterEach(() => {
+    if (prevEnv === undefined) {
+      delete process.env[ENV_KEY];
+    } else {
+      process.env[ENV_KEY] = prevEnv;
+    }
+  });
+
+  it('passes default 60s timeout as the third argument to callTool', async () => {
+    adapter = await setupConnectedClient();
+    const client = (adapter as any).sdkClients.get('test');
+    client.callTool.mockResolvedValue({ ok: true });
+
+    await adapter.executeMcpTool('test', 'test_tool', {}, { retry: false });
+
+    expect(client.callTool).toHaveBeenCalledWith(
+      { name: 'test_tool', arguments: {} },
+      undefined,
+      { timeout: 60_000 }
+    );
+  });
+
+  it('passes options.timeout to callTool', async () => {
+    adapter = await setupConnectedClient();
+    const client = (adapter as any).sdkClients.get('test');
+    client.callTool.mockResolvedValue({ ok: true });
+
+    await adapter.executeMcpTool('test', 'test_tool', {}, { timeout: 999, retry: false });
+
+    expect(client.callTool).toHaveBeenCalledWith(
+      { name: 'test_tool', arguments: {} },
+      undefined,
+      { timeout: 999 }
+    );
+  });
+
+  it('uses MCP_TOOL_CALL_TIMEOUT_MS when options.timeout is omitted', async () => {
+    process.env[ENV_KEY] = '240000';
+    adapter = await setupConnectedClient();
+    const client = (adapter as any).sdkClients.get('test');
+    client.callTool.mockResolvedValue({ ok: true });
+
+    await adapter.executeMcpTool('test', 'test_tool', {}, { retry: false });
+
+    expect(client.callTool).toHaveBeenCalledWith(
+      { name: 'test_tool', arguments: {} },
+      undefined,
+      { timeout: 240_000 }
+    );
+  });
+
+  it('applies the same timeout resolution for streaming executeTool', async () => {
+    adapter = await setupConnectedClient();
+    const client = (adapter as any).sdkClients.get('test');
+    client.callTool.mockResolvedValue({});
+
+    await adapter.executeTool('test', 'test_tool', {}, true, { retry: false });
+
+    expect(client.callTool).toHaveBeenCalledWith(
+      { name: 'test_tool', arguments: {}, stream: true },
+      undefined,
+      { timeout: 60_000 }
+    );
   });
 });
 

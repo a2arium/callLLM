@@ -6,7 +6,10 @@
  * Options for MCP SDK requests
  */
 export type MCPRequestOptions = {
-    /** Timeout in milliseconds */
+    /**
+     * Timeout in milliseconds for this MCP `tools/call` request.
+     * Overrides `MCP_TOOL_CALL_TIMEOUT_MS` and the default 60s when set to a positive finite number.
+     */
     timeout?: number;
     /** Whether to retry on transient errors. Defaults to true. */
     retry?: boolean;

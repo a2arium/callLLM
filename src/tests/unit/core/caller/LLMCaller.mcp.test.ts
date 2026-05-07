@@ -186,7 +186,19 @@ describe('LLMCaller - MCP Direct Access', () => {
       const args = { path: 'file.txt' };
       const result = await caller.callMcpTool('filesystem', 'read_file', args);
 
-      expect(mockMcpAdapterInstance.executeMcpTool).toHaveBeenCalledWith('filesystem', 'read_file', args);
+      expect(mockMcpAdapterInstance.executeMcpTool).toHaveBeenCalledWith('filesystem', 'read_file', args, undefined);
+      expect(result).toEqual(mockResult);
+    });
+
+    it('forwards optional MCP request options to executeMcpTool', async () => {
+      const mockResult = { content: 'file contents' };
+      mockMcpAdapterInstance.executeMcpTool.mockResolvedValue(mockResult as any);
+
+      const args = { path: 'file.txt' };
+      const options = { timeout: 120_000 };
+      const result = await caller.callMcpTool('filesystem', 'read_file', args, options);
+
+      expect(mockMcpAdapterInstance.executeMcpTool).toHaveBeenCalledWith('filesystem', 'read_file', args, options);
       expect(result).toEqual(mockResult);
     });
 
@@ -207,7 +219,7 @@ describe('LLMCaller - MCP Direct Access', () => {
       const result = await caller.callMcpTool('filesystem', 'read_file', args);
 
       expect(MCPServiceAdapter).toHaveBeenCalledTimes(1);
-      expect(mockMcpAdapterInstance.executeMcpTool).toHaveBeenCalledWith('filesystem', 'read_file', args);
+      expect(mockMcpAdapterInstance.executeMcpTool).toHaveBeenCalledWith('filesystem', 'read_file', args, undefined);
       expect(result).toEqual(mockResult);
     });
   });

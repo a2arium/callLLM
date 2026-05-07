@@ -6,6 +6,7 @@
  */
 
 import type { McpToolSchema } from './MCPConfigTypes.ts';
+import type { MCPRequestOptions } from './MCPInterfaces.ts';
 
 /**
  * Interface for direct MCP tool access provided by LLMCaller
@@ -25,9 +26,15 @@ export interface MCPDirectAccess {
      * @param serverName - The name of the MCP server as configured in the mcpServers map
      * @param toolName - The name of the tool to call
      * @param parameters - The parameters to pass to the tool
+     * @param options - Optional MCP request options (e.g. `timeout` for `tools/call` in milliseconds)
      * @returns The result from the tool
      */
-    callMcpTool(serverName: string, toolName: string, parameters: Record<string, any>): Promise<any>;
+    callMcpTool(
+        serverName: string,
+        toolName: string,
+        parameters: Record<string, unknown>,
+        options?: MCPRequestOptions
+    ): Promise<unknown>;
 }
 
 // Re-export McpToolSchema type for convenience

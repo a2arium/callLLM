@@ -4,7 +4,6 @@
 ![TypeScript](https://img.shields.io/badge/lang-TypeScript-007ACC.svg)
 
 
-# NOTE: This is a work in progress and is not yet ready for production use.
 
 ```typescript
 // Unified example across providers
@@ -2037,6 +2036,8 @@ const response = await caller.call(
 ```
 
 Tools from MCP servers are exposed with names in the format `${serverKey}.${toolName}` to avoid name collisions.
+
+Each MCP `tools/call` uses a client-side timeout (default **60 seconds**). For long-running tools, set the **`MCP_TOOL_CALL_TIMEOUT_MS`** environment variable or pass **`timeout`** in `MCPRequestOptions` to `callMcpTool` / `executeMcpTool`. See [docs/mcp-tools.md](docs/mcp-tools.md#tool-call-timeout).
 
 ### Video Generation
 

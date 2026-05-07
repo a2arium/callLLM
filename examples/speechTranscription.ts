@@ -32,7 +32,7 @@ async function main(): Promise<void> {
     if (!fileArg && !fs.existsSync(file)) {
         console.error(
             `No audio file at ${DEFAULT_AUDIO}. Run \`yarn example:speechSynthesis\` first, or pass a file path:\n` +
-                '  yarn example:speechTranscription ./my-recording.mp3'
+            '  yarn example:speechTranscription ./my-recording.mp3'
         );
         process.exit(1);
     }
@@ -41,7 +41,8 @@ async function main(): Promise<void> {
 
     const result = await caller.transcribe({
         file,
-        model: 'gpt-4o-mini-transcribe'
+        model: 'gpt-4o-mini-transcribe',
+        // splitLargeFile: true, // Uncomment for very large files
     });
 
     console.log('Transcript:', result.text);

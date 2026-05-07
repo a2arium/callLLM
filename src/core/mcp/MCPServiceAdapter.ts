@@ -75,6 +75,30 @@ const DEFAULT_RETRY_CONFIG = {
     retryableStatusCodes: [408, 429, 502, 503, 504] // Common transient HTTP errors
 };
 
+/** Default MCP SDK `tools/call` client timeout (matches SDK default request window). */
+const DEFAULT_MCP_TOOL_CALL_TIMEOUT_MS = 60_000;
+
+const MCP_TOOL_CALL_TIMEOUT_ENV = 'MCP_TOOL_CALL_TIMEOUT_MS';
+
+/**
+ * Resolves per-request timeout for MCP `tools/call`.
+ * Precedence: `options.timeout` (finite positive ms) → `MCP_TOOL_CALL_TIMEOUT_MS` env → default 60s.
+ */
+function resolveMcpToolCallTimeoutMs(options?: MCPRequestOptions): number {
+    const perCall = options?.timeout;
+    if (typeof perCall === 'number' && Number.isFinite(perCall) && perCall > 0) {
+        return perCall;
+    }
+    const fromEnv = process.env[MCP_TOOL_CALL_TIMEOUT_ENV];
+    if (fromEnv !== undefined && fromEnv !== '') {
+        const parsed = Number.parseInt(fromEnv, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+            return parsed;
+        }
+    }
+    return DEFAULT_MCP_TOOL_CALL_TIMEOUT_MS;
+}
+
 /**
  * Define JSON-RPC Error interface locally since we can't import it
  */
@@ -1023,6 +1047,7 @@ export class MCPServiceAdapter {
      * @param toolName The name of the tool to execute
      * @param args The arguments to pass to the tool
      * @param stream Whether to stream the result
+     * @param options Optional request options. `timeout` (ms) overrides `MCP_TOOL_CALL_TIMEOUT_MS` and the default 60s cap for this `tools/call` request.
      * @returns The result of the tool execution, or an AsyncIterator for streaming
      * @throws MCPConnectionError if the server is not connected
      * @throws MCPToolCallError if execution fails
@@ -1049,6 +1074,7 @@ export class MCPServiceAdapter {
 
         // Process arguments to handle any environment variable references
         const processedArgs = this.processArguments(serverKey, toolName, args);
+        const toolCallRequestOptions = { timeout: resolveMcpToolCallTimeoutMs(options) };
 
         // Define the operation to execute with potential retries
         const operation = async () => {
@@ -1060,12 +1086,12 @@ export class MCPServiceAdapter {
                         name: toolName,
                         arguments: processedArgs,
                         stream: true
-                    }) as unknown as AsyncIterator<T>;
+                    }, undefined, toolCallRequestOptions) as unknown as AsyncIterator<T>;
                 } else {
                     return await client.callTool({
                         name: toolName,
                         arguments: processedArgs
-                    }) as unknown as T;
+                    }, undefined, toolCallRequestOptions) as unknown as T;
                 }
             } catch (error) {
                 // If the error is already one of our specific types, re-throw it directly.
@@ -1385,7 +1411,7 @@ export class MCPServiceAdapter {
      * @param serverKey The unique identifier for the MCP server.
      * @param toolName The original name of the tool (e.g., 'list_directory').
      * @param args The arguments object to pass to the tool.
-     * @param options Optional request options for timeout and cancellation
+     * @param options Optional request options (`timeout` ms per `tools/call`; see `executeTool`).
      * @returns A promise that resolves with the tool's result payload.
      * @throws MCPToolCallError if the server is not connected or the tool call fails.
      */
@@ -1400,7 +1426,7 @@ export class MCPServiceAdapter {
 
         // Reuse the existing executeTool method which already handles the direct tool execution
         // Skip streaming for direct calls
-        return this.executeTool(serverKey, toolName, args, false);
+        return this.executeTool(serverKey, toolName, args, false, options);
     }
 
     /**

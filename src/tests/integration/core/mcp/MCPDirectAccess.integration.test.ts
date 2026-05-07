@@ -183,7 +183,12 @@ jest.unstable_mockModule('@/core/mcp/MCPServiceAdapter', () => {
         );
       }
 
-      async executeMcpTool(serverKey: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
+      async executeMcpTool(
+        serverKey: string,
+        toolName: string,
+        args: Record<string, unknown>,
+        _options?: unknown
+      ): Promise<unknown> {
         if (!this.isConnected(serverKey)) {
           // Import error class dynamically if needed
           if (!MCPToolCallError) {

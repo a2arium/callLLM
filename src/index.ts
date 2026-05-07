@@ -65,5 +65,6 @@ export type {
     MCPServerConfig,
     MCPServersMap,
     McpToolSchema,
-    MCPDirectAccess
+    MCPDirectAccess,
+    MCPRequestOptions
 } from './core/index.ts';

@@ -59,6 +59,7 @@ import { PromptEnhancer } from '../prompt/PromptEnhancer.ts';
 import { ToolsFolderLoader } from '../tools/toolLoader/ToolsFolderLoader.ts';
 import type { StringOrDefinition } from '../tools/toolLoader/types.ts';
 import type { MCPDirectAccess } from '../mcp/MCPDirectAccess.ts';
+import type { MCPRequestOptions } from '../mcp/MCPInterfaces.ts';
 import type { McpToolSchema, MCPServersMap } from '../mcp/MCPConfigTypes.ts';
 import { isMCPToolConfig } from '../mcp/MCPConfigTypes.ts';
 import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
@@ -2648,10 +2649,16 @@ export class LLMCaller implements MCPDirectAccess {
      * @param serverKey The unique identifier for the MCP server (e.g., 'filesystem').
      * @param toolName The original name of the tool as defined on the MCP server (e.g., 'list_directory').
      * @param args An object containing the arguments required by the tool.
+     * @param options Optional MCP request options (e.g. `timeout` for `tools/call` in milliseconds).
      * @returns A promise that resolves with the raw result payload from the MCP tool.
      * @throws Error if MCP is not configured or the specified server/tool cannot be reached or executed.
      */
-    public async callMcpTool(serverKey: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
+    public async callMcpTool(
+        serverKey: string,
+        toolName: string,
+        args: Record<string, unknown>,
+        options?: MCPRequestOptions
+    ): Promise<unknown> {
         const log = logger.createLogger({ prefix: 'LLMCaller.callMcpTool' });
         log.debug(`Initiating direct MCP tool call: ${serverKey}.${toolName}`, { args });
 
@@ -2669,7 +2676,7 @@ export class LLMCaller implements MCPDirectAccess {
 
         // Delegate the execution to the MCP adapter
         try {
-            const result = await mcpAdapter.executeMcpTool(serverKey, toolName, args);
+            const result = await mcpAdapter.executeMcpTool(serverKey, toolName, args, options);
             log.info(`Direct MCP tool call successful: ${serverKey}.${toolName}`);
             return result;
         } catch (error) {

@@ -64,7 +64,7 @@
     "verify:attw": "attw --pack ."
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "author": "A2arium <a2arium@gmail.com>",
   "license": "MIT",

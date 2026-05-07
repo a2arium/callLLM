@@ -40,12 +40,19 @@ While LLM interaction is the primary method for using MCP tools, `LLMCaller` als
 The `MCPDirectAccess` interface provides two supplementary methods:
 
 ```typescript
+import type { MCPRequestOptions } from 'callllm';
+
 interface MCPDirectAccess {
   // Get schema information about available tools
   getMcpServerToolSchemas(serverName: string): Promise<McpToolSchema[]>;
   
   // Call a specific tool directly
-  callMcpTool(serverName: string, toolName: string, parameters: Record<string, any>): Promise<any>;
+  callMcpTool(
+    serverName: string,
+    toolName: string,
+    parameters: Record<string, unknown>,
+    options?: MCPRequestOptions
+  ): Promise<unknown>;
 }
 ```
 
@@ -157,7 +164,7 @@ const fileContent = await caller.callMcpTool(
   'read_file',   // tool name (the original name from the MCP server, not the LLM tool name)
   { path: 'package.json' }  // parameters
 );
-  
+```
 
 ### Error Handling
 
@@ -210,6 +217,40 @@ CallLLM uses the official MCP SDK to connect to MCP servers. The implementation 
    - `MCPToolCallError` - For tool execution failures
    - `MCPAuthenticationError` - For auth-related issues
    - `MCPTimeoutError` - For timeout issues
+
+### Tool call timeout
+
+Each MCP `tools/call` request uses a **client-side** timeout in milliseconds. This matches the Model Context Protocol SDK’s default request window unless you override it.
+
+**Default:** 60 seconds (60_000 ms).
+
+**Precedence (highest first):**
+
+1. Per-call `timeout` in `MCPRequestOptions` (must be a positive finite number), passed to `MCPServiceAdapter.executeTool`, `executeMcpTool`, or `LLMCaller.callMcpTool`.
+2. Process environment variable `MCP_TOOL_CALL_TIMEOUT_MS` (positive integer; invalid or unset is ignored).
+3. Built-in default 60_000 ms.
+
+**Examples**
+
+Long-running tools (e.g. browser automation) without changing code for every call:
+
+```bash
+export MCP_TOOL_CALL_TIMEOUT_MS=300000
+```
+
+Per-call override:
+
+```typescript
+import type { MCPRequestOptions } from 'callllm';
+
+const opts: MCPRequestOptions = { timeout: 120_000 };
+await caller.callMcpTool('browser', 'navigate_and_extract', { url: 'https://example.com' }, opts);
+
+// Or via MCPServiceAdapter
+await adapter.executeMcpTool('browser', 'navigate_and_extract', { url: 'https://example.com' }, opts);
+```
+
+When the model invokes MCP tools through normal LLM tool execution (`convertToToolDefinition` → `executeTool` without per-call options), only the **default** and **`MCP_TOOL_CALL_TIMEOUT_MS`** apply. Use direct calls with `options` or set the env var for long jobs.
 
 ### Transport Configuration Examples
 
