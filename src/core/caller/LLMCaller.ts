@@ -40,6 +40,7 @@ import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
 import { RequestProcessor } from '../processors/RequestProcessor.ts';
 import { DataSplitter } from '../processors/DataSplitter.ts';
 import { RetryManager } from '../retry/RetryManager.ts';
+import { shouldRetryDueToLLMError } from '../retry/utils/ShouldRetryDueToLLMError.ts';
 import { UsageTracker } from '../telemetry/UsageTracker.ts';
 import { ChatController } from '../chat/ChatController.ts';
 import { ToolsManager } from '../tools/ToolsManager.ts';
@@ -450,15 +451,18 @@ export class LLMCaller implements MCPDirectAccess {
             }
         }
 
-        return this.embeddingController.generateEmbeddings({
-            input: options.input,
-            model: modelName,
-            dimensions: options.dimensions,
-            encodingFormat: options.encodingFormat,
-            usageCallback: options.usageCallback,
-            usageBatchSize: options.usageBatchSize,
-            callerId: this.callerId
-        });
+        return this.retryManager.executeWithRetry(
+            () => this.embeddingController!.generateEmbeddings({
+                input: options.input,
+                model: modelName,
+                dimensions: options.dimensions,
+                encodingFormat: options.encodingFormat,
+                usageCallback: options.usageCallback,
+                usageBatchSize: options.usageBatchSize,
+                callerId: this.callerId
+            }),
+            shouldRetryDueToLLMError
+        );
     }
 
     /**
@@ -533,12 +537,15 @@ export class LLMCaller implements MCPDirectAccess {
             }
         }
 
-        return this.audioController.transcribe({
-            ...options,
-            model: modelName,
-            callerId: this.callerId,
-            usageCallback: options.usageCallback ?? this.usageCallback
-        });
+        return this.retryManager.executeWithRetry(
+            () => this.audioController!.transcribe({
+                ...options,
+                model: modelName,
+                callerId: this.callerId,
+                usageCallback: options.usageCallback ?? this.usageCallback
+            }),
+            shouldRetryDueToLLMError
+        );
     }
 
     /**
@@ -577,12 +584,15 @@ export class LLMCaller implements MCPDirectAccess {
             }
         }
 
-        return this.audioController.translate({
-            ...options,
-            model: modelName,
-            callerId: this.callerId,
-            usageCallback: options.usageCallback ?? this.usageCallback
-        });
+        return this.retryManager.executeWithRetry(
+            () => this.audioController!.translate({
+                ...options,
+                model: modelName,
+                callerId: this.callerId,
+                usageCallback: options.usageCallback ?? this.usageCallback
+            }),
+            shouldRetryDueToLLMError
+        );
     }
 
     /**
@@ -621,12 +631,15 @@ export class LLMCaller implements MCPDirectAccess {
             }
         }
 
-        return this.audioController.synthesize({
-            ...options,
-            model: modelName,
-            callerId: this.callerId,
-            usageCallback: options.usageCallback ?? this.usageCallback
-        });
+        return this.retryManager.executeWithRetry(
+            () => this.audioController!.synthesize({
+                ...options,
+                model: modelName,
+                callerId: this.callerId,
+                usageCallback: options.usageCallback ?? this.usageCallback
+            }),
+            shouldRetryDueToLLMError
+        );
     }
 
     /**
@@ -1626,14 +1639,17 @@ export class LLMCaller implements MCPDirectAccess {
                 if (hasVideoOutput) {
                     const videoOpts = actualOptions.output?.video;
                     const wait = videoOpts?.wait || 'none';
-                    const providerResponse = await this.providerManager.callVideoOperation(modelToUse, {
-                        prompt: actualOptions.text || '',
-                        size: (videoOpts?.size as any) || undefined,
-                        seconds: videoOpts?.seconds,
-                        wait,
-                        variant: videoOpts?.variant,
-                        outputPath: actualOptions.outputPath
-                    });
+                    const providerResponse = await this.retryManager.executeWithRetry(
+                        () => this.providerManager.callVideoOperation(modelToUse, {
+                            prompt: actualOptions.text || '',
+                            size: (videoOpts?.size as any) || undefined,
+                            seconds: videoOpts?.seconds,
+                            wait,
+                            variant: videoOpts?.variant,
+                            outputPath: actualOptions.outputPath
+                        }),
+                        shouldRetryDueToLLMError
+                    );
 
                     // Trigger usage callback if available
                     const usage = providerResponse.metadata?.usage;
@@ -1841,15 +1857,18 @@ export class LLMCaller implements MCPDirectAccess {
                     }]);
                 }
 
-                const providerResponse = await this.providerManager.callVideoOperation(initialModel, {
-                    prompt: opts.text || '',
-                    image: opts.file || (opts.files && opts.files[0]) || undefined,
-                    size: (videoOpts.size as any) || undefined,
-                    seconds: videoOpts.seconds,
-                    wait: videoOpts.wait || 'none',
-                    variant: videoOpts.variant,
-                    outputPath: opts.outputPath
-                });
+                const providerResponse = await this.retryManager.executeWithRetry(
+                    () => this.providerManager.callVideoOperation(initialModel, {
+                        prompt: opts.text || '',
+                        image: opts.file || (opts.files && opts.files[0]) || undefined,
+                        size: (videoOpts.size as any) || undefined,
+                        seconds: videoOpts.seconds,
+                        wait: videoOpts.wait || 'none',
+                        variant: videoOpts.variant,
+                        outputPath: opts.outputPath
+                    }),
+                    shouldRetryDueToLLMError
+                );
 
                 log.info('videoCall completed', {
                     model: initialModel,
@@ -2130,10 +2149,13 @@ export class LLMCaller implements MCPDirectAccess {
                         }
 
                         // Call the image operation directly
-                        const response = await this.providerManager.callImageOperation(
-                            modelToUse,
-                            imageOperation,
-                            imageParams
+                        const response = await this.retryManager.executeWithRetry(
+                            () => this.providerManager.callImageOperation(
+                                modelToUse,
+                                imageOperation,
+                                imageParams
+                            ),
+                            shouldRetryDueToLLMError
                         );
 
                         // Emit an output image marker for telemetry consumers (generic addChoice)

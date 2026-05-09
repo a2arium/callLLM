@@ -4,6 +4,7 @@ import { ModelManager } from '../models/ModelManager.ts';
 import { TokenCalculator } from '../models/TokenCalculator.ts';
 import { ResponseProcessor } from '../processors/ResponseProcessor.ts';
 import { RetryManager } from '../retry/RetryManager.ts';
+import { shouldRetryDueToLLMError } from '../retry/utils/ShouldRetryDueToLLMError.ts';
 import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
 import { StreamHandler } from './StreamHandler.ts';
 import { logger } from '../../utils/logger.ts';
@@ -212,8 +213,7 @@ export class StreamingService {
                 async () => {
                     return await this.executeStreamRequest(model, params, inputTokens, modelInfo);
                 },
-                // No internal retry logic in this function
-                () => false
+                shouldRetryDueToLLMError
             );
         } catch (error) {
             log.error('Stream execution failed after retries', {

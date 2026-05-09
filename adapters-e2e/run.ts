@@ -125,6 +125,24 @@ async function run() {
                         }
                     } catch { }
                 }
+                // Fallback for specialized scenarios (image, audio, video):
+                // If no alias model meets requirements, search all available models
+                if (!modelName) {
+                    const specializedIds = [
+                        'image-generate', 'image-edit', 'image-masked-edit',
+                        'audio-round-trip', 'text-to-speech', 'audio-translate',
+                        'multimodal-input', 'video-generate',
+                    ];
+                    if (specializedIds.includes(scenario.id)) {
+                        try {
+                            const allModels = selectorCaller.getAvailableModels();
+                            const matches = ModelSelector.filterModelsByCapabilities(allModels, scenario.requirements);
+                            if (matches.length > 0) {
+                                modelName = matches[0].name;
+                            }
+                        } catch { }
+                    }
+                }
                 if (!modelName) {
                     console.log(`[skip] ${provider} lacks models for scenario '${scenario.id}'`);
                     continue;

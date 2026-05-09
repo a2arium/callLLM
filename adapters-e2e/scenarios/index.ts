@@ -4,6 +4,7 @@ import { streamingChat } from './streaming.ts';
 import { jsonOutput } from './jsonOutput.ts';
 import { toolCalling } from './tools.ts';
 import { imageGenerate } from './images.ts';
+import { imageEdit } from './imageEdit.ts';
 import { jsonRawSchema } from './jsonRawSchema.ts';
 import { reasoningScenario } from './reasoning.ts';
 import { usageTracking } from './usageTracking.ts';
@@ -16,6 +17,9 @@ import { streamingJson } from './streamingJson.ts';
 import { complexZod } from './complexZod.ts';
 import { audioTranscribe } from './audioTranscribe.ts';
 import { audioSpeech } from './audioSpeech.ts';
+import { audioTranslate } from './audioTranslate.ts';
+import { multimodalInput } from './multimodalInput.ts';
+import { videoGenerate } from './videoGenerate.ts';
 
 export const allScenarios: Scenario[] = [
     simpleChat,
@@ -25,7 +29,10 @@ export const allScenarios: Scenario[] = [
     toolCalling,
     toolFolderScenario,
     imageGenerate,
+    imageEdit,
     imageMaskedEdit,
+    multimodalInput,
+    videoGenerate,
     reasoningScenario,
     usageTracking,
     embeddingsScenario,
@@ -34,7 +41,6 @@ export const allScenarios: Scenario[] = [
     streamingJson,
     complexZod,
     audioTranscribe,
-    audioSpeech
+    audioSpeech,
+    audioTranslate,
 ];
-
-

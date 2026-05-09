@@ -163,9 +163,11 @@ export class SchemaSanitizer {
                 const hasProps = typeof n.properties === 'object';
                 const hasItems = Boolean(n.items);
                 const hasEnum = Array.isArray(n.enum);
+                const hasComposition = ('anyOf' in n) || ('oneOf' in n) || ('allOf' in n);
                 if (hasProps) n.type = 'object';
                 else if (hasItems) n.type = 'array';
                 else if (hasEnum) n.type = 'string';
+                else if (hasComposition) { /* skip: composition keywords define the type */ }
                 else n.type = 'string';
             }
         };

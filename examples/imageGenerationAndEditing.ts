@@ -34,7 +34,7 @@ const usageCallback = (usageData: UsageData) => {
 
 async function runExamples() {
     // Initialize with a model that supports image generation
-    const caller = new LLMCaller('openai', 'gpt-image-1', '', { usageCallback });
+    const caller = new LLMCaller('gemini', 'gemini-2.5-flash-image', '', { usageCallback });
 
     try {
         console.log('\n===========================================');

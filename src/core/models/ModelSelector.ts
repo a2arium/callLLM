@@ -65,6 +65,12 @@ export type CapabilityRequirement = {
         /** Specific audio operations required */
         operations?: ('transcribe' | 'translate' | 'synthesize')[];
     };
+
+    /** Video output capability requirements */
+    videoOutput?: {
+        /** Whether video output is required */
+        required: boolean;
+    };
 };
 
 export class ModelSelector {
@@ -161,6 +167,13 @@ export class ModelSelector {
         // Check standalone audio API requirements
         if (requirements.audio?.required) {
             if (!this.supportsAudio(capabilities, requirements.audio)) {
+                return false;
+            }
+        }
+
+        // Check video output requirements
+        if (requirements.videoOutput?.required) {
+            if (!this.supportsVideoOutput(capabilities)) {
                 return false;
             }
         }
@@ -348,6 +361,13 @@ export class ModelSelector {
         }
 
         return false;
+    }
+
+    /**
+     * Checks if model supports video output.
+     */
+    public static supportsVideoOutput(capabilities: ModelCapabilities): boolean {
+        return Boolean(capabilities.output?.video);
     }
 
     /**

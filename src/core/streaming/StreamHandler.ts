@@ -370,8 +370,7 @@ export class StreamHandler {
                         if (toolProcessingResult.requiresResubmission && this.streamingService) {
                             try {
                                 // Create continuation messages
-                                const toolMessages =
-                                    this.historyManager.getLastMessages(5) || [];
+                                const currentMsgs = Array.isArray(currentMessages) ? currentMessages : [];
 
                                 const toolNames = completedToolCalls
                                     .map((call) => call.name)
@@ -385,14 +384,24 @@ export class StreamHandler {
                                         'Do not call these tools again for the same information. Use the information you have to complete your response.',
                                 };
 
+                                // Check if the assistant message and tool results are already in currentMessages
+                                const hasAssistant = currentMsgs.some(m => m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0);
+                                const continuationMessages: UniversalMessage[] = [
+                                    ...currentMsgs,
+                                ];
+
+                                // Only add assistant + tool messages if not already in history
+                                if (!hasAssistant) {
+                                    continuationMessages.push(assistantMessage);
+                                    const toolMsgs = this.historyManager.getLastMessages(5) || [];
+                                    continuationMessages.push(...toolMsgs);
+                                }
+
+                                continuationMessages.push(systemInstructionMessage);
+
                                 const continuationParams: UniversalChatParams = {
                                     ...params,
-                                    messages: [
-                                        ...(Array.isArray(currentMessages) ? currentMessages : []),
-                                        assistantMessage,
-                                        ...(Array.isArray(toolMessages) ? toolMessages : []),
-                                        systemInstructionMessage,
-                                    ],
+                                    messages: continuationMessages,
                                 };
 
                                 const continuationStream =

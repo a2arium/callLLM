@@ -90,6 +90,7 @@
   "dependencies": {
     "@cerebras/cerebras_cloud_sdk": "^1.50.0",
     "@dqbd/tiktoken": "^1.0.18",
+    "@google/genai": "^1.52.0",
     "@modelcontextprotocol/sdk": "^1.10.2",
     "@openrouter/sdk": "^0.8.0",
     "@types/jest": "^29.5.14",

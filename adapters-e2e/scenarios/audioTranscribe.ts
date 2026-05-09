@@ -28,6 +28,8 @@ export const audioTranscribe: Scenario = {
             if (stt) sttModel = stt;
             const tts = models.find(m => m.includes('tts'));
             if (tts) ttsModel = tts;
+            // If no dedicated STT model found, use the first audio-capable model
+            if (!stt && models.length > 0) sttModel = models[0];
         } catch {
             /* use defaults */
         }

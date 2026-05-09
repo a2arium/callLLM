@@ -4,6 +4,7 @@ import { StreamHandler } from './StreamHandler.ts';
 import type { UniversalChatParams, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces.ts';
 import { RetryManager } from '../retry/RetryManager.ts';
 import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent.ts";
+import { shouldRetryDueToLLMError } from '../retry/utils/ShouldRetryDueToLLMError.ts';
 import { logger } from '../../utils/logger.ts';
 
 /**
@@ -219,7 +220,7 @@ export class StreamController {
                         }
                         return res;
                     },
-                    () => false // Do not retry internally.
+                    shouldRetryDueToLLMError
                 );
 
                 log.debug('Stream acquired successfully', {

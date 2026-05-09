@@ -15,6 +15,8 @@ export const audioSpeech: Scenario = {
             const models = caller.getAvailableAudioModels();
             const tts = models.find(m => m.includes('tts'));
             if (tts) model = tts;
+            // If no dedicated TTS model found, use the first audio-capable model
+            else if (models.length > 0) model = models[0];
         } catch {
             /* use default */
         }
