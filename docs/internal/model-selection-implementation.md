@@ -1,10 +1,10 @@
-# Model Selection API Spec
+# Model Selection Implementation Notes
 
 ## Status
 
-Proposed.
+Implemented.
 
-This document specifies a runtime model selection system for `LLMCaller` that preserves the current simple constructor usage while adding dynamic, capability-aware selection across one or more providers.
+This document records the implementation design for runtime model selection in `LLMCaller`. For user-facing documentation, start with [Model selection](../guides/model-selection.md). This page is intentionally more detailed and is useful for maintainers, reviewers, and contributors.
 
 ## Current Framework Context
 
@@ -1493,34 +1493,34 @@ Update `ADAPTERS.md` and `ADAPTER_CREATION_RULES.md`:
 
 ### Feature Docs
 
-Update `docs/embeddings.md`:
+Update `docs/guides/embeddings.md` and `docs/guides/retrieval-with-embeddings.md`:
 
 - document that presets/policies can select embedding-capable models
 - document dimensions and encoding format filtering
 - remove or update any statement that aliases are not supported for embeddings
 
-Update `docs/images.md`:
+Update `docs/guides/media.md` and `docs/reference/image-details.md`:
 
 - document image generation/edit/composite/masked-edit inference
 - document model selection for image output
 - document that image input chat and image generation are different requirements
 
-Update `docs/gpt5.md`:
+Update `docs/guides/reasoning-and-verbosity.md`:
 
 - document reasoning capability inference from `settings.reasoning`
 - document exact model validation for reasoning requests
 
-Update `docs/telemetry.md`:
+Update `docs/guides/telemetry-and-usage.md` and `docs/internal/telemetry-architecture.md`:
 
 - document resolved provider/model metadata
 - document optional `modelResolution` diagnostics
 - document that diagnostic scoring details are not a stable public contract
 
-Update `docs/history-manager.md`:
+Update `docs/reference/history.md`:
 
 - document that dynamic history truncation uses the resolved model's token limits
 
-Update `docs/mcp-tools.md` and `docs/function-folders.md`:
+Update `docs/reference/mcp.md` and `docs/guides/function-folders.md`:
 
 - document tool-call capability inference
 - document streaming tool-call requirements

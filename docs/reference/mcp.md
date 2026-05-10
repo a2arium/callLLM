@@ -105,7 +105,7 @@ const mcpConfig: MCPServersMap = {
 await caller.addTools([mcpConfig]);
 
 // Explicitly connect to the server for direct access
-// You can uee 'connectToMcpServer' to preconnect to servers prior to calling any tools, as well
+// You can use connectToMcpServer to preconnect to servers before calling tools.
 await caller.connectToMcpServer('filesystem');
 
 // Now you can access the tools directly
@@ -118,7 +118,7 @@ const response = await caller.call('Read the README.md file and summarize it');
 await caller.disconnectMcpServers();
 ```
 
-The implementation   efficiently reuses connections and avoids redundant server startups. When you:
+The implementation efficiently reuses connections and avoids redundant server startups. When you:
 
 1. Call `addTools([mcpConfig])` - Saves the configuration for future use
 2. Call `connectToMcpServer('filesystem')` - Establishes a connection if not already connected
@@ -126,36 +126,7 @@ The implementation   efficiently reuses connections and avoids redundant server 
 
 This prevents duplicate server instances when using direct MCP tool calls together with LLM calls.
 
-For more advanced cases where you need explicit connection management:
-
-```typescript
-import { LLMCaller, MCPServiceAdapter } from 'callllm';
-import type { MCPServersMap } from 'callllm';
-
-const mcpConfig: MCPServersMap = {
-  filesystem: {
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
-  }
-};
-
-// Create and initialize the MCP service adapter with the SDK
-const adapter = new MCPServiceAdapter(mcpConfig);
-
-// Explicitly connect to a server
-await adapter.connectToServer('filesystem');
-
-// Initialize an LLMCaller and set its MCP adapter
-const caller = new LLMCaller('openai', 'fast');
-(caller as any)._mcpAdapter = adapter;
-
-// Now you can make direct tool calls
-const schemas = await caller.getMcpServerToolSchemas('filesystem');
-const result = await caller.callMcpTool('filesystem', 'read_file', { path: 'package.json' });
-
-// Clean up when done
-await adapter.disconnectAll();
-```
+Use `LLMCaller` direct-access methods for application code. `MCPServiceAdapter` is exported for advanced integrations, but public examples should not mutate private `LLMCaller` fields.
 
 ### Working with Tool Schemas
 
@@ -222,7 +193,7 @@ try {
 
 ## MCP SDK Integration
 
-CallLLM uses the official MCP SDK to connect to MCP servers. The implementation supports:
+`callllm` uses the official MCP SDK to connect to MCP servers. The implementation supports:
 
 1. Multiple transport types:
    - **stdio** - For local server processes
@@ -419,8 +390,8 @@ This configuration will connect directly via SSE without trying StreamableHTTP f
 
 See the following example files for complete working implementations:
 
-- [`examples/mcpClient.ts`](../examples/mcpClient.ts) - Using MCP with LLM interpretation
-- [`examples/mcpDirectTools.ts`](../examples/mcpDirectTools.ts) - Using MCP tools directly
+- [`examples/mcpClient.ts`](../../examples/mcpClient.ts) - Using MCP with LLM interpretation
+- [`examples/mcpDirectTools.ts`](../../examples/mcpDirectTools.ts) - Using MCP tools directly
 
 ## Running the Examples
 
@@ -431,10 +402,10 @@ To run the examples:
 yarn add -D @modelcontextprotocol/server-filesystem
 
 # Run the LLM-based example
-yarn ts-node examples/mcpClient.ts
+yarn example:mcp
 
 # Run the direct tool call example
-yarn ts-node examples/mcpDirectTools.ts
+yarn example:mcpDirect
 
 ```
 

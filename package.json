@@ -30,6 +30,11 @@
   },
   "files": [
     "dist",
+    "docs",
+    "examples/*.ts",
+    "examples/functions/*.ts",
+    "examples/*.png",
+    "examples/*.jpg",
     "README.md",
     "LICENSE"
   ],

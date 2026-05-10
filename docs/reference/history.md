@@ -1,5 +1,6 @@
+# History Reference
 
-The core component responsible for managing conversation history is the `HistoryManager` class, which is integrated into the `LLMCaller`. The `LLMCaller` provides several methods to interact with this history.
+The core component responsible for managing conversation history is the `HistoryManager` class, which is integrated into `LLMCaller`. `LLMCaller` provides several methods to interact with this history.
 
 Here are the primary ways you can add, manage, and influence the history used in your calls:
 
@@ -112,9 +113,9 @@ Here are the primary ways you can add, manage, and influence the history used in
     ```
 
     The available `historyMode` values are:
-    *   `'full'`: (Default mode if not specified in constructor/options) Sends *all* messages currently in the `HistoryManager` (including the system message) to the model. Best for preserving full conversation context.
+    *   `'full'`: Sends *all* messages currently in the `HistoryManager` (including the system message) to the model. Best for preserving full conversation context.
     *   `'dynamic'`: Intelligently truncates the history to fit within the model's `maxRequestTokens`. It prioritizes the system message, the first user message, and the most recent messages. Useful for long conversations to avoid hitting token limits while retaining recent context.
-    *   `'stateless'`: Only sends the current user message and the system message (if one is set in `HistoryManager`) to the model. No previous conversation turns are included. Each call is independent. Most token-efficient.
+    *   `'stateless'`: Default mode. Only sends the current user message and the system message (if one is set in `HistoryManager`) to the model. No previous conversation turns are included. Each call is independent. Most token-efficient.
 
     When the caller uses a preset or policy, dynamic history truncation uses the model resolved for the current request, not just the constructor string. This matters when the same caller can select different models for text, tools, image input, or reasoning requests:
 

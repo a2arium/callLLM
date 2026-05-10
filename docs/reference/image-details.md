@@ -1,24 +1,29 @@
-# Working with Images in callLLM
+# Working with Images in callllm
 
-This guide explains how to use callLLM with multimodal models that support image inputs and image generation/editing.
+> User-facing media documentation starts at [Media: images, video, and audio](../guides/media.md). This page is a deeper image-specific reference.
+
+This guide explains how to use `callllm` with models that support image inputs and image generation/editing.
 
 ## Prerequisites
 
-- A multimodal model that supports image inputs (e.g., GPT-4o, Claude 3 Opus)
+- A model that supports image input or image output, depending on the operation
 - Provider API key configured with access to multimodal models
 
 ## Input Methods
 
-callLLM supports two primary methods for including images in your LLM requests:
+`callllm` supports two primary methods for including images in your LLM requests:
 
-### Method 1: Using `file` and `imageDetail` Parameters
+### Method 1: Using `file` and `input.image.detail`
 
 This is the recommended approach for most use cases:
 
 ```typescript
-const response = await caller.call("Analyze this image", {
+const response = await caller.call({
+  text: "Analyze this image",
   file: "https://example.com/path/to/image.jpg",
-  imageDetail: "high" // Options: "low", "high", or "auto"
+  input: {
+    image: { detail: "high" }
+  }
 });
 ```
 
@@ -29,7 +34,7 @@ Parameters:
   - Local file path (will be read from disk)
   - Base64-encoded image data
 
-- **imageDetail**: Controls the resolution/detail level for the image:
+- **input.image.detail**: Controls the resolution/detail level for the image:
   - **"low"**: Lower resolution, fewer tokens, faster processing
   - **"high"**: Higher resolution, more tokens, better for detailed analysis
   - **"auto"** (default): Let the provider choose based on image content
@@ -66,7 +71,7 @@ Approximate token usage for a typical image:
 
 ### Tracking Image Token Usage
 
-callLLM automatically tracks image token usage in the response metadata:
+`callllm` tracks image token usage in response metadata when the provider reports enough usage information or the framework can estimate it:
 
 ```typescript
 const response = await caller.call("Analyze this image", {
@@ -94,29 +99,28 @@ This information is also included in usage callbacks for real-time token monitor
   - GPT-4o supports both URLs and base64-encoded images
   - Image tokens count against both input and output token limits
 
-- **Anthropic**:
-  - Claude models have their own token counting mechanism
-  - Image tokens count against the context window
+- **Gemini**:
+  - Gemini image-capable models support image input through the Gemini adapter.
+  - Image generation and editing support depends on the selected model catalog entry.
 
 ## Examples
 
-See [examples/image.ts](../examples/image.ts) for a complete working example.
+See [examples/imageInput.ts](../../examples/imageInput.ts) for a complete working example.
 
 ```typescript
 // Example with a web image
-const response = await caller.call("Describe this image", {
+const response = await caller.call({
+  text: "Describe this image",
   file: "https://example.com/path/to/image.jpg",
-  imageDetail: "high"
+  input: { image: { detail: "high" } }
 });
 
 // Example with a local file
-const response = await caller.call("What text is in this image?", {
+const response = await caller.call({
+  text: "What text is in this image?",
   file: "./screenshots/receipt.jpg",
-  imageDetail: "high"
+  input: { image: { detail: "high" } }
 });
-
-// Example with file placeholder
-const response = await caller.call("<file:./diagram.png> Explain this technical diagram.");
 ``` 
 
 ## Image Output and Model Selection
@@ -126,7 +130,7 @@ Image input chat and image output are different model requirements.
 - Image input chat requires a chat model with image input support.
 - Image output requires an image-capable model and a provider adapter that implements the image operation interface.
 
-When the constructor uses a preset or policy, callLLM resolves the model at request time after it sees the actual image operation:
+When the constructor uses a preset or policy, `callllm` resolves the model at request time after it sees the actual image operation:
 
 ```typescript
 const caller = new LLMCaller(['openai', 'gemini'], 'fast');

@@ -1,6 +1,6 @@
 # Telemetry Architecture
 
-This framework provides a provider-agnostic telemetry system built around a generic TelemetryCollector. Providers implement platform-specific transmission (OpenTelemetry, Langfuse, Opik, etc.).
+This framework provides a provider-agnostic telemetry system built around a generic `TelemetryCollector`. Providers implement platform-specific transmission such as OpenTelemetry and Opik.
 
 ## Overview
 
@@ -10,7 +10,8 @@ This framework provides a provider-agnostic telemetry system built around a gene
   - Emits normalized events (prompts, choices, usage) to registered providers
 - Providers (pluggable):
   - OpenTelemetryProvider (enabled when `CALLLLM_OTEL_ENABLED=true`)
-  - Future: LangfuseProvider, OpikProvider, ConsoleProvider
+  - OpikProvider (enabled when `CALLLLM_OPIK_ENABLED=true`)
+  - Future provider candidates: LangfuseProvider, ConsoleProvider
 
 ## Lifecycle
 
@@ -40,6 +41,13 @@ Configured via environment variables. Defaults:
   - LLM spans: CLIENT; attributes include `gen_ai.system`, `gen_ai.request.model`, and usage
   - Events: `gen_ai.prompt`, `gen_ai.choice` (+ chunk variants)
 - Standard OTLP envs apply (OTEL_EXPORTER_OTLP_ENDPOINT, headers, etc.)
+
+## Opik Provider
+
+- Enabled with `CALLLLM_OPIK_ENABLED=true`
+- Uses `OPIK_API_KEY`, `OPIK_WORKSPACE`, `OPIK_PROJECT_NAME`, and optional `OPIK_URL_OVERRIDE`
+- Records conversation summaries, LLM spans, selected provider/model, usage, estimated cost, prompts, and responses when redaction allows it
+- Use `OPIK_LOG_LEVEL=ERROR` to quiet Opik SDK logs in local runs
 
 ## Integration in Code
 

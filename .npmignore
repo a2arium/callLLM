@@ -16,10 +16,7 @@ tsconfig*.json
 src/tests/
 tests/
 
-# Documentation (except README)
-docs/
-*.md
-!README.md
+# Documentation is published so README links work on npm.
 
 # Development dependencies and configs
 .gitignore
@@ -27,8 +24,8 @@ docs/
 .git/
 .github/
 
-# Examples (optional - you might want to include these)
-examples/
+# Source examples are published through package.json files.
+# Generated media outputs are not included.
 
 # Environment files
 .env*

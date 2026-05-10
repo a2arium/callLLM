@@ -59,7 +59,7 @@ console.log(response[0].content);
 
 ## Model Selection With Function Folder Tools
 
-Function-folder tools affect dynamic model selection. When a caller uses a preset or policy, callLLM loads the effective tool definitions first, then resolves a model that supports the required tool-calling mode.
+Function-folder tools affect dynamic model selection. When a caller uses a preset or policy, `callllm` loads the effective tool definitions first, then resolves a model that supports the required tool-calling mode.
 
 ```typescript
 const caller = new LLMCaller(['openai', 'gemini'], 'cheap', 'You are a helpful assistant', {
@@ -245,7 +245,7 @@ When creating a new `LLMCaller` instance, you can specify the functions director
 ```typescript
 const caller = new LLMCaller(
   'openai',
-  'gpt-4o-mini',
+  'fast',
   'You are a helpful assistant',
   { 
     toolsDir: './my-tools',
