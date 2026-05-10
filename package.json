@@ -1,7 +1,7 @@
 {
   "name": "callllm",
-  "version": "0.2.8",
-  "description": "A universal LLM caller library.",
+  "version": "0.3.0",
+  "description": "A capability-aware TypeScript runtime for production LLM calls.",
   "type": "module",
   "main": "dist/cjs/index.cjs",
   "module": "dist/esm/index.js",
@@ -35,6 +35,7 @@
     "examples/functions/*.ts",
     "examples/*.png",
     "examples/*.jpg",
+    "callllm-logo.png",
     "README.md",
     "LICENSE"
   ],

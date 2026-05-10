@@ -56,7 +56,8 @@ Users normally do not manually declare capabilities. The framework infers them f
 | --- | --- |
 | `caller.call('...')` | text input and text output |
 | `caller.stream('...')` | streaming text |
-| `jsonSchema` or `responseFormat: 'json'` | JSON/structured output |
+| `jsonSchema` or `responseFormat: 'json'` | structured output through native JSON or framework fallback |
+| `jsonMode: 'native-only'` | provider-native JSON support |
 | `tools` | tool calling |
 | streaming with tools | streaming tool-call support |
 | `file` or `files` without media output | image input |

@@ -40,7 +40,7 @@ import path from 'path';
 // Initialize with a functions directory
 const caller = new LLMCaller(
   'openai',
-  'gpt-4o-mini',
+  'balanced',
   'You are a helpful assistant',
   { toolsDir: './my-tools' }
 );

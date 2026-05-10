@@ -157,7 +157,8 @@ console.log(response[0].metadata?.modelResolution);
 | --- | --- |
 | `call()` | text output |
 | `stream()` | streaming |
-| `jsonSchema` or `responseFormat: 'json'` | JSON output |
+| `jsonSchema` or `responseFormat: 'json'` with default `jsonMode: 'fallback'` | chat text output plus framework JSON validation/fallback |
+| `jsonSchema` or `responseFormat: 'json'` with `jsonMode: 'native-only'` | native JSON output |
 | `tools` | tool calling |
 | `file` / `files` | image input |
 | `output.image` | image output |

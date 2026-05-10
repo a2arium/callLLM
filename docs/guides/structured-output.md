@@ -2,6 +2,8 @@
 
 Use structured output when your application needs data, not prose. `callllm` supports Zod schemas, JSON Schema, native provider JSON mode where available, and prompt-based fallback for models without native structured output.
 
+Structured JSON is a framework feature, not only a provider-native feature. In the default `fallback` mode, `callllm` asks for JSON using the best available provider mechanism and falls back to prompt/schema enforcement when native JSON mode is unavailable. Use `native-only` only when your application specifically requires provider-native structured output.
+
 ## Zod Schema
 
 ```ts
@@ -79,7 +81,7 @@ Modes:
 | `native-only` | require native JSON support; fail if unavailable |
 | `force-prompt` | always use prompt enhancement |
 
-Dynamic model selection treats `native-only` JSON as a hard model capability requirement.
+Dynamic model selection treats `native-only` JSON as a hard model capability requirement. In `fallback` and `force-prompt` modes, JSON output does not require native provider JSON support, but validation can still fail if the model returns invalid data.
 
 ## Streaming JSON
 
