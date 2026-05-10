@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'a2arium/callllm'
+    if: github.repository == 'a2arium/callLLM'
     runs-on: ubuntu-latest
     environment: npm-publish
 
@@ -40,6 +40,7 @@ jobs:
         with:
           node-version: 24.x
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       - name: Enable Corepack
         run: corepack enable
