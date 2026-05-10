@@ -41,8 +41,11 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: yarn
 
+      - name: Enable Corepack
+        run: corepack enable
+
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --immutable
 
       - name: Check npm version
         id: npm-version
