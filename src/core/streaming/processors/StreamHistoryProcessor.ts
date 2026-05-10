@@ -8,6 +8,7 @@ import { logger } from '../../../utils/logger.ts';
  */
 export class StreamHistoryProcessor implements IStreamProcessor {
     private historyManager: HistoryManager;
+    private readonly log = logger.createLogger({ prefix: 'StreamHistoryProcessor' });
 
     /**
      * Creates a new StreamHistoryProcessor
@@ -15,11 +16,7 @@ export class StreamHistoryProcessor implements IStreamProcessor {
      */
     constructor(historyManager: HistoryManager) {
         this.historyManager = historyManager;
-        const log = logger.createLogger({
-            level: process.env.LOG_LEVEL as any || 'debug',
-            prefix: 'StreamHistoryProcessor.constructor'
-        });
-        log.debug('Initialized StreamHistoryProcessor');
+        this.log.debug('Initialized StreamHistoryProcessor');
     }
 
     /**
@@ -28,8 +25,7 @@ export class StreamHistoryProcessor implements IStreamProcessor {
      * @returns The original stream with history tracking
      */
     async *processStream(stream: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
-        const log = logger.createLogger({ prefix: 'StreamHistoryProcessor.processStream' });
-        log.debug('Starting history processing of stream');
+        this.log.debug('Starting history processing of stream');
 
         let finalContent = '';
 
@@ -41,7 +37,7 @@ export class StreamHistoryProcessor implements IStreamProcessor {
 
             // Save to history if this is the final chunk
             if (chunk.isComplete) {
-                log.debug('Captured complete response in history: ', finalContent);
+                this.log.debug('Captured complete response in history: ', finalContent);
 
                 // Skip adding the message to history if it contains tool calls
                 // Tool calls will be handled by the special tool call handling code in StreamHandler

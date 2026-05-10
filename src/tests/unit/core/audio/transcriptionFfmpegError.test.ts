@@ -11,6 +11,8 @@ describe('TranscriptionFfmpegError', () => {
         expect(err.tool).toBe('ffprobe');
         expect(err.kind).toBe('not_found');
         expect(err.message).toContain('ffprobe');
+        expect(err.message).toContain('audio processing');
+        expect(err.message).toContain('speech-output transcoding');
         expect(err.message).toContain('brew install ffmpeg');
         expect(err.message).toContain('which ffmpeg');
         expect(err.message).toContain('process.env.PATH');

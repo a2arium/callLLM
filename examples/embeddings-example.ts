@@ -41,8 +41,8 @@ async function embeddingExample() {
         console.log(`💰 Total cost: $${batchEmbeddings.usage.costs.total.toFixed(6)}`);
         console.log(`🔢 Total tokens used: ${batchEmbeddings.usage.tokens.total}\n`);
 
-        // Example 3: Model consistency importance (instead of aliases)
-        console.log('🎯 Example 3: Model Consistency (No Aliases)');
+        // Example 3: Model consistency importance
+        console.log('🎯 Example 3: Model Consistency');
         console.log('📌 Important: Always use the same specific model for indexing and querying!');
 
         const consistentEmbedding = await llm.embeddings({
@@ -52,7 +52,16 @@ async function embeddingExample() {
 
         console.log(`✅ Generated embedding using specific model: ${consistentEmbedding.model}`);
         console.log(`💰 Cost: $${consistentEmbedding.usage.costs.total.toFixed(6)}`);
-        console.log(`⚠️  Never use aliases like 'small', 'large' for embeddings - use exact model names!\n`);
+        console.log(`⚠️  For retrieval indexes, keep using the same exact embedding model for every query and document.\n`);
+
+        // Example 3b: Dynamic embedding model selection
+        console.log('🎯 Example 3b: Dynamic Embedding Selection');
+        const dynamicEmbeddingCaller = new LLMCaller('openai', 'cheap', 'You are a helpful assistant.');
+        const dynamicEmbedding = await dynamicEmbeddingCaller.embeddings({
+            input: 'This example lets the framework pick a low-cost embedding-capable model.'
+        });
+        console.log(`✅ Dynamically selected embedding model: ${dynamicEmbedding.metadata?.model}`);
+        console.log(`🏷️  Selection mode: ${dynamicEmbedding.metadata?.selectionMode}\n`);
 
         // Example 4: Custom dimensions
         console.log('📐 Example 4: Custom Dimensions');

@@ -116,6 +116,22 @@ Here are the primary ways you can add, manage, and influence the history used in
     *   `'dynamic'`: Intelligently truncates the history to fit within the model's `maxRequestTokens`. It prioritizes the system message, the first user message, and the most recent messages. Useful for long conversations to avoid hitting token limits while retaining recent context.
     *   `'stateless'`: Only sends the current user message and the system message (if one is set in `HistoryManager`) to the model. No previous conversation turns are included. Each call is independent. Most token-efficient.
 
+    When the caller uses a preset or policy, dynamic history truncation uses the model resolved for the current request, not just the constructor string. This matters when the same caller can select different models for text, tools, image input, or reasoning requests:
+
+    ```typescript
+    const caller = new LLMCaller(['openai', 'gemini'], 'balanced', 'You are concise.', {
+        historyMode: 'dynamic'
+    });
+
+    const response = await caller.call('Continue the discussion', {
+        settings: {
+            maxTokens: 1200
+        }
+    });
+
+    console.log(response[0].metadata?.model); // model whose token limits were used
+    ```
+
 7.  **Accessing History**:
     You can retrieve the current message history using methods like `getMessages()` (excluding the initial system message unless it was explicitly added back) or `getMessages(true)` (includes the initial system message). `getHistorySummary()` provides a condensed view.
 

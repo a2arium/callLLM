@@ -375,6 +375,11 @@ export class OpikProvider implements TelemetryProvider {
             return;
         }
         try {
+            const desiredLogLevel = this.mapLogLevel(String(config.env.LOG_LEVEL || ''));
+            if (desiredLogLevel && !config.env.OPIK_LOG_LEVEL) {
+                process.env.OPIK_LOG_LEVEL = desiredLogLevel;
+                config.env.OPIK_LOG_LEVEL = desiredLogLevel;
+            }
             // Lazy import to avoid hard dep for users not using Opik
             // eslint-disable-next-line @typescript-eslint/no-var-requires
             const opikModule: any = await import('opik');
@@ -382,10 +387,9 @@ export class OpikProvider implements TelemetryProvider {
             // Align Opik SDK logging with global LOG_LEVEL; do not override if unmapped
             try {
                 const raw = String(config.env.LOG_LEVEL || '');
-                const desired = this.mapLogLevel(raw);
-                if (opikModule?.setLoggerLevel && desired) {
-                    opikModule.setLoggerLevel(desired);
-                    this.log.debug('Configured Opik SDK log level', { raw, mapped: desired });
+                if (opikModule?.setLoggerLevel && desiredLogLevel) {
+                    opikModule.setLoggerLevel(desiredLogLevel);
+                    this.log.debug('Configured Opik SDK log level', { raw, mapped: desiredLogLevel });
                 } else {
                     this.log.debug('Skipped Opik SDK log level mapping', { raw });
                 }
@@ -1062,5 +1066,4 @@ export class OpikProvider implements TelemetryProvider {
         this.client = undefined;
     }
 }
-
 

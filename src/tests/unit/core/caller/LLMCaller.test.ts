@@ -584,7 +584,14 @@ describe('LLMCaller', () => {
 
       expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
       expect(results.length).toBe(1);
-      expect(results[0]).toEqual(mockStreamChunkWithToolCall);
+      expect(results[0]).toMatchObject({
+        ...mockStreamChunkWithToolCall,
+        metadata: {
+          provider: 'openai',
+          model: 'test-model',
+          selectionMode: 'exact'
+        }
+      });
       expect(results[0].toolCalls).toEqual([toolCall]);
     });
   });
@@ -837,7 +844,15 @@ describe('LLMCaller', () => {
       );
 
       // Verify the response is returned correctly
-      expect(result).toEqual([mockChatResponse]);
+      expect(result[0]).toMatchObject({
+        ...mockChatResponse,
+        metadata: {
+          ...mockChatResponse.metadata,
+          provider: 'openai',
+          model: 'test-model',
+          selectionMode: 'exact'
+        }
+      });
     });
 
     it('should properly process and include data parameter in stream method', async () => {
@@ -915,7 +930,15 @@ describe('LLMCaller', () => {
 
       // Verify the stream results
       expect(results).toHaveLength(1);
-      expect(results[0]).toEqual(mockStreamResponse);
+      expect(results[0]).toMatchObject({
+        ...mockStreamResponse,
+        metadata: {
+          ...mockStreamResponse.metadata,
+          provider: 'openai',
+          model: 'test-model',
+          selectionMode: 'exact'
+        }
+      });
     });
 
     // Add test for data parameter handling in both single and multi-chunk flows
@@ -1172,6 +1195,470 @@ describe('LLMCaller', () => {
       expect(capturedModel).toBe('tool-capable-model');
     });
 
+    it('should select using final effective base tools before chat model resolution', async () => {
+      const textOnlyModel: ModelInfo = {
+        name: 'text-only-cheap',
+        inputPricePerMillion: 0.1,
+        outputPricePerMillion: 0.2,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          streaming: true,
+          toolCalls: false,
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 70, outputSpeed: 200, firstTokenLatency: 100 }
+      };
+      const toolModel: ModelInfo = {
+        name: 'tool-capable-expensive',
+        inputPricePerMillion: 5,
+        outputPricePerMillion: 10,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          streaming: true,
+          toolCalls: true,
+          parallelToolCalls: true,
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 80, outputSpeed: 150, firstTokenLatency: 150 }
+      };
+      const baseTool: ToolDefinition = {
+        name: 'base_tool',
+        description: 'Base tool',
+        parameters: { type: 'object', properties: {} }
+      };
+      const localModelManager = {
+        getAvailableModels: jest.fn().mockReturnValue([textOnlyModel, toolModel]),
+        getModel: jest.fn((nameOrAlias: string) => {
+          if (nameOrAlias === textOnlyModel.name) return textOnlyModel;
+          if (nameOrAlias === toolModel.name) return toolModel;
+          return undefined;
+        })
+      };
+      const localToolsManager = {
+        ...mockToolsManager,
+        listTools: jest.fn().mockReturnValue([baseTool])
+      } as unknown as jest.Mocked<ToolsManager>;
+
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'cheap', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: localModelManager as unknown as ModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: localToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      let capturedModel: string | undefined;
+      mockChatController.execute.mockImplementation((params) => {
+        capturedModel = params.model;
+        return Promise.resolve({
+          content: 'Response',
+          role: 'assistant',
+          metadata: {}
+        });
+      });
+
+      await caller.call('Use the base tool');
+
+      expect(capturedModel).toBe('tool-capable-expensive');
+    });
+
+    it('should require streaming tool support when effective tools are used in stream', async () => {
+      const nonStreamingToolModel: ModelInfo = {
+        name: 'non-streaming-tools',
+        inputPricePerMillion: 0.1,
+        outputPricePerMillion: 0.2,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          streaming: true,
+          toolCalls: {
+            nonStreaming: true,
+            streamingMode: 'none',
+            parallel: false
+          },
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 75, outputSpeed: 200, firstTokenLatency: 100 }
+      };
+      const streamingToolModel: ModelInfo = {
+        name: 'streaming-tools',
+        inputPricePerMillion: 1,
+        outputPricePerMillion: 2,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          streaming: true,
+          toolCalls: {
+            nonStreaming: true,
+            streamingMode: 'deltas',
+            parallel: false
+          },
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 80, outputSpeed: 150, firstTokenLatency: 150 }
+      };
+      const baseTool: ToolDefinition = {
+        name: 'stream_tool',
+        description: 'Streaming tool',
+        parameters: { type: 'object', properties: {} }
+      };
+      const localModelManager = {
+        getAvailableModels: jest.fn().mockReturnValue([nonStreamingToolModel, streamingToolModel]),
+        getModel: jest.fn((nameOrAlias: string) => {
+          if (nameOrAlias === nonStreamingToolModel.name) return nonStreamingToolModel;
+          if (nameOrAlias === streamingToolModel.name) return streamingToolModel;
+          return undefined;
+        })
+      };
+      const localToolsManager = {
+        ...mockToolsManager,
+        listTools: jest.fn().mockReturnValue([baseTool])
+      } as unknown as jest.Mocked<ToolsManager>;
+
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'cheap', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: localModelManager as unknown as ModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: localToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      let capturedModel: string | undefined;
+      jest.spyOn(caller as any, 'internalStreamCall').mockImplementation((params: UniversalChatParams) => {
+        capturedModel = params.model;
+        return Promise.resolve((async function* () {
+          yield { content: 'done', role: 'assistant', isComplete: true } as UniversalStreamResponse;
+        })());
+      });
+
+      for await (const _ of caller.stream('Use the streaming tool')) {
+        // consume stream
+      }
+
+      expect(capturedModel).toBe('streaming-tools');
+    });
+
+    it('should treat settings.providerOptions.model as an exact per-call override, not a preset', async () => {
+      const exactFastModel: ModelInfo = {
+        name: 'fast',
+        inputPricePerMillion: 10,
+        outputPricePerMillion: 20,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          streaming: true,
+          toolCalls: false,
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 20, outputSpeed: 10, firstTokenLatency: 2000 }
+      };
+      const dynamicFastWinner: ModelInfo = {
+        name: 'speedster',
+        inputPricePerMillion: 1,
+        outputPricePerMillion: 2,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          streaming: true,
+          toolCalls: false,
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 80, outputSpeed: 500, firstTokenLatency: 50 }
+      };
+      const localModelManager = {
+        getAvailableModels: jest.fn().mockReturnValue([exactFastModel, dynamicFastWinner]),
+        getModel: jest.fn((nameOrAlias: string) => {
+          if (nameOrAlias === exactFastModel.name) return exactFastModel;
+          if (nameOrAlias === dynamicFastWinner.name) return dynamicFastWinner;
+          return undefined;
+        })
+      };
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'balanced', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: localModelManager as unknown as ModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      let capturedModel: string | undefined;
+      mockChatController.execute.mockImplementation((params) => {
+        capturedModel = params.model;
+        return Promise.resolve({
+          content: 'Response',
+          role: 'assistant',
+          metadata: {}
+        });
+      });
+
+      await caller.call('Use the exact override', {
+        settings: {
+          providerOptions: {
+            model: 'fast'
+          }
+        }
+      });
+
+      expect(capturedModel).toBe('fast');
+    });
+
+    it('should add stable model selection metadata to chat responses', async () => {
+      const testModel: ModelInfo = {
+        name: 'metadata-model',
+        inputPricePerMillion: 1,
+        outputPricePerMillion: 2,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          streaming: true,
+          toolCalls: false,
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 80, outputSpeed: 100, firstTokenLatency: 100 }
+      };
+      const localModelManager = {
+        getAvailableModels: jest.fn().mockReturnValue([testModel]),
+        getModel: jest.fn((nameOrAlias: string) => nameOrAlias === testModel.name ? testModel : undefined)
+      };
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'metadata-model', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: localModelManager as unknown as ModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      mockChatController.execute.mockResolvedValueOnce({
+        content: 'Response',
+        role: 'assistant',
+        metadata: {}
+      });
+
+      const responses = await caller.call('hello');
+
+      expect(responses[0].metadata).toMatchObject({
+        provider: 'openai',
+        model: 'metadata-model',
+        selectionMode: 'exact'
+      });
+    });
+
+    it('should add stable model selection metadata to stream chunks', async () => {
+      const testModel: ModelInfo = {
+        name: 'stream-metadata-model',
+        inputPricePerMillion: 1,
+        outputPricePerMillion: 2,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          streaming: true,
+          toolCalls: false,
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 80, outputSpeed: 100, firstTokenLatency: 100 }
+      };
+      const localModelManager = {
+        getAvailableModels: jest.fn().mockReturnValue([testModel]),
+        getModel: jest.fn((nameOrAlias: string) => nameOrAlias === testModel.name ? testModel : undefined)
+      };
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'stream-metadata-model', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: localModelManager as unknown as ModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      const chunks: UniversalStreamResponse[] = [];
+      for await (const chunk of caller.stream('hello')) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks[0].metadata).toMatchObject({
+        provider: 'openai',
+        model: 'stream-metadata-model',
+        selectionMode: 'exact'
+      });
+    });
+
+    it('should include diagnostic modelResolution metadata when explain is enabled', async () => {
+      const cheapModel: ModelInfo = {
+        name: 'cheap-metadata-model',
+        inputPricePerMillion: 0.1,
+        outputPricePerMillion: 0.2,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          streaming: true,
+          toolCalls: false,
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 70, outputSpeed: 100, firstTokenLatency: 100 }
+      };
+      const localModelManager = {
+        getAvailableModels: jest.fn().mockReturnValue([cheapModel]),
+        getModel: jest.fn((nameOrAlias: string) => nameOrAlias === cheapModel.name ? cheapModel : undefined)
+      };
+      const caller = new LLMCaller('openai' as RegisteredProviders, {
+        preset: 'cheap',
+        resolution: { explain: true }
+      }, 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: localModelManager as unknown as ModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      mockChatController.execute.mockResolvedValueOnce({
+        content: 'Response',
+        role: 'assistant',
+        metadata: {}
+      });
+
+      const responses = await caller.call('hello');
+
+      expect(responses[0].metadata).toMatchObject({
+        provider: 'openai',
+        model: 'cheap-metadata-model',
+        selectionMode: 'preset',
+        modelResolution: {
+          selected: {
+            provider: 'openai',
+            model: 'cheap-metadata-model'
+          },
+          mode: 'preset',
+          preset: 'cheap',
+          requiredByRequest: ['text input', 'text output']
+        }
+      });
+    });
+
+    it('should validate settings.providerOptions.model against inferred request capabilities', async () => {
+      const textOnlyModel: ModelInfo = {
+        name: 'text-only',
+        inputPricePerMillion: 0.1,
+        outputPricePerMillion: 0.2,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          streaming: true,
+          toolCalls: false,
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 70, outputSpeed: 100, firstTokenLatency: 100 }
+      };
+      const toolModel: ModelInfo = {
+        name: 'tool-model',
+        inputPricePerMillion: 1,
+        outputPricePerMillion: 2,
+        maxRequestTokens: 4000,
+        maxResponseTokens: 1000,
+        capabilities: {
+          streaming: true,
+          toolCalls: true,
+          parallelToolCalls: true,
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text'] } }
+        },
+        characteristics: { qualityIndex: 80, outputSpeed: 100, firstTokenLatency: 100 }
+      };
+      const baseTool: ToolDefinition = {
+        name: 'base_tool',
+        description: 'Base tool',
+        parameters: { type: 'object', properties: {} }
+      };
+      const localModelManager = {
+        getAvailableModels: jest.fn().mockReturnValue([textOnlyModel, toolModel]),
+        getModel: jest.fn((nameOrAlias: string) => {
+          if (nameOrAlias === textOnlyModel.name) return textOnlyModel;
+          if (nameOrAlias === toolModel.name) return toolModel;
+          return undefined;
+        })
+      };
+      const localToolsManager = {
+        ...mockToolsManager,
+        listTools: jest.fn().mockReturnValue([baseTool])
+      } as unknown as jest.Mocked<ToolsManager>;
+      const caller = new LLMCaller('openai' as RegisteredProviders, 'balanced', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: localModelManager as unknown as ModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: localToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      await expect(caller.call('Use the base tool', {
+        settings: {
+          providerOptions: {
+            model: 'text-only'
+          }
+        }
+      })).rejects.toThrow('Exact model openai/text-only does not satisfy the request requirements');
+    });
+
+    it('should apply multi-provider ambiguity rules to settings.providerOptions.model overrides', () => {
+      const caller = new LLMCaller(['cerebras', 'venice'] as RegisteredProviders[], 'balanced', 'System message', {
+        providerManager: mockProviderManager,
+        modelManager: mockModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      expect(() => (caller as any).resolveCurrentModelSelection({
+        textInput: true,
+        textOutput: {
+          required: true,
+          formats: ['text']
+        }
+      }, { model: 'llama-3.3-70b' })).toThrow('is available from multiple providers');
+    });
+
     it('should throw Error when no suitable model is found', async () => {
       // Make model manager return undefined (no suitable model)
       mockModelManager.getModel.mockReturnValue(undefined);
@@ -1208,6 +1695,170 @@ describe('LLMCaller', () => {
       // Model should not be resolved during construction
       expect(mockModelManager.getModel).not.toHaveBeenCalled();
       expect((caller as any).model).toBe('cheap');
+    });
+
+    it('should resolve dynamic selections across provider arrays', () => {
+      const mockProviderPool = {
+        getProviderScope: jest.fn().mockReturnValue(['openai', 'gemini']),
+        getInterfaceSupport: jest.fn().mockReturnValue({
+          chatCall: true,
+          streamCall: true,
+          imageCall: false,
+          videoCall: false,
+          embeddingCall: false,
+          audioCall: false
+        }),
+        getProvider: jest.fn()
+      };
+
+      const caller = new LLMCaller(['openai', 'gemini'] as RegisteredProviders[], {
+        preset: 'balanced',
+        constraints: {
+          allowedModels: ['gemini-3-flash-preview']
+        }
+      }, 'System message', {
+        providerManager: mockProviderManager,
+        providerPool: mockProviderPool as any,
+        modelManager: mockModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      const resolved = (caller as any).resolveCurrentModelSelection({
+        textInput: true,
+        textOutput: {
+          required: true,
+          formats: ['text']
+        }
+      });
+
+      expect(resolved.provider).toBe('gemini');
+      expect(resolved.model).toBe('gemini-3-flash-preview');
+    });
+
+    it('should build a per-request provider execution target without switching active provider', () => {
+      const geminiProvider = {
+        chatCall: jest.fn()
+      };
+      const mockProviderPool = {
+        getProviderScope: jest.fn().mockReturnValue(['openai', 'gemini']),
+        getInterfaceSupport: jest.fn().mockReturnValue({
+          chatCall: true,
+          streamCall: true,
+          imageCall: false,
+          videoCall: false,
+          embeddingCall: false,
+          audioCall: false
+        }),
+        getProvider: jest.fn().mockReturnValue(geminiProvider)
+      };
+      const useProviderInstance = jest.fn();
+      const switchProvider = jest.fn();
+      const providerManagerWithRouting = {
+        ...mockProviderManager,
+        getCurrentProviderName: jest.fn().mockReturnValue('openai'),
+        useProviderInstance,
+        switchProvider
+      };
+
+      const caller = new LLMCaller(['openai', 'gemini'] as RegisteredProviders[], {
+        preset: 'balanced',
+        constraints: {
+          allowedModels: ['gemini-3-flash-preview']
+        }
+      }, 'System message', {
+        providerManager: providerManagerWithRouting as any,
+        providerPool: mockProviderPool as any,
+        modelManager: mockModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      const target = (caller as any).resolveExecutionTarget({
+        textInput: true,
+        textOutput: {
+          required: true,
+          formats: ['text']
+        }
+      });
+
+      expect(target.providerName).toBe('gemini');
+      expect(target.provider).toBe(geminiProvider);
+      expect(target.model).toBe('gemini-3-flash-preview');
+      expect(mockProviderPool.getProvider).toHaveBeenCalledWith('gemini');
+      expect(useProviderInstance).not.toHaveBeenCalled();
+      expect(switchProvider).not.toHaveBeenCalled();
+    });
+
+    it('should pass the resolved ProviderPool instance to chat execution without mutating ProviderManager', async () => {
+      const geminiProvider = {
+        chatCall: jest.fn()
+      };
+      const mockProviderPool = {
+        getProviderScope: jest.fn().mockReturnValue(['openai', 'gemini']),
+        getInterfaceSupport: jest.fn().mockReturnValue({
+          chatCall: true,
+          streamCall: true,
+          imageCall: false,
+          videoCall: false,
+          embeddingCall: false,
+          audioCall: false
+        }),
+        getProvider: jest.fn().mockReturnValue(geminiProvider)
+      };
+      const useProviderInstance = jest.fn();
+      const switchProvider = jest.fn();
+      const providerManagerWithRouting = {
+        ...mockProviderManager,
+        getCurrentProviderName: jest.fn().mockReturnValue('openai'),
+        useProviderInstance,
+        switchProvider
+      };
+
+      mockChatController.execute.mockResolvedValueOnce({
+        content: 'Response',
+        role: 'assistant',
+        metadata: {}
+      });
+
+      const caller = new LLMCaller(['openai', 'gemini'] as RegisteredProviders[], {
+        preset: 'balanced',
+        constraints: {
+          allowedModels: ['gemini-3-flash-preview']
+        }
+      }, 'System message', {
+        providerManager: providerManagerWithRouting as any,
+        providerPool: mockProviderPool as any,
+        modelManager: mockModelManager,
+        historyManager: mockHistoryManager,
+        streamingService: mockStreamingService,
+        toolsManager: mockToolsManager,
+        chatController: mockChatController,
+        retryManager: mockRetryManager,
+        tokenCalculator: mockTokenCalculator,
+        responseProcessor: mockResponseProcessor
+      });
+
+      await caller.call('Use the selected provider');
+
+      expect(mockChatController.execute).toHaveBeenCalled();
+      const execution = mockChatController.execute.mock.calls[0][1] as any;
+      expect(execution).toMatchObject({
+        providerName: 'gemini',
+        provider: geminiProvider
+      });
+      expect(useProviderInstance).not.toHaveBeenCalled();
+      expect(switchProvider).not.toHaveBeenCalled();
     });
   });
 

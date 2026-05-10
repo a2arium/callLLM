@@ -9,14 +9,14 @@ const __dirname = getDirname(import.meta.url);
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 /**
- * Text-to-speech via `synthesizeSpeech` (OpenAI `audio/speech`).
+ * Text-to-speech via `synthesizeSpeech`.
  *
- * Requires OPENAI_API_KEY. Run: `yarn example:speechSynthesis`
+ * Requires GEMINI_API_KEY. Run: `yarn example:speechSynthesis`
  * Output: `examples/output/speech-example.mp3` (overwritten each run).
  */
 async function main(): Promise<void> {
-    if (!process.env.OPENAI_API_KEY) {
-        console.error('Set OPENAI_API_KEY in .env or the environment.');
+    if (!process.env.GEMINI_API_KEY) {
+        console.error('Set GEMINI_API_KEY in .env or the environment.');
         process.exit(1);
     }
 
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
     const outputPath = path.join(outDir, 'speech-example.mp3');
     await fs.promises.mkdir(outDir, { recursive: true });
 
-    const caller = new LLMCaller('openai', 'gpt-4o-mini-tts', 'You are a helpful assistant.');
+    const caller = new LLMCaller('gemini', 'fast', 'You are a helpful assistant.');
 
     const text =
         process.argv[2] ||
@@ -32,7 +32,6 @@ async function main(): Promise<void> {
 
     const result = await caller.synthesizeSpeech({
         input: text,
-        model: 'gpt-4o-mini-tts',
         voice: 'alloy',
         responseFormat: 'mp3',
         outputPath

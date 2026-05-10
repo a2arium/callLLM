@@ -18,6 +18,7 @@ import { StreamController } from '../streaming/StreamController.ts';
 import { HistoryManager } from '../history/HistoryManager.ts';
 import { toMessageParts } from '../../interfaces/UniversalInterfaces.ts';
 import type { ToolDefinition } from '../../types/tooling.ts';
+import type { ProviderExecutionContext } from '../caller/ProviderExecution.ts';
 
 /**
  * Error thrown when chunk iteration limit is exceeded
@@ -59,6 +60,7 @@ export type ChunkProcessingParams = {
     historyMode?: HistoryMode; // New: history mode for chunk processing
     maxIterations?: number; // New: max iterations for this sequence
     maxParallelRequests?: number; // New: max parallel requests (batch size)
+    execution?: ProviderExecutionContext;
 };
 
 /**
@@ -185,7 +187,9 @@ export class ChunkController {
             });
 
             // Call execute with the full UniversalChatParams object
-            const response = await this.chatController.execute(chatParams);
+            const response = params.execution
+                ? await this.chatController.execute(chatParams, params.execution)
+                : await this.chatController.execute(chatParams);
 
             log.debug('Received response from ChatController', {
                 iteration: this.iterationCount,
@@ -303,11 +307,18 @@ export class ChunkController {
             const inputTokens = await this.tokenCalculator.calculateTotalTokens(streamParams.messages);
             // const inputTokens = 0; // Assuming streamController handles calculation
 
-            const chunkStream = await this.streamController.createStream(
-                params.model,
-                streamParams,
-                inputTokens
-            );
+            const chunkStream = params.execution
+                ? await this.streamController.createStream(
+                    params.model,
+                    streamParams,
+                    inputTokens,
+                    params.execution
+                )
+                : await this.streamController.createStream(
+                    params.model,
+                    streamParams,
+                    inputTokens
+                );
 
             let finalChunkData: UniversalStreamResponse | null = null;
 
@@ -433,7 +444,9 @@ export class ChunkController {
                 };
 
                 try {
-                    const response = await this.chatController.execute(chunkChatParams);
+                    const response = params.execution
+                        ? await this.chatController.execute(chunkChatParams, params.execution)
+                        : await this.chatController.execute(chunkChatParams);
 
                     // Store result in the correct position
                     results[globalIndex] = response;

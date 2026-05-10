@@ -3,13 +3,10 @@ import { logger } from '../../utils/logger.ts';
 
 export class StreamPipeline implements IStreamProcessor {
     private processors: IStreamProcessor[];
+    private readonly log = logger.createLogger({ prefix: 'StreamPipeline' });
 
     constructor(processors: IStreamProcessor[] = []) {
         this.processors = processors;
-        logger.setConfig({
-            level: process.env.LOG_LEVEL as any || 'debug',
-            prefix: 'StreamPipeline'
-        });
     }
 
     addProcessor(processor: IStreamProcessor): void {
@@ -17,12 +14,11 @@ export class StreamPipeline implements IStreamProcessor {
     }
 
     async *processStream(stream: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
-        const log = logger.createLogger({ prefix: 'StreamPipeline.processStream' });
         let currentStream = stream;
 
         // Apply each processor in sequence
         for (const processor of this.processors) {
-            log.debug('Processing stream with processor:', processor.constructor.name);
+            this.log.debug('Processing stream with processor:', processor.constructor.name);
             currentStream = processor.processStream(currentStream);
         }
         // Yield the fully processed stream

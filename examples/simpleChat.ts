@@ -2,7 +2,7 @@ import { LLMCaller } from '../src/core/caller/LLMCaller.ts';
 
 async function main() {
     // Initialize the caller with OpenAI
-    const caller = new LLMCaller('venice', 'fast');
+    const caller = new LLMCaller('gemini', 'fast');
 
     try {
         // Test regular chat call
@@ -34,20 +34,20 @@ async function main() {
 
         console.log('\nStream Response:');
         let lastUsage;
+        let completeResponseText = '';
         for await (const chunk of stream) {
             // For incremental chunks (not the final one)
             if (!chunk.isComplete) {
                 // Display content as it comes in
                 process.stdout.write(chunk.content);
-            } else {
-                // For the final chunk, we can access the complete accumulated text
-                console.log('\n\nComplete response text:');
-                console.log(chunk.contentText);
             }
 
+            completeResponseText = chunk.contentText || chunk.metadata?.accumulatedContent || completeResponseText;
             // Track usage information for final reporting
             lastUsage = chunk.metadata?.usage;
         }
+        console.log('\n\nComplete response text:');
+        console.log(completeResponseText);
         console.log('\n\nFinal Usage Information:');
         console.log('Tokens:', lastUsage?.tokens);
         console.log('Costs:', lastUsage?.costs);

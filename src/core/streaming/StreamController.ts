@@ -6,6 +6,7 @@ import { RetryManager } from '../retry/RetryManager.ts';
 import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent.ts";
 import { shouldRetryDueToLLMError } from '../retry/utils/ShouldRetryDueToLLMError.ts';
 import { logger } from '../../utils/logger.ts';
+import type { ProviderExecutionContext } from '../caller/ProviderExecution.ts';
 
 /**
  * StreamController is responsible for managing the creation and processing of streaming LLM responses.
@@ -56,7 +57,8 @@ export class StreamController {
     async createStream(
         model: string,
         params: UniversalChatParams,
-        inputTokens: number
+        inputTokens: number,
+        execution?: ProviderExecutionContext
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
         // Use maxRetries from settings (if provided)
         const maxRetries = params.settings?.maxRetries ?? 3;
@@ -97,7 +99,7 @@ export class StreamController {
                 level: process.env.LOG_LEVEL as any || 'info',
                 prefix: 'StreamController.getStream'
             });
-            const provider = this.providerManager.getProvider();
+            const provider = execution?.provider ?? this.providerManager.getProvider();
             const providerType = provider.constructor.name;
 
             log.debug('Requesting provider stream', {

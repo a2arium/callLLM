@@ -156,7 +156,15 @@ describe('LLMCaller - Model Management', () => {
       );
 
       expect(responses.length).toBe(mockStream.length);
-      expect(responses).toEqual(mockStream);
+      expect(responses).toEqual([
+        expect.objectContaining(mockStream[0]),
+        expect.objectContaining(mockStream[1])
+      ]);
+      expect(responses[0].metadata).toEqual(expect.objectContaining({
+        provider: 'openai',
+        model: 'test-model',
+        selectionMode: 'exact'
+      }));
 
       // Since the implementation has changed, we're removing this expectation
       // captureStreamResponse is either not being called or not properly mocked
@@ -282,7 +290,15 @@ describe('LLMCaller - Model Management', () => {
       expect(mockHistoryManager.addMessage).toHaveBeenCalledWith('user', message, {});
       expect(mockStreamingService.createStream).toHaveBeenCalledTimes(1);
       expect(responses).toHaveLength(2);
-      expect(responses).toEqual([mockStreamChunk, mockFinalStreamChunk]);
+      expect(responses).toEqual([
+        expect.objectContaining(mockStreamChunk),
+        expect.objectContaining(mockFinalStreamChunk)
+      ]);
+      expect(responses[0].metadata).toEqual(expect.objectContaining({
+        provider: 'openai',
+        model: 'test-model',
+        selectionMode: 'exact'
+      }));
 
       // Removing this expectation since captureStreamResponse may not be 
       // called or not properly mocked in the current implementation

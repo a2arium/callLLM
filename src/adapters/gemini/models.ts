@@ -372,7 +372,7 @@ export const defaultModels: ModelInfo[] = [
             streaming: false,
             audio: {
                 synthesize: true,
-                supportedOutputFormats: ['mp3'],
+                supportedOutputFormats: ['pcm', 'wav'],
             },
             input: {
                 text: true,
@@ -400,7 +400,7 @@ export const defaultModels: ModelInfo[] = [
             streaming: false,
             audio: {
                 synthesize: true,
-                supportedOutputFormats: ['mp3'],
+                supportedOutputFormats: ['pcm', 'wav'],
             },
             input: {
                 text: true,
@@ -428,7 +428,7 @@ export const defaultModels: ModelInfo[] = [
             streaming: false,
             audio: {
                 synthesize: true,
-                supportedOutputFormats: ['mp3'],
+                supportedOutputFormats: ['pcm', 'wav'],
             },
             input: {
                 text: true,

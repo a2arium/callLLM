@@ -21,6 +21,7 @@ import { PromptEnhancer } from '../prompt/PromptEnhancer.ts';
 import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
 import type { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts'
 import type { ConversationContext, LLMCallContext, PromptMessage } from '../telemetry/collector/types.ts'
+import type { ProviderExecutionContext } from '../caller/ProviderExecution.ts';
 
 export class ChatController {
     // Keep track of the orchestrator - needed for recursive calls
@@ -86,7 +87,8 @@ export class ChatController {
      */
     async execute<T extends z.ZodType | undefined = undefined>(
         // Update signature to accept UniversalChatParams
-        params: UniversalChatParams
+        params: UniversalChatParams,
+        execution?: ProviderExecutionContext
     ): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
         const log = logger.createLogger({ prefix: 'ChatController.execute' });
 
@@ -110,7 +112,11 @@ export class ChatController {
 
         try {
             // --- Telemetry: Collector start LLM ---
-            const providerName = (this.providerManager.getCurrentProviderName?.() as unknown as string) || this.providerManager.getProvider().constructor.name || 'unknown';
+            const provider = execution?.provider ?? this.providerManager.getProvider();
+            const providerName = execution?.providerName
+                ?? (this.providerManager.getCurrentProviderName?.() as unknown as string)
+                ?? provider.constructor.name
+                ?? 'unknown';
             if (this.telemetryCollector && this.conversationCtx) {
                 // Build toolsAvailable list as just tool names
                 const toolsAvailable = (tools || []).map(t => t.name);
@@ -140,7 +146,7 @@ export class ChatController {
             }
 
             // Get the model info early for history truncation
-            const modelInfo = this.modelManager.getModel(model);
+            const modelInfo = execution?.modelInfo ?? this.modelManager.getModel(model);
             if (!modelInfo) throw new Error(`Model ${model} not found`);
 
             // Validate JSON mode capability if needed and get injection flag
@@ -265,7 +271,7 @@ export class ChatController {
             let response = await localRetryManager.executeWithRetry(
                 async () => {
                     const exec = async () => {
-                        const resp = await this.providerManager.getProvider().chatCall(model, chatParamsForProvider);
+                        const resp = await provider.chatCall(model, chatParamsForProvider);
                         if (!resp) {
                             throw new Error('No response received from provider');
                         }
@@ -433,7 +439,7 @@ export class ChatController {
                         },
                         jsonSchema: jsonSchema, // Explicitly pass original schema
                         responseFormat: effectiveResponseFormat // Explicitly pass original format
-                    });
+                    }, execution);
                 } else {
                     log.debug('Tool calls processed, no resubmission required.');
                     // If no resubmission, the original `response` might be the final one

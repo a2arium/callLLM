@@ -7,12 +7,12 @@ export class RetryWrapper implements IStreamProcessor {
     private processor: IStreamProcessor;
     private retryPolicy: IRetryPolicy;
     private maxRetries: number;
+    private readonly log = logger.createLogger({ prefix: 'RetryWrapper' });
 
     constructor(processor: IStreamProcessor, retryPolicy: IRetryPolicy, maxRetries = 3) {
         this.processor = processor;
         this.retryPolicy = retryPolicy;
         this.maxRetries = maxRetries;
-        logger.setConfig({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'RetryWrapper' });
     }
 
     async *processStream(stream: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
@@ -49,7 +49,7 @@ export class RetryWrapper implements IStreamProcessor {
 
                     if (shouldRetry) {
                         const delayMs = this.retryPolicy.getDelayMs(attempt);
-                        logger.warn(`Retry attempt ${attempt}/${this.maxRetries} after ${delayMs}ms: ${error.message}`);
+                        this.log.warn(`Retry attempt ${attempt}/${this.maxRetries} after ${delayMs}ms: ${error.message}`);
                         await new Promise((resolve) => setTimeout(resolve, delayMs));
 
                         // Recreate the buffered stream for the next attempt
@@ -61,13 +61,13 @@ export class RetryWrapper implements IStreamProcessor {
 
                         bufferedStream[Symbol.asyncIterator] = retryStream[Symbol.asyncIterator].bind(retryStream);
                     } else {
-                        logger.error(`Max retries (${this.maxRetries}) exceeded or retry not allowed: ${error instanceof Error ? error.message : String(error)}`);
+                        this.log.error(`Max retries (${this.maxRetries}) exceeded or retry not allowed: ${error instanceof Error ? error.message : String(error)}`);
                         throw error;
                     }
                 }
             }
         } catch (error) {
-            logger.error(`Error in RetryWrapper: ${error instanceof Error ? error.message : String(error)}`);
+            this.log.error(`Error in RetryWrapper: ${error instanceof Error ? error.message : String(error)}`);
             throw error;
         }
     }

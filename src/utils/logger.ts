@@ -2,8 +2,9 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { resolveFromFile } from './paths.ts';
 
-// Load environment variables using cross-platform path resolution
-// Use resolveFromFile without parameter - it will use getImportMetaUrl internally
+// Load environment variables from the host app first, then fall back to the
+// repository/package root. dotenv does not override existing values by default.
+dotenv.config();
 dotenv.config({ path: resolveFromFile(undefined, '../../.env') });
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';

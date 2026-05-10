@@ -20,7 +20,8 @@ import {
     isLocalAudioFilePath,
     localFileExceedsTranscriptionByteThreshold,
     localFileExceedsTranscriptionDurationThreshold,
-    splitLocalAudioForTranscription
+    splitLocalAudioForTranscription,
+    transcodeAudioBuffer
 } from './ffmpegAudioPrep.ts';
 import { mergeTranscriptionResponses } from './transcriptionMerge.ts';
 import {
@@ -156,13 +157,14 @@ export class AudioController {
             throw new CapabilityError('Provider does not support audio operations');
         }
         try {
-            const response = await this.adapter.audioCall(params.model, 'synthesize', params);
-            await this.dispatchUsageCallbacks(params.usageCallback, response.usage);
+            const response = await this.adapter.audioCall(params.model, 'synthesize', params) as SpeechResponse;
+            const normalized = await this.normalizeSpeechOutput(response, params);
+            await this.dispatchUsageCallbacks(params.usageCallback, normalized.usage);
             this.log.info('Speech synthesis completed', {
                 model: params.model,
-                sizeBytes: (response as SpeechResponse).audio?.sizeBytes
+                sizeBytes: normalized.audio?.sizeBytes
             });
-            return response as SpeechResponse;
+            return normalized;
         } catch (error) {
             this.log.error('Speech synthesis failed:', error, { model: params.model });
             throw error;
@@ -189,6 +191,64 @@ export class AudioController {
                 this.log.warn('Per-call usage callback failed:', error);
             }
         }
+    }
+
+    private async normalizeSpeechOutput(response: SpeechResponse, params: SpeechParams): Promise<SpeechResponse> {
+        const requestedFormat = params.responseFormat ?? this.formatFromPath(params.outputPath);
+        if (!requestedFormat || response.audio.format === requestedFormat) {
+            return response;
+        }
+
+        const inputBuffer = Buffer.from(response.audio.data, 'base64');
+        const transcoded = await transcodeAudioBuffer({
+            input: inputBuffer,
+            inputMime: response.audio.mime,
+            outputFormat: requestedFormat as 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm'
+        });
+
+        let audioSavedPath = response.metadata?.audioSavedPath;
+        if (params.outputPath) {
+            const targetPath = this.pathWithAudioExtension(params.outputPath, transcoded.format);
+            const fs = await import('fs/promises');
+            await fs.mkdir(path.dirname(targetPath), { recursive: true });
+            await fs.writeFile(targetPath, transcoded.data);
+            if (audioSavedPath && audioSavedPath !== targetPath) {
+                await fs.rm(audioSavedPath, { force: true });
+            }
+            audioSavedPath = targetPath;
+        }
+
+        return {
+            ...response,
+            audio: {
+                data: transcoded.data.toString('base64'),
+                mime: transcoded.mime,
+                format: transcoded.format,
+                sizeBytes: transcoded.data.length
+            },
+            metadata: {
+                ...response.metadata,
+                audioSavedPath,
+                usage: response.usage
+            }
+        };
+    }
+
+    private pathWithAudioExtension(outputPath: string, format: SpeechResponse['audio']['format']): string {
+        const expectedExt = `.${format}`;
+        if (path.extname(outputPath).toLowerCase() === expectedExt) {
+            return outputPath;
+        }
+        return path.join(path.dirname(outputPath), `${path.basename(outputPath, path.extname(outputPath))}${expectedExt}`);
+    }
+
+    private formatFromPath(outputPath: string | undefined): SpeechResponse['audio']['format'] | undefined {
+        if (!outputPath) return undefined;
+        const ext = path.extname(outputPath).toLowerCase().replace('.', '');
+        if (ext === 'mp3' || ext === 'opus' || ext === 'aac' || ext === 'flac' || ext === 'wav' || ext === 'pcm') {
+            return ext;
+        }
+        return undefined;
     }
 
     private validateAudioSupport(modelName: string, op: AudioOp): void {

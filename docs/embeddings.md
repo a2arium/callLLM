@@ -113,25 +113,58 @@ const queryEmbedding = await llm.embeddings({
 // The similarity calculation will be meaningless or impossible
 ```
 
-### **No Aliases for Embeddings**
+### Presets and Retrieval Consistency
 
-❌ **Aliases are NOT supported for embedding models** (unlike chat models) because they could lead to inconsistent model usage:
+Constructor presets and policy objects can select embedding-capable models:
 
 ```typescript
-// ❌ WRONG: Aliases not supported for embeddings
+const llm = new LLMCaller('openai', 'cheap');
+
 const embedding = await llm.embeddings({
-    input: 'Sample text',
-    model: 'small'  // ❌ This will cause an error
+    input: 'Sample text'
 });
 
-// ✅ CORRECT: Always use specific model names
-const embedding = await llm.embeddings({
-    input: 'Sample text',
-    model: 'text-embedding-3-small'  // ✅ Explicit model name
+console.log(embedding.metadata?.model); // selected embedding model
+```
+
+This is useful for one-off embedding jobs and tools where the framework should choose the cheapest or fastest embedding-capable model. For retrieval systems, still prefer an exact embedding model for indexes and queries so vector dimensions and vector spaces stay consistent:
+
+```typescript
+const llm = new LLMCaller('openai', { model: 'text-embedding-3-small' });
+```
+
+Per-call `model` remains an exact model override and is validated against embedding requirements.
+
+## Model Selection
+
+`LLMCaller.embeddings()` participates in the same request-time model resolver as chat and media operations. The resolver infers these hard requirements:
+
+- text input
+- embedding output
+- provider embedding interface
+- requested `dimensions`, when present
+- requested `encodingFormat`, when present
+
+Then it applies the constructor selection:
+
+```typescript
+const fastEmbedding = new LLMCaller('openai', 'fast');
+const lowCostEmbedding = new LLMCaller(['openai', 'gemini'], {
+    preset: 'cheap',
+    constraints: {
+        maxInputPricePerMillion: 0.2
+    }
 });
 ```
 
-## Model Selection
+The response includes stable metadata:
+
+```typescript
+const response = await lowCostEmbedding.embeddings({ input: 'hello' });
+console.log(response.metadata?.provider);
+console.log(response.metadata?.model);
+console.log(response.metadata?.selectionMode);
+```
 
 ### Available Models
 
@@ -669,7 +702,7 @@ async embeddings(options: EmbeddingCallOptions): Promise<EmbeddingResponse>
 ```typescript
 interface EmbeddingCallOptions {
     input: string | string[];           // Text(s) to embed
-    model?: string;                     // Specific model name (no aliases supported)
+    model?: string;                     // Exact per-call embedding model override
     dimensions?: number;                // Custom dimensions (if supported)
     encodingFormat?: 'float' | 'base64'; // Encoding format
     usageCallback?: UsageCallback;      // Per-call usage tracking
@@ -757,36 +790,35 @@ import { LLMCaller } from 'callllm';
 const llm = new LLMCaller('openai', 'gpt-4', 'Assistant');
 const response = await llm.embeddings({
     input: 'Sample text',
-    model: 'text-embedding-3-small'  // ✅ Always use specific model names
+    model: 'text-embedding-3-small'
 });
 ```
 
-### Key Differences from Chat Models
+### Exact Models vs Dynamic Selection
 
-**Embeddings vs Chat Models:**
+Use exact models for retrieval indexes where documents and queries must stay in the same vector space:
 
 ```typescript
-// ✅ Chat models: Aliases are supported
-const chatResponse = await llm.call('Hello', {
-    model: 'fast'  // ✅ Alias works for chat
+const exact = new LLMCaller('openai', { model: 'text-embedding-3-small' });
+```
+
+Use constructor presets or policies for one-off jobs where the framework should choose an embedding-capable model:
+
+```typescript
+const dynamic = new LLMCaller(['openai', 'gemini'], {
+    preset: 'cheap',
+    constraints: {
+        maxInputPricePerMillion: 0.2
+    }
 });
 
-// ❌ Embedding models: No aliases (for consistency)
-const embedding = await llm.embeddings({
-    input: 'Hello',
-    model: 'fast'  // ❌ Will throw error - use specific model name
-});
-
-// ✅ Embedding models: Use specific names
-const embedding = await llm.embeddings({
-    input: 'Hello',
-    model: 'text-embedding-3-small'  // ✅ Specific model required
-});
+const embedding = await dynamic.embeddings({ input: 'Hello' });
+console.log(embedding.metadata?.model);
 ```
 
 Benefits of using CallLLM for embeddings:
-- **Model consistency enforcement** prevents vector space mismatches
+- **Exact model validation** for retrieval consistency
+- **Dynamic embedding-capable selection** for presets and policies
 - **Built-in usage tracking** and cost calculation
 - **Error handling** and retry logic
 - **Type safety** with full TypeScript support
-- **No accidental model switching** through aliases 

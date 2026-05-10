@@ -15,7 +15,7 @@ const UserSchema = z.object({
 async function main() {
     // Initialize the caller with OpenAI
     const caller = new LLMCaller(
-        'openai',
+        ['gemini', 'openai'],
         'fast',
         'You are a helpful assistant.'
     );

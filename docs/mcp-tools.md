@@ -29,6 +29,32 @@ const response = await caller.call("List the files in the current directory", {
 
 The LLM will automatically discover the available tools from the MCP server and use them appropriately based on the user's request.
 
+## Model Selection With MCP Tools
+
+MCP tools participate in request-time model selection. The framework resolves effective tools before resolving a dynamic model, so presets and policies only choose models that can support the actual tool-calling mode.
+
+```typescript
+const caller = new LLMCaller(['openai', 'gemini'], 'cheap');
+
+const response = await caller.call("List the files in the current directory", {
+  tools: [mcpConfig]
+});
+
+console.log(response[0].metadata?.model); // selected tool-capable model
+```
+
+For streaming calls with tools, the selected model must support streaming tool calls:
+
+```typescript
+for await (const chunk of caller.stream("Watch the workspace and report changes", {
+  tools: [mcpConfig]
+})) {
+  process.stdout.write(chunk.content);
+}
+```
+
+If an optional MCP server fails to load and the call continues without that server's tools, model selection uses the tools that are actually available, not stale schemas from a previous attempt.
+
 ## Direct Access Methods
 
 While LLM interaction is the primary method for using MCP tools, `LLMCaller` also implements the `MCPDirectAccess` interface which provides supplementary methods for special cases where you need to:
@@ -490,4 +516,3 @@ type McpToolSchema = {
   serverKey: string;
 };
 ```
-

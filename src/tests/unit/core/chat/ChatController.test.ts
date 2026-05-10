@@ -169,6 +169,46 @@ describe('ChatController', () => {
     expect(response.content).toBe('Test response');
   });
 
+  it('should start telemetry with the resolved provider and model', async () => {
+    const conversationCtx = {
+      conversationId: 'conversation-1',
+      startedAt: Date.now(),
+      type: 'call'
+    };
+    const llmCtx = {
+      llmCallId: 'llm-1',
+      conversationId: 'conversation-1',
+      provider: 'openai',
+      model: 'gpt-5-mini',
+      streaming: false,
+      startedAt: Date.now()
+    };
+    const telemetryCollector = {
+      startLLM: jest.fn().mockReturnValue(llmCtx),
+      addPrompt: jest.fn(),
+      addChoice: jest.fn(),
+      endLLM: jest.fn()
+    };
+
+    (mockProviderManager as any).getCurrentProviderName = jest.fn().mockReturnValue('openai');
+    chatController.setTelemetryContext(telemetryCollector as any, conversationCtx as any);
+
+    await chatController.execute({
+      model: 'gpt-5-mini',
+      messages: [{ role: 'user', content: 'Hello' }]
+    });
+
+    expect(telemetryCollector.startLLM).toHaveBeenCalledWith(
+      conversationCtx,
+      expect.objectContaining({
+        provider: 'openai',
+        model: 'gpt-5-mini',
+        streaming: false,
+        responseFormat: 'text'
+      })
+    );
+  });
+
   it('should handle stateless history mode', async () => {
     // Arrange
     const mockPrompt = 'this is a test message';

@@ -184,6 +184,11 @@ export class ProviderManager {
         this.currentProviderName = providerName;
     }
 
+    public useProviderInstance(providerName: RegisteredProviders, provider: LLMProvider): void {
+        this.provider = provider;
+        this.currentProviderName = providerName;
+    }
+
     public getCurrentProviderName(): RegisteredProviders {
         return this.currentProviderName as RegisteredProviders;
     }

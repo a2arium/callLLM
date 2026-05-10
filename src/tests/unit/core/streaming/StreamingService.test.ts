@@ -183,6 +183,49 @@ describe('StreamingService', () => {
     expect(processStreamSpy).toHaveBeenCalled();
   });
 
+  it('should start telemetry with the resolved provider and model', async () => {
+    const conversationCtx = {
+      conversationId: 'conversation-1',
+      startedAt: Date.now(),
+      type: 'stream'
+    };
+    const llmCtx = {
+      llmCallId: 'llm-1',
+      conversationId: 'conversation-1',
+      provider: 'openai',
+      model: 'gpt-5-mini',
+      streaming: true,
+      startedAt: Date.now()
+    };
+    const telemetryCollector = {
+      awaitReady: jest.fn().mockResolvedValue(undefined),
+      startLLM: jest.fn().mockReturnValue(llmCtx),
+      addPrompt: jest.fn(),
+      addChoice: jest.fn(),
+      endLLM: jest.fn()
+    };
+
+    (mockProviderManager as any).getCurrentProviderName = jest.fn().mockReturnValue('openai');
+    streamingService.setTelemetryContext(telemetryCollector as any, conversationCtx as any);
+
+    const processed = await streamingService.createStream(
+      createTestParams({ model: 'gpt-5-mini' }),
+      'gpt-5-mini',
+      testSystemMessage
+    );
+    for await (const _ of processed) { /* drain */ }
+
+    expect(telemetryCollector.startLLM).toHaveBeenCalledWith(
+      conversationCtx,
+      expect.objectContaining({
+        provider: 'openai',
+        model: 'gpt-5-mini',
+        streaming: true,
+        responseFormat: 'text'
+      })
+    );
+  });
+
   it('should not prepend system message if one already exists', async () => {
     mockHistoryManager.getMessages = mockGetMessages_1;
     const systemMessage = 'You are a helpful assistant';

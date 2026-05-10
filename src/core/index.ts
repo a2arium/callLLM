@@ -2,6 +2,109 @@
 export { ModelManager } from './models/ModelManager.ts';
 export { TokenCalculator } from './models/TokenCalculator.ts';
 export { ModelSelector } from './models/ModelSelector.ts';
+export {
+    DEFAULT_PROVIDER_MODEL_CATALOGS,
+    ModelCatalog,
+    ModelNotFoundError,
+    AmbiguousModelError,
+    normalizeProviderScope,
+    loadModelCandidates,
+    resolveExactModel
+} from './models/ModelCatalog.ts';
+export type {
+    ModelCandidate,
+    ProviderModelCatalogs
+} from './models/ModelCatalog.ts';
+export {
+    getEffectiveCapabilities,
+    candidateMeetsRequirements,
+    filterCandidatesByRequirements,
+    explainCapabilityMatch,
+    supportsTextInput,
+    supportsTextOutput,
+    supportsImageInput,
+    supportsImageOutput,
+    supportsAudioInput,
+    supportsAudioOutput,
+    supportsVideoOutput,
+    supportsEmbeddings,
+    supportsAudioApi,
+    supportsToolCalls
+} from './models/CapabilityMatcher.ts';
+export type {
+    TextOutputRequirement,
+    RequestRequirements,
+    ProviderInterfaceSupport,
+    CapabilityMatchResult
+} from './models/CapabilityMatcher.ts';
+export {
+    rankCandidates,
+    applyModelConstraints,
+    getConstraintRejectionReasons,
+    scoreCandidates,
+    sortScoredCandidates,
+    getRawMetrics,
+    getOperationCost,
+    normalizeMetric,
+    ModelScoringError
+} from './models/ModelScoring.ts';
+export type {
+    SelectionOperation,
+    ScoreContext,
+    CandidateScores,
+    ScoredModelCandidate,
+    ConstraintResult,
+    RankedModelSelection
+} from './models/ModelScoring.ts';
+export {
+    inferChatRequestRequirements,
+    inferEmbeddingRequestRequirements,
+    inferTranscriptionRequestRequirements,
+    inferTranslationRequestRequirements,
+    inferSpeechRequestRequirements,
+    inferImageOperation
+} from './models/RequestInference.ts';
+export type {
+    ChatOperationKind,
+    ImageOperationRequirement,
+    InferredModelRequest,
+    ToolInferenceOptions
+} from './models/RequestInference.ts';
+export {
+    resolveModel,
+    describeRequestRequirements,
+    formatModelResolutionErrorMessage,
+    ModelSelectionError,
+    ModelResolutionError
+} from './models/ModelResolver.ts';
+export type {
+    ModelResolutionMode,
+    ModelResolverInput,
+    ResolvedModel,
+    ModelResolution,
+    ModelResolutionCandidate,
+    ModelResolutionErrorDetails
+} from './models/ModelResolver.ts';
+export {
+    MODEL_PRESETS,
+    PREFERENCE_DIMENSIONS,
+    MODEL_SELECTION_PRESETS,
+    ModelSelectionConfigError,
+    isModelPreset,
+    normalizeModelSelection
+} from './models/ModelSelection.ts';
+export type {
+    ProviderScope,
+    ModelPreset,
+    PreferenceDimension,
+    ModelPreferences,
+    ModelConstraints,
+    ModelResolutionOptions,
+    ExactModelSelection,
+    DynamicModelSelection,
+    ModelOrSelection,
+    NormalizedModelSelection
+} from './models/ModelSelection.ts';
 
 // Core history management exports
 export { HistoryManager } from './history/HistoryManager.ts';
@@ -14,6 +117,12 @@ export { ToolOrchestrator } from './tools/ToolOrchestrator.ts';
 
 // Core chat functionality exports
 export { ChatController } from './chat/ChatController.ts';
+export { ProviderPool } from './caller/ProviderPool.ts';
+export type {
+    ProviderInterfaceName,
+    ProviderPoolInterfaceSupport,
+    ProviderPoolOptions
+} from './caller/ProviderPool.ts';
 
 // Core streaming exports
 export { StreamController } from './streaming/StreamController.ts';

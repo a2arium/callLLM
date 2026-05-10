@@ -54,6 +54,7 @@
     "example:image": "tsx examples/imageInput.ts",
     "example:imageGenerate": "tsx examples/imageGenerationAndEditing.ts",
     "example:embeddings": "tsx examples/embeddings-example.ts",
+    "example:modelSelection": "tsx examples/modelSelection.ts",
     "example:video": "tsx examples/videoGeneration.ts",
     "example:speechSynthesis": "tsx examples/speechSynthesis.ts",
     "example:speechTranscription": "tsx examples/speechTranscription.ts",

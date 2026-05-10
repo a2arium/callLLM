@@ -16,6 +16,11 @@ import { HistoryTruncator } from '../history/HistoryTruncator.ts';
 import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
 import type { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts'
 import type { ConversationContext, LLMCallContext } from '../telemetry/collector/types.ts'
+import {
+    attachProviderExecutionContext,
+    getProviderExecutionContext,
+    type ProviderExecutionContext
+} from '../caller/ProviderExecution.ts';
 
 /**
  * StreamingService
@@ -110,7 +115,8 @@ export class StreamingService {
     public async createStream(
         params: UniversalChatParams,
         model: string,
-        systemMessage?: string
+        systemMessage?: string,
+        execution?: ProviderExecutionContext
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
         const log = logger.createLogger({
             level: process.env.LOG_LEVEL as any || 'info',
@@ -118,7 +124,13 @@ export class StreamingService {
         });
 
         // Collector: start LLM for streaming
-        const providerName = (this.providerManager.getCurrentProviderName?.() as unknown as string) || this.providerManager.getProvider()?.constructor?.name || 'unknown';
+        const effectiveExecution = execution ?? getProviderExecutionContext(params);
+        attachProviderExecutionContext(params, effectiveExecution);
+        const provider = effectiveExecution?.provider ?? this.providerManager.getProvider();
+        const providerName = effectiveExecution?.providerName
+            ?? (this.providerManager.getCurrentProviderName?.() as unknown as string)
+            ?? provider?.constructor?.name
+            ?? 'unknown';
         if (this.telemetryCollector) {
             // Ensure providers are ready so spans attach correctly
             try { await (this.telemetryCollector as any).awaitReady?.(); } catch { /* ignore */ }
@@ -166,7 +178,7 @@ export class StreamingService {
         const modelInfo = this.modelManager.getModel(model);
 
         if (!modelInfo) {
-            const err = new Error(`Model ${model} not found for provider ${this.providerManager.getProvider().constructor.name}`);
+            const err = new Error(`Model ${model} not found for provider ${provider.constructor.name}`);
             throw err;
         }
 
@@ -180,7 +192,7 @@ export class StreamingService {
         // Collector will handle usage; no-op here
 
         try {
-            const stream = await this.executeWithRetry(model, params, inputTokens, modelInfo);
+            const stream = await this.executeWithRetry(model, params, inputTokens, modelInfo, effectiveExecution);
             return this.wrapStreamWithTelemetry(stream, undefined, model);
         } catch (error) {
             throw error;
@@ -194,7 +206,8 @@ export class StreamingService {
         model: string,
         params: UniversalChatParams,
         inputTokens: number,
-        modelInfo: ModelInfo
+        modelInfo: ModelInfo,
+        execution?: ProviderExecutionContext
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
         const log = logger.createLogger({
             prefix: 'StreamingService.executeWithRetry'
@@ -211,7 +224,7 @@ export class StreamingService {
 
             return await this.retryManager.executeWithRetry(
                 async () => {
-                    return await this.executeStreamRequest(model, params, inputTokens, modelInfo);
+                    return await this.executeStreamRequest(model, params, inputTokens, modelInfo, execution);
                 },
                 shouldRetryDueToLLMError
             );
@@ -231,13 +244,14 @@ export class StreamingService {
         model: string,
         params: UniversalChatParams,
         inputTokens: number,
-        modelInfo: ModelInfo
+        modelInfo: ModelInfo,
+        execution?: ProviderExecutionContext
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
         const log = logger.createLogger({
             prefix: 'StreamingService.executeStreamRequest'
         });
 
-        const provider = this.providerManager.getProvider();
+        const provider = execution?.provider ?? this.providerManager.getProvider();
         const startTime = Date.now();
 
         try {

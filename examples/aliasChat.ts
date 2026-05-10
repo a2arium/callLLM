@@ -1,8 +1,8 @@
 import { LLMCaller } from '../src/core/caller/LLMCaller.ts';
 
 async function runAliasExample() {
-    // Initialize LLMCaller with different aliases
-    console.log('\nTesting different model aliases:');
+    // Initialize LLMCaller with different presets
+    console.log('\nTesting different model presets:');
 
 
     // Fast model

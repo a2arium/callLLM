@@ -22,6 +22,23 @@ const mockProviderManager = {
   callImageOperation: jest.fn()
 };
 
+const mockProviderPool = {
+  getProviderScope: jest.fn().mockReturnValue(['mock-provider']),
+  getInitializedProviders: jest.fn().mockReturnValue([]),
+  hasProvider: jest.fn().mockReturnValue(true),
+  getProvider: jest.fn().mockReturnValue(mockProviderAdapter),
+  supports: jest.fn().mockReturnValue(true),
+  getInterfaceSupport: jest.fn().mockReturnValue({
+    chatCall: true,
+    streamCall: true,
+    imageCall: false,
+    videoCall: false,
+    embeddingCall: false,
+    audioCall: false
+  }),
+  clear: jest.fn()
+};
+
 // Plain mock for ModelManager (implements public interface only)
 const mockModelManager = {
   getModel: jest.fn().mockReturnValue({
@@ -48,6 +65,8 @@ describe("LLMCaller.tools integration", () => {
   beforeEach(() => {
     mockProviderAdapter.chatCall.mockClear();
     mockProviderAdapter.streamCall.mockClear();
+    mockProviderPool.getProvider.mockClear();
+    mockProviderPool.getInterfaceSupport.mockClear();
   });
 
   test("should register and use tools provided in the constructor", async () => {
@@ -70,6 +89,7 @@ describe("LLMCaller.tools integration", () => {
     const caller = new LLMCaller('mock-provider' as any, 'mock-model', 'System message', {
       tools: [testTool],
       providerManager: mockProviderManager as any,
+      providerPool: mockProviderPool as any,
       modelManager: mockModelManager as any
     });
 
@@ -197,6 +217,7 @@ describe("LLMCaller.tools integration", () => {
     const caller = new LLMCaller('mock-provider' as any, 'mock-model', 'System message', {
       tools: [streamTestTool],
       providerManager: mockProviderManager as any,
+      providerPool: mockProviderPool as any,
       modelManager: mockModelManager as any
     });
     await new Promise((resolve) => setImmediate(resolve)); // Allow addTools to potentially finish
@@ -265,6 +286,7 @@ describe("LLMCaller.tools integration", () => {
     const caller = new LLMCaller('mock-provider' as any, 'mock-model', 'System message', {
       tools: [streamTestTool],
       providerManager: mockProviderManager as any,
+      providerPool: mockProviderPool as any,
       modelManager: mockModelManager as any
     });
     await new Promise((resolve) => setImmediate(resolve)); // Allow addTools to potentially finish

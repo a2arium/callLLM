@@ -134,6 +134,44 @@ metadata?: Metadata;
 
 - All adapters should pass any JSON Schema or Zod-based `jsonSchema` through the shared `SchemaSanitizer` (in `src/core/schema`) before attaching it to provider payloads. That sanitizer clones the schema, normalizes `$defs`, enforces object rules, and strips unsupported constraints (and can append hints).
 - When a provider cannot handle JSON Schema composition keywords (`allOf`, `anyOf`, `oneOf`), enable the `stripCompositionKeywords` option, which removes those properties and documents the removal in descriptions when hints are enabled. OpenAI and Cerebras already use that toggle, so follow their example for new adapters that need composition-free schemas.
+
+### Model catalog and selection expectations
+
+- Every adapter must maintain a provider model catalog in `src/adapters/<provider>/models.ts`.
+- Catalog entries drive exact-model validation, preset/policy ranking, request capability filtering, and cross-provider selection.
+- Keep `ModelInfo.capabilities` aligned with real adapter behavior. If the catalog says a model supports image output but the adapter does not implement `imageCall`, dynamic selection will reject that provider for image generation.
+- Populate operation-specific capabilities where applicable:
+  - `capabilities.streaming`
+  - `capabilities.toolCalls`, including streaming and parallel modes
+  - `capabilities.reasoning`
+  - `capabilities.embeddings`
+  - `capabilities.audio`
+  - `capabilities.input.image`
+  - `capabilities.output.text.textOutputFormats`
+  - `capabilities.output.text.structuredOutputs`
+  - `capabilities.output.image`
+  - `capabilities.output.video`
+- Populate scoring metadata:
+  - `characteristics.qualityIndex`
+  - `characteristics.outputSpeed`
+  - `characteristics.firstTokenLatency`
+- Populate pricing metadata used by constraints and scoring:
+  - text input/output prices
+  - image prices
+  - video prices
+  - audio/TTS prices when available
+- Provider/model identity is provider-qualified internally. Do not rely on model names being unique across providers.
+
+### Optional operation interfaces
+
+Implement optional provider interfaces when the provider supports them:
+
+- `imageCall` for image generation, edit, composite edit, and masked edit
+- `videoCall`, `retrieveVideo`, `downloadVideo` for video jobs and downloads
+- `embeddingCall` for embeddings
+- audio APIs for transcription, translation, and speech synthesis
+
+These interfaces are part of request-time model selection. A candidate model must satisfy both model capability metadata and provider interface availability.
 - Stream responses/chunks:
 ```399:465:src/interfaces/UniversalInterfaces.ts
 export interface UniversalStreamResponse<T = unknown> {

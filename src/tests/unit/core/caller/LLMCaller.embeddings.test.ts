@@ -83,6 +83,49 @@ describe('LLMCaller embeddings API', () => {
         expect(res.usage.tokens.total).toBe(10);
     });
 
+    it('embeddings() resolves presets to embedding-capable models and annotates metadata', async () => {
+        const chatModel: ModelInfo = {
+            name: 'cheap-chat',
+            inputPricePerMillion: 0.001,
+            outputPricePerMillion: 0.002,
+            maxRequestTokens: 4000,
+            maxResponseTokens: 1000,
+            capabilities: {
+                streaming: true,
+                toolCalls: false,
+                input: { text: true },
+                output: { text: true }
+            },
+            characteristics: { qualityIndex: 70, outputSpeed: 100, firstTokenLatency: 100 }
+        };
+        const embeddingModel = modelManager.getAvailableModels()[0] as ModelInfo;
+        modelManager.getAvailableModels.mockReturnValue([chatModel, embeddingModel]);
+        modelManager.getModel.mockImplementation((name: string) => {
+            if (name === chatModel.name) return chatModel;
+            if (name === embeddingModel.name) return embeddingModel;
+            return undefined;
+        });
+        (ModelManager.getCapabilities as any).mockImplementation((name: string) => {
+            if (name === embeddingModel.name) return embeddingModel.capabilities;
+            if (name === chatModel.name) return chatModel.capabilities;
+            return { streaming: true, input: { text: true }, output: { text: true } };
+        });
+
+        const llm = new LLMCaller('openai' as RegisteredProviders, 'cheap', 'sys', {
+            providerManager,
+            modelManager,
+            tokenCalculator
+        });
+
+        const res = await llm.embeddings({ input: 'hi' });
+
+        expect(res.model).toBe('text-embedding-3-small');
+        expect(res.metadata).toMatchObject({
+            provider: 'openai',
+            model: 'text-embedding-3-small'
+        });
+    });
+
     it('embeddings() throws when model lacks embedding capability', async () => {
         // Mock a non-embedding model
         const nonEmbeddingModel: ModelInfo = {
@@ -141,5 +184,4 @@ describe('LLMCaller embeddings API', () => {
         expect(caps.encodingFormats).toEqual(['float', 'base64']);
     });
 });
-
 

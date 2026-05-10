@@ -110,6 +110,7 @@ describe('LLMCaller - MCP Direct Access', () => {
     isConnected: jest.Mock<() => boolean>;
     getConnectedServers: jest.Mock<() => string[]>;
     listConfiguredServers: jest.Mock<() => string[]>;
+    getServerTools: jest.Mock<(serverKey: string) => Promise<ToolDefinition[]>>;
     registerServerConfig: jest.Mock<(serverKey: string, config: MCPServerConfig) => void>;
   };
 
@@ -124,6 +125,7 @@ describe('LLMCaller - MCP Direct Access', () => {
       isConnected: jest.fn<() => boolean>().mockReturnValue(true as any),
       getConnectedServers: jest.fn<() => string[]>().mockReturnValue(['filesystem'] as any),
       listConfiguredServers: jest.fn<() => string[]>().mockReturnValue(['filesystem'] as any),
+      getServerTools: jest.fn<(serverKey: string) => Promise<ToolDefinition[]>>().mockResolvedValue([]),
       registerServerConfig: jest.fn<(serverKey: string, config: MCPServerConfig) => void>()
     };
 
@@ -289,6 +291,44 @@ describe('LLMCaller - MCP Direct Access', () => {
 
       // Verify resolveToolDefinitions was called (for standard tools)
       expect(jest.spyOn(caller as any, 'resolveToolDefinitions')).toHaveBeenCalled();
+    });
+
+    it('should keep MCP schema cache behavior for connected servers', async () => {
+      const mcpTool: ToolDefinition = {
+        name: 'mcp_read_file',
+        description: 'Read file',
+        parameters: { type: 'object', properties: {} },
+        callFunction: jest.fn() as any
+      };
+      mockMcpAdapterInstance.listConfiguredServers.mockReturnValue(['filesystem']);
+      mockMcpAdapterInstance.isConnected.mockReturnValue(true);
+      mockMcpAdapterInstance.getServerTools.mockResolvedValue([mcpTool]);
+
+      const first = await (caller as any).resolveEffectiveToolsForCall({});
+      const second = await (caller as any).resolveEffectiveToolsForCall({});
+
+      expect(first).toEqual([mcpTool]);
+      expect(second).toEqual([mcpTool]);
+      expect(mockMcpAdapterInstance.getServerTools).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not use stale cached MCP tools when optional server reconnect fails', async () => {
+      const staleTool: ToolDefinition = {
+        name: 'stale_mcp_tool',
+        description: 'Stale tool',
+        parameters: { type: 'object', properties: {} },
+        callFunction: jest.fn() as any
+      };
+      (caller as any).mcpSchemaCache.set('filesystem', [staleTool]);
+      mockMcpAdapterInstance.listConfiguredServers.mockReturnValue(['filesystem']);
+      mockMcpAdapterInstance.isConnected.mockReturnValue(false);
+      mockMcpAdapterInstance.connectToServer.mockRejectedValue(new Error('offline'));
+
+      const effectiveTools = await (caller as any).resolveEffectiveToolsForCall({});
+
+      expect(effectiveTools).toBeUndefined();
+      expect(mockMcpAdapterInstance.getServerTools).not.toHaveBeenCalled();
+      expect((caller as any).mcpSchemaCache.has('filesystem')).toBe(false);
     });
   });
 
@@ -493,8 +533,15 @@ describe('LLMCaller - MCP Direct Access', () => {
         })
       );
 
-      // Verify the response was returned correctly
-      expect(result).toEqual([mockResponse]);
+      // Verify the response was returned with stable model metadata
+      expect(result[0]).toMatchObject({
+        ...mockResponse,
+        metadata: {
+          provider: 'openai',
+          model: 'gpt-3.5-turbo',
+          selectionMode: 'exact'
+        }
+      });
 
       // Verify MCP registration happened
       expect(mockMcpAdapterInstance.registerServerConfig).toHaveBeenCalledWith('filesystem', mcpConfig.filesystem);

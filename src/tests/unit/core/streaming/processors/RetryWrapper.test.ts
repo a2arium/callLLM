@@ -62,8 +62,7 @@ describe('RetryWrapper', () => {
     it('should initialize with default max retries', () => {
       const retryWrapper = new RetryWrapper(mockProcessor, mockRetryPolicy);
       expect(retryWrapper).toBeDefined();
-      // Now logger.setConfig refers to mockLoggerSetConfig due to dynamic import
-      expect(logger.setConfig).toHaveBeenCalledWith(
+      expect(logger.createLogger).toHaveBeenCalledWith(
         expect.objectContaining({ prefix: 'RetryWrapper' })
       );
     });
@@ -71,8 +70,7 @@ describe('RetryWrapper', () => {
     it('should initialize with custom max retries', () => {
       const retryWrapper = new RetryWrapper(mockProcessor, mockRetryPolicy, 5);
       expect(retryWrapper).toBeDefined();
-      // Check setConfig was called for this instance too
-      expect(logger.setConfig).toHaveBeenCalledWith(
+      expect(logger.createLogger).toHaveBeenCalledWith(
         expect.objectContaining({ prefix: 'RetryWrapper' })
       );
     });

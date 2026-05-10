@@ -75,35 +75,27 @@ describe('StreamHistoryProcessor', () => {
       expect(streamHistoryProcessor).toBeDefined();
     });
 
-    it('should use LOG_LEVEL from environment variable when provided', () => {
-      // Set the LOG_LEVEL environment variable
+    it('should create an isolated logger for the processor', () => {
       process.env.LOG_LEVEL = 'info';
 
-      // Create a new instance with the environment variable set
       const processor = new StreamHistoryProcessor(mockHistoryManager);
 
-      // Verify the logger was created with the correct options
       expect(logger.createLogger).toHaveBeenCalledWith(
         expect.objectContaining({
-          level: 'info',
-          prefix: 'StreamHistoryProcessor.constructor'
+          prefix: 'StreamHistoryProcessor'
         })
       );
     });
 
-    it('should use default debug level when LOG_LEVEL is not provided', () => {
-      // Ensure LOG_LEVEL is not set
+    it('should rely on the logger default level when LOG_LEVEL is not provided', () => {
       delete process.env.LOG_LEVEL;
 
-      // Create a new instance without the environment variable
       const processor = new StreamHistoryProcessor(mockHistoryManager);
 
-      // Verify the logger was created with the correct options
       expect(logger.createLogger).toHaveBeenCalledWith(
-        expect.objectContaining({
-          level: 'debug',
-          prefix: 'StreamHistoryProcessor.constructor'
-        })
+        {
+          prefix: 'StreamHistoryProcessor'
+        }
       );
     });
   });

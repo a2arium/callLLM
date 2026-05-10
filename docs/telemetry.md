@@ -62,6 +62,36 @@ OTEL_EXPORTER_OTLP_ENDPOINT=https://example.com/otlp
 
 - Basic flow is automatic via `LLMCaller`; providers will be auto-registered.
 
+## Model Selection Metadata
+
+Every response is annotated with stable model-selection metadata:
+
+```ts
+const result = await caller.call('Hello');
+
+console.log(result[0].metadata?.provider);
+console.log(result[0].metadata?.model);
+console.log(result[0].metadata?.selectionMode); // exact | preset | policy
+```
+
+These fields are stable and safe for logging, metrics, audit trails, and application-level routing decisions. They are added for chat, stream chunks, image/video operations, embeddings, and audio operations.
+
+When a dynamic selection is created with `resolution.explain: true`, the response also includes diagnostic resolution details:
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], {
+  preset: 'balanced',
+  resolution: { explain: true }
+});
+
+const result = await caller.call('Summarize this');
+console.log(result[0].metadata?.modelResolution);
+```
+
+`modelResolution` can include the selected candidate, request-derived requirements, applied constraints, candidate scores, and rejection reasons. Treat this object as diagnostic. Candidate scores and rejection reasons may change as model catalogs, provider health signals, or scoring formulas are improved.
+
+Telemetry providers should record the resolved provider/model, not only the constructor provider/model, because presets and policies can choose different models by operation.
+
 ## Notes
 - Old direct OpenTelemetry wiring has been removed from controllers in favor of provider-based emission.
 - More providers can be added without changing core logic.

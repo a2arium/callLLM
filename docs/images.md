@@ -1,6 +1,6 @@
 # Working with Images in callLLM
 
-This guide explains how to use callLLM with multimodal models that support image inputs.
+This guide explains how to use callLLM with multimodal models that support image inputs and image generation/editing.
 
 ## Prerequisites
 
@@ -118,3 +118,50 @@ const response = await caller.call("What text is in this image?", {
 // Example with file placeholder
 const response = await caller.call("<file:./diagram.png> Explain this technical diagram.");
 ``` 
+
+## Image Output and Model Selection
+
+Image input chat and image output are different model requirements.
+
+- Image input chat requires a chat model with image input support.
+- Image output requires an image-capable model and a provider adapter that implements the image operation interface.
+
+When the constructor uses a preset or policy, callLLM resolves the model at request time after it sees the actual image operation:
+
+```typescript
+const caller = new LLMCaller(['openai', 'gemini'], 'fast');
+
+const result = await caller.call({
+  text: 'Create a clean app icon',
+  output: { image: { size: '1024x1024', quality: 'high' } },
+  outputPath: './icon.png'
+});
+
+console.log(result[0].metadata?.provider);
+console.log(result[0].metadata?.model);
+console.log(result[0].metadata?.selectionMode); // preset
+```
+
+The resolver infers the image operation from the request:
+
+| Request shape | Inferred operation |
+| --- | --- |
+| `output.image` only | generate |
+| `output.image` plus `file` or one `files[]` item | edit |
+| `output.image` plus multiple `files[]` items | composite edit |
+| `output.image` plus `mask` | masked edit |
+
+These inferred capabilities are hard filters. If the selected exact model cannot perform the requested operation, the call fails instead of silently switching models.
+
+For advanced routing, use a policy:
+
+```typescript
+const caller = new LLMCaller(['openai', 'gemini'], {
+  preset: 'balanced',
+  prefer: { cost: 0.35, latency: 0.25 },
+  constraints: {
+    maxImagePricePerImage: 0.05
+  },
+  resolution: { explain: true }
+});
+```

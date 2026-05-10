@@ -13,20 +13,17 @@ import { logger } from "../../../utils/logger.ts";
 export class ReasoningProcessor implements IStreamProcessor {
     private accumulatedReasoning = "";
     private hasReasoningContent = false;
+    private readonly log = logger.createLogger({ prefix: 'ReasoningProcessor' });
 
     constructor() {
-        logger.setConfig({
-            level: process.env.LOG_LEVEL as any || 'info',
-            prefix: 'ReasoningProcessor'
-        });
-        logger.debug('ReasoningProcessor initialized');
+        this.log.debug('ReasoningProcessor initialized');
     }
 
     async *processStream(stream: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
-        logger.debug('Starting to process stream for reasoning');
+        this.log.debug('Starting to process stream for reasoning');
 
         for await (const chunk of stream) {
-            logger.debug('Processing chunk for reasoning:', {
+            this.log.debug('Processing chunk for reasoning:', {
                 hasReasoning: chunk.reasoning ? true : false,
                 reasoningLength: chunk.reasoning ? chunk.reasoning.length : 0
             });
@@ -35,7 +32,7 @@ export class ReasoningProcessor implements IStreamProcessor {
             if (chunk.reasoning) {
                 this.accumulatedReasoning += chunk.reasoning;
                 this.hasReasoningContent = true;
-                logger.debug(`Accumulated reasoning, length: ${this.accumulatedReasoning.length}`);
+                this.log.debug(`Accumulated reasoning, length: ${this.accumulatedReasoning.length}`);
             }
 
             // Enhanced metadata with reasoning information
@@ -52,14 +49,14 @@ export class ReasoningProcessor implements IStreamProcessor {
             };
         }
 
-        logger.debug('Finished processing stream for reasoning');
+        this.log.debug('Finished processing stream for reasoning');
     }
 
     /**
      * Returns the accumulated reasoning content
      */
     getAccumulatedReasoning(): string {
-        logger.debug(`Getting accumulated reasoning, length: ${this.accumulatedReasoning.length}`);
+        this.log.debug(`Getting accumulated reasoning, length: ${this.accumulatedReasoning.length}`);
         return this.accumulatedReasoning;
     }
 
@@ -74,7 +71,7 @@ export class ReasoningProcessor implements IStreamProcessor {
      * Resets the processor state
      */
     reset(): void {
-        logger.debug('Resetting ReasoningProcessor');
+        this.log.debug('Resetting ReasoningProcessor');
         this.accumulatedReasoning = "";
         this.hasReasoningContent = false;
     }

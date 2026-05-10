@@ -64,8 +64,53 @@ New providers can be added by:
    export const adapterRegistry: Map<string, AdapterConstructor> = new Map([
      // ... existing adapters ...
      ['your-provider', YourProviderAdapter],
-   ]);
-   ```
+]);
+```
+
+## Model Catalog Requirements
+
+Adapters participate in model selection through their provider model catalog. Add or update `src/adapters/<provider>/models.ts` with accurate `ModelInfo` entries for every routable model.
+
+Model selection quality depends directly on catalog quality. At minimum, each model should provide:
+
+- `name`
+- `inputPricePerMillion`
+- `outputPricePerMillion`
+- `maxRequestTokens`
+- `maxResponseTokens`
+- `capabilities`
+- `characteristics.qualityIndex`
+- `characteristics.outputSpeed`
+- `characteristics.firstTokenLatency`
+
+Use operation-specific prices when available:
+
+- `imagePricePerImage`
+- `imageInputPricePerMillion`
+- `imageOutputPricePerMillion`
+- `videoPricePerSecond`
+- audio/TTS pricing fields when supported by the model catalog
+
+Capability metadata should describe what the model can actually do:
+
+- text input/output and JSON/structured-output formats
+- streaming
+- tool calls, including streaming and parallel modes
+- image input
+- image output operations: generate, edit, masked edit
+- video output sizes, max seconds, variants
+- embeddings, dimensions, and encoding formats
+- audio transcription, translation, and speech synthesis
+- reasoning
+
+If a model advertises a capability but the adapter does not implement the corresponding provider interface, dynamic selection will reject that provider for that operation. Implement the optional interfaces when supported:
+
+- `imageCall` for image generation/editing
+- `videoCall`, `retrieveVideo`, and `downloadVideo` for video generation
+- `embeddingCall` for embeddings
+- audio methods for transcription, translation, and speech synthesis
+
+For multi-provider selection, provider plus model is the internal identity. Avoid assuming model names are globally unique.
 
 ## Testing the Adapter
 

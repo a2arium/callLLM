@@ -73,6 +73,100 @@ export async function assertFfmpegAvailable(): Promise<void> {
     await verifyToolVersion('ffprobe');
 }
 
+export type AudioTranscodeFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm';
+
+export type TranscodeAudioBufferOptions = {
+    input: Buffer;
+    inputMime: string;
+    outputFormat: AudioTranscodeFormat;
+};
+
+export type TranscodeAudioBufferResult = {
+    data: Buffer;
+    mime: string;
+    format: AudioTranscodeFormat;
+};
+
+function parsePcmRate(mime: string): number {
+    const match = /rate=(\d+)/i.exec(mime);
+    return match ? Number(match[1]) : 24000;
+}
+
+function isRawPcmMime(mime: string): boolean {
+    const lower = mime.toLowerCase();
+    return lower.includes('audio/l16') || lower.includes('audio/pcm');
+}
+
+function outputMime(format: AudioTranscodeFormat): string {
+    switch (format) {
+        case 'mp3': return 'audio/mpeg';
+        case 'opus': return 'audio/opus';
+        case 'aac': return 'audio/aac';
+        case 'flac': return 'audio/flac';
+        case 'wav': return 'audio/wav';
+        case 'pcm': return 'audio/pcm';
+    }
+}
+
+function codecArgs(format: AudioTranscodeFormat): string[] {
+    switch (format) {
+        case 'mp3': return ['-codec:a', 'libmp3lame'];
+        case 'opus': return ['-codec:a', 'libopus'];
+        case 'aac': return ['-codec:a', 'aac'];
+        case 'flac': return ['-codec:a', 'flac'];
+        case 'wav': return ['-codec:a', 'pcm_s16le'];
+        case 'pcm': return ['-f', 's16le', '-codec:a', 'pcm_s16le'];
+    }
+}
+
+/**
+ * Transcodes a synthesized audio buffer to the requested output format.
+ * Raw Gemini PCM/L16 input is described explicitly to ffmpeg; container formats are auto-detected.
+ */
+export async function transcodeAudioBuffer(options: TranscodeAudioBufferOptions): Promise<TranscodeAudioBufferResult> {
+    await assertFfmpegAvailable();
+
+    const workDir = path.join(os.tmpdir(), `callllm-audio-transcode-${randomUUID()}`);
+    await fsPromises.mkdir(workDir, { recursive: true });
+
+    const inputIsRawPcm = isRawPcmMime(options.inputMime);
+    const inputPath = path.join(workDir, inputIsRawPcm ? 'input.pcm' : 'input.audio');
+    const outputPath = path.join(workDir, `output.${options.outputFormat}`);
+
+    try {
+        await fsPromises.writeFile(inputPath, options.input);
+        const args = [
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-y',
+        ];
+        if (inputIsRawPcm) {
+            args.push('-f', 's16le', '-ar', String(parsePcmRate(options.inputMime)), '-ac', '1');
+        }
+        args.push('-i', inputPath, ...codecArgs(options.outputFormat), outputPath);
+
+        const { code, stderr } = await runCommand('ffmpeg', args);
+        if (code !== 0) {
+            throw new TranscriptionFfmpegError('ffmpeg', 'bad_exit', { exitCode: code, stderr });
+        }
+
+        return {
+            data: await fsPromises.readFile(outputPath),
+            mime: outputMime(options.outputFormat),
+            format: options.outputFormat,
+        };
+    } catch (err) {
+        const e = err as NodeJS.ErrnoException;
+        if (e.code === 'ENOENT') {
+            throw new TranscriptionFfmpegError('ffmpeg', 'not_found', { cause: e });
+        }
+        throw err;
+    } finally {
+        await fsPromises.rm(workDir, { recursive: true, force: true });
+    }
+}
+
 /**
  * Whether the file reference is a resolvable local path (not URL or data URI).
  */

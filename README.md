@@ -21,7 +21,7 @@ const response = await caller.call({
 
 ## Why callLLM?
 
-*   **Multi-Provider Support**: Easily switch between different LLM providers (currently OpenAI, with others planned).
+*   **Multi-Provider Support**: Work across OpenAI, Gemini, OpenRouter, Cerebras, and Venice through one API.
 *   **Streaming**: Native support for handling streaming responses.
 *   **Large Data Handling**: Automatic chunking and processing of large text or JSON data that exceeds model context limits.
 *   **JSON Mode & Schema Validation**: Support for enforcing JSON output with native JSON mode or prompt enhancement fallback for models that don't support structured output. Validation against Zod or JSON schemas.
@@ -29,7 +29,7 @@ const response = await caller.call({
 *   **Function Folders**: Organize tools in separate files and load them dynamically using a directory, with automatic type and documentation extraction.
 *   **MCP Client Support**: Connect to Model Context Protocol (MCP) servers to access external tools and resources. Seamlessly integrate with LLM tools.
 *   **Cost Tracking**: Automatic calculation and reporting of token usage and costs per API call.
-*   **Model Management**: Flexible model selection using aliases (`fast`, `cheap`, `balanced`, `premium`) or specific names, with built-in defaults and support for custom models.
+*   **Model Selection**: Use exact model names, simple presets (`fast`, `cheap`, `balanced`, `premium`), or policy objects that choose a capable model at request time.
 *   **Retry Mechanisms**: Built-in resilience against transient API errors using exponential backoff.
 *   **History Management**: Conversation history management to build chat based conversation or stateless calls without prior history.
 
@@ -57,7 +57,10 @@ const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are a helpful assistan
 ## Documentation
 
 - [Function Folders](docs/function-folders.md) - Learn how to organize tools in separate files
+- [Model Selection](docs/model-selection.md) - Exact models, presets, policies, capabilities, and resolver behavior
+- [Model Selection Migration Notes](docs/model-selection-migration.md) - Alias-to-preset semantics and compatibility notes
 - [Working with Images](docs/images.md) - Guide to using multimodal models with image inputs and generating images
+- [Embeddings](docs/embeddings.md) - Text embeddings, exact models, and dynamic embedding-capable selection
 - Video generation with OpenAI Sora (see below)
 - [GPT-5, Reasoning & Verbosity](docs/gpt5.md) - Using GPT-5 features, reasoning effort (incl. 'minimal'), and verbosity
 - More documentation coming soon
@@ -146,14 +149,135 @@ For more examples, see the [examples directory](examples).
 
 ### JSON Output
 
-## Model Aliases
+## Model Selection
 
-The library supports selecting models by characteristics using aliases:
+`LLMCaller` keeps the same constructor shape:
 
-- `'fast'`: Optimized for speed (high output speed, low latency)
-- `'premium'`: Optimized for quality (high quality index)
-- `'balanced'`: Good balance of speed and quality and cost
-- `'cheap'`: Optimized for cost (best price/quality ratio)
+```typescript
+new LLMCaller(provider, modelOrSelection, systemMessage?, options?)
+```
+
+The first argument is the provider scope. It can be one provider or a provider array:
+
+```typescript
+new LLMCaller('openai', 'gpt-5-mini');
+new LLMCaller(['openai', 'gemini', 'openrouter'], 'balanced');
+```
+
+The second argument can be an exact model, a preset, or a policy.
+
+### Exact Models
+
+Any string that is not a built-in preset is treated as an exact model name:
+
+```typescript
+const caller = new LLMCaller('openai', 'gpt-5-mini');
+```
+
+Exact models are strict. They are not scored or replaced. The framework still validates that the model can satisfy the actual request, so an embedding request with a chat-only model fails clearly.
+
+If a provider ever has a real model named like a preset, use the explicit exact-model form:
+
+```typescript
+const caller = new LLMCaller('openai', { model: 'fast' });
+```
+
+Across multiple providers, exact model strings must be unambiguous. If more than one scoped provider has the same model name, use `{ provider, model }`.
+
+### Presets
+
+These strings are dynamic selection presets:
+
+- `'fast'`: prefer low latency and high throughput
+- `'cheap'`: prefer low cost
+- `'balanced'`: general-purpose production default
+- `'premium'`: prefer higher quality and larger context
+
+Presets resolve at request time, after the framework knows the requested operation and capabilities. For example, `fast` can choose a fast text model for chat, a fast image-capable model for image generation, and a fast embedding-capable model for embeddings.
+
+```typescript
+const caller = new LLMCaller('openai', 'cheap');
+
+const text = await caller.call('Summarize this report');
+const image = await caller.call({
+  text: 'Generate a clean product mockup',
+  output: { image: { size: '1024x1024' } }
+});
+
+console.log(text[0].metadata?.model);
+console.log(image[0].metadata?.model);
+```
+
+### Policy Objects
+
+Advanced callers can add soft preferences and hard constraints:
+
+```typescript
+const caller = new LLMCaller(['openai', 'gemini'], {
+  preset: 'fast',
+  prefer: {
+    cost: 0.25
+  },
+  constraints: {
+    maxOutputPricePerMillion: 5,
+    minContextTokens: 32000
+  },
+  resolution: {
+    explain: true
+  }
+});
+```
+
+`prefer` weights are soft scoring inputs. They do not reject models. Weights do not need to add up to `1`.
+
+`constraints` are hard filters. If no model satisfies the request and constraints, the call throws a `ModelResolutionError` explaining the provider scope, request requirements, and rejected candidates.
+
+Empty selection objects are invalid. Use `'balanced'` or `{ preset: 'balanced' }`.
+
+### Request-Time Capability Inference
+
+Users normally do not pass capabilities manually. The framework infers hard requirements from the call:
+
+- `call()` requires text input/output
+- `stream()` additionally requires streaming
+- `jsonSchema` with `jsonMode: 'native-only'` requires native structured output
+- tools require tool calling; streaming tools require streaming tool-call support
+- image input requires image input support
+- image generation/editing requires image output support and the provider image interface
+- video generation requires video output support and the provider video interface
+- `embeddings()` requires embedding support and the provider embedding interface
+- audio transcription, translation, and speech synthesis require audio API support
+- `settings.reasoning` requires reasoning support
+
+### Response Metadata
+
+Responses include stable model-selection metadata:
+
+```typescript
+const result = await caller.call('Hello');
+
+console.log(result[0].metadata?.provider);      // selected provider
+console.log(result[0].metadata?.model);         // selected model
+console.log(result[0].metadata?.selectionMode); // exact | preset | policy
+```
+
+When `resolution.explain` is enabled, responses also include diagnostic `metadata.modelResolution`. Candidate scores and rejection reasons are diagnostic and may change as catalogs and scoring improve.
+
+### Backward Compatibility
+
+`settings.providerOptions.model` is preserved as a legacy per-call exact model override:
+
+```typescript
+await caller.call('Use this model for one request', {
+  settings: {
+    providerOptions: {
+      model: 'gpt-5-mini'
+    }
+  }
+});
+```
+
+It is treated as an exact model inside the constructor provider scope. It is not interpreted as a preset and is validated against the actual request. Prefer constructor exact selection (`new LLMCaller('openai', { model: 'gpt-5-mini' })`) for new code.
 
 ## Model Information
 
@@ -408,15 +532,20 @@ console.log(tr.text);
 Text-to-speech:
 
 ```typescript
-const tts = new LLMCaller('openai', 'gpt-4o-mini-tts', 'You are a helpful assistant.');
+const tts = new LLMCaller(['openai', 'gemini'], 'fast', 'You are a helpful assistant.');
 const speech = await tts.synthesizeSpeech({
   input: 'Hello world!',
   voice: 'alloy',
+  responseFormat: 'mp3',
   outputPath: './output.mp3'
 });
 console.log(speech.metadata?.audioSavedPath);
 console.log(speech.audio.mime, speech.audio.sizeBytes);
 ```
+
+The speech API presents a unified output-format interface across providers. If the selected provider can return the requested `responseFormat` natively, callLLM uses that. If the provider returns a different supported audio representation, callLLM attempts local transcoding with `ffmpeg` and saves/returns the requested format. This is what allows Gemini TTS, which returns raw PCM/L16 audio, to satisfy an MP3 request.
+
+Supported speech output formats are `mp3`, `opus`, `aac`, `flac`, `wav`, and `pcm`. If transcoding is needed and `ffmpeg`/`ffprobe` are missing or unavailable on the Node process `PATH`, callLLM throws `TranscriptionFfmpegError` with platform-specific install and PATH verification instructions.
 
 Helpers: `getAvailableAudioModels()` and `checkAudioCapabilities(modelName)` mirror embedding discovery APIs.
 
@@ -444,78 +573,18 @@ For streaming calls, usage is reported in 100‑token batches (by default) via d
 
 Currently supported LLM providers:
 - OpenAI (ChatGPT)
-- More coming soon (Anthropic, Google, etc.)
+- Gemini
+- OpenRouter
+- Cerebras
+- Venice
 
-## Capability-Aware Alias Resolution
+## Dynamic Model Selection
 
-The library now supports capability-aware alias resolution, which means that when you use model aliases (`cheap`, `balanced`, `fast`, `premium`), the system will automatically select the best model that supports the specific capabilities you need.
+Presets and policy objects are capability-aware and resolve at request time. The resolver first filters to models that can satisfy the call, then applies constraints and scoring.
 
-### How It Works
+This applies to chat, streaming, JSON, tools, image input, image generation/editing, video generation, embeddings, audio transcription/translation/speech, and reasoning requests. The selected model is visible on every response through `metadata.provider`, `metadata.model`, and `metadata.selectionMode`.
 
-When you request specific features like image generation, JSON output, or embeddings, the library will:
-
-1. **Filter models** based on the required capabilities
-2. **Apply the alias selection logic** (cheapest, fastest, etc.) on the filtered models
-3. **Return the optimal model** that meets your requirements
-
-### Examples
-
-```typescript
-import { LLMCaller } from 'callllm';
-import type { CapabilityRequirement } from 'callllm';
-
-const caller = new LLMCaller('openai', 'cheap', 'You are a helpful assistant.');
-
-// Basic text output - selects cheapest text-capable model
-const textModel = caller.getModel('cheap');
-
-// JSON output - automatically finds a cheap model that supports JSON
-const jsonRequirements: CapabilityRequirement = {
-    textOutput: {
-        required: true,
-        formats: ['json']
-    }
-};
-const jsonModel = caller.getModel('cheap', jsonRequirements);
-
-// Image generation - finds a cheap model that can generate images
-const imageGenRequirements: CapabilityRequirement = {
-    imageOutput: {
-        required: true,
-        operations: ['generate']
-    }
-};
-const imageModel = caller.getModel('cheap', imageGenRequirements);
-
-// Embeddings - finds a cheap embedding model
-const embeddingRequirements: CapabilityRequirement = {
-    embeddings: { required: true }
-};
-const embeddingModel = caller.getModel('cheap', embeddingRequirements);
-
-// Tool calls - finds a cheap model that supports function calling
-const toolCallRequirements: CapabilityRequirement = {
-    toolCalls: { required: true }
-};
-const toolCallModel = caller.getModel('cheap', toolCallRequirements);
-```
-
-### Supported Capability Requirements
-
-- **Text Output**: `textOutput: { required: boolean, formats?: ('text' | 'json')[] }`
-- **Image Input**: `imageInput: { required: boolean }`
-- **Image Output**: `imageOutput: { required: boolean, operations?: ('generate' | 'edit' | 'editWithMask')[] }`
-- **Tool Calls**: `toolCalls: { required: boolean, parallel?: boolean }`
-- **Streaming**: `streaming: { required: boolean }`
-- **Embeddings**: `embeddings: { required: boolean, dimensions?: number[], encodingFormat?: 'float' | 'base64' }`
-- **Reasoning**: `reasoning: { required: boolean }`
-
-The capability-aware resolution is automatically used in:
-
-- `embeddings()` method calls
-- `call()` and `stream()` methods when image output is requested
-- `call()` and `stream()` methods when JSON output is requested
-- Manual model resolution via `getModel(nameOrAlias, requirements)`
+For a complete design and implementation reference, see [docs/model-selection.md](docs/model-selection.md).
 
 ### Adding New Providers
 
@@ -1833,6 +1902,19 @@ logger.setConfig({ level: 'debug' });
 - In test environments, logging is automatically minimized
 - Warning and error messages are always shown regardless of log level
 
+### What `LOG_LEVEL` Controls
+
+`LOG_LEVEL` controls logs emitted through the framework logger. It does not suppress output that your application writes directly with `console.log`, `console.error`, or `process.stdout.write`. For example, the sample scripts print streamed tokens, complete response text, token usage, and cost summaries explicitly.
+
+Telemetry SDKs may also have their own log settings. When Opik is enabled, the framework maps `LOG_LEVEL` to `OPIK_LOG_LEVEL` before loading the Opik SDK unless `OPIK_LOG_LEVEL` is already set. You can still set it explicitly:
+
+```env
+LOG_LEVEL=error
+OPIK_LOG_LEVEL=ERROR
+```
+
+To disable Opik telemetry entirely, unset `CALLLLM_OPIK_ENABLED` or set it to `false`.
+
 ### Log Categories
 
 The logger automatically prefixes logs with their source component:
@@ -2168,4 +2250,5 @@ Find more examples in the [examples/](examples/) directory:
 - [videoGeneration.ts](examples/videoGeneration.ts) - Generating videos with Sora models
 - [mcpClient.ts](examples/mcpClient.ts) - Using Model Context Protocol (MCP) servers
 - [mcpDirectTools.ts](examples/mcpDirectTools.ts) - Direct access to MCP tools
-- [aliasChat.ts](examples/aliasChat.ts) - Using model aliases
+- [aliasChat.ts](examples/aliasChat.ts) - Using model presets
+- [modelSelection.ts](examples/modelSelection.ts) - Exact models, presets, policies, and resolution metadata

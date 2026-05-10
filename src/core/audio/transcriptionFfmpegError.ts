@@ -3,7 +3,7 @@ import * as os from 'os';
 export type TranscriptionFfmpegErrorKind = 'not_found' | 'spawn_failed' | 'bad_exit';
 
 /**
- * Thrown when `splitLargeFile` transcription prep cannot run ffmpeg/ffprobe.
+ * Thrown when audio processing cannot run ffmpeg/ffprobe.
  * Message is multi-line for logs and terminal display.
  */
 export class TranscriptionFfmpegError extends Error {
@@ -43,11 +43,12 @@ export class TranscriptionFfmpegError extends Error {
     ): string {
         const platform = os.platform();
         const lines: string[] = [
-            `[callllm] Cannot run "${tool}" (splitLargeFile / chunked transcription).`,
+            `[callllm] Cannot run "${tool}" for audio processing.`,
             '',
             'What this means:',
-            '- Chunked transcription re-encodes and splits local audio before calling the API.',
-            '- That requires the FFmpeg toolchain: both `ffmpeg` and `ffprobe` must be installed and visible on the same PATH your Node process uses.',
+            '- callllm uses the FFmpeg toolchain for local audio processing.',
+            '- This includes chunked transcription and speech-output transcoding when a provider cannot natively return the requested format.',
+            '- Both `ffmpeg` and `ffprobe` must be installed and visible on the same PATH your Node process uses.',
             '- If only one of the two is missing, install the full `ffmpeg` package (it normally ships both binaries).',
             '',
             `Detected platform: ${platform} (${os.arch()}).`,

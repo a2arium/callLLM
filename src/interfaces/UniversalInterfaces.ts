@@ -381,7 +381,27 @@ export type Metadata = {
     created?: number;
     usage?: Usage;
     refusal?: any;
+    provider?: string;
     model?: string;
+    selectionMode?: 'exact' | 'preset' | 'policy';
+    modelResolution?: {
+        selected: {
+            provider: string;
+            model: string;
+        };
+        mode: 'exact' | 'preset' | 'policy';
+        preset?: string;
+        requiredByRequest: string[];
+        appliedConstraints: string[];
+        candidates?: Array<{
+            provider: string;
+            model: string;
+            score?: number;
+            selected?: boolean;
+            rejected?: boolean;
+            rejectionReasons?: string[];
+        }>;
+    };
     jsonSchemaUsed?: JSONSchemaDefinition;
     isGenerated?: boolean;
     chatId?: string;

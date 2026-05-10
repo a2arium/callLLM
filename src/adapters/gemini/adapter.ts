@@ -1,4 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
+import * as nodePath from 'path';
+import * as nodeFs from 'fs';
 import { BaseAdapter, type AdapterConfig } from '../base/baseAdapter.ts';
 import type { LLMProvider, LLMProviderEmbedding, LLMProviderImage, LLMProviderAudio, LLMProviderVideo, ImageOp, ImageCallParams, AudioOp, VideoCallParams } from '../../interfaces/LLMProvider.ts';
 import { saveBase64ToFile } from '../../core/file-data/fileData.ts';
@@ -235,18 +237,29 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
         }
     }
 
+    // Best-effort compatibility map for callers that pass OpenAI voice names to
+    // Gemini TTS models. Keep gender/timbre families aligned where a voice has
+    // an obvious presentation; revisit this with a first-class portable voice
+    // taxonomy instead of provider-to-provider aliases.
     private static readonly OPENAI_TO_GEMINI_VOICE: Record<string, string> = {
-        alloy: 'achernar',
-        echo: 'charon',
-        fable: 'leda',
-        onyx: 'orus',
-        nova: 'kore',
-        shimmer: 'puck',
+        alloy: 'Despina',
+        ash: 'Sadachbia',
+        ballad: 'Algieba',
+        coral: 'Autonoe',
+        echo: 'Iapetus',
+        fable: 'Rasalgethi',
+        onyx: 'Orus',
+        nova: 'Laomedeia',
+        sage: 'Gacrux',
+        shimmer: 'Achernar',
+        verse: 'Sadaltager',
+        marin: 'Sulafat',
+        cedar: 'Schedar',
     };
 
     private mapVoice(voice: string | Record<string, unknown> | undefined): string | undefined {
         if (!voice) return undefined;
-        const name = typeof voice === 'string' ? voice : (voice.name as string);
+        const name = typeof voice === 'string' ? voice : ((voice.id ?? voice.name) as string);
         if (!name) return undefined;
         return GeminiAdapter.OPENAI_TO_GEMINI_VOICE[name.toLowerCase()] ?? name;
     }
@@ -282,52 +295,158 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
         const parts = candidates[0]?.content?.parts ?? [];
 
         let audioData = '';
-        let audioMime = 'audio/mp3';
+        let audioMime = 'audio/L16;codec=pcm;rate=24000';
 
         for (const part of parts) {
             if ((part as Record<string, unknown>).inlineData) {
                 const blob = (part as Record<string, unknown>).inlineData as Record<string, unknown>;
                 audioData = (blob.data as string) ?? '';
-                audioMime = (blob.mimeType as string) ?? 'audio/mp3';
+                audioMime = (blob.mimeType as string) ?? audioMime;
             }
         }
 
+        const rawAudioBuffer = Buffer.from(audioData, 'base64');
+        const requestedFormat = params.responseFormat;
+        const outputExt = params.outputPath ? nodePath.extname(params.outputPath).toLowerCase() : '';
+        const shouldWrapWav = this.isPcmMime(audioMime) && (requestedFormat === 'wav' || outputExt === '.wav');
+        const outputBuffer = shouldWrapWav
+            ? this.wrapPcmInWav(rawAudioBuffer, this.parsePcmRate(audioMime), 1, 16)
+            : rawAudioBuffer;
+        const outputMime = shouldWrapWav ? 'audio/wav' : audioMime;
+        const outputFormat = shouldWrapWav ? 'wav' : this.formatFromMime(outputMime);
+        const outputAudioData = outputBuffer.toString('base64');
+
         let audioSavedPath: string | undefined;
-        if (params.outputPath && audioData) {
+        if (params.outputPath && outputBuffer.length > 0) {
             const fs = await import('fs/promises');
-            const path = await import('path');
-            const dir = path.dirname(params.outputPath);
+            const savePath = this.pathWithAudioExtension(params.outputPath, outputFormat);
+            const dir = nodePath.dirname(savePath);
             await fs.mkdir(dir, { recursive: true });
-            const buffer = Buffer.from(audioData, 'base64');
-            await fs.writeFile(params.outputPath, buffer);
-            audioSavedPath = params.outputPath;
+            await fs.writeFile(savePath, outputBuffer);
+            audioSavedPath = savePath;
         }
+
+        const usage = this.mapSpeechUsage(
+            (response as unknown as Record<string, unknown>).usageMetadata as Record<string, unknown> | undefined,
+            model,
+            params.input,
+            rawAudioBuffer.length,
+            audioMime,
+        );
 
         return {
             audio: {
-                data: audioData,
-                mime: audioMime,
-                format: params.responseFormat ?? 'mp3',
-                sizeBytes: audioData.length,
+                data: outputAudioData,
+                mime: outputMime,
+                format: outputFormat,
+                sizeBytes: outputBuffer.length,
             },
-            usage: {
-                tokens: {
-                    input: { total: 0, cached: 0 },
-                    output: { total: 0, reasoning: 0 },
-                    total: 0,
-                },
-                costs: {
-                    input: { total: 0, cached: 0 },
-                    output: { total: 0, reasoning: 0 },
-                    total: 0,
-                },
-            },
+            usage,
             model,
             metadata: {
                 model,
+                usage,
                 audioSavedPath,
             },
         };
+    }
+
+    private isPcmMime(mime: string): boolean {
+        const lower = mime.toLowerCase();
+        return lower.includes('audio/l16') || lower.includes('audio/pcm');
+    }
+
+    private parsePcmRate(mime: string): number {
+        const match = /rate=(\d+)/i.exec(mime);
+        return match ? Number(match[1]) : 24000;
+    }
+
+    private formatFromMime(mime: string): SpeechResponse['audio']['format'] {
+        const lower = mime.toLowerCase();
+        if (lower.includes('mpeg') || lower.includes('mp3')) return 'mp3';
+        if (lower.includes('opus')) return 'opus';
+        if (lower.includes('aac')) return 'aac';
+        if (lower.includes('flac')) return 'flac';
+        if (lower.includes('wav')) return 'wav';
+        return 'pcm';
+    }
+
+    private pathWithAudioExtension(outputPath: string, format: SpeechResponse['audio']['format']): string {
+        const expectedExt = `.${format}`;
+        if (nodePath.extname(outputPath).toLowerCase() === expectedExt) return outputPath;
+        return nodePath.join(
+            nodePath.dirname(outputPath),
+            `${nodePath.basename(outputPath, nodePath.extname(outputPath))}${expectedExt}`,
+        );
+    }
+
+    private wrapPcmInWav(pcm: Buffer, sampleRate: number, channels: number, bitsPerSample: number): Buffer {
+        const blockAlign = (channels * bitsPerSample) / 8;
+        const byteRate = sampleRate * blockAlign;
+        const header = Buffer.alloc(44);
+        header.write('RIFF', 0);
+        header.writeUInt32LE(36 + pcm.length, 4);
+        header.write('WAVE', 8);
+        header.write('fmt ', 12);
+        header.writeUInt32LE(16, 16);
+        header.writeUInt16LE(1, 20);
+        header.writeUInt16LE(channels, 22);
+        header.writeUInt32LE(sampleRate, 24);
+        header.writeUInt32LE(byteRate, 28);
+        header.writeUInt16LE(blockAlign, 32);
+        header.writeUInt16LE(bitsPerSample, 34);
+        header.write('data', 36);
+        header.writeUInt32LE(pcm.length, 40);
+        return Buffer.concat([header, pcm]);
+    }
+
+    private mapSpeechUsage(
+        usageMeta: Record<string, unknown> | undefined,
+        model: string,
+        input: string,
+        rawAudioBytes: number,
+        mime: string,
+    ): SpeechResponse['usage'] {
+        const meta = usageMeta ?? {};
+        const inputTokens = typeof meta.promptTokenCount === 'number'
+            ? meta.promptTokenCount
+            : this.tokenCalculator.calculateTokens(input, model);
+        const outputTokens = typeof meta.candidatesTokenCount === 'number'
+            ? meta.candidatesTokenCount
+            : this.estimateAudioOutputTokens(rawAudioBytes, mime);
+        const thinkingTokens = typeof meta.thoughtsTokenCount === 'number' ? meta.thoughtsTokenCount : 0;
+        const cachedTokens = typeof meta.cachedContentTokenCount === 'number' ? meta.cachedContentTokenCount : 0;
+        const totalTokens = typeof meta.totalTokenCount === 'number'
+            ? meta.totalTokenCount
+            : inputTokens + outputTokens + thinkingTokens;
+        const modelInfo = this.modelManager.getModel(model);
+        const costs = this.tokenCalculator.calculateUsage(
+            inputTokens,
+            outputTokens,
+            modelInfo?.inputPricePerMillion ?? 0,
+            modelInfo?.audioOutputPricePerMillion ?? modelInfo?.outputPricePerMillion ?? 0,
+            cachedTokens,
+            modelInfo?.inputCachedPricePerMillion,
+            thinkingTokens,
+        );
+        costs.output.audio = costs.output.total - costs.output.reasoning;
+
+        return {
+            tokens: {
+                input: { total: inputTokens, cached: cachedTokens },
+                output: { total: outputTokens, reasoning: thinkingTokens, audio: outputTokens },
+                total: totalTokens,
+            },
+            costs,
+        };
+    }
+
+    private estimateAudioOutputTokens(rawAudioBytes: number, mime: string): number {
+        if (!rawAudioBytes) return 0;
+        const sampleRate = this.parsePcmRate(mime);
+        const bytesPerSecond = sampleRate * 2;
+        const seconds = rawAudioBytes / bytesPerSecond;
+        return Math.max(1, Math.ceil(seconds * 50));
     }
 
     private async transcribeOrTranslate(
@@ -391,17 +510,104 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
 
         const response = await this.client.models.generateContent(geminiParams as any);
         const text = response.text ?? '';
-
-        const baseUsage = {
-            tokens: { input: { total: 0, cached: 0 }, output: { total: 0, reasoning: 0 }, total: 0 },
-            costs: { input: { total: 0, cached: 0 }, output: { total: 0, reasoning: 0 }, total: 0 },
-        };
+        const usage = await this.mapAudioUnderstandingUsage(
+            (response as unknown as Record<string, unknown>).usageMetadata as Record<string, unknown> | undefined,
+            model,
+            text,
+            audioFile,
+        );
 
         if (op === 'translate') {
-            return { text, usage: baseUsage, model } as TranslationResponse;
+            return { text, usage, model } as TranslationResponse;
         }
 
-        return { text, usage: baseUsage, model } as TranscriptionResponse;
+        return { text, usage, model } as TranscriptionResponse;
+    }
+
+    private async mapAudioUnderstandingUsage(
+        usageMeta: Record<string, unknown> | undefined,
+        model: string,
+        outputText: string,
+        audioFile: string,
+    ): Promise<TranscriptionResponse['usage']> {
+        const meta = usageMeta ?? {};
+        const estimatedAudioTokens = await this.estimateAudioInputTokens(audioFile);
+        const inputTokens = typeof meta.promptTokenCount === 'number'
+            ? meta.promptTokenCount
+            : estimatedAudioTokens;
+        const outputTokens = typeof meta.candidatesTokenCount === 'number'
+            ? meta.candidatesTokenCount
+            : this.tokenCalculator.calculateTokens(outputText, model);
+        const thinkingTokens = typeof meta.thoughtsTokenCount === 'number' ? meta.thoughtsTokenCount : 0;
+        const cachedTokens = typeof meta.cachedContentTokenCount === 'number' ? meta.cachedContentTokenCount : 0;
+        const totalTokens = typeof meta.totalTokenCount === 'number'
+            ? meta.totalTokenCount
+            : inputTokens + outputTokens + thinkingTokens;
+        const modelInfo = this.modelManager.getModel(model);
+        const inputPrice = modelInfo?.audioInputPricePerMillion ?? modelInfo?.inputPricePerMillion ?? 0;
+        const outputPrice = modelInfo?.outputPricePerMillion ?? 0;
+        const costs = this.tokenCalculator.calculateUsage(
+            inputTokens,
+            outputTokens,
+            inputPrice,
+            outputPrice,
+            cachedTokens,
+            modelInfo?.inputCachedPricePerMillion,
+            thinkingTokens,
+        );
+        const duration = await this.getLocalAudioDuration(audioFile);
+        costs.input.audio = costs.input.total - costs.input.cached;
+
+        return {
+            tokens: {
+                input: { total: inputTokens, cached: cachedTokens, audio: inputTokens },
+                output: { total: outputTokens, reasoning: thinkingTokens },
+                total: totalTokens,
+            },
+            costs,
+            durations: duration !== undefined ? { inputAudioSeconds: duration } : undefined,
+        };
+    }
+
+    private async estimateAudioInputTokens(audioFile: string): Promise<number> {
+        const duration = await this.getLocalAudioDuration(audioFile);
+        if (duration !== undefined) {
+            return Math.max(1, Math.ceil(duration * 50));
+        }
+        const bytes = this.getInlineAudioBytes(audioFile);
+        if (bytes > 0) {
+            return Math.max(1, Math.ceil(bytes / 1000));
+        }
+        return 0;
+    }
+
+    private async getLocalAudioDuration(audioFile: string): Promise<number | undefined> {
+        if (!audioFile || audioFile.startsWith('data:') || audioFile.startsWith('http://') || audioFile.startsWith('https://')) {
+            return undefined;
+        }
+        try {
+            if (!nodeFs.existsSync(audioFile)) return undefined;
+            const { getAudioDurationSeconds } = await import('../../core/audio/ffmpegAudioPrep.ts');
+            const duration = await getAudioDurationSeconds(nodePath.resolve(audioFile));
+            return duration ?? undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    private getInlineAudioBytes(audioFile: string): number {
+        if (audioFile.startsWith('data:')) {
+            const match = audioFile.match(/^data:[^;]+;base64,(.+)$/);
+            return match ? Buffer.byteLength(match[1], 'base64') : 0;
+        }
+        try {
+            if (nodeFs.existsSync(audioFile)) {
+                return nodeFs.statSync(audioFile).size;
+            }
+        } catch {
+            return 0;
+        }
+        return 0;
     }
 
     // ═══════════════════════════════════════════

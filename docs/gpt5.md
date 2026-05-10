@@ -6,6 +6,7 @@ This library supports GPT-5 family features and adds sensible fallbacks for olde
 
 - Supported efforts: `minimal`, `low`, `medium`, `high`.
 - Configure via `settings.reasoning.effort`.
+- When `settings.reasoning` is present, dynamic model selection infers a hard reasoning requirement before scoring models.
 - Behavior:
   - GPT-5 models: the requested effort is passed through as-is.
   - Non‑GPT‑5 reasoning models: `minimal` is mapped to `low` for backward compatibility.
@@ -41,8 +42,27 @@ await caller.call('Summarize:', {
 });
 ```
 
+With presets or policy selection, the resolver chooses only reasoning-capable models for reasoning requests:
+
+```ts
+const caller = new LLMCaller(['openai', 'openrouter'], {
+  preset: 'premium',
+  constraints: { minContextTokens: 32000 }
+});
+
+const response = await caller.call('Solve step by step:', {
+  settings: {
+    reasoning: { effort: 'high', summary: 'concise' }
+  }
+});
+
+console.log(response[0].metadata?.provider);
+console.log(response[0].metadata?.model);
+```
+
+Exact models stay strict. If you construct `new LLMCaller('openai', { model: 'gpt-4o-mini' })` and make a reasoning request, the call fails instead of silently replacing the model.
+
 ### Provider Notes
 
 - Current implementation targets OpenAI. Other providers will adopt the same universal settings (`reasoning.effort`, `verbosity`) with provider-appropriate mappings in their adapters.
-
 

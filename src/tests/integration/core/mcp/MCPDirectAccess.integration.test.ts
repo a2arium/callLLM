@@ -46,7 +46,15 @@ const mockModelManager = {
     capabilities: { toolCalls: true, streaming: true, input: { text: true }, output: { text: { textOutputFormats: ['text'] } } },
     characteristics: { qualityIndex: 50, outputSpeed: 50, firstTokenLatency: 100 }
   }),
-  getAvailableModels: jest.fn().mockReturnValue([]),
+  getAvailableModels: jest.fn().mockReturnValue([{
+    name: 'mock-model',
+    inputPricePerMillion: 0,
+    outputPricePerMillion: 0,
+    maxRequestTokens: 4000,
+    maxResponseTokens: 1000,
+    capabilities: { toolCalls: true, streaming: true, input: { text: true }, output: { text: { textOutputFormats: ['text'] } } },
+    characteristics: { qualityIndex: 50, outputSpeed: 50, firstTokenLatency: 100 }
+  }]),
   addModel: jest.fn(),
   updateModel: jest.fn(),
   clearModels: jest.fn(),

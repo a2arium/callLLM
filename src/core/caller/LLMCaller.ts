@@ -24,15 +24,30 @@ import type {
     TranslationCallOptions,
     TranslationResponse,
     SpeechCallOptions,
-    SpeechResponse
+    SpeechResponse,
+    Metadata
 } from '../../interfaces/UniversalInterfaces.ts';
 import { toMessageParts } from '../../interfaces/UniversalInterfaces.ts';
 import { z } from 'zod';
 import { ProviderManager } from './ProviderManager.ts';
+import { ProviderPool, type ProviderPoolOptions } from './ProviderPool.ts';
+import type { ProviderExecutionContext } from './ProviderExecution.ts';
 import type { RegisteredProviders } from '../../adapters/index.ts';
 import { ProviderNotFoundError } from '../../adapters/types.ts';
 import { ModelManager } from '../models/ModelManager.ts';
 import { CapabilityError } from '../models/CapabilityError.ts';
+import type { RequestRequirements } from '../models/CapabilityMatcher.ts';
+import { ModelNotFoundError } from '../models/ModelCatalog.ts';
+import { resolveModel, type ModelResolutionMode, type ResolvedModel } from '../models/ModelResolver.ts';
+import {
+    inferChatRequestRequirements,
+    inferEmbeddingRequestRequirements,
+    inferSpeechRequestRequirements,
+    inferTranscriptionRequestRequirements,
+    inferTranslationRequestRequirements
+} from '../models/RequestInference.ts';
+import type { ScoreContext } from '../models/ModelScoring.ts';
+import { ModelSelectionConfigError, type ExactModelSelection, type ModelOrSelection, type ProviderScope } from '../models/ModelSelection.ts';
 import { TokenCalculator } from '../models/TokenCalculator.ts';
 import { ResponseProcessor } from '../processors/ResponseProcessor.ts';
 import { v4 as uuidv4 } from 'uuid';
@@ -51,7 +66,7 @@ import { StreamingService } from '../streaming/StreamingService.ts';
 import type { ToolDefinition, ToolCall } from '../../types/tooling.ts';
 import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
 import { StreamController } from '../streaming/StreamController.ts';
-import type { LLMProviderVideo } from '../../interfaces/LLMProvider.ts';
+import type { LLMProvider, LLMProviderAudio, LLMProviderEmbedding, LLMProviderImage, LLMProviderVideo } from '../../interfaces/LLMProvider.ts';
 import * as fs from 'fs';
 import * as path from 'path';
 import { HistoryManager } from '../history/HistoryManager.ts';
@@ -90,9 +105,24 @@ interface StreamControllerInterface {
     createStream(
         model: string,
         params: UniversalChatParams,
-        inputTokens: number // Might be calculated within the service now
+        inputTokens: number, // Might be calculated within the service now
+        execution?: ProviderExecutionContext
     ): Promise<AsyncIterable<UniversalStreamResponse>>;
 }
+
+type ResolvedModelMetadata = {
+    provider: RegisteredProviders;
+    model: string;
+    mode: ModelResolutionMode;
+    resolution?: ResolvedModel['resolution'];
+};
+
+type ResolvedExecutionTarget = ProviderExecutionContext & {
+    model: string;
+    mode: ModelResolutionMode;
+    resolution?: ResolvedModel['resolution'];
+    resolved?: ResolvedModel;
+};
 
 /**
  * Options for creating an LLMCaller instance
@@ -111,6 +141,8 @@ export type LLMCallerOptions = {
     tools?: (ToolDefinition | string | MCPServersMap)[];
     // Dependency injection options for testing
     providerManager?: ProviderManager;
+    providerPool?: ProviderPool;
+    providerApiKeys?: ProviderPoolOptions['providerApiKeys'];
     modelManager?: ModelManager;
     streamingService?: StreamingService;
     chatController?: ChatController;
@@ -131,12 +163,16 @@ export type LLMCallerOptions = {
  */
 export class LLMCaller implements MCPDirectAccess {
     private providerManager: ProviderManager;
+    private providerPool: ProviderPool;
     private modelManager: ModelManager;
+    private readonly ownsModelManager: boolean;
     private tokenCalculator: TokenCalculator;
     private responseProcessor: ResponseProcessor;
     private retryManager: RetryManager;
     private readonly log = logger.createLogger({ prefix: 'LLMCaller' });
     private model: string;
+    private modelSelection: ModelOrSelection;
+    private providerScope: ProviderScope;
     private systemMessage: string; // Keep track of the initial system message
     private callerId: string;
     private usageCallback?: UsageCallback;
@@ -169,16 +205,28 @@ export class LLMCaller implements MCPDirectAccess {
     private resolvedModel?: string;
 
     constructor(
-        providerName: RegisteredProviders,
-        modelOrAlias: string,
+        providerName: ProviderScope,
+        modelOrAlias: ModelOrSelection,
         systemMessage = 'You are a helpful assistant.',
         options?: LLMCallerOptions
     ) {
+        const initialProvider = Array.isArray(providerName) ? providerName[0] : providerName;
+        if (!initialProvider) {
+            throw new ProviderNotFoundError('');
+        }
+        this.providerScope = providerName;
+
         // Initialize dependencies that don't depend on each other first
         this.providerManager = options?.providerManager ||
-            new ProviderManager(providerName as RegisteredProviders, options?.apiKey);
+            new ProviderManager(initialProvider as RegisteredProviders, options?.apiKey);
+        this.providerPool = options?.providerPool ||
+            new ProviderPool(providerName, {
+                apiKey: options?.apiKey,
+                providerApiKeys: options?.providerApiKeys
+            });
+        this.ownsModelManager = !options?.modelManager;
         this.modelManager = options?.modelManager ||
-            new ModelManager(providerName as RegisteredProviders);
+            new ModelManager(initialProvider as RegisteredProviders);
         this.tokenCalculator = options?.tokenCalculator ||
             new TokenCalculator();
         this.responseProcessor = options?.responseProcessor ||
@@ -255,7 +303,12 @@ export class LLMCaller implements MCPDirectAccess {
 
         // Store the model/alias without resolving it immediately
         // Model resolution will happen during calls with appropriate capability requirements
-        this.model = modelOrAlias;
+        this.modelSelection = modelOrAlias;
+        this.model = typeof modelOrAlias === 'string'
+            ? modelOrAlias
+            : 'model' in modelOrAlias
+                ? modelOrAlias.model
+                : modelOrAlias.preset ?? 'balanced';
 
         // **Initialize StreamingService early, passing adapter provider**
         this.streamingService = options?.streamingService ||
@@ -289,13 +342,16 @@ export class LLMCaller implements MCPDirectAccess {
             createStream: async (
                 model: string,
                 params: UniversalChatParams,
-                inputTokens: number
+                inputTokens: number,
+                execution?: ProviderExecutionContext
             ): Promise<AsyncIterable<UniversalStreamResponse>> => {
                 params.callerId = params.callerId || this.callerId;
                 if (!this.streamingService) {
                     throw new Error('StreamingService is not initialized');
                 }
-                return this.streamingService.createStream(params, model, undefined);
+                return execution
+                    ? this.streamingService.createStream(params, model, undefined, execution)
+                    : this.streamingService.createStream(params, model, undefined);
             }
         };
         this.toolOrchestrator = new ToolOrchestrator(
@@ -413,20 +469,24 @@ export class LLMCaller implements MCPDirectAccess {
      * Generate text embeddings using a supported embedding model.
      */
     public async embeddings(options: EmbeddingCallOptions): Promise<EmbeddingResponse> {
-        // Lazily initialize the EmbeddingController
-        if (!this.embeddingController) {
-            const adapter = this.providerManager.getProvider() as unknown as BaseAdapter;
-            this.embeddingController = new EmbeddingController(
-                adapter,
-                this.modelManager,
-                this.tokenCalculator,
-                this.usageCallback,
-                this.callerId
-            );
-        }
+        const inferred = inferEmbeddingRequestRequirements(options);
+        const target = this.resolveExecutionTarget(
+            inferred.requirements,
+            options.model ? { model: options.model } : undefined,
+            inferred.scoreContext
+        );
+        let modelName = target?.model ?? options.model ?? this.model;
+        const embeddingAdapter = (target?.provider ?? this.providerManager.getProvider()) as unknown as BaseAdapter;
+
+        const embeddingController = new EmbeddingController(
+            embeddingAdapter,
+            this.modelManager,
+            this.tokenCalculator,
+            this.usageCallback,
+            this.callerId
+        );
 
         // Require an explicit embedding model (no aliases for embeddings)
-        let modelName = options.model || this.model;
         const capabilities = ModelManager.getCapabilities(modelName);
         if (!capabilities.embeddings) {
             // If the current model doesn't support embeddings, try to find a suitable embedding model
@@ -451,8 +511,8 @@ export class LLMCaller implements MCPDirectAccess {
             }
         }
 
-        return this.retryManager.executeWithRetry(
-            () => this.embeddingController!.generateEmbeddings({
+        const response = await this.retryManager.executeWithRetry(
+            () => embeddingController.generateEmbeddings({
                 input: options.input,
                 model: modelName,
                 dimensions: options.dimensions,
@@ -462,6 +522,10 @@ export class LLMCaller implements MCPDirectAccess {
                 callerId: this.callerId
             }),
             shouldRetryDueToLLMError
+        );
+        return this.addResolvedModelMetadata(
+            response,
+            this.toResolvedModelMetadata(target?.resolved, modelName, options.model ? { model: options.model } : this.modelSelection)
         );
     }
 
@@ -505,18 +569,23 @@ export class LLMCaller implements MCPDirectAccess {
      * Transcribe audio to text using a supported speech-to-text model.
      */
     public async transcribe(options: TranscriptionCallOptions): Promise<TranscriptionResponse> {
-        if (!this.audioController) {
-            const adapter = this.providerManager.getProvider() as unknown as BaseAdapter;
-            this.audioController = new AudioController(
-                adapter,
-                this.modelManager,
-                this.tokenCalculator,
-                this.usageCallback,
-                this.callerId
-            );
-        }
+        const inferred = inferTranscriptionRequestRequirements(options);
+        const target = this.resolveExecutionTarget(
+            inferred.requirements,
+            options.model ? { model: options.model } : undefined,
+            inferred.scoreContext
+        );
+        let modelName = target?.model ?? options.model ?? this.model;
+        const audioAdapter = (target?.provider ?? this.providerManager.getProvider()) as unknown as BaseAdapter;
 
-        let modelName = options.model || this.model;
+        const audioController = new AudioController(
+            audioAdapter,
+            this.modelManager,
+            this.tokenCalculator,
+            this.usageCallback,
+            this.callerId
+        );
+
         if (!this.modelSupportsAudioOp(modelName, 'transcribe')) {
             const requirements = this.buildCapabilityRequirements({
                 needsTextOutput: false,
@@ -537,8 +606,8 @@ export class LLMCaller implements MCPDirectAccess {
             }
         }
 
-        return this.retryManager.executeWithRetry(
-            () => this.audioController!.transcribe({
+        const response = await this.retryManager.executeWithRetry(
+            () => audioController.transcribe({
                 ...options,
                 model: modelName,
                 callerId: this.callerId,
@@ -546,24 +615,33 @@ export class LLMCaller implements MCPDirectAccess {
             }),
             shouldRetryDueToLLMError
         );
+        return this.addResolvedModelMetadata(
+            response,
+            this.toResolvedModelMetadata(target?.resolved, modelName, options.model ? { model: options.model } : this.modelSelection)
+        );
     }
 
     /**
      * Translate spoken audio to English text (provider-specific; typically Whisper).
      */
     public async translateAudio(options: TranslationCallOptions): Promise<TranslationResponse> {
-        if (!this.audioController) {
-            const adapter = this.providerManager.getProvider() as unknown as BaseAdapter;
-            this.audioController = new AudioController(
-                adapter,
-                this.modelManager,
-                this.tokenCalculator,
-                this.usageCallback,
-                this.callerId
-            );
-        }
+        const inferred = inferTranslationRequestRequirements(options);
+        const target = this.resolveExecutionTarget(
+            inferred.requirements,
+            options.model ? { model: options.model } : undefined,
+            inferred.scoreContext
+        );
+        let modelName = target?.model ?? options.model ?? this.model;
+        const audioAdapter = (target?.provider ?? this.providerManager.getProvider()) as unknown as BaseAdapter;
 
-        let modelName = options.model || this.model;
+        const audioController = new AudioController(
+            audioAdapter,
+            this.modelManager,
+            this.tokenCalculator,
+            this.usageCallback,
+            this.callerId
+        );
+
         if (!this.modelSupportsAudioOp(modelName, 'translate')) {
             const requirements = this.buildCapabilityRequirements({
                 needsTextOutput: false,
@@ -584,8 +662,8 @@ export class LLMCaller implements MCPDirectAccess {
             }
         }
 
-        return this.retryManager.executeWithRetry(
-            () => this.audioController!.translate({
+        const response = await this.retryManager.executeWithRetry(
+            () => audioController.translate({
                 ...options,
                 model: modelName,
                 callerId: this.callerId,
@@ -593,24 +671,33 @@ export class LLMCaller implements MCPDirectAccess {
             }),
             shouldRetryDueToLLMError
         );
+        return this.addResolvedModelMetadata(
+            response,
+            this.toResolvedModelMetadata(target?.resolved, modelName, options.model ? { model: options.model } : this.modelSelection)
+        );
     }
 
     /**
      * Synthesize speech from text (TTS).
      */
     public async synthesizeSpeech(options: SpeechCallOptions): Promise<SpeechResponse> {
-        if (!this.audioController) {
-            const adapter = this.providerManager.getProvider() as unknown as BaseAdapter;
-            this.audioController = new AudioController(
-                adapter,
-                this.modelManager,
-                this.tokenCalculator,
-                this.usageCallback,
-                this.callerId
-            );
-        }
+        const inferred = inferSpeechRequestRequirements(options);
+        const target = this.resolveExecutionTarget(
+            inferred.requirements,
+            options.model ? { model: options.model } : undefined,
+            inferred.scoreContext
+        );
+        let modelName = target?.model ?? options.model ?? this.model;
+        const audioAdapter = (target?.provider ?? this.providerManager.getProvider()) as unknown as BaseAdapter;
 
-        let modelName = options.model || this.model;
+        const audioController = new AudioController(
+            audioAdapter,
+            this.modelManager,
+            this.tokenCalculator,
+            this.usageCallback,
+            this.callerId
+        );
+
         if (!this.modelSupportsAudioOp(modelName, 'synthesize')) {
             const requirements = this.buildCapabilityRequirements({
                 needsTextOutput: false,
@@ -631,14 +718,18 @@ export class LLMCaller implements MCPDirectAccess {
             }
         }
 
-        return this.retryManager.executeWithRetry(
-            () => this.audioController!.synthesize({
+        const response = await this.retryManager.executeWithRetry(
+            () => audioController.synthesize({
                 ...options,
                 model: modelName,
                 callerId: this.callerId,
                 usageCallback: options.usageCallback ?? this.usageCallback
             }),
             shouldRetryDueToLLMError
+        );
+        return this.addResolvedModelMetadata(
+            response,
+            this.toResolvedModelMetadata(target?.resolved, modelName, options.model ? { model: options.model } : this.modelSelection)
         );
     }
 
@@ -728,11 +819,13 @@ export class LLMCaller implements MCPDirectAccess {
         if (provider) {
             this.providerManager.switchProvider(provider as RegisteredProviders, apiKey);
             this.modelManager = new ModelManager(provider as RegisteredProviders);
+            this.providerScope = provider;
         }
 
         // Resolve and set new model with capability requirements
         const resolvedModel = this.resolveModelWithCapabilities(nameOrAlias, capabilityRequirements);
         const modelChanged = this.model !== resolvedModel.name;
+        this.modelSelection = nameOrAlias;
         this.model = resolvedModel.name;
 
         // Clear cached resolved model
@@ -852,6 +945,17 @@ export class LLMCaller implements MCPDirectAccess {
             return this.resolvedModel;
         }
 
+        if (!requirements) {
+            const resolved = this.resolveCurrentModelSelection({
+                textInput: true,
+                textOutput: { required: true, formats: ['text'] }
+            });
+            if (resolved) {
+                this.resolvedModel = resolved.model;
+                return resolved.model;
+            }
+        }
+
         // Resolve the model with capability requirements
         const modelInfo = this.resolveModelWithCapabilities(this.model, requirements);
         const modelName = modelInfo.name;
@@ -864,6 +968,253 @@ export class LLMCaller implements MCPDirectAccess {
         return modelName;
     }
 
+    private resolveCurrentModelSelection(
+        requirements: RequestRequirements,
+        selectionOverride?: ModelOrSelection,
+        scoreContext?: ScoreContext
+    ): ResolvedModel | undefined {
+        const catalogs = this.getResolverCatalogs();
+        if (!catalogs && !Array.isArray(this.providerScope)) {
+            return undefined;
+        }
+
+        try {
+            return resolveModel({
+                providerScope: this.providerScope,
+                selection: selectionOverride ?? this.modelSelection,
+                requirements,
+                scoreContext,
+                catalogs,
+                providerInterfacesByProvider: this.getProviderInterfaceSupportForResolver()
+            });
+        } catch (error) {
+            if (error instanceof ModelNotFoundError && !Array.isArray(this.providerScope)) {
+                return undefined;
+            }
+            throw error;
+        }
+    }
+
+    private resolveOperationModel(
+        requirements: RequestRequirements,
+        selectionOverride?: ModelOrSelection,
+        scoreContext?: ScoreContext
+    ): ResolvedModel | undefined {
+        return this.resolveCurrentModelSelection(requirements, selectionOverride, scoreContext);
+    }
+
+    private resolveExecutionTarget(
+        requirements: RequestRequirements,
+        selectionOverride?: ModelOrSelection,
+        scoreContext?: ScoreContext
+    ): ResolvedExecutionTarget | undefined {
+        const resolved = this.resolveOperationModel(requirements, selectionOverride, scoreContext);
+        if (!resolved) {
+            const model = selectionOverride && typeof selectionOverride === 'object' && 'model' in selectionOverride
+                ? selectionOverride.model
+                : typeof selectionOverride === 'string'
+                    ? selectionOverride
+                    : typeof this.modelSelection === 'string' && !['cheap', 'fast', 'balanced', 'premium'].includes(this.modelSelection)
+                        ? this.modelSelection
+                        : (() => {
+                            try {
+                                return this.getResolvedModel();
+                            } catch {
+                                return this.model;
+                            }
+                        })();
+            const modelInfo = this.modelManager.getModel(model);
+            if (!modelInfo) {
+                return undefined;
+            }
+            return {
+                providerName: this.getCurrentProviderName(),
+                provider: this.providerManager.getProvider(),
+                model,
+                modelInfo,
+                mode: this.inferSelectionMode(selectionOverride ?? this.modelSelection)
+            };
+        }
+
+        return {
+            providerName: resolved.provider,
+            provider: this.getExecutionProvider(resolved.provider),
+            model: resolved.model,
+            modelInfo: resolved.modelInfo,
+            mode: resolved.mode,
+            resolution: resolved.resolution,
+            resolved
+        };
+    }
+
+    private getExecutionProvider(provider: RegisteredProviders): LLMProvider {
+        if (provider === this.getCurrentProviderName()) {
+            return this.providerManager.getProvider();
+        }
+        return this.providerPool.getProvider(provider);
+    }
+
+    private getDispatchExecution(
+        execution?: ProviderExecutionContext
+    ): ProviderExecutionContext | undefined {
+        if (!execution) return undefined;
+        return execution.providerName === this.getCurrentProviderName() ? undefined : execution;
+    }
+
+    private getProviderOptionsModelOverride(settings?: UniversalChatSettings): ExactModelSelection | undefined {
+        const model = settings?.providerOptions?.model;
+        if (model === undefined || model === null) {
+            return undefined;
+        }
+        if (typeof model !== 'string' || model.trim().length === 0) {
+            throw new ModelSelectionConfigError('settings.providerOptions.model must be a non-empty model string');
+        }
+        return { model };
+    }
+
+    private addResolvedModelMetadata<T extends { metadata?: Metadata; model?: string }>(
+        response: T,
+        resolved: ResolvedModelMetadata | Pick<ResolvedModelMetadata, 'provider' | 'model'>
+    ): T {
+        const mode = 'mode' in resolved ? resolved.mode : this.inferSelectionMode();
+        const resolution = 'resolution' in resolved ? resolved.resolution : undefined;
+        return {
+            ...response,
+            model: response.model ?? resolved.model,
+            metadata: {
+                ...response.metadata,
+                provider: resolved.provider,
+                model: response.metadata?.model ?? resolved.model,
+                selectionMode: response.metadata?.selectionMode ?? mode,
+                ...(resolution ? { modelResolution: resolution } : {})
+            } as Metadata
+        };
+    }
+
+    private toResolvedModelMetadata(
+        resolved?: ResolvedModel,
+        model?: string,
+        selection: ModelOrSelection = this.modelSelection
+    ): ResolvedModelMetadata {
+        return {
+            provider: resolved?.provider ?? this.getCurrentProviderName(),
+            model: resolved?.model ?? model ?? this.model,
+            mode: resolved?.mode ?? this.inferSelectionMode(selection),
+            ...(resolved?.resolution && this.shouldExposeModelResolution(selection) ? { resolution: resolved.resolution } : {})
+        };
+    }
+
+    private inferSelectionMode(selection: ModelOrSelection = this.modelSelection): ModelResolutionMode {
+        if (typeof selection === 'string') {
+            return ['cheap', 'fast', 'balanced', 'premium'].includes(selection) ? 'preset' : 'exact';
+        }
+        if ('model' in selection) {
+            return 'exact';
+        }
+        return selection.prefer || selection.constraints ? 'policy' : 'preset';
+    }
+
+    private shouldExposeModelResolution(selection: ModelOrSelection = this.modelSelection): boolean {
+        return typeof selection === 'object' && 'resolution' in selection && selection.resolution?.explain === true;
+    }
+
+    private getResolverCatalogs() {
+        if (Array.isArray(this.providerScope)) {
+            return undefined;
+        }
+
+        const getAvailableModels = (this.modelManager as unknown as { getAvailableModels?: () => ModelInfo[] }).getAvailableModels;
+        if (typeof getAvailableModels !== 'function') {
+            return undefined;
+        }
+
+        const provider = this.providerScope;
+        return {
+            [provider]: getAvailableModels.call(this.modelManager)
+        };
+    }
+
+    private findModelInfo(modelName: string): ModelInfo | undefined {
+        const current = this.modelManager.getModel(modelName);
+        if (current) return current;
+
+        const catalogs = this.getResolverCatalogs();
+        if (catalogs) {
+            return Object.values(catalogs)
+                .flat()
+                .find(model => model.name === modelName);
+        }
+
+        try {
+            const resolved = resolveModel({
+                providerScope: this.providerScope,
+                selection: { model: modelName },
+                requirements: {
+                    textInput: true
+                }
+            });
+            return resolved.modelInfo;
+        } catch {
+            return undefined;
+        }
+    }
+
+    private getProviderInterfaceSupportForResolver() {
+        const support: Partial<Record<RegisteredProviders, {
+            imageCall: boolean;
+            videoCall: boolean;
+            embeddingCall: boolean;
+            audioCall: boolean;
+        }>> = {};
+
+        for (const provider of this.providerPool.getProviderScope()) {
+            try {
+                const providerSupport = this.providerPool.getInterfaceSupport(provider);
+                support[provider] = {
+                    imageCall: providerSupport.imageCall,
+                    videoCall: providerSupport.videoCall,
+                    embeddingCall: providerSupport.embeddingCall,
+                    audioCall: providerSupport.audioCall
+                };
+            } catch {
+                support[provider] = {
+                    imageCall: false,
+                    videoCall: false,
+                    embeddingCall: false,
+                    audioCall: false
+                };
+            }
+        }
+
+        return support;
+    }
+
+    private getCurrentProviderName(): RegisteredProviders {
+        if (typeof this.providerManager.getCurrentProviderName === 'function') {
+            const current = this.providerManager.getCurrentProviderName();
+            const scope = Array.isArray(this.providerScope) ? this.providerScope : [this.providerScope];
+            if (scope.includes(current)) {
+                return current;
+            }
+        }
+        const provider = Array.isArray(this.providerScope) ? this.providerScope[0] : this.providerScope;
+        return provider as RegisteredProviders;
+    }
+
+    private activateResolvedProvider(provider: RegisteredProviders): void {
+        if (provider === this.getCurrentProviderName()) return;
+        const providerInstance = this.providerPool.getProvider(provider);
+        if (typeof (this.providerManager as any).useProviderInstance === 'function') {
+            this.providerManager.useProviderInstance(provider, providerInstance);
+        } else {
+            this.providerManager.switchProvider(provider);
+        }
+        if (this.ownsModelManager) {
+            this.modelManager = new ModelManager(provider);
+        }
+        this.reinitializeControllers();
+    }
+
     private resolveModelWithCapabilities(
         nameOrAlias: string,
         requirements?: CapabilityRequirement
@@ -872,18 +1223,6 @@ export class LLMCaller implements MCPDirectAccess {
         const model = this.modelManager.getModel(nameOrAlias, requirements);
         if (model) {
             return model;
-        }
-
-        // If that fails and we had requirements, try without requirements for backwards compatibility
-        if (requirements) {
-            const fallbackModel = this.modelManager.getModel(nameOrAlias);
-            if (fallbackModel) {
-                this.log.warn('Model resolved without capability requirements - may not support all requested features', {
-                    model: fallbackModel.name,
-                    requestedRequirements: requirements
-                });
-                return fallbackModel;
-            }
         }
 
         throw new Error(`Model ${nameOrAlias} not found`);
@@ -931,13 +1270,16 @@ export class LLMCaller implements MCPDirectAccess {
             createStream: async (
                 model: string,
                 params: UniversalChatParams,
-                inputTokens: number
+                inputTokens: number,
+                execution?: ProviderExecutionContext
             ): Promise<AsyncIterable<UniversalStreamResponse>> => {
                 params.callerId = params.callerId || this.callerId;
                 if (!this.streamingService) {
                     throw new Error('StreamingService is not initialized');
                 }
-                return this.streamingService.createStream(params, model, undefined);
+                return execution
+                    ? this.streamingService.createStream(params, model, undefined, execution)
+                    : this.streamingService.createStream(params, model, undefined);
             }
         };
 
@@ -1044,7 +1386,8 @@ export class LLMCaller implements MCPDirectAccess {
 
     // Basic chat completion method - internal helper
     private async internalChatCall<T extends z.ZodTypeAny>(
-        params: UniversalChatParams
+        params: UniversalChatParams,
+        execution?: ProviderExecutionContext
     ): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'LLMCaller.internalChatCall' });
         log.debug(`Calling chat with ${params.messages?.length} messages`);
@@ -1056,7 +1399,9 @@ export class LLMCaller implements MCPDirectAccess {
         params.model = params.model || this.getResolvedModel();
 
         const { systemMessage, ...paramsForController } = params;
-        const chatResponse = await this.chatController.execute(paramsForController as any);
+        const chatResponse = execution
+            ? await this.chatController.execute(paramsForController as any, execution)
+            : await this.chatController.execute(paramsForController as any);
 
         // Process image output if present (save to file if outputPath provided)
         // Note: outputPath handling will be moved to the public call/stream methods
@@ -1072,7 +1417,8 @@ export class LLMCaller implements MCPDirectAccess {
      */
     private async internalStreamCall(
         // Takes the full parameter object
-        params: UniversalChatParams
+        params: UniversalChatParams,
+        execution?: ProviderExecutionContext
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
         this.toolController.resetIterationCount(); // Reset tool iteration
 
@@ -1099,11 +1445,18 @@ export class LLMCaller implements MCPDirectAccess {
                 }
             }
             // OTel spans are no longer created here; providers will emit via the collector
-            const create = async () => await this.streamingService.createStream(
-                params,
-                params.model,
-                undefined  // System message comes from history manager via params
-            );
+            const create = async () => execution
+                ? await this.streamingService.createStream(
+                    params,
+                    params.model,
+                    undefined,  // System message comes from history manager via params
+                    execution
+                )
+                : await this.streamingService.createStream(
+                    params,
+                    params.model,
+                    undefined  // System message comes from history manager via params
+                );
             const stream = await create();
 
             const self = this;
@@ -1247,6 +1600,95 @@ export class LLMCaller implements MCPDirectAccess {
         return resolvedTools;
     }
 
+    private async resolveEffectiveToolsForCall(opts: LLMCallOptions): Promise<ToolDefinition[] | undefined> {
+        const log = logger.createLogger({ prefix: 'LLMCaller.resolveEffectiveToolsForCall' });
+
+        const standardToolsToResolve = opts.tools?.filter(t =>
+            typeof t === 'string' ||
+            (typeof t === 'object' && t && 'name' in t && 'description' in t && 'parameters' in t)
+        ) as (string | ToolDefinition)[] | undefined;
+
+        const newlyResolvedTools = await this.resolveToolDefinitions(standardToolsToResolve, opts.toolsDir);
+        const baseTools = this.toolsManager.listTools();
+
+        const standardToolsMap: Map<string, ToolDefinition> = new Map();
+        [...baseTools, ...newlyResolvedTools].forEach(tool => standardToolsMap.set(tool.name, tool));
+
+        const mcpConfigObjects = (opts.tools || []).flatMap(tool => {
+            if (isMCPToolConfig(tool as any)) return [(tool as any).mcpServers as MCPServersMap];
+            if (this.isRawMcpServersMap(tool)) return [tool as MCPServersMap];
+            return [] as MCPServersMap[];
+        });
+
+        if (mcpConfigObjects.length) {
+            const adapterForRegistration = this.getMcpAdapter();
+            for (const config of mcpConfigObjects) {
+                for (const [serverKey, serverConfig] of Object.entries(config)) {
+                    if (typeof (adapterForRegistration as any).registerServerConfig === 'function') {
+                        adapterForRegistration.registerServerConfig(serverKey, serverConfig);
+                    } else {
+                        this.log.debug('MCP adapter missing registerServerConfig (mocked?); skipping registration');
+                    }
+                }
+            }
+        }
+
+        const mcpTools = await this.resolveMcpToolsForCall(log);
+        const finalToolsMap: Map<string, ToolDefinition> = new Map();
+        [...standardToolsMap.values(), ...mcpTools].forEach(tool => finalToolsMap.set(tool.name, tool));
+
+        const effectiveTools = Array.from(finalToolsMap.values());
+        return effectiveTools.length > 0 ? effectiveTools : undefined;
+    }
+
+    private async resolveMcpToolsForCall(log: ReturnType<typeof logger.createLogger>): Promise<ToolDefinition[]> {
+        const mcpAdapter = this.getMcpAdapter();
+        const configuredServers = mcpAdapter.listConfiguredServers();
+        const mcpToolsForCall: ToolDefinition[] = [];
+
+        for (const serverKey of configuredServers) {
+            if (!mcpAdapter.isConnected(serverKey)) {
+                try {
+                    log.debug(`Auto-connecting to MCP server ${serverKey} for tool usage`);
+                    await mcpAdapter.connectToServer(serverKey);
+                } catch (error) {
+                    log.warn(`Failed to auto-connect to MCP server ${serverKey}`, { error });
+                    this.mcpSchemaCache.delete(serverKey);
+                    continue;
+                }
+            }
+
+            let serverTools = this.mcpSchemaCache.get(serverKey);
+            if (!serverTools) {
+                try {
+                    log.debug(`Cache miss for MCP schemas: ${serverKey}. Fetching...`);
+                    serverTools = await mcpAdapter.getServerTools(serverKey);
+                    this.mcpSchemaCache.set(serverKey, serverTools);
+                    log.debug(`Fetched and cached ${serverTools.length} tools for ${serverKey}`);
+                } catch (error) {
+                    log.error(`Failed to fetch tools for MCP server ${serverKey}`, { error });
+                    this.mcpSchemaCache.delete(serverKey);
+                    serverTools = [];
+                }
+            } else {
+                log.debug(`Cache hit for MCP schemas: ${serverKey}`);
+            }
+
+            mcpToolsForCall.push(...serverTools);
+        }
+
+        return mcpToolsForCall;
+    }
+
+    private isRawMcpServersMap(obj: unknown): obj is MCPServersMap {
+        if (!obj || typeof obj !== 'object' || ('name' in (obj as any))) return false;
+        const values = Object.values(obj as Record<string, unknown>);
+        if (values.length === 0) return false;
+        return values.every(value => value && typeof value === 'object' && (
+            'command' in (value as any) || 'url' in (value as any) || 'pluginPath' in (value as any) || 'args' in (value as any)
+        ));
+    }
+
     /**
      * Helper method to build chat params and process files consistently for both call() and stream()
      * @private
@@ -1380,114 +1822,46 @@ export class LLMCaller implements MCPDirectAccess {
     private async buildChatParams(opts: LLMCallOptions & {
         userText?: string;
         processedMessages: any[]; // TextPart[]
-    }): Promise<{ chatParams: UniversalChatParams; processedMessages: any[] }> {
+        operationKind?: 'call' | 'stream';
+    }): Promise<{ chatParams: UniversalChatParams; processedMessages: any[]; resolvedModelMetadata: ResolvedModelMetadata; execution?: ProviderExecutionContext }> {
         const log = logger.createLogger({ prefix: 'LLMCaller.buildChatParams' });
         const actualMessage = opts.userText || opts.text || '';
 
-        // Get model info for capability checks
-        const resolvedModelName = this.getResolvedModel();
-        const modelInfo = this.modelManager.getModel(resolvedModelName);
+        let resolvedModelName = this.getResolvedModel();
+        let modelInfo = this.findModelInfo(resolvedModelName);
         if (!modelInfo) {
             throw new Error(`Model ${resolvedModelName} not found`);
         }
 
-        // --- Tool Resolution and MCP Schema Fetching ---
-        // Filter out MCP configs before resolving standard tools
-        const standardToolsToResolve = opts.tools?.filter(t =>
-            typeof t === 'string' ||
-            (typeof t === 'object' && t && 'name' in t && 'description' in t && 'parameters' in t)
-        ) as (string | ToolDefinition)[] | undefined;
-
-        // Resolve ONLY standard tool definitions
-        const newlyResolvedTools = await this.resolveToolDefinitions(standardToolsToResolve, opts.toolsDir);
-
-        // Start merging: base tools + call-specific standard tools
-        let finalEffectiveTools: ToolDefinition[] = [];
-        const baseTools = this.toolsManager.listTools(); // Tools added via addTools()
-        const callSpecificStandardTools = newlyResolvedTools; // Tools from options.tools (excluding MCP)
-
-        // Merge base and call-specific standard tools
-        const mergedStandardToolsMap: Map<string, ToolDefinition> = new Map();
-        [...baseTools, ...callSpecificStandardTools].forEach(t => mergedStandardToolsMap.set(t.name, t));
-        finalEffectiveTools = Array.from(mergedStandardToolsMap.values());
-
-        // Register MCP server configurations passed via opts.tools (support both wrapped and raw maps)
-        const isRawMcpServersMap = (obj: unknown): obj is MCPServersMap => {
-            if (!obj || typeof obj !== 'object' || ('name' in (obj as any))) return false;
-            const values = Object.values(obj as Record<string, unknown>);
-            if (values.length === 0) return false;
-            return values.every(v => v && typeof v === 'object' && (
-                'command' in (v as any) || 'url' in (v as any) || 'pluginPath' in (v as any) || 'args' in (v as any)
-            ));
-        };
-        const mcpConfigObjects = (opts.tools || []).flatMap(t => {
-            if (isMCPToolConfig(t as any)) return [(t as any).mcpServers as MCPServersMap];
-            if (isRawMcpServersMap(t)) return [t as MCPServersMap];
-            return [] as MCPServersMap[];
-        });
-        if (mcpConfigObjects.length) {
-            const adapterForRegistration = this.getMcpAdapter();
-            for (const cfg of mcpConfigObjects) {
-                for (const [serverKey, serverConfig] of Object.entries(cfg)) {
-                    if (typeof (adapterForRegistration as any).registerServerConfig === 'function') {
-                        adapterForRegistration.registerServerConfig(serverKey, serverConfig);
-                    } else {
-                        this.log.debug('MCP adapter missing registerServerConfig (mocked?); skipping registration');
-                    }
-                }
-            }
-        }
-
-        // Now fetch and merge MCP tools
-        const mcpAdapter = this.getMcpAdapter();
-        // Get all configured servers
-        const configuredServers = mcpAdapter.listConfiguredServers();
-        const mcpToolsForCall: ToolDefinition[] = [];
-
-        for (const serverKey of configuredServers) {
-            // Auto-connect on first use if needed
-            if (!mcpAdapter.isConnected(serverKey)) {
-                try {
-                    log.debug(`Auto-connecting to MCP server ${serverKey} for tool usage`);
-                    await mcpAdapter.connectToServer(serverKey);
-                } catch (error) {
-                    log.warn(`Failed to auto-connect to MCP server ${serverKey}`, { error });
-                    // Continue with other servers rather than failing completely
-                    continue;
-                }
-            }
-
-            let serverTools = this.mcpSchemaCache.get(serverKey);
-            if (!serverTools) {
-                try {
-                    log.debug(`Cache miss for MCP schemas: ${serverKey}. Fetching...`);
-                    // Fetch tools (connects implicitly if needed)
-                    serverTools = await mcpAdapter.getServerTools(serverKey);
-                    this.mcpSchemaCache.set(serverKey, serverTools);
-                    log.debug(`Fetched and cached ${serverTools.length} tools for ${serverKey}`);
-                } catch (error) {
-                    log.error(`Failed to fetch tools for MCP server ${serverKey}`, { error });
-                    // Decide whether to throw or continue without this server's tools
-                    // Let's continue for now
-                    serverTools = [];
-                }
-            } else {
-                log.debug(`Cache hit for MCP schemas: ${serverKey}`);
-            }
-            mcpToolsForCall.push(...serverTools);
-        }
-
-        // Finalize the tool list with MCP tools
-        const finalToolsMap: Map<string, ToolDefinition> = new Map();
-        [...finalEffectiveTools, ...mcpToolsForCall].forEach(t => finalToolsMap.set(t.name, t));
-        finalEffectiveTools = Array.from(finalToolsMap.values());
-        const effectiveTools = finalEffectiveTools.length > 0 ? finalEffectiveTools : undefined;
+        const effectiveTools = await this.resolveEffectiveToolsForCall(opts);
 
         // Merge the settings with any defaults
         const mergedSettings = this.mergeSettings(opts.settings);
 
         // Get the effective history mode
         const effectiveHistoryMode = this.mergeHistoryMode(opts.historyMode);
+
+        const inferredRequest = inferChatRequestRequirements(
+            opts.operationKind ?? 'call',
+            {
+                ...opts,
+                settings: mergedSettings
+            },
+            {
+                hasTools: Boolean(effectiveTools?.length),
+                hasParallelTools: Boolean(mergedSettings?.providerOptions?.parallelToolCalls)
+            }
+        );
+        const selectionOverride = this.getProviderOptionsModelOverride(mergedSettings);
+        const execution = this.resolveExecutionTarget(
+            inferredRequest.requirements,
+            selectionOverride,
+            inferredRequest.scoreContext
+        );
+        if (execution) {
+            resolvedModelName = execution.model;
+            modelInfo = execution.modelInfo ?? modelInfo;
+        }
 
         // Get messages from history manager (which already has the latest user message)
         let messages = this.historyManager.getMessages() || [];
@@ -1524,7 +1898,7 @@ export class LLMCaller implements MCPDirectAccess {
 
         // Build final chat parameters - everything in one place
         const chatParams: UniversalChatParams = {
-            model: this.getResolvedModel(),
+            model: resolvedModelName,
             messages: messages,
             settings: mergedSettings,
             jsonSchema: opts.jsonSchema,
@@ -1564,7 +1938,16 @@ export class LLMCaller implements MCPDirectAccess {
         // Update response format based on model capabilities
         chatParams.responseFormat = useNativeJsonMode ? 'json' : (opts.jsonSchema ? 'text' : opts.responseFormat);
 
-        return { chatParams, processedMessages: opts.processedMessages };
+        return {
+            chatParams,
+            processedMessages: opts.processedMessages,
+            resolvedModelMetadata: this.toResolvedModelMetadata(
+                execution?.resolved,
+                resolvedModelName,
+                selectionOverride ?? this.modelSelection
+            ),
+            execution: this.getDispatchExecution(execution)
+        };
     }
 
     /**
@@ -1590,8 +1973,23 @@ export class LLMCaller implements MCPDirectAccess {
                 actualOptions = input;
                 messageParts = actualOptions.text ? toMessageParts(actualOptions.text) : [];
             }
+            const actualSettings = this.mergeSettings(actualOptions.settings);
 
-            let modelToUse = actualOptions.settings?.providerOptions?.model as string || this.getResolvedModel();
+            const streamMediaInference = (actualOptions.output?.image || actualOptions.output?.video)
+                ? inferChatRequestRequirements('stream', {
+                    ...actualOptions,
+                    settings: actualSettings
+                })
+                : undefined;
+            const streamMediaTarget = streamMediaInference
+                ? this.resolveExecutionTarget(
+                    streamMediaInference.requirements,
+                    this.getProviderOptionsModelOverride(actualSettings),
+                    streamMediaInference.scoreContext
+                )
+                : undefined;
+            const providerOptionsModelOverride = this.getProviderOptionsModelOverride(actualSettings);
+            let modelToUse = streamMediaTarget?.model || providerOptionsModelOverride?.model || this.getResolvedModel();
             if (typeof ModelManager.getCapabilities === 'function') {
                 const capabilities = ModelManager.getCapabilities(modelToUse);
                 const hasImageInput = actualOptions.file || (actualOptions.files && actualOptions.files.length > 0);
@@ -1639,8 +2037,12 @@ export class LLMCaller implements MCPDirectAccess {
                 if (hasVideoOutput) {
                     const videoOpts = actualOptions.output?.video;
                     const wait = videoOpts?.wait || 'none';
+                    const videoProvider = (streamMediaTarget?.provider ?? this.providerManager.getProvider()) as unknown as LLMProviderVideo;
+                    if (typeof videoProvider.videoCall !== 'function') {
+                        throw new CapabilityError(`Provider "${streamMediaTarget?.providerName ?? this.getCurrentProviderName()}" does not support video generation`);
+                    }
                     const providerResponse = await this.retryManager.executeWithRetry(
-                        () => this.providerManager.callVideoOperation(modelToUse, {
+                        () => videoProvider.videoCall(modelToUse, {
                             prompt: actualOptions.text || '',
                             size: (videoOpts?.size as any) || undefined,
                             seconds: videoOpts?.seconds,
@@ -1664,7 +2066,10 @@ export class LLMCaller implements MCPDirectAccess {
                             // ignore callback errors
                         }
                     }
-                    return [providerResponse];
+                    return [this.addResolvedModelMetadata(
+                        providerResponse,
+                        this.toResolvedModelMetadata(streamMediaTarget?.resolved, modelToUse, providerOptionsModelOverride ?? this.modelSelection)
+                    )];
                 }
             }
 
@@ -1693,11 +2098,12 @@ export class LLMCaller implements MCPDirectAccess {
             if (originalUserText) this.historyManager.addMessage('user', originalUserText, {});
 
             const effHistoryMode = this.mergeHistoryMode(actualOptions.historyMode);
+            const resolvedModelName = this.getResolvedModel();
             const processedMessages = await this.requestProcessor.processRequest({
                 message: actualOptions.text || '',
                 data: actualOptions.data,
                 endingMessage: actualOptions.endingMessage,
-                model: this.modelManager.getModel(this.model) || (() => { throw new Error(`Model ${this.model} not found`); })(),
+                model: this.findModelInfo(resolvedModelName) || (() => { throw new Error(`Model ${resolvedModelName} not found`); })(),
                 maxResponseTokens: actualOptions.settings?.maxTokens,
                 maxCharsPerChunk: actualOptions.maxCharsPerChunk,
                 jsonSchema: actualOptions.jsonSchema,
@@ -1706,19 +2112,22 @@ export class LLMCaller implements MCPDirectAccess {
             });
             log.debug('Processed messages', { count: processedMessages.length });
 
-            const { chatParams, processedMessages: finalProcessedMessages } =
+            const { chatParams, processedMessages: finalProcessedMessages, resolvedModelMetadata, execution } =
                 await this.buildChatParams({
                     ...actualOptions,
                     userText: actualOptions.text || '',
-                    processedMessages
+                    processedMessages,
+                    operationKind: 'stream'
                 });
 
             if (finalProcessedMessages.length <= 1) {
-                const stream = await this.internalStreamCall(chatParams);
+                const stream = execution
+                    ? await this.internalStreamCall(chatParams, execution)
+                    : await this.internalStreamCall(chatParams);
                 for await (const chunk of stream as AsyncIterable<UniversalStreamResponse<T extends z.ZodTypeAny ? z.infer<T> : unknown>>) {
                     // Image output processing is handled within the adapters when outputPath is provided
                     // No additional processing needed here as the adapter handles outputPath automatically
-                    yield chunk;
+                    yield this.addResolvedModelMetadata(chunk, resolvedModelMetadata);
                 }
             } else {
                 const chunkStreamParams = { ...chatParams, historicalMessages: chatParams.messages };
@@ -1726,7 +2135,7 @@ export class LLMCaller implements MCPDirectAccess {
                 const shouldUseParallel = this.parallelChunking || (actualOptions.maxParallelRequests !== undefined);
                 const responses = shouldUseParallel
                     ? await this.chunkController.processChunksParallel(finalProcessedMessages, {
-                        model: this.model,
+                        model: chatParams.model,
                         historicalMessages: chatParams.messages,
                         settings: chatParams.settings,
                         jsonSchema: actualOptions.jsonSchema,
@@ -1736,10 +2145,11 @@ export class LLMCaller implements MCPDirectAccess {
                         maxCharsPerChunk: actualOptions.maxCharsPerChunk,
                         historyMode: chatParams.historyMode,
                         maxIterations: actualOptions.maxChunkIterations,
-                        maxParallelRequests: actualOptions.maxParallelRequests
+                        maxParallelRequests: actualOptions.maxParallelRequests,
+                        execution
                     })
                     : await this.chunkController.processChunks(finalProcessedMessages, {
-                        model: this.model,
+                        model: chatParams.model,
                         historicalMessages: chatParams.messages,
                         settings: chatParams.settings,
                         jsonSchema: actualOptions.jsonSchema,
@@ -1748,7 +2158,8 @@ export class LLMCaller implements MCPDirectAccess {
                         callerId: this.callerId,
                         maxCharsPerChunk: actualOptions.maxCharsPerChunk,
                         historyMode: chatParams.historyMode,
-                        maxIterations: actualOptions.maxChunkIterations
+                        maxIterations: actualOptions.maxChunkIterations,
+                        execution
                     });
                 responses.forEach(response => {
                     if (response.content && (!response.toolCalls || response.toolCalls.length === 0) && response.metadata?.finishReason !== 'tool_calls') {
@@ -1776,7 +2187,7 @@ export class LLMCaller implements MCPDirectAccess {
 
                     // Image output processing is handled within the adapters when outputPath is provided
                     // No additional processing needed here as the adapter handles outputPath automatically
-                    yield streamResponseChunk;
+                    yield this.addResolvedModelMetadata(streamResponseChunk, resolvedModelMetadata);
                 }
             }
 
@@ -1803,6 +2214,9 @@ export class LLMCaller implements MCPDirectAccess {
             const opts: LLMCallOptions = typeof message === 'string'
                 ? { text: message, ...options }
                 : { ...message };
+            const mergedCallSettings = this.mergeSettings(opts.settings);
+            const providerOptionsModelOverride = this.getProviderOptionsModelOverride(mergedCallSettings);
+            const providerOptionsModelName = providerOptionsModelOverride?.model;
 
             const effHistoryMode = this.mergeHistoryMode(opts.historyMode);
             if (effHistoryMode.toLowerCase() === 'stateless') {
@@ -1811,8 +2225,17 @@ export class LLMCaller implements MCPDirectAccess {
 
             // Early logging for video routing intent
             if (opts.output?.video) {
+                const videoInference = inferChatRequestRequirements('call', {
+                    ...opts,
+                    settings: mergedCallSettings
+                });
+                const videoTarget = this.resolveExecutionTarget(
+                    videoInference.requirements,
+                    providerOptionsModelOverride,
+                    videoInference.scoreContext
+                );
                 log.info('Detected video output request; will attempt to route to videoCall', {
-                    requestedModel: this.getResolvedModel(),
+                    requestedModel: videoTarget?.model ?? this.model,
                     size: opts.output.video.size,
                     seconds: opts.output.video.seconds,
                     wait: opts.output.video.wait,
@@ -1820,7 +2243,7 @@ export class LLMCaller implements MCPDirectAccess {
                 });
 
                 // Short-circuit routing to provider videoCall (bypass chat path entirely)
-                const initialModel = (opts.settings?.providerOptions?.model as string) || this.getResolvedModel();
+                const initialModel = videoTarget?.model || providerOptionsModelName || this.getResolvedModel();
                 const videoOpts = opts.output.video;
                 log.info('Routing to provider videoCall (short-circuit)', {
                     model: initialModel,
@@ -1838,9 +2261,10 @@ export class LLMCaller implements MCPDirectAccess {
                         callerId: this.callerId,
                         hasTools: false
                     });
-                    const providerName = (this.providerManager.getCurrentProviderName?.() as unknown as string)
-                        || this.providerManager.getProvider().constructor.name
-                        || 'unknown';
+                    const providerName = videoTarget?.providerName
+                        ?? (this.providerManager.getCurrentProviderName?.() as unknown as string)
+                        ?? this.providerManager.getProvider().constructor.name
+                        ?? 'unknown';
                     llmCtx = this.telemetryCollector.startLLM(conversationCtx, {
                         provider: String(providerName).toLowerCase(),
                         model: initialModel,
@@ -1857,8 +2281,12 @@ export class LLMCaller implements MCPDirectAccess {
                     }]);
                 }
 
+                const videoProvider = (videoTarget?.provider ?? this.providerManager.getProvider()) as unknown as LLMProviderVideo;
+                if (typeof videoProvider.videoCall !== 'function') {
+                    throw new CapabilityError(`Provider "${videoTarget?.providerName ?? this.getCurrentProviderName()}" does not support video generation`);
+                }
                 const providerResponse = await this.retryManager.executeWithRetry(
-                    () => this.providerManager.callVideoOperation(initialModel, {
+                    () => videoProvider.videoCall(initialModel, {
                         prompt: opts.text || '',
                         image: opts.file || (opts.files && opts.files[0]) || undefined,
                         size: (videoOpts.size as any) || undefined,
@@ -1925,10 +2353,26 @@ export class LLMCaller implements MCPDirectAccess {
                     }
                 }
 
-                return [providerResponse];
+                return [this.addResolvedModelMetadata(
+                    providerResponse,
+                    this.toResolvedModelMetadata(videoTarget?.resolved, initialModel, providerOptionsModelOverride ?? this.modelSelection)
+                )];
             }
 
-            let modelToUse = opts.settings?.providerOptions?.model as string || this.getResolvedModel();
+            const imageInference = opts.output?.image
+                ? inferChatRequestRequirements('call', {
+                    ...opts,
+                    settings: mergedCallSettings
+                })
+                : undefined;
+            const imageOrChatTarget = imageInference
+                ? this.resolveExecutionTarget(
+                    imageInference.requirements,
+                    providerOptionsModelOverride,
+                    imageInference.scoreContext
+                )
+                : undefined;
+            let modelToUse = imageOrChatTarget?.model || providerOptionsModelName || this.getResolvedModel();
             if (typeof ModelManager.getCapabilities === 'function') {
                 const capabilities = ModelManager.getCapabilities(modelToUse);
                 const hasImageInput = opts.file || (opts.files && opts.files.length > 0);
@@ -2102,9 +2546,10 @@ export class LLMCaller implements MCPDirectAccess {
                         });
 
                         if (this.telemetryCollector && conversationCtx) {
-                            const providerName = (this.providerManager.getCurrentProviderName?.() as unknown as string)
-                                || this.providerManager.getProvider().constructor.name
-                                || 'unknown';
+                            const providerName = imageOrChatTarget?.providerName
+                                ?? (this.providerManager.getCurrentProviderName?.() as unknown as string)
+                                ?? this.providerManager.getProvider().constructor.name
+                                ?? 'unknown';
                             llmCtx = this.telemetryCollector.startLLM(conversationCtx, {
                                 provider: String(providerName).toLowerCase(),
                                 model: modelToUse,
@@ -2149,12 +2594,12 @@ export class LLMCaller implements MCPDirectAccess {
                         }
 
                         // Call the image operation directly
+                        const imageProvider = (imageOrChatTarget?.provider ?? this.providerManager.getProvider()) as unknown as LLMProviderImage;
+                        if (typeof imageProvider.imageCall !== 'function') {
+                            throw new CapabilityError(`Provider "${imageOrChatTarget?.providerName ?? this.getCurrentProviderName()}" does not support image generation`);
+                        }
                         const response = await this.retryManager.executeWithRetry(
-                            () => this.providerManager.callImageOperation(
-                                modelToUse,
-                                imageOperation,
-                                imageParams
-                            ),
+                            () => imageProvider.imageCall(modelToUse, imageOperation, imageParams),
                             shouldRetryDueToLLMError
                         );
 
@@ -2200,7 +2645,10 @@ export class LLMCaller implements MCPDirectAccess {
 
                         // Image output processing is handled within the adapters when outputPath is provided
                         // No additional processing needed here as the adapter handles outputPath automatically
-                        return [response];
+                        return [this.addResolvedModelMetadata(
+                            response,
+                            this.toResolvedModelMetadata(imageOrChatTarget?.resolved, modelToUse, providerOptionsModelOverride ?? this.modelSelection)
+                        )];
                     } catch (err) {
                         // On error, best-effort end spans and conversation
                         if (this.telemetryCollector && conversationCtx) {
@@ -2246,11 +2694,12 @@ export class LLMCaller implements MCPDirectAccess {
 
             if (this.toolOrchestrator) this.toolOrchestrator.resetCalledTools();
 
+            const resolvedModelName = this.getResolvedModel();
             const processedMessages = await this.requestProcessor.processRequest({
                 message: opts.text || '',
                 data: opts.data,
                 endingMessage: opts.endingMessage,
-                model: this.modelManager.getModel(this.model) || (() => { throw new Error(`Model ${this.model} not found`); })(),
+                model: this.findModelInfo(resolvedModelName) || (() => { throw new Error(`Model ${resolvedModelName} not found`); })(),
                 maxResponseTokens: opts.settings?.maxTokens,
                 maxCharsPerChunk: opts.maxCharsPerChunk,
                 jsonSchema: opts.jsonSchema,
@@ -2259,11 +2708,12 @@ export class LLMCaller implements MCPDirectAccess {
             });
             log.debug('Processed messages', { count: processedMessages.length });
 
-            const { chatParams, processedMessages: finalProcessedMessages } =
+            const { chatParams, processedMessages: finalProcessedMessages, resolvedModelMetadata, execution } =
                 await this.buildChatParams({
                     ...opts,
                     userText: opts.text || '',
-                    processedMessages
+                    processedMessages,
+                    operationKind: 'call'
                 });
 
             // Ensure telemetry providers are ready before starting conversation
@@ -2297,7 +2747,9 @@ export class LLMCaller implements MCPDirectAccess {
             try {
                 if (finalProcessedMessages.length <= 1) {
                     log.debug('Calling internalChatCall (single chunk)');
-                    const exec = async () => await this.internalChatCall<T>(chatParams);
+                    const exec = async () => execution
+                        ? await this.internalChatCall<T>(chatParams, execution)
+                        : await this.internalChatCall<T>(chatParams);
                     const response = await exec();
                     responses = [response];
                     llmCallsCount = 1;
@@ -2305,7 +2757,7 @@ export class LLMCaller implements MCPDirectAccess {
                     log.debug('Calling chunkController.processChunks (multi-chunk)', { chunkCount: finalProcessedMessages.length });
                     const execChunks = async () => this.parallelChunking
                         ? await this.chunkController.processChunksParallel(finalProcessedMessages, {
-                            model: this.model,
+                            model: chatParams.model,
                             historicalMessages: chatParams.messages,
                             settings: chatParams.settings,
                             jsonSchema: opts.jsonSchema,
@@ -2315,10 +2767,11 @@ export class LLMCaller implements MCPDirectAccess {
                             maxCharsPerChunk: opts.maxCharsPerChunk,
                             historyMode: chatParams.historyMode,
                             maxIterations: opts.maxChunkIterations,
-                            maxParallelRequests: opts.maxParallelRequests
+                            maxParallelRequests: opts.maxParallelRequests,
+                            execution
                         })
                         : await this.chunkController.processChunks(finalProcessedMessages, {
-                            model: this.model,
+                            model: chatParams.model,
                             historicalMessages: chatParams.messages,
                             settings: chatParams.settings,
                             jsonSchema: opts.jsonSchema,
@@ -2327,7 +2780,8 @@ export class LLMCaller implements MCPDirectAccess {
                             callerId: this.callerId,
                             maxCharsPerChunk: opts.maxCharsPerChunk,
                             historyMode: chatParams.historyMode,
-                            maxIterations: opts.maxChunkIterations
+                            maxIterations: opts.maxChunkIterations,
+                            execution
                         });
                     responses = await execChunks();
                     llmCallsCount = responses.length;
@@ -2358,7 +2812,9 @@ export class LLMCaller implements MCPDirectAccess {
 
             // Image output processing is handled within the adapters when outputPath is provided
             // No additional processing needed here as the adapter handles outputPath automatically
-            const processedResponses = responses;
+            const processedResponses = responses.map(response =>
+                this.addResolvedModelMetadata(response, resolvedModelMetadata)
+            );
 
             if (chatParams.historyMode?.toLowerCase() === 'stateless') {
                 this.historyManager.initializeWithSystemMessage();

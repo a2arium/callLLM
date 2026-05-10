@@ -11,9 +11,9 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const DEFAULT_AUDIO = path.join(__dirname, 'output', 'speech-example.mp3');
 
 /**
- * Speech-to-text via `transcribe` (OpenAI `audio/transcriptions`).
+ * Speech-to-text via `transcribe` with Gemini audio understanding.
  *
- * Requires OPENAI_API_KEY. Run: `yarn example:speechTranscription [path-to-audio]`
+ * Requires GEMINI_API_KEY. Run: `yarn example:speechTranscription [path-to-audio]`
  *
  * Default file: `examples/output/speech-example.mp3` — create it first with
  * `yarn example:speechSynthesis`, or pass any supported path / https URL / data: URI.
@@ -21,8 +21,8 @@ const DEFAULT_AUDIO = path.join(__dirname, 'output', 'speech-example.mp3');
  * Very large local files: pass `splitLargeFile: true` on `transcribe()` (requires ffmpeg/ffprobe on PATH).
  */
 async function main(): Promise<void> {
-    if (!process.env.OPENAI_API_KEY) {
-        console.error('Set OPENAI_API_KEY in .env or the environment.');
+    if (!process.env.GEMINI_API_KEY) {
+        console.error('Set GEMINI_API_KEY in .env or the environment.');
         process.exit(1);
     }
 
@@ -37,11 +37,10 @@ async function main(): Promise<void> {
         process.exit(1);
     }
 
-    const caller = new LLMCaller('openai', 'gpt-4o-mini-transcribe', 'You are a helpful assistant.');
+    const caller = new LLMCaller('gemini', 'fast', 'You are a helpful assistant.');
 
     const result = await caller.transcribe({
         file,
-        model: 'gpt-4o-mini-transcribe',
         // splitLargeFile: true, // Uncomment for very large files
     });
 
