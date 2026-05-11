@@ -78,7 +78,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/a2arium/callLLM.git"
+    "url": "git+https://github.com/a2arium/callllm.git"
   },
   "bugs": {
     "url": "https://github.com/a2arium/callllm/issues"

@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'a2arium/callLLM'
+    if: github.repository_owner == 'a2arium'
     runs-on: ubuntu-latest
     environment: npm-publish
 
