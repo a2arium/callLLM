@@ -78,12 +78,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/a2arium/callllm.git"
+    "url": "git+https://github.com/a2arium/callLLM.git"
   },
   "bugs": {
-    "url": "https://github.com/a2arium/callllm/issues"
+    "url": "https://github.com/a2arium/callLLM/issues"
   },
-  "homepage": "https://github.com/a2arium/callllm#readme",
+  "homepage": "https://github.com/a2arium/callLLM#readme",
   "keywords": [
     "llm",
     "ai",
