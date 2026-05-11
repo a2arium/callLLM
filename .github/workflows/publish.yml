@@ -63,6 +63,20 @@ jobs:
             echo "Will publish ${package_name}@${package_version}."
           fi
 
+      - name: Show trusted publishing context
+        if: steps.npm-version.outputs.publish == 'true'
+        run: |
+          echo "event_name=${GITHUB_EVENT_NAME}"
+          echo "repository=${GITHUB_REPOSITORY}"
+          echo "repository_owner=${GITHUB_REPOSITORY_OWNER}"
+          echo "workflow=${GITHUB_WORKFLOW}"
+          echo "ref=${GITHUB_REF}"
+          echo "sha=${GITHUB_SHA}"
+          echo "node=$(node --version)"
+          echo "npm=$(npm --version)"
+          npm config get registry
+          node -p "require('./package.json').repository.url"
+
       - name: Publish to npm
         if: steps.npm-version.outputs.publish == 'true'
         run: npm publish --access public
