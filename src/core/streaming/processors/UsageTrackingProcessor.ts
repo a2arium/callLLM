@@ -2,6 +2,7 @@ import type { StreamChunk, IStreamProcessor } from "../types.ts";
 import type { ModelInfo, Usage } from "../../../interfaces/UniversalInterfaces.ts";
 import type { UsageCallback } from "../../../interfaces/UsageInterfaces.ts";
 import type { TokenCalculator } from "../../models/TokenCalculator.ts";
+import { normalizeUsage } from "../../telemetry/UsageNormalizer.ts";
 
 /**
  * UsageTrackingProcessor
@@ -255,7 +256,7 @@ export class UsageTrackingProcessor implements IStreamProcessor {
                             // Send the final callback with the unreported tokens
                             this.usageCallback({
                                 callerId: this.callerId,
-                                usage: finalUsageForCallback as any,
+                                usage: normalizeUsage(finalUsageForCallback as Usage),
                                 timestamp: Date.now(),
                                 incremental: unreportedOutputTokens
                             });
@@ -306,7 +307,7 @@ export class UsageTrackingProcessor implements IStreamProcessor {
 
                         this.usageCallback({
                             callerId: this.callerId,
-                            usage: usageForCallback as any,
+                            usage: normalizeUsage(usageForCallback as Usage),
                             timestamp: Date.now(),
                             incremental: delta
                         });
@@ -355,7 +356,8 @@ export class UsageTrackingProcessor implements IStreamProcessor {
                 total: outputCost,
                 reasoning: reasoningCost,
             },
-            total: totalCost
+            total: totalCost,
+            unit: 'USD'
         };
     }
 

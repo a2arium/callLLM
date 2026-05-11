@@ -57,6 +57,7 @@ import { DataSplitter } from '../processors/DataSplitter.ts';
 import { RetryManager } from '../retry/RetryManager.ts';
 import { shouldRetryDueToLLMError } from '../retry/utils/ShouldRetryDueToLLMError.ts';
 import { UsageTracker } from '../telemetry/UsageTracker.ts';
+import { normalizeUsage } from '../telemetry/UsageNormalizer.ts';
 import { ChatController } from '../chat/ChatController.ts';
 import { ToolsManager } from '../tools/ToolsManager.ts';
 import { ToolController } from '../tools/ToolController.ts';
@@ -2059,7 +2060,7 @@ export class LLMCaller implements MCPDirectAccess {
                         try {
                             await Promise.resolve(this.usageCallback({
                                 callerId: this.callerId,
-                                usage,
+                                usage: normalizeUsage(usage),
                                 timestamp: Date.now()
                             }));
                         } catch (_) {
@@ -2345,7 +2346,7 @@ export class LLMCaller implements MCPDirectAccess {
                     try {
                         await Promise.resolve(this.usageCallback({
                             callerId: this.callerId,
-                            usage,
+                            usage: normalizeUsage(usage),
                             timestamp: Date.now()
                         }));
                     } catch (_) {

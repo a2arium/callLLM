@@ -5,6 +5,7 @@ import { ModelManager } from '../models/ModelManager.ts';
 import { logger } from '../../utils/logger.ts';
 import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
 import { UsageTracker } from '../telemetry/UsageTracker.ts';
+import { normalizeUsage } from '../telemetry/UsageNormalizer.ts';
 import { TokenCalculator } from '../models/TokenCalculator.ts';
 
 export class EmbeddingController {
@@ -59,7 +60,7 @@ export class EmbeddingController {
                 try {
                     await params.usageCallback({
                         callerId: this.callerId || 'unknown',
-                        usage: response.usage,
+                        usage: normalizeUsage(response.usage),
                         timestamp: Date.now()
                     });
                 } catch (error) {

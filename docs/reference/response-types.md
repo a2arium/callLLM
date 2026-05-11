@@ -118,7 +118,6 @@ type Usage = {
       reasoning: number;
       image?: number;
       audio?: number;
-      videoSeconds?: number;
     };
     total: number;
   };
@@ -136,9 +135,19 @@ type Usage = {
       audio?: number;
     };
     total: number;
+    unit: 'USD';
   };
   durations?: {
-    inputAudioSeconds?: number;
+    input?: {
+      audio?: number;
+      video?: number;
+    };
+    output?: {
+      audio?: number;
+      video?: number;
+    };
+    total?: number;
+    unit: 'seconds';
   };
 };
 ```

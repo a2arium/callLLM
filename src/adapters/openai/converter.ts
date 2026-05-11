@@ -738,11 +738,12 @@ export class Converter {
                         total: 0,
                         reasoning: 0,
                     },
-                    total: 0
+                    total: 0,
+                    unit: 'USD'
                 } // Costs calculated later
             };
 
-            log.debug('Converted usage data:', universalResponse.metadata.usage.tokens);
+            log.debug('Converted usage data:', universalResponse.metadata.usage?.tokens);
         }
 
         // Process output items from native structure

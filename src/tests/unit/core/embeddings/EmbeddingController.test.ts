@@ -332,7 +332,8 @@ describe('EmbeddingController', () => {
                     costs: {
                         input: { total: 0.0002, cached: 0 },
                         output: { total: 0, reasoning: 0 },
-                        total: 0.0002
+                        total: 0.0002,
+                        unit: 'USD'
                     }
                 },
                 timestamp: expect.any(Number)

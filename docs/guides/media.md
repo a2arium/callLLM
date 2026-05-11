@@ -119,7 +119,7 @@ Video usage is reported as media usage, not text tokens:
 
 ```ts
 const usage = response[0].metadata?.usage;
-console.log(usage?.tokens.output.videoSeconds);
+console.log(usage?.durations?.output?.video);
 console.log(usage?.costs.output.video);
 ```
 
@@ -185,7 +185,7 @@ const transcript = await caller.transcribe({
 
 console.log(transcript.text);
 console.log(transcript.usage.tokens.input.audio);
-console.log(transcript.usage.durations?.inputAudioSeconds);
+console.log(transcript.usage.durations?.input?.audio);
 ```
 
 `file` can be a local path, URL, or data URI.

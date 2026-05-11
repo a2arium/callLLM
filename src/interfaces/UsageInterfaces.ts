@@ -20,6 +20,10 @@ export type UsageData = {
                  * Tokens attributable to file/image inputs (if any)
                  */
                 image?: number;
+                /**
+                 * Tokens attributable to audio inputs (if any)
+                 */
+                audio?: number;
             },
             /**
              * Output token details
@@ -33,6 +37,10 @@ export type UsageData = {
                  * Number of output tokens used for reasoning (if applicable)
                  */
                 reasoning: number;
+                /**
+                 * Tokens, characters, or provider billing units attributable to audio output (if reported)
+                 */
+                audio?: number;
             },
             /**
              * Total tokens (including both cached and non-cached input tokens and reasoning)
@@ -52,6 +60,10 @@ export type UsageData = {
                  * Cost for cached input tokens
                  */
                 cached: number;
+                /**
+                 * Cost attributable to audio input processing
+                 */
+                audio?: number;
             },
             /**
              * Output cost details
@@ -65,11 +77,57 @@ export type UsageData = {
                  * Cost for output reasoning tokens (if applicable)
                  */
                 reasoning: number;
+                /**
+                 * Cost attributable to image generation/editing output
+                 */
+                image?: number;
+                /**
+                 * Cost attributable to video generation output
+                 */
+                video?: number;
+                /**
+                 * Cost attributable to audio output
+                 */
+                audio?: number;
             },
             /**
              * Total cost of the operation
              */
             total: number;
+            /**
+             * Currency for all costs.
+             */
+            unit: 'USD';
+        };
+        durations?: {
+            input?: {
+                /**
+                 * Audio duration in seconds.
+                 */
+                audio?: number;
+                /**
+                 * Video duration in seconds.
+                 */
+                video?: number;
+            };
+            output?: {
+                /**
+                 * Audio duration in seconds.
+                 */
+                audio?: number;
+                /**
+                 * Video duration in seconds.
+                 */
+                video?: number;
+            };
+            /**
+             * Total duration in seconds across reported input and output media.
+             */
+            total?: number;
+            /**
+             * Unit for all duration fields.
+             */
+            unit: 'seconds';
         };
     };
     timestamp: number;

@@ -17,14 +17,16 @@ describe('OpenAI Video Response Format', () => {
                     usage: {
                         tokens: {
                             input: { total: 0, cached: 0 },
-                            output: { total: 0, reasoning: 0, videoSeconds: 4 },
+                            output: { total: 0, reasoning: 0 },
                             total: 0
                         },
                         costs: {
                             input: { total: 0, cached: 0 },
                             output: { total: 0.4, reasoning: 0, video: 0.4 },
-                            total: 0.4
-                        }
+                            total: 0.4,
+                            unit: 'USD'
+                        },
+                        durations: { output: { video: 4 }, total: 4, unit: 'seconds' }
                     }
                 }
             };
@@ -34,7 +36,7 @@ describe('OpenAI Video Response Format', () => {
             expect(mockResponse.metadata?.videoJobId).toBe('video_123');
             expect(mockResponse.metadata?.videoStatus).toBe('queued');
             expect(mockResponse.metadata?.videoProgress).toBe(0);
-            expect(mockResponse.metadata?.usage?.tokens.output.videoSeconds).toBe(4);
+            expect(mockResponse.metadata?.usage?.durations?.output?.video).toBe(4);
             expect(mockResponse.metadata?.usage?.costs.output.video).toBe(0.4);
         });
 
@@ -51,14 +53,16 @@ describe('OpenAI Video Response Format', () => {
                     usage: {
                         tokens: {
                             input: { total: 0, cached: 0 },
-                            output: { total: 0, reasoning: 0, videoSeconds: 8 },
+                            output: { total: 0, reasoning: 0 },
                             total: 0
                         },
                         costs: {
                             input: { total: 0, cached: 0 },
                             output: { total: 2.4, reasoning: 0, video: 2.4 },
-                            total: 2.4
-                        }
+                            total: 2.4,
+                            unit: 'USD'
+                        },
+                        durations: { output: { video: 8 }, total: 8, unit: 'seconds' }
                     }
                 }
             };
@@ -66,7 +70,7 @@ describe('OpenAI Video Response Format', () => {
             expect(mockResponse.metadata?.videoStatus).toBe('completed');
             expect(mockResponse.metadata?.videoProgress).toBe(1.0);
             expect(mockResponse.metadata?.videoSavedPath).toBe('/output/video.mp4');
-            expect(mockResponse.metadata?.usage?.tokens.output.videoSeconds).toBe(8);
+            expect(mockResponse.metadata?.usage?.durations?.output?.video).toBe(8);
             expect(mockResponse.metadata?.usage?.costs.output.video).toBe(2.4); // 8 seconds * $0.30
         });
 
@@ -83,14 +87,16 @@ describe('OpenAI Video Response Format', () => {
                     usage: {
                         tokens: {
                             input: { total: 0, cached: 0 },
-                            output: { total: 0, reasoning: 0, videoSeconds: 4 },
+                            output: { total: 0, reasoning: 0 },
                             total: 0
                         },
                         costs: {
                             input: { total: 0, cached: 0 },
                             output: { total: 0.4, reasoning: 0, video: 0.4 },
-                            total: 0.4
-                        }
+                            total: 0.4,
+                            unit: 'USD'
+                        },
+                        durations: { output: { video: 4 }, total: 4, unit: 'seconds' }
                     }
                 }
             };
@@ -115,14 +121,16 @@ describe('OpenAI Video Response Format', () => {
                     usage: {
                         tokens: {
                             input: { total: 0, cached: 0 },
-                            output: { total: 0, reasoning: 0, videoSeconds: 0 },
+                            output: { total: 0, reasoning: 0 },
                             total: 0
                         },
                         costs: {
                             input: { total: 0, cached: 0 },
                             output: { total: 0, reasoning: 0, video: 0 },
-                            total: 0
-                        }
+                            total: 0,
+                            unit: 'USD'
+                        },
+                        durations: { output: { video: 0 }, total: 0, unit: 'seconds' }
                     }
                 }
             };
@@ -198,14 +206,16 @@ describe('OpenAI Video Response Format', () => {
                     usage: {
                         tokens: {
                             input: { total: 0, cached: 0 },
-                            output: { total: 0, reasoning: 0, videoSeconds: seconds },
+                            output: { total: 0, reasoning: 0 },
                             total: 0
                         },
                         costs: {
                             input: { total: 0, cached: 0 },
                             output: { total: expectedCost, reasoning: 0, video: expectedCost },
-                            total: expectedCost
-                        }
+                            total: expectedCost,
+                            unit: 'USD'
+                        },
+                        durations: { output: { video: seconds }, total: seconds, unit: 'seconds' }
                     }
                 }
             };
@@ -228,14 +238,16 @@ describe('OpenAI Video Response Format', () => {
                     usage: {
                         tokens: {
                             input: { total: 0, cached: 0 },
-                            output: { total: 0, reasoning: 0, videoSeconds: seconds },
+                            output: { total: 0, reasoning: 0 },
                             total: 0
                         },
                         costs: {
                             input: { total: 0, cached: 0 },
                             output: { total: expectedCost, reasoning: 0, video: expectedCost },
-                            total: expectedCost
-                        }
+                            total: expectedCost,
+                            unit: 'USD'
+                        },
+                        durations: { output: { video: seconds }, total: seconds, unit: 'seconds' }
                     }
                 }
             };
@@ -260,14 +272,16 @@ describe('OpenAI Video Response Format', () => {
                     usage: {
                         tokens: {
                             input: { total: 0, cached: 0 },
-                            output: { total: 0, reasoning: 0, videoSeconds: requestedSeconds },
+                            output: { total: 0, reasoning: 0 },
                             total: 0
                         },
                         costs: {
                             input: { total: 0, cached: 0 },
                             output: { total: expectedCost, reasoning: 0, video: expectedCost },
-                            total: expectedCost
-                        }
+                            total: expectedCost,
+                            unit: 'USD'
+                        },
+                        durations: { output: { video: requestedSeconds }, total: requestedSeconds, unit: 'seconds' }
                     }
                 }
             };

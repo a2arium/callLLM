@@ -168,14 +168,16 @@ describe('LLMCaller - Video Generation', () => {
                     usage: {
                         tokens: {
                             input: { total: 0, cached: 0 },
-                            output: { total: 0, reasoning: 0, videoSeconds: 4 },
+                            output: { total: 0, reasoning: 0 },
                             total: 0
                         },
                         costs: {
                             input: { total: 0, cached: 0 },
                             output: { total: 0.4, reasoning: 0, video: 0.4 },
-                            total: 0.4
-                        }
+                            total: 0.4,
+                            unit: 'USD'
+                        },
+                        durations: { output: { video: 4 }, total: 4, unit: 'seconds' }
                     }
                 }
             }),
@@ -334,9 +336,9 @@ describe('LLMCaller - Video Generation', () => {
             expect(usageCallback).toHaveBeenCalledWith({
                 callerId: 'test-caller-1',
                 usage: expect.objectContaining({
-                    tokens: expect.objectContaining({
+                    durations: expect.objectContaining({
                         output: expect.objectContaining({
-                            videoSeconds: 4
+                            video: 4
                         })
                     }),
                     costs: expect.objectContaining({
@@ -480,14 +482,16 @@ describe('LLMCaller - Video Generation', () => {
                         usage: {
                             tokens: {
                                 input: { total: 0, cached: 0 },
-                                output: { total: 0, reasoning: 0, videoSeconds: 3.2 },
+                                output: { total: 0, reasoning: 0 },
                                 total: 0
                             },
                             costs: {
                                 input: { total: 0, cached: 0 },
                                 output: { total: 0.32, reasoning: 0, video: 0.32 },
-                                total: 0.32
-                            }
+                                total: 0.32,
+                                unit: 'USD'
+                            },
+                            durations: { output: { video: 3.2 }, total: 3.2, unit: 'seconds' }
                         }
                     }
                 })
@@ -650,4 +654,3 @@ describe('LLMCaller - Video Generation', () => {
         });
     });
 });
-

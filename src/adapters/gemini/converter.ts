@@ -461,6 +461,7 @@ export class GeminiConverter {
             input: { total: 0, cached: 0 },
             output: { total: 0, reasoning: 0 },
             total: 0,
+            unit: 'USD',
         };
 
         if (model) {

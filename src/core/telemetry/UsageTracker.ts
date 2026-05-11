@@ -3,6 +3,7 @@ import type { ModelInfo, Usage } from '../../interfaces/UniversalInterfaces.ts';
 import type { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces.ts';
 import { UsageTrackingProcessor } from '../streaming/processors/UsageTrackingProcessor.ts';
 import { logger } from '../../utils/logger.ts';
+import { normalizeUsage } from './UsageNormalizer.ts';
 
 /**
  * UsageTracker
@@ -35,7 +36,7 @@ export class UsageTracker {
             inputImageTokens?: number;
             outputImageTokens?: number;
             generatedImages?: number;
-            videoSeconds?: number;
+            outputVideoDuration?: number;
         }
     ): Promise<Usage> {
         const log = logger.createLogger({ prefix: 'UsageTracker.trackUsage' });
@@ -52,10 +53,7 @@ export class UsageTracker {
                 output: {
                     total: outputTokens,
                     reasoning: outputReasoningTokens,
-                    ...(options?.outputImageTokens ? { image: options.outputImageTokens } : {}),
-                    ...(options?.videoSeconds ? { video: options.videoSeconds } : {}) // Track seconds as generic 'video' unit? 
-                    // Or better to add videoSeconds to Usage interface?
-                    // For now, let's keep it simple and assume the caller handles the interface match
+                    ...(options?.outputImageTokens ? { image: options.outputImageTokens } : {})
                 },
                 total: inputTokens + outputTokens + outputReasoningTokens +
                     (options?.inputImageTokens || 0) + (options?.outputImageTokens || 0)
@@ -72,19 +70,30 @@ export class UsageTracker {
                 options?.outputImageTokens,
                 modelInfo.imageInputPricePerMillion,
                 modelInfo.imageOutputPricePerMillion,
-                options?.videoSeconds,
+                options?.outputVideoDuration,
                 modelInfo.videoPricePerSecond,
                 options?.generatedImages,
                 modelInfo.imagePricePerImage
-            )
+            ),
+            ...(options?.outputVideoDuration
+                ? {
+                    durations: {
+                        output: { video: options.outputVideoDuration },
+                        total: options.outputVideoDuration,
+                        unit: 'seconds' as const
+                    }
+                }
+                : {})
         };
+
+        normalizeUsage(usage);
 
         if (this.callback && this.callerId) {
             log.debug(`Invoking usage callback for callerId: ${this.callerId}`);
             await Promise.resolve(
                 this.callback({
                     callerId: this.callerId,
-                    usage,
+                    usage: normalizeUsage(usage),
                     timestamp: Date.now()
                 })
             );
@@ -184,7 +193,7 @@ export class UsageTracker {
             undefined, // imageOutputTokens
             modelInfo.imageInputPricePerMillion,
             modelInfo.imageOutputPricePerMillion,
-            undefined, // videoSeconds
+            undefined, // outputVideoDuration
             modelInfo.videoPricePerSecond,
             undefined, // generatedImages
             modelInfo.imagePricePerImage

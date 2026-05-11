@@ -1,11 +1,12 @@
 import type { TranscriptionResponse, Usage } from '../../interfaces/UniversalInterfaces.ts';
+import { normalizeUsage } from '../telemetry/UsageNormalizer.ts';
 
 /**
  * Sums {@link Usage} objects from multiple transcription API calls (e.g. chunked files).
  */
 export function mergeTranscriptionUsages(usages: Usage[]): Usage {
     if (usages.length === 0) {
-        return {
+        return normalizeUsage({
             tokens: {
                 input: { total: 0, cached: 0 },
                 output: { total: 0, reasoning: 0 },
@@ -14,9 +15,10 @@ export function mergeTranscriptionUsages(usages: Usage[]): Usage {
             costs: {
                 input: { total: 0, cached: 0 },
                 output: { total: 0, reasoning: 0 },
-                total: 0
+                total: 0,
+                unit: 'USD'
             }
-        };
+        });
     }
 
     let inputTotal = 0;
@@ -51,7 +53,7 @@ export function mergeTranscriptionUsages(usages: Usage[]): Usage {
         reasoning += u.tokens.output.reasoning;
         outAudio += u.tokens.output.audio ?? 0;
         outImage += u.tokens.output.image ?? 0;
-        videoSec += u.tokens.output.videoSeconds ?? 0;
+        videoSec += u.durations?.output?.video ?? 0;
         tokensGrand += u.tokens.total;
 
         costInTotal += u.costs.input.total;
@@ -64,7 +66,7 @@ export function mergeTranscriptionUsages(usages: Usage[]): Usage {
         costOutVideo += u.costs.output.video ?? 0;
         costGrand += u.costs.total;
 
-        durAudio += u.durations?.inputAudioSeconds ?? 0;
+        durAudio += u.durations?.input?.audio ?? 0;
     }
 
     const merged: Usage = {
@@ -79,8 +81,7 @@ export function mergeTranscriptionUsages(usages: Usage[]): Usage {
                 total: outputTotal,
                 reasoning,
                 ...(outAudio > 0 ? { audio: outAudio } : {}),
-                ...(outImage > 0 ? { image: outImage } : {}),
-                ...(videoSec > 0 ? { videoSeconds: videoSec } : {})
+                ...(outImage > 0 ? { image: outImage } : {})
             },
             total: tokensGrand
         },
@@ -97,15 +98,21 @@ export function mergeTranscriptionUsages(usages: Usage[]): Usage {
                 ...(costOutImage > 0 ? { image: costOutImage } : {}),
                 ...(costOutVideo > 0 ? { video: costOutVideo } : {})
             },
-            total: costGrand
+            total: costGrand,
+            unit: 'USD'
         }
     };
 
     if (durAudio > 0) {
-        merged.durations = { inputAudioSeconds: durAudio };
+        merged.durations = {
+            input: { audio: durAudio },
+            ...(videoSec > 0 ? { output: { video: videoSec } } : {}),
+            total: durAudio + videoSec,
+            unit: 'seconds'
+        };
     }
 
-    return merged;
+    return normalizeUsage(merged);
 }
 
 /**

@@ -117,7 +117,8 @@ export class VeniceAdapter extends BaseAdapter implements LLMProvider, LLMProvid
                             total: 0,
                             reasoning: 0
                         },
-                        total: 0
+                        total: 0,
+                        unit: 'USD'
                     }
                 }
             };

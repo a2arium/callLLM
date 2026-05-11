@@ -59,6 +59,7 @@ import * as fs from 'fs';
 import type { UrlSource, Base64Source, FilePathSource } from '../../interfaces/UniversalInterfaces.ts';
 import { RetryManager } from '../../core/retry/RetryManager.ts';
 import { UsageTracker } from '../../core/telemetry/UsageTracker.ts';
+import { normalizeUsage } from '../../core/telemetry/UsageNormalizer.ts';
 import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
 
 // Use the paths utility to get the directory name for resolving .env
@@ -301,14 +302,16 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 const usage: Usage = {
                     tokens: {
                         input: { total: 0, cached: 0 },
-                        output: { total: 0, reasoning: 0, videoSeconds: secs },
+                        output: { total: 0, reasoning: 0 },
                         total: 0
                     },
                     costs: {
                         input: { total: 0, cached: 0 },
                         output: { total: videoCost, reasoning: 0, video: videoCost },
-                        total: videoCost
-                    }
+                        total: videoCost,
+                        unit: 'USD'
+                    },
+                    durations: secs > 0 ? { output: { video: secs }, total: secs, unit: 'seconds' } : undefined
                 };
 
                 return {
@@ -333,14 +336,16 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 const usage: Usage = {
                     tokens: {
                         input: { total: 0, cached: 0 },
-                        output: { total: 0, reasoning: 0, videoSeconds: secs },
+                        output: { total: 0, reasoning: 0 },
                         total: 0
                     },
                     costs: {
                         input: { total: 0, cached: 0 },
                         output: { total: videoCost, reasoning: 0, video: videoCost },
-                        total: videoCost
-                    }
+                        total: videoCost,
+                        unit: 'USD'
+                    },
+                    durations: secs > 0 ? { output: { video: secs }, total: secs, unit: 'seconds' } : undefined
                 };
 
                 return {
@@ -1697,7 +1702,8 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                     total: outputCost,
                     reasoning: 0,
                     image: outputCost
-                }
+                },
+                unit: 'USD'
             }
         };
 
@@ -1881,6 +1887,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 reasoning: 0,
             },
             total: inputCost,
+            unit: 'USD'
         };
     }
 
@@ -1966,7 +1973,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             const seconds = u.seconds;
             const pricePerSec = modelInfo?.audioPricePerSecond ?? 0.006 / 60;
             const inputCost = seconds * pricePerSec;
-            return {
+            return normalizeUsage({
                 tokens: {
                     input: { total: 0, cached: 0 },
                     output: { total: 0, reasoning: 0 },
@@ -1975,10 +1982,11 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 costs: {
                     input: { total: inputCost, cached: 0, audio: inputCost },
                     output: { total: 0, reasoning: 0 },
-                    total: inputCost
+                    total: inputCost,
+                    unit: 'USD'
                 },
-                durations: { inputAudioSeconds: seconds }
-            };
+                durations: { input: { audio: seconds }, total: seconds, unit: 'seconds' }
+            });
         }
 
         const inputTokens = typeof u.input_tokens === 'number' ? u.input_tokens : 0;
@@ -1997,7 +2005,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
         const outputCost = (outputTokens * outAudioPrice) / 1_000_000;
         const inputCostTotal = inputAudioCost + inputTextCost;
 
-        return {
+        return normalizeUsage({
             tokens: {
                 input: {
                     total: inputTokens,
@@ -2022,27 +2030,37 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                     reasoning: 0,
                     audio: outputCost > 0 ? outputCost : undefined
                 },
-                total: inputCostTotal + outputCost
+                total: inputCostTotal + outputCost,
+                unit: 'USD'
             }
-        };
+        });
     }
 
-    private mapTtsUsage(charCount: number, modelName: string): Usage {
+    private mapTtsUsage(charCount: number, modelName: string, outputAudioDuration?: number): Usage {
         const modelInfo = this.modelManager.getModel(modelName);
         const pricePerMillion = modelInfo?.ttsPricePerMillionChars ?? 15;
         const cost = (charCount * pricePerMillion) / 1_000_000;
-        return {
+        const usage: Usage = {
             tokens: {
                 input: { total: 0, cached: 0 },
-                output: { total: 0, reasoning: 0 },
+                output: {
+                    total: 0,
+                    reasoning: 0,
+                    audio: charCount
+                },
                 total: 0
             },
             costs: {
                 input: { total: 0, cached: 0 },
                 output: { total: cost, reasoning: 0, audio: cost },
-                total: cost
+                total: cost,
+                unit: 'USD'
             }
         };
+        if (outputAudioDuration !== undefined) {
+            usage.durations = { output: { audio: outputAudioDuration }, total: outputAudioDuration, unit: 'seconds' };
+        }
+        return normalizeUsage(usage);
     }
 
     private rethrowAudioApiError(error: unknown, label: string): never {

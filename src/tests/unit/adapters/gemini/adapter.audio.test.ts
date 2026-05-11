@@ -77,6 +77,11 @@ describe('GeminiAdapter audio', () => {
             expect(result.usage.tokens.input.total).toBe(8);
             expect(result.usage.tokens.output.audio).toBe(50);
             expect(result.usage.costs.output.audio).toBeGreaterThan(0);
+            expect(result.usage.durations).toEqual({
+                output: { audio: 1 },
+                total: 1,
+                unit: 'seconds',
+            });
             expect(result.metadata?.audioSavedPath).toBe(outPath);
             expect(fs.readFileSync(outPath).subarray(0, 4).toString('ascii')).toBe('RIFF');
             expect(fs.readFileSync(outPath).subarray(8, 12).toString('ascii')).toBe('WAVE');

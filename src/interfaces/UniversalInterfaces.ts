@@ -339,10 +339,8 @@ export type Usage = {
             reasoning: number;
             /** Tokens attributable to image generation/editing in output (if any) */
             image?: number;
-            /** Tokens attributable to audio output (e.g. transcription text tokens) */
+            /** Tokens, characters, or provider billing units attributable to audio output (if reported) */
             audio?: number;
-            /** Seconds attributable to video generation in output (if any) */
-            videoSeconds?: number;
         },
         total: number;
     };
@@ -364,10 +362,27 @@ export type Usage = {
             audio?: number;
         },
         total: number;
+        /** Currency for all costs. */
+        unit: 'USD';
     };
-    /** Duration-based billing (e.g. Whisper per-second) */
+    /** Duration-based media usage and billing. */
     durations?: {
-        inputAudioSeconds?: number;
+        input?: {
+            /** Audio duration in seconds. */
+            audio?: number;
+            /** Video duration in seconds. */
+            video?: number;
+        };
+        output?: {
+            /** Audio duration in seconds. */
+            audio?: number;
+            /** Video duration in seconds. */
+            video?: number;
+        };
+        /** Total duration in seconds across reported input and output media. */
+        total?: number;
+        /** Unit for all duration fields. */
+        unit: 'seconds';
     };
 };
 

@@ -153,7 +153,8 @@ describe('UsageTracker', () => {
           total: 0.04,
           reasoning: 0
         },
-        total: 0.05
+        total: 0.05,
+        unit: 'USD'
       }
     });
   });
@@ -190,7 +191,8 @@ describe('UsageTracker', () => {
               total: 0.04,
               reasoning: 0
             },
-            total: 0.05
+            total: 0.05,
+            unit: 'USD'
           }
         },
         timestamp: expect.any(Number)
@@ -219,7 +221,8 @@ describe('UsageTracker', () => {
           total: 0.04,
           reasoning: 0
         },
-        total: 0.05
+        total: 0.05,
+        unit: 'USD'
       }
     });
   });

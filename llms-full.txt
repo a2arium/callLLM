@@ -777,13 +777,19 @@ Responses include a normalized `usage` object when the provider or local estimat
 {
   tokens: {
     input: { total: 100, cached: 0, image: 0, audio: 0 },
-    output: { total: 40, reasoning: 0, image: 0, audio: 0, videoSeconds: 0 },
+    output: { total: 40, reasoning: 0, image: 0, audio: 0 },
     total: 140
   },
   costs: {
     input: { total: 0.000015, cached: 0, audio: 0 },
     output: { total: 0.000024, reasoning: 0, image: 0, video: 0, audio: 0 },
-    total: 0.000039
+    total: 0.000039,
+    unit: 'USD'
+  },
+  durations: {
+    output: { video: 0 },
+    total: 0,
+    unit: 'seconds'
   }
 }
 ```
@@ -2014,7 +2020,7 @@ Video usage is reported as media usage, not text tokens:
 
 ```ts
 const usage = response[0].metadata?.usage;
-console.log(usage?.tokens.output.videoSeconds);
+console.log(usage?.durations?.output?.video);
 console.log(usage?.costs.output.video);
 ```
 
@@ -2080,7 +2086,7 @@ const transcript = await caller.transcribe({
 
 console.log(transcript.text);
 console.log(transcript.usage.tokens.input.audio);
-console.log(transcript.usage.durations?.inputAudioSeconds);
+console.log(transcript.usage.durations?.input?.audio);
 ```
 
 `file` can be a local path, URL, or data URI.
@@ -2419,7 +2425,6 @@ type Usage = {
       reasoning: number;
       image?: number;
       audio?: number;
-      videoSeconds?: number;
     };
     total: number;
   };
@@ -2437,9 +2442,19 @@ type Usage = {
       audio?: number;
     };
     total: number;
+    unit: 'USD';
   };
   durations?: {
-    inputAudioSeconds?: number;
+    input?: {
+      audio?: number;
+      video?: number;
+    };
+    output?: {
+      audio?: number;
+      video?: number;
+    };
+    total?: number;
+    unit: 'seconds';
   };
 };
 ```
@@ -3550,7 +3565,6 @@ type Usage = {
       reasoning: number;
       image?: number;
       audio?: number;
-      videoSeconds?: number;
     };
     total: number;
   };
@@ -3568,9 +3582,19 @@ type Usage = {
       audio?: number;
     };
     total: number;
+    unit: 'USD';
   };
   durations?: {
-    inputAudioSeconds?: number;
+    input?: {
+      audio?: number;
+      video?: number;
+    };
+    output?: {
+      audio?: number;
+      video?: number;
+    };
+    total?: number;
+    unit: 'seconds';
   };
 };
 ```

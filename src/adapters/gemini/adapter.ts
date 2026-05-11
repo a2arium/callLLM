@@ -26,6 +26,7 @@ import { GeminiConverter } from './converter.ts';
 import { GeminiStreamHandler } from './stream.ts';
 import { mapGeminiError, GeminiAdapterError } from './errors.ts';
 import type { GeminiResponse } from './types.ts';
+import { normalizeUsage } from '../../core/telemetry/UsageNormalizer.ts';
 
 /**
  * Adapter for Google Gemini using the @google/genai SDK
@@ -132,6 +133,7 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
                         input: { total: 0, cached: 0 },
                         output: { total: 0, reasoning: 0 },
                         total: 0,
+                        unit: 'USD',
                     },
                 },
             };
@@ -431,14 +433,25 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
         );
         costs.output.audio = costs.output.total - costs.output.reasoning;
 
-        return {
+        const audioDuration = this.estimatePcmAudioDurationSeconds(rawAudioBytes, mime);
+
+        return normalizeUsage({
             tokens: {
                 input: { total: inputTokens, cached: cachedTokens },
                 output: { total: outputTokens, reasoning: thinkingTokens, audio: outputTokens },
                 total: totalTokens,
             },
             costs,
-        };
+            ...(audioDuration !== undefined
+                ? {
+                    durations: {
+                        output: { audio: audioDuration },
+                        total: audioDuration,
+                        unit: 'seconds' as const,
+                    },
+                }
+                : {}),
+        });
     }
 
     private estimateAudioOutputTokens(rawAudioBytes: number, mime: string): number {
@@ -447,6 +460,15 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
         const bytesPerSecond = sampleRate * 2;
         const seconds = rawAudioBytes / bytesPerSecond;
         return Math.max(1, Math.ceil(seconds * 50));
+    }
+
+    private estimatePcmAudioDurationSeconds(rawAudioBytes: number, mime: string): number | undefined {
+        if (!rawAudioBytes || !this.isPcmMime(mime)) return undefined;
+        const sampleRate = this.parsePcmRate(mime);
+        const bytesPerSample = 2;
+        const channels = 1;
+        const seconds = rawAudioBytes / (sampleRate * bytesPerSample * channels);
+        return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
     }
 
     private async transcribeOrTranslate(
@@ -558,15 +580,17 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
         const duration = await this.getLocalAudioDuration(audioFile);
         costs.input.audio = costs.input.total - costs.input.cached;
 
-        return {
+        return normalizeUsage({
             tokens: {
                 input: { total: inputTokens, cached: cachedTokens, audio: inputTokens },
                 output: { total: outputTokens, reasoning: thinkingTokens },
                 total: totalTokens,
             },
             costs,
-            durations: duration !== undefined ? { inputAudioSeconds: duration } : undefined,
-        };
+            durations: duration !== undefined
+                ? { input: { audio: duration }, total: duration, unit: 'seconds' }
+                : undefined,
+        });
     }
 
     private async estimateAudioInputTokens(audioFile: string): Promise<number> {

@@ -102,7 +102,7 @@ describe('OpenAIResponseAdapter audio', () => {
                 file: wav,
                 model: 'whisper-1'
             });
-            expect(result.usage.durations?.inputAudioSeconds).toBe(12);
+            expect(result.usage.durations?.input?.audio).toBe(12);
             expect(result.usage.costs.input.audio).toBeGreaterThan(0);
         } finally {
             fs.unlinkSync(wav);

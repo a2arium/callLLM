@@ -13,6 +13,7 @@ import { ModelManager } from '../models/ModelManager.ts';
 import { logger } from '../../utils/logger.ts';
 import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
 import { UsageTracker } from '../telemetry/UsageTracker.ts';
+import { normalizeUsage } from '../telemetry/UsageNormalizer.ts';
 import { TokenCalculator } from '../models/TokenCalculator.ts';
 import * as path from 'path';
 import {
@@ -20,6 +21,7 @@ import {
     isLocalAudioFilePath,
     localFileExceedsTranscriptionByteThreshold,
     localFileExceedsTranscriptionDurationThreshold,
+    getAudioDurationSeconds,
     splitLocalAudioForTranscription,
     transcodeAudioBuffer
 } from './ffmpegAudioPrep.ts';
@@ -158,7 +160,8 @@ export class AudioController {
         }
         try {
             const response = await this.adapter.audioCall(params.model, 'synthesize', params) as SpeechResponse;
-            const normalized = await this.normalizeSpeechOutput(response, params);
+            const normalizedOutput = await this.normalizeSpeechOutput(response, params);
+            const normalized = await this.ensureSpeechOutputDuration(normalizedOutput);
             await this.dispatchUsageCallbacks(params.usageCallback, normalized.usage);
             this.log.info('Speech synthesis completed', {
                 model: params.model,
@@ -184,7 +187,7 @@ export class AudioController {
             try {
                 await perCallCallback({
                     callerId: this.callerId || 'unknown',
-                    usage,
+                    usage: normalizeUsage(usage),
                     timestamp: Date.now()
                 });
             } catch (error) {
@@ -232,6 +235,48 @@ export class AudioController {
                 usage: response.usage
             }
         };
+    }
+
+    private async ensureSpeechOutputDuration(response: SpeechResponse): Promise<SpeechResponse> {
+        if (response.usage.durations?.output?.audio !== undefined) {
+            return response;
+        }
+
+        const audioSavedPath = response.metadata?.audioSavedPath;
+        if (!audioSavedPath) {
+            return response;
+        }
+
+        try {
+            const duration = await getAudioDurationSeconds(audioSavedPath);
+            if (duration === null || duration <= 0) {
+                return response;
+            }
+
+            const usage = normalizeUsage({
+                ...response.usage,
+                durations: {
+                    ...response.usage.durations,
+                    output: {
+                        ...response.usage.durations?.output,
+                        audio: duration
+                    },
+                    unit: 'seconds'
+                }
+            });
+
+            return {
+                ...response,
+                usage,
+                metadata: {
+                    ...response.metadata,
+                    usage
+                }
+            };
+        } catch (error) {
+            this.log.warn('Could not determine synthesized audio duration with ffprobe:', error);
+            return response;
+        }
     }
 
     private pathWithAudioExtension(outputPath: string, format: SpeechResponse['audio']['format']): string {

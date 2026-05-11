@@ -126,7 +126,8 @@ export class OpenAIResponseAdapter {
                     reasoning: 0,
                     image: 0  // Would need pricing info to calculate accurately
                 },
-                total: 0 // Would need pricing info to calculate accurately
+                total: 0, // Would need pricing info to calculate accurately
+                unit: 'USD'
             }
         };
     }

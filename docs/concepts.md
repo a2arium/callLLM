@@ -127,13 +127,19 @@ Responses include a normalized `usage` object when the provider or local estimat
 {
   tokens: {
     input: { total: 100, cached: 0, image: 0, audio: 0 },
-    output: { total: 40, reasoning: 0, image: 0, audio: 0, videoSeconds: 0 },
+    output: { total: 40, reasoning: 0, image: 0, audio: 0 },
     total: 140
   },
   costs: {
     input: { total: 0.000015, cached: 0, audio: 0 },
     output: { total: 0.000024, reasoning: 0, image: 0, video: 0, audio: 0 },
-    total: 0.000039
+    total: 0.000039,
+    unit: 'USD'
+  },
+  durations: {
+    output: { video: 0 },
+    total: 0,
+    unit: 'seconds'
   }
 }
 ```

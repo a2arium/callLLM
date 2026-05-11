@@ -16,7 +16,7 @@ export class TokenCalculator {
         imageOutputTokens?: number,
         imageInputPricePerMillion?: number,
         imageOutputPricePerMillion?: number,
-        videoSeconds?: number,
+        outputVideoDuration?: number,
         videoPricePerSecond?: number,
         generatedImages?: number,
         imagePricePerImage?: number
@@ -50,8 +50,8 @@ export class TokenCalculator {
             : 0;
 
         // Calculate video output costs (time-based)
-        const videoCost = (videoSeconds && videoPricePerSecond)
-            ? videoSeconds * videoPricePerSecond
+        const videoCost = (outputVideoDuration && videoPricePerSecond)
+            ? outputVideoDuration * videoPricePerSecond
             : 0;
 
         // Calculate per-image generation costs
@@ -76,7 +76,8 @@ export class TokenCalculator {
                 image: imageOutputCost + generatedImagesCost,
                 video: videoCost
             },
-            total: totalCost
+            total: totalCost,
+            unit: 'USD'
         };
     }
 
