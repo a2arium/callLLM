@@ -1,0 +1,4604 @@
+# callllm Full Documentation
+
+> Curated full documentation bundle for AI coding assistants and RAG ingestion. Generated from the repository Markdown sources.
+
+Last updated: 2026-05-11
+
+For the compact index, see [llms.txt](./llms.txt).
+
+---
+
+# Source: README.md
+
+# callllm
+
+A TypeScript framework for production LLM calls.
+
+`callllm` lets you describe what a request needs and runs it through a compatible model/provider with normalized output, usage, cost, and telemetry-ready metadata.
+
+Use it for text, structured JSON, tools, streaming, images, audio, embeddings, and model selection based on capability, cost, latency, or context size.
+
+Use an exact model when model identity is part of your application contract. Use presets like `fast`, `cheap`, `balanced`, and `premium` when you want `callllm` to choose based on the actual request requirements.
+
+## Quick Example
+
+```ts
+import { LLMCaller } from 'callllm';
+
+const caller = new LLMCaller('openai', 'gpt-5-mini');
+
+const result = await caller.call('Summarize this in one sentence.', {
+  data: 'The CSV export works for small reports but times out for the monthly billing report.'
+});
+
+console.log(result[0].content);
+```
+
+For production workflows, use provider scopes and model presets:
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], 'cheap');
+
+const result = await caller.call('Summarize this support ticket in one sentence.', {
+  data: {
+    subject: 'Export failed',
+    body: 'The CSV export works for small reports but times out for the monthly billing report.'
+  }
+});
+
+console.log(result[0].content);
+console.log(result[0].metadata?.provider);
+console.log(result[0].metadata?.model);
+console.log(result[0].metadata?.usage?.costs.total);
+```
+
+## How It Works
+
+`callllm` combines three things:
+
+```ts
+new LLMCaller(providerScope, modelSelection, systemMessage?, options?)
+```
+
+1. **Provider scope**: where the request is allowed to run, for example `'openai'` or `['openai', 'gemini']`.
+2. **Model selection**: an exact model, a preset such as `'fast'`, or a custom policy.
+3. **Request requirements**: what the current call needs: tools, streaming, image output, audio, embeddings, reasoning, context size, cost constraints, or native provider features.
+
+```text
+request
+  + provider scope
+  + model selection
+  + required capabilities
+        |
+        v
+model resolver
+        |
+        v
+provider adapter
+        |
+        v
+normalized response + usage + telemetry metadata
+```
+
+If you pass an exact model, `callllm` uses that model or fails. If you pass a preset or policy, `callllm` filters models by the request requirements and selects a compatible option.
+
+`caller.call()` returns an array of choices. Most calls use `result[0]`.
+
+Each choice can include:
+
+- `content`: normalized text output
+- `contentObject`: parsed structured output when JSON/schema mode is used
+- `metadata.provider`: selected provider
+- `metadata.model`: selected model
+- `metadata.usage`: tokens, media usage, and estimated cost
+
+Use `data` to attach structured or long-form context to a request. Depending on the request and settings, `callllm` serializes it into the provider request and can split large values into model-sized chunks.
+
+## Why callllm?
+
+Provider SDKs are best when your app always calls one known model in one known way.
+
+`callllm` is designed for applications where requests vary at runtime:
+
+- some need fast text
+- some need strict JSON
+- some need tools or streaming
+- some need image, audio, video, or embeddings
+- some need cost, latency, or context constraints
+- all need consistent usage, cost, and telemetry metadata
+
+With `callllm`, you can keep exact model control where it matters and use presets or policies where runtime selection is more useful.
+
+- **Capability-aware model selection**: `fast` means a fast text model for chat, a fast image model for image generation, a fast embedding model for embeddings, and a fast audio-capable model for transcription.
+- **Exact model control when needed**: `{ model: 'gpt-5-mini' }` is strict. It will not silently switch models.
+- **Typed structured output**: use Zod or JSON Schema, get parsed `contentObject`, and choose native JSON mode or prompt fallback.
+- **Tools that feel like application code**: register local functions, load function folders, or expose MCP server tools.
+- **Cost visibility**: every response can include tokens, media durations, generated media units, and estimated cost.
+- **Telemetry-ready operations**: track selected provider/model, model-resolution metadata, prompts, choices, tools, usage, costs, and OpenTelemetry or Opik traces.
+- **Large input handling**: split large strings, objects, and markdown into model-sized chunks, with optional parallel processing.
+
+## Installation
+
+```bash
+npm install callllm
+```
+
+```bash
+yarn add callllm
+pnpm add callllm
+```
+
+Requirements:
+
+- Node.js `>=20`
+- TypeScript is supported through generated declarations
+- At least one provider API key, depending on the provider you use
+
+```env
+OPENAI_API_KEY=...
+GEMINI_API_KEY=...
+OPENROUTER_API_KEY=...
+CEREBRAS_API_KEY=...
+VENICE_API_KEY=...
+```
+
+## Run Locally
+
+Create `index.ts`:
+
+```ts
+import { LLMCaller } from 'callllm';
+
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You write concise product copy.');
+
+const result = await caller.call('Write a welcome message for a developer analytics dashboard.');
+
+console.log(result[0].content);
+console.log('Usage:', result[0].metadata?.usage);
+```
+
+Run it with your preferred TypeScript runner:
+
+```bash
+npx tsx index.ts
+```
+
+Expected shape:
+
+```text
+Welcome to your developer analytics dashboard...
+Usage: { tokens: ..., costs: ... }
+```
+
+The repository examples can also be run directly:
+
+```bash
+yarn example:simple
+yarn example:json
+yarn example:tool
+yarn example:modelSelection
+```
+
+## Core Workflows
+
+### Text
+
+```ts
+const caller = new LLMCaller('gemini', 'fast');
+const response = await caller.call('Explain TypeScript generics in two paragraphs.');
+
+console.log(response[0].content);
+```
+
+### Structured JSON
+
+```ts
+import { z } from 'zod';
+import { LLMCaller } from 'callllm';
+
+const TicketSchema = z.object({
+  severity: z.enum(['low', 'medium', 'high']),
+  summary: z.string(),
+  nextActions: z.array(z.string())
+});
+
+type Ticket = z.infer<typeof TicketSchema>;
+
+const caller = new LLMCaller(['openai', 'gemini'], 'balanced');
+const result = await caller.call<Ticket>('Classify this support ticket.', {
+  data: 'Customer cannot export billing reports. Export works for small reports only.',
+  jsonSchema: { name: 'TicketClassification', schema: TicketSchema },
+  responseFormat: 'json'
+});
+
+console.log(result[0].contentObject);
+```
+
+Structured JSON works through native provider support when available and prompt/schema fallback otherwise. Use `jsonMode: 'native-only'` only when native structured output is a hard requirement.
+
+### Tool Calling
+
+For application code, the easiest and most testable pattern is usually a function folder: each tool lives in its own TypeScript file, can be unit-tested directly, and can be loaded by name.
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are a support agent.', {
+  toolsDir: './tools'
+});
+
+const response = await caller.call('Why is order A100 delayed?', {
+  tools: ['getOrder']
+});
+
+console.log(response[0].content);
+```
+
+Use inline `ToolDefinition` objects when the tool is small or created dynamically:
+
+```ts
+import { LLMCaller, type ToolDefinition } from 'callllm';
+
+const getOrder: ToolDefinition = {
+  name: 'get_order',
+  description: 'Look up an order by id.',
+  parameters: {
+    type: 'object',
+    properties: {
+      orderId: { type: 'string', description: 'The order id.' }
+    },
+    required: ['orderId']
+  },
+  callFunction: async ({ orderId }) => ({
+    orderId,
+    status: 'delayed',
+    eta: '2026-05-12'
+  })
+};
+
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are a support agent.', {
+  tools: [getOrder]
+});
+
+const response = await caller.call('Why is order A100 delayed?');
+
+console.log(response[0].content);
+```
+
+### Streaming
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini');
+
+for await (const chunk of caller.stream('Draft a short incident update.')) {
+  if (!chunk.isComplete) process.stdout.write(chunk.content);
+  if (chunk.isComplete) console.log('\nCost:', chunk.metadata?.usage?.costs.total);
+}
+```
+
+## Additional Capabilities
+
+The same request model also applies to:
+
+- **Images**: image input, generation, editing, masked editing, and saved image output.
+- **Audio**: speech-to-text, translation, and text-to-speech with local `ffmpeg` transcoding when provider input/output needs conversion.
+- **Video**: asynchronous video jobs with status polling, download helpers, usage seconds, and estimated video cost.
+- **Embeddings**: exact embedding models for retrieval systems or dynamic embedding-capable selection for one-off jobs.
+- **Large inputs**: split large strings, objects, and markdown into model-sized chunks.
+- **MCP and function folders**: expose external tool servers or load local tool files by name.
+
+See the guides below for full examples.
+
+## Model Selection
+
+Use exact models when the model identity is part of your application contract:
+
+```ts
+new LLMCaller('openai', 'gpt-5-mini');
+new LLMCaller('openai', { model: 'gpt-5-mini' });
+```
+
+Use presets when you want the framework to choose a model that can satisfy the current request:
+
+```ts
+new LLMCaller(['openai', 'gemini'], 'fast');
+new LLMCaller(['openai', 'gemini'], 'cheap');
+new LLMCaller(['openai', 'gemini'], 'balanced');
+new LLMCaller(['openai', 'gemini'], 'premium');
+```
+
+Use policies when you need hard constraints or custom tradeoffs:
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], {
+  preset: 'balanced',
+  prefer: {
+    cost: 0.3,
+    latency: 0.3,
+    quality: 0.4
+  },
+  constraints: {
+    maxOutputPricePerMillion: 5,
+    minContextTokens: 32000
+  },
+  resolution: { explain: true }
+});
+```
+
+Every response includes stable model metadata:
+
+```ts
+console.log(response[0].metadata?.provider);
+console.log(response[0].metadata?.model);
+console.log(response[0].metadata?.selectionMode); // exact | preset | policy
+```
+
+Read the full guide: [Model selection](./docs/guides/model-selection.md).
+
+## Usage and Telemetry
+
+Every operation can report normalized usage:
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are concise.', {
+  callerId: 'support-thread-42',
+  usageCallback: ({ callerId, usage, timestamp }) => {
+    console.log(callerId, usage.costs.total, new Date(timestamp).toISOString());
+  }
+});
+
+const response = await caller.call('Summarize this ticket.', {
+  data: 'The customer cannot export the billing report.'
+});
+
+console.log(response[0].metadata?.usage);
+```
+
+The built-in telemetry collector can emit normalized spans/events to OpenTelemetry and Opik when enabled by environment variables. See [Telemetry and usage](./docs/guides/telemetry-and-usage.md).
+
+## Contracts and Limits
+
+`callllm` is designed to make model routing explicit and inspectable:
+
+- Exact model selection never silently switches models.
+- Preset and policy selection only choose models inside the constructor provider scope.
+- Preset and policy selection filter by detected hard requirements before scoring.
+- Responses include normalized selected provider/model metadata when available.
+- Usage and cost are reported when supported by provider usage metadata or model registry estimates.
+
+It does not make LLM output deterministic, guarantee identical behavior across providers, or hide provider-specific capability differences. If provider-specific SDK features matter more than normalized behavior, call the provider SDK directly for that path.
+
+You may not need `callllm` if your app calls one fixed model, does not need structured output or tools, and does not need normalized usage, cost, retries, or telemetry.
+
+## How callllm Fits
+
+`callllm` is not a full agent framework, hosted AI gateway, or UI SDK. It is a TypeScript runtime for application-level LLM calls where model choice, request capabilities, usage metadata, and production behavior need to stay explicit in code.
+
+| Tool type | Best when you need | How `callllm` is different |
+| --- | --- | --- |
+| Provider SDKs | Direct access to one provider's full API | `callllm` normalizes calls, output, usage, cost, and model selection across providers. |
+| AI UI SDKs | Chat UI, streaming UI, frontend integration | `callllm` focuses on backend/application LLM execution and runtime model selection. |
+| Agent frameworks | Long-running agents, workflow graphs, memory, orchestration | `callllm` focuses on individual calls and tool-enabled workflows without requiring an agent architecture. |
+| AI gateways | Centralized proxy, org-wide keys, caching, rate limits, governance | `callllm` runs inside your Node.js application and keeps request logic in code. |
+| Raw model routers | Provider routing and fallback | `callllm` combines routing with typed structured output, tools, media, usage/cost metadata, and request capability detection. |
+
+## Documentation
+
+Start here:
+
+- [Getting started](./docs/getting-started.md)
+- [Core concepts](./docs/concepts.md)
+- [Examples catalog](./docs/examples.md)
+- [API reference](./docs/reference/api.md)
+- [Errors and troubleshooting](./docs/guides/errors-and-troubleshooting.md)
+
+Guides:
+
+- [Model selection](./docs/guides/model-selection.md)
+- [Structured output](./docs/guides/structured-output.md)
+- [Tool calling and MCP](./docs/guides/tools-and-mcp.md)
+- [Streaming, history, and large inputs](./docs/guides/streaming-history-large-inputs.md)
+- [Media: images, video, and audio](./docs/guides/media.md)
+- [Embeddings](./docs/guides/embeddings.md)
+- [Telemetry and usage](./docs/guides/telemetry-and-usage.md)
+- [Settings, retries, and overrides](./docs/guides/retries-and-settings.md)
+
+More guides:
+
+- [Function folders](./docs/guides/function-folders.md)
+- [Retrieval with embeddings](./docs/guides/retrieval-with-embeddings.md)
+- [Message composition](./docs/guides/message-composition.md)
+- [Reasoning and verbosity](./docs/guides/reasoning-and-verbosity.md)
+
+Specialized references:
+
+- [Configuration](./docs/reference/configuration.md)
+- [Models and capabilities](./docs/reference/models-and-capabilities.md)
+- [Response types](./docs/reference/response-types.md)
+- [History reference](./docs/reference/history.md)
+- [Image details](./docs/reference/image-details.md)
+- [MCP reference](./docs/reference/mcp.md)
+- [Model selection migration notes](./docs/migration/model-selection.md)
+
+## For Contributors
+
+- [Contributing provider adapters](./docs/contributing/providers.md)
+- [Model selection implementation notes](./docs/internal/model-selection-implementation.md)
+- [Telemetry architecture notes](./docs/internal/telemetry-architecture.md)
+
+## Supported Providers
+
+Provider registry keys and environment variables:
+
+| Provider | Key | Environment variable |
+| --- | --- | --- |
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Gemini | `gemini` | `GEMINI_API_KEY` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
+| Cerebras | `cerebras` | `CEREBRAS_API_KEY` |
+| Venice | `venice` | `VENICE_API_KEY` |
+
+Support is model-specific. Dynamic selection filters by the actual model capabilities before scoring. Structured JSON output is available through `callllm` for all chat-capable providers: native JSON mode is used when available, and prompt/schema fallback is used otherwise unless `jsonMode: 'native-only'` is requested.
+
+## Production Notes
+
+For production applications, configure:
+
+- exact models or policies with cost/context constraints
+- `historyMode: 'stateless'` for independent calls or `'dynamic'` for long conversations
+- `maxRetries`, timeouts for MCP tools, and provider-level rate-limit handling
+- structured output schemas for machine-consumed responses
+- `usageCallback` and telemetry provider env vars for observability
+- `LOG_LEVEL=warn` or `LOG_LEVEL=error` for quiet runtime logs
+- redaction settings before sending prompts/responses to telemetry systems
+
+LLM output is not deterministic. For workflows that require correctness, use schemas, validation, retries, tests with mocked provider responses, and explicit error handling.
+
+## Logging
+
+Set framework log level with:
+
+```env
+LOG_LEVEL=error
+```
+
+`LOG_LEVEL` controls logs emitted through the `callllm` logger. It does not suppress output that your application writes directly with `console.log`, `console.error`, or `process.stdout.write`. Telemetry SDKs may also have their own log settings. When Opik is enabled, set `OPIK_LOG_LEVEL=ERROR` if you need to quiet Opik SDK logs.
+
+## Development
+
+```bash
+yarn install
+yarn build
+yarn test
+yarn prepublishOnly
+```
+
+### Publishing
+
+Publishing is automated by `.github/workflows/publish.yml`.
+
+To release a new npm version:
+
+1. Update `package.json` to a new version.
+2. Push the change to `main`.
+3. GitHub Actions builds, verifies, and publishes the package if that version does not already exist on npm.
+
+The workflow expects a GitHub repository secret named `NPM_TOKEN` containing an npm automation token. It publishes with provenance enabled.
+
+Useful examples:
+
+```bash
+yarn example:simple
+yarn example:json
+yarn example:tool
+yarn example:imageGenerate
+yarn example:speechSynthesis
+yarn example:speechTranscription
+```
+
+## License
+
+MIT
+
+---
+
+# Source: docs/getting-started.md
+
+# Getting Started
+
+This guide gets you from install to a working LLM call, then shows the next three things most applications need: JSON output, streaming, and model switching.
+
+## Install
+
+```bash
+npm install callllm
+```
+
+```bash
+yarn add callllm
+pnpm add callllm
+```
+
+Requirements:
+
+- Node.js `>=20`
+- A provider API key
+- A TypeScript runner such as `tsx`, or a normal TypeScript build step
+
+## Configure a Provider Key
+
+Use the environment variable for the provider you want to call:
+
+```env
+OPENAI_API_KEY=...
+GEMINI_API_KEY=...
+OPENROUTER_API_KEY=...
+CEREBRAS_API_KEY=...
+VENICE_API_KEY=...
+```
+
+You can also pass a key when constructing `LLMCaller`:
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are helpful.', {
+  apiKey: process.env.OPENAI_API_KEY
+});
+```
+
+For multiple providers, use `providerApiKeys`:
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], 'balanced', 'You are helpful.', {
+  providerApiKeys: {
+    openai: process.env.OPENAI_API_KEY,
+    gemini: process.env.GEMINI_API_KEY
+  }
+});
+```
+
+## First Call
+
+```ts
+import { LLMCaller } from 'callllm';
+
+const caller = new LLMCaller('openai', 'gpt-5-mini');
+
+const response = await caller.call('Write a one-sentence description of callllm.');
+
+console.log(response[0].content);
+console.log(response[0].metadata?.usage);
+```
+
+`call()` returns an array because large inputs may be split into multiple chunks. For normal prompts, use `response[0]`.
+
+## Use a Preset Instead of an Exact Model
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], 'fast');
+
+const response = await caller.call('Summarize this release note.', {
+  data: 'Fixed billing export retries and added audit logging.'
+});
+
+console.log(response[0].metadata?.provider);
+console.log(response[0].metadata?.model);
+```
+
+The selected model is resolved at request time. A later image, embedding, or audio request can choose a different model from the same provider scope.
+
+## Structured Output
+
+```ts
+import { z } from 'zod';
+import { LLMCaller } from 'callllm';
+
+const Summary = z.object({
+  title: z.string(),
+  risk: z.enum(['low', 'medium', 'high']),
+  actionItems: z.array(z.string())
+});
+
+const caller = new LLMCaller(['openai', 'gemini'], 'balanced');
+
+const result = await caller.call<typeof Summary>('Analyze this incident report.', {
+  data: 'The queue delayed invoice exports for 19 minutes. No data was lost.',
+  jsonSchema: { name: 'IncidentSummary', schema: Summary },
+  responseFormat: 'json'
+});
+
+console.log(result[0].contentObject);
+```
+
+## Streaming
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini');
+
+for await (const chunk of caller.stream('Write a short status update.')) {
+  if (!chunk.isComplete) {
+    process.stdout.write(chunk.content);
+  } else {
+    console.log('\nFinal usage:', chunk.metadata?.usage);
+  }
+}
+```
+
+## Run Repository Examples
+
+From the repository:
+
+```bash
+yarn example:simple
+yarn example:json
+yarn example:tool
+yarn example:modelSelection
+yarn example:embeddings
+yarn example:speechSynthesis
+yarn example:speechTranscription
+```
+
+Some examples require provider-specific keys and media tools such as `ffmpeg`.
+
+## Next
+
+- Learn the mental model in [Core concepts](./docs/concepts.md).
+- Choose models with [Model selection](./docs/guides/model-selection.md).
+- Build typed responses with [Structured output](./docs/guides/structured-output.md).
+- Add functions and MCP servers with [Tool calling and MCP](./docs/guides/tools-and-mcp.md).
+
+---
+
+# Source: docs/concepts.md
+
+# Core Concepts
+
+`callllm` exists to separate your application from provider-specific LLM details. Your code describes the task. The framework resolves the model, validates capabilities, executes the provider call, and returns normalized response metadata.
+
+## `LLMCaller`
+
+`LLMCaller` is the main public API:
+
+```ts
+new LLMCaller(providerScope, modelOrSelection, systemMessage?, options?)
+```
+
+Example:
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], 'balanced', 'You are concise.');
+```
+
+The caller owns:
+
+- provider scope
+- model selection policy
+- system message
+- default settings
+- tools
+- history mode
+- usage and telemetry callbacks
+
+## Provider Scope
+
+The first constructor argument is the maximum set of providers the caller may use.
+
+```ts
+new LLMCaller('openai', 'gpt-5-mini');
+new LLMCaller(['openai', 'gemini'], 'balanced');
+```
+
+Dynamic selection can only choose inside this scope. It never expands to a provider you did not list.
+
+## Model Selection
+
+The second constructor argument can be:
+
+- an exact model string, such as `'gpt-5-mini'`
+- a preset string: `'cheap'`, `'fast'`, `'balanced'`, or `'premium'`
+- an exact object: `{ model: 'gpt-5-mini' }`
+- a policy object with `preset`, `prefer`, `constraints`, and `resolution`
+
+Exact model selection is strict. Presets and policies are resolved at request time.
+
+## Request-Time Capability Inference
+
+Users normally do not manually declare capabilities. The framework infers them from the call:
+
+| Request shape | Required capability |
+| --- | --- |
+| `caller.call('...')` | text input and text output |
+| `caller.stream('...')` | streaming text |
+| `jsonSchema` or `responseFormat: 'json'` | structured output through native JSON or framework fallback |
+| `jsonMode: 'native-only'` | provider-native JSON support |
+| `tools` | tool calling |
+| streaming with tools | streaming tool-call support |
+| `file` or `files` without media output | image input |
+| `output.image` | image generation/editing |
+| `output.video` | video generation |
+| `embeddings()` | embeddings |
+| `transcribe()` | audio transcription |
+| `translateAudio()` | audio translation |
+| `synthesizeSpeech()` | speech synthesis |
+| `settings.reasoning` | reasoning model support |
+
+These requirements are hard filters before model scoring.
+
+## Normalized Responses
+
+Chat responses use `UniversalChatResponse`:
+
+```ts
+const response = await caller.call('Hello');
+
+console.log(response[0].content);
+console.log(response[0].contentObject);
+console.log(response[0].toolCalls);
+console.log(response[0].metadata?.usage);
+```
+
+Stable metadata fields:
+
+```ts
+response[0].metadata?.provider;
+response[0].metadata?.model;
+response[0].metadata?.selectionMode; // exact | preset | policy
+```
+
+Operation-specific metadata can include `imageSavedPath`, `videoJobId`, `videoSavedPath`, `audioSavedPath`, usage details, validation errors, or model resolution diagnostics.
+
+## Tools
+
+A tool is a local function, function-folder export, or MCP server tool that a model may call. `callllm` can execute local tool functions and send the result back to the model automatically.
+
+```ts
+const response = await caller.call('Look up order A100.', {
+  tools: [getOrderTool],
+  settings: { toolChoice: 'auto' }
+});
+```
+
+## History
+
+The caller stores conversation history through `HistoryManager`. The default mode is `stateless`.
+
+- `stateless`: send only the system message and current user message
+- `dynamic`: keep recent history within the selected model context window
+- `full`: send all history
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are helpful.', {
+  historyMode: 'dynamic'
+});
+```
+
+## Usage and Cost
+
+Responses include a normalized `usage` object when the provider or local estimator can calculate it:
+
+```ts
+{
+  tokens: {
+    input: { total: 100, cached: 0, image: 0, audio: 0 },
+    output: { total: 40, reasoning: 0, image: 0, audio: 0, videoSeconds: 0 },
+    total: 140
+  },
+  costs: {
+    input: { total: 0.000015, cached: 0, audio: 0 },
+    output: { total: 0.000024, reasoning: 0, image: 0, video: 0, audio: 0 },
+    total: 0.000039
+  }
+}
+```
+
+Cost values are estimates from model catalog pricing and provider usage metadata where available.
+
+## What callllm Does Not Promise
+
+`callllm` normalizes provider APIs. It does not make model output deterministic or guarantee provider parity for every feature. If a workflow needs strict correctness:
+
+- use structured output
+- validate schemas
+- handle errors explicitly
+- pin exact models when model identity matters
+- test with mocked provider responses
+- monitor cost and selected model metadata
+
+---
+
+# Source: docs/examples.md
+
+# Examples
+
+The repository examples are small scripts meant to show one capability at a time. They use local source imports inside the repository; package users should import from `callllm`.
+
+## Setup
+
+```bash
+yarn install
+cp .env.example .env # if available, or create .env manually
+```
+
+Configure the provider keys required by the example:
+
+```env
+OPENAI_API_KEY=...
+GEMINI_API_KEY=...
+OPENROUTER_API_KEY=...
+CEREBRAS_API_KEY=...
+VENICE_API_KEY=...
+```
+
+## Core Examples
+
+| Command | What it demonstrates |
+| --- | --- |
+| `yarn example:simple` | text call, streaming, final usage |
+| `yarn example:json` | Zod schema, JSON Schema, streaming JSON |
+| `yarn example:tool` | local function tools and streaming tools |
+| `yarn example:modelSelection` | exact models, presets, policies, resolution metadata |
+| `yarn example:usage` | usage callbacks and caller IDs |
+| `yarn example:history` | history modes |
+| `yarn example:dataSplitting` | large input splitting |
+
+## Media Examples
+
+| Command | What it demonstrates |
+| --- | --- |
+| `yarn example:image` | image input |
+| `yarn example:imageGenerate` | image generation and editing |
+| `yarn example:video` | video generation jobs |
+| `yarn example:speechSynthesis` | text-to-speech with output format normalization |
+| `yarn example:speechTranscription` | speech-to-text and audio usage/cost |
+
+Audio transcoding and large-file transcription require `ffmpeg` and `ffprobe` on the Node process `PATH`.
+
+## Tooling Examples
+
+| Command | What it demonstrates |
+| --- | --- |
+| `yarn example:toolFolder` | function folder tools |
+| `yarn example:mcp` | MCP tools through the model |
+| `yarn example:mcpDirect` | direct MCP tool calls |
+
+## Model and Reasoning Examples
+
+| Command | What it demonstrates |
+| --- | --- |
+| `yarn example:embeddings` | embeddings, dimensions, batch inputs, usage |
+| `yarn example:reasoning` | reasoning settings |
+| `yarn example:loadHistory` | loading saved history |
+
+## Import Difference
+
+Repository examples often use:
+
+```ts
+import { LLMCaller } from '../src/index.ts';
+```
+
+Package users should use:
+
+```ts
+import { LLMCaller } from 'callllm';
+```
+
+---
+
+# Source: docs/guides/model-selection.md
+
+# Model Selection
+
+`callllm` lets you choose a model in three ways:
+
+- exact model: use one model and fail if it cannot do the request
+- preset: use a human-friendly goal such as `fast` or `cheap`
+- policy: combine a preset with preferences and hard constraints
+
+The key idea is that dynamic selection happens at request time, after the framework knows what the request needs.
+
+## Exact Models
+
+Use exact models when identity matters:
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini');
+```
+
+Equivalent explicit form:
+
+```ts
+const caller = new LLMCaller('openai', { model: 'gpt-5-mini' });
+```
+
+Exact model rules:
+
+- exact models are not scored
+- exact models are not silently replaced
+- exact models are still validated against request requirements
+- `{ model: 'fast' }` means an exact model named `fast`, not the `fast` preset
+
+With multiple providers, exact model strings must be unambiguous. If two providers expose the same model name, use:
+
+```ts
+const caller = new LLMCaller(['openai', 'openrouter'], {
+  provider: 'openai',
+  model: 'gpt-5-mini'
+});
+```
+
+## Presets
+
+```ts
+new LLMCaller(['openai', 'gemini'], 'cheap');
+new LLMCaller(['openai', 'gemini'], 'fast');
+new LLMCaller(['openai', 'gemini'], 'balanced');
+new LLMCaller(['openai', 'gemini'], 'premium');
+```
+
+Preset intent:
+
+| Preset | Optimizes for |
+| --- | --- |
+| `cheap` | low cost, with some quality |
+| `fast` | low latency and high throughput |
+| `balanced` | production default across cost, speed, and quality |
+| `premium` | quality and context over cost |
+
+Presets are capability-aware:
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], 'fast');
+
+await caller.call('Summarize this note.');
+await caller.call({ text: 'Create an icon.', output: { image: { size: '1024x1024' } } });
+await caller.embeddings({ input: 'Text to embed' });
+await caller.synthesizeSpeech({ input: 'Done.', voice: 'alloy', responseFormat: 'mp3' });
+```
+
+Each operation can resolve to a different model because each operation has different hard requirements.
+
+## Policies
+
+Policies add hard constraints and soft preferences:
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], {
+  preset: 'balanced',
+  prefer: {
+    cost: 0.3,
+    latency: 0.2,
+    throughput: 0.1,
+    quality: 0.4
+  },
+  constraints: {
+    maxOutputPricePerMillion: 5,
+    minContextTokens: 32000
+  },
+  resolution: { explain: true }
+});
+```
+
+Preferences:
+
+- are soft scoring inputs
+- do not reject models by themselves
+- do not need to add up to `1`; the framework normalizes them
+
+Constraints:
+
+- are hard filters
+- reject models before scoring
+- produce a clear error if no candidate remains
+
+Supported constraints:
+
+```ts
+type ModelConstraints = {
+  maxInputPricePerMillion?: number;
+  maxOutputPricePerMillion?: number;
+  maxImagePricePerImage?: number;
+  maxVideoPricePerSecond?: number;
+  maxAudioPricePerSecond?: number;
+  maxTtsPricePerMillionChars?: number;
+  minQuality?: number;
+  minContextTokens?: number;
+  minOutputTokens?: number;
+  allowedModels?: string[];
+  excludedModels?: string[];
+  allowPreviewModels?: boolean;
+  allowDeprecatedModels?: boolean;
+  allowUncensoredModels?: boolean;
+};
+```
+
+Provider constraints such as `allowedProviders` and `excludedProviders` are intentionally not supported. The constructor provider scope is the provider boundary.
+
+## Resolution Metadata
+
+Stable metadata is present on every response:
+
+```ts
+const response = await caller.call('Hello');
+
+console.log(response[0].metadata?.provider);
+console.log(response[0].metadata?.model);
+console.log(response[0].metadata?.selectionMode);
+```
+
+Enable diagnostic explanations with `resolution.explain`:
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], {
+  preset: 'balanced',
+  resolution: { explain: true }
+});
+
+const response = await caller.call('Summarize this.');
+console.log(response[0].metadata?.modelResolution);
+```
+
+`modelResolution` may include selected model, request requirements, constraints, candidates, scores, and rejection reasons. Treat it as diagnostic; candidate scores can change as catalogs improve.
+
+## What Counts as a Request Requirement?
+
+| Request | Hard requirement |
+| --- | --- |
+| `call()` | text output |
+| `stream()` | streaming |
+| `jsonSchema` or `responseFormat: 'json'` with default `jsonMode: 'fallback'` | chat text output plus framework JSON validation/fallback |
+| `jsonSchema` or `responseFormat: 'json'` with `jsonMode: 'native-only'` | native JSON output |
+| `tools` | tool calling |
+| `file` / `files` | image input |
+| `output.image` | image output |
+| `output.video` | video output |
+| `embeddings()` | embeddings |
+| `transcribe()` | audio transcription |
+| `translateAudio()` | audio translation |
+| `synthesizeSpeech()` | speech synthesis |
+| `settings.reasoning` | reasoning |
+
+## Failure Behavior
+
+If an exact model cannot satisfy the request, the call fails:
+
+```ts
+const caller = new LLMCaller('openai', { model: 'gpt-5-mini' });
+
+await caller.embeddings({ input: 'hello' }); // fails if model is not embedding-capable
+```
+
+If dynamic selection finds no valid candidate, `ModelResolutionError` explains:
+
+- provider scope
+- requirements inferred from the request
+- rejected candidates and reasons
+
+This is deliberate. The framework should not guess outside the provider scope or silently drop capabilities.
+
+---
+
+# Source: docs/guides/structured-output.md
+
+# Structured Output
+
+Use structured output when your application needs data, not prose. `callllm` supports Zod schemas, JSON Schema, native provider JSON mode where available, and prompt-based fallback for models without native structured output.
+
+Structured JSON is a framework feature, not only a provider-native feature. In the default `fallback` mode, `callllm` asks for JSON using the best available provider mechanism and falls back to prompt/schema enforcement when native JSON mode is unavailable. Use `native-only` only when your application specifically requires provider-native structured output.
+
+## Zod Schema
+
+```ts
+import { z } from 'zod';
+import { LLMCaller } from 'callllm';
+
+const Ticket = z.object({
+  category: z.enum(['billing', 'bug', 'account', 'other']),
+  priority: z.enum(['low', 'medium', 'high']),
+  summary: z.string(),
+  suggestedReply: z.string()
+});
+
+const caller = new LLMCaller(['openai', 'gemini'], 'balanced');
+
+const response = await caller.call<typeof Ticket>('Classify this support request.', {
+  data: 'I cannot export last month billing report. The spinner never stops.',
+  jsonSchema: {
+    name: 'Ticket',
+    schema: Ticket
+  },
+  responseFormat: 'json'
+});
+
+console.log(response[0].contentObject);
+```
+
+`content` contains the raw response text. `contentObject` contains the parsed and validated object when parsing succeeds.
+
+## JSON Schema
+
+```ts
+const schema = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    tags: {
+      type: 'array',
+      items: { type: 'string' }
+    }
+  },
+  required: ['title', 'tags']
+};
+
+const response = await caller.call('Create metadata for this article.', {
+  data: articleText,
+  jsonSchema: {
+    name: 'ArticleMetadata',
+    schema: JSON.stringify(schema)
+  },
+  responseFormat: 'json'
+});
+```
+
+The schema layer sanitizes/coerces schemas for provider compatibility where possible.
+
+## JSON Modes
+
+Configure JSON behavior with `settings.jsonMode`:
+
+```ts
+await caller.call('Return JSON only.', {
+  responseFormat: 'json',
+  settings: {
+    jsonMode: 'fallback'
+  }
+});
+```
+
+Modes:
+
+| Mode | Behavior |
+| --- | --- |
+| `fallback` | use native JSON if available, otherwise prompt enhancement |
+| `native-only` | require native JSON support; fail if unavailable |
+| `force-prompt` | always use prompt enhancement |
+
+Dynamic model selection treats `native-only` JSON as a hard model capability requirement. In `fallback` and `force-prompt` modes, JSON output does not require native provider JSON support, but validation can still fail if the model returns invalid data.
+
+## Streaming JSON
+
+```ts
+for await (const chunk of caller.stream<typeof Ticket>('Classify this ticket.', {
+  data: ticketText,
+  jsonSchema: { name: 'Ticket', schema: Ticket },
+  responseFormat: 'json'
+})) {
+  if (!chunk.isComplete) {
+    process.stdout.write(chunk.content);
+  } else {
+    console.log(chunk.contentText);
+    console.log(chunk.contentObject);
+  }
+}
+```
+
+During streaming, `content` is the incremental text. The final chunk contains `contentText` and, when valid, `contentObject`.
+
+## Handling Invalid Output
+
+LLM output can still be invalid. Your production code should handle:
+
+- validation failures
+- repaired JSON (`metadata.jsonRepaired`)
+- validation errors (`metadata.validationErrors`)
+- missing `contentObject`
+
+```ts
+const first = response[0];
+
+if (!first.contentObject) {
+  console.error('Raw output:', first.content);
+  console.error('Validation errors:', first.metadata?.validationErrors);
+  throw new Error('Model did not return valid structured output');
+}
+```
+
+## Guidance
+
+- Use Zod for TypeScript-first application code.
+- Use JSON Schema when interoperating with existing API schemas.
+- Use `native-only` when provider-native structured output is a hard requirement.
+- Use `fallback` when model flexibility matters more than native JSON mode.
+- Keep schemas small and explicit. Deep or ambiguous schemas are harder for models.
+
+---
+
+# Source: docs/guides/tools-and-mcp.md
+
+# Tool Calling and MCP
+
+Tools let the model ask your application to do work: look up data, call an API, run a calculation, or interact with an MCP server.
+
+`callllm` supports three tool sources:
+
+- explicit `ToolDefinition` objects
+- function folders
+- Model Context Protocol (MCP) servers
+
+## Local Tool Definition
+
+```ts
+import { LLMCaller, type ToolDefinition } from 'callllm';
+
+const getInvoice: ToolDefinition = {
+  name: 'get_invoice',
+  description: 'Fetch an invoice by id.',
+  parameters: {
+    type: 'object',
+    properties: {
+      invoiceId: { type: 'string', description: 'The invoice id.' }
+    },
+    required: ['invoiceId']
+  },
+  callFunction: async ({ invoiceId }) => ({
+    invoiceId,
+    status: 'paid',
+    total: 129.5
+  })
+};
+
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You answer billing questions.', {
+  tools: [getInvoice]
+});
+
+const response = await caller.call('Was invoice INV-100 paid?', {
+  settings: { toolChoice: 'auto' }
+});
+
+console.log(response[0].content);
+```
+
+The tool schema is sent to the model. When the model calls the tool, `callllm` executes `callFunction`, adds the tool result to the conversation, and continues the model response.
+
+## Call-Level Tools
+
+Constructor tools are available by default. Call-level tools are available only for that request:
+
+```ts
+await caller.call('Calculate 15% of 85.', {
+  tools: [calculateTool],
+  settings: { toolChoice: 'auto' }
+});
+```
+
+You can mix tool sources in one request:
+
+```ts
+await caller.call('Check the weather and then read the configured project file.', {
+  tools: [weatherTool, 'readProjectFile', mcpServers],
+  toolsDir: './tools',
+  settings: { toolChoice: 'auto' }
+});
+```
+
+String tool names are loaded from `toolsDir`. Explicit tool objects and MCP server maps do not require `toolsDir`.
+
+## Tool Choice
+
+```ts
+settings: {
+  toolChoice: 'auto'
+}
+```
+
+Supported values:
+
+- `none`: do not call tools
+- `auto`: let the model decide
+- `{ type: 'function', function: { name: 'tool_name' } }`: force a specific tool
+
+## Streaming Tools
+
+```ts
+for await (const chunk of caller.stream('Look up invoice INV-100.', {
+  tools: [getInvoice],
+  settings: { toolChoice: 'auto' }
+})) {
+  if (chunk.content) process.stdout.write(chunk.content);
+  if (chunk.toolCalls?.length) console.log('Tool calls:', chunk.toolCalls);
+}
+```
+
+Model selection requires streaming tool-call support when you stream with tools.
+
+## Function Folders
+
+Function folders let you keep tools as separate TypeScript files and load them by name:
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You can use tools.', {
+  toolsDir: './tools'
+});
+
+await caller.addTools(['getWeather', 'getTime']);
+```
+
+See [Function folders](./docs/guides/function-folders.md).
+
+## MCP Servers
+
+MCP lets you expose external tool servers to the model.
+
+```ts
+import { LLMCaller, type MCPServersMap } from 'callllm';
+
+const mcpServers: MCPServersMap = {
+  filesystem: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
+  },
+  remoteApi: {
+    url: 'https://mcp.example.com',
+    headers: {
+      Authorization: 'Bearer ${MY_SERVICE_TOKEN}'
+    }
+  }
+};
+
+const caller = new LLMCaller('openai', 'fast');
+
+const response = await caller.call('List the files in the current directory.', {
+  tools: [mcpServers],
+  settings: { toolChoice: 'auto' }
+});
+```
+
+MCP server tools are discovered and converted into model tools. Tool names are namespaced to avoid collisions.
+
+Environment variable placeholders such as `${MY_SERVICE_TOKEN}` are resolved from `process.env` before connection. Missing variables resolve to an empty string, so production apps should validate required environment before creating the caller.
+
+Model-invoked MCP tool calls use a 60 second client-side timeout by default. Set `MCP_TOOL_CALL_TIMEOUT_MS` for long-running tools. Direct calls can also pass a per-call timeout. See [MCP tool call timeout](./docs/reference/mcp.md#tool-call-timeout).
+
+## Direct MCP Calls
+
+Use direct MCP calls when you want deterministic tool execution without asking the model:
+
+```ts
+await caller.addTools([mcpServers]);
+await caller.connectToMcpServer('filesystem');
+
+const result = await caller.callMcpTool('filesystem', 'read_file', {
+  path: 'package.json'
+});
+
+await caller.disconnectMcpServers();
+```
+
+See [MCP reference](./docs/reference/mcp.md).
+
+## Manual Tool Results
+
+Most applications let `callllm` execute tools automatically. Use `addToolResult()` only when you are manually coordinating a provider tool call:
+
+```ts
+caller.addToolResult(
+  'call_123',
+  JSON.stringify({ status: 'paid' }),
+  'get_invoice'
+);
+```
+
+The `toolCallId` must match the exact id emitted by the model. If the tool failed, pass `true` as the fourth argument so the model receives an error result:
+
+```ts
+caller.addToolResult('call_123', 'Invoice service timed out.', 'get_invoice', true);
+```
+
+## Tool Safety
+
+Tool calls are application code. Treat tool arguments as untrusted input:
+
+- validate parameters in `callFunction`
+- return structured, concise tool results
+- choose clear tool names and descriptions; the model uses them to decide whether to call the tool
+- enforce authorization inside tools
+- handle tool errors and return useful failure messages when the model can recover
+- avoid passing raw secrets to the model
+- cap tool iteration with `maxIterations`
+- use MCP timeouts for long-running tools
+- log tool calls and errors through telemetry
+
+---
+
+# Source: docs/guides/function-folders.md
+
+# Function Folders
+
+The Function Folders feature allows you to define tools as individual TypeScript files in a directory. This makes it easier to organize and maintain your tools, especially when you have many of them.
+ 
+### Step 1: Create a functions directory
+
+```bash
+mkdir my-tools
+```
+
+### Step 2: Create a tool function file
+
+Create a file in your functions directory (e.g., `my-tools/getWeather.ts`):
+
+```typescript
+/**
+ * Get current temperature for a given location.
+ *
+ * @param params - Object containing all parameters
+ * @param params.location - City and country e.g. Bogotá, Colombia
+ * @returns Weather information for the location
+ */
+export async function toolFunction(params: { location: string }): Promise<{ temperature: number; conditions: string }> {
+  console.log(`Getting weather for ${params.location}`);
+  
+  // Your implementation here
+  return {
+    temperature: 22,
+    conditions: 'Partly cloudy'
+  };
+}
+```
+
+### Step 3: Use the tool in your code
+
+```typescript
+import { LLMCaller } from 'callllm';
+import path from 'path';
+
+// Initialize with a functions directory
+const caller = new LLMCaller(
+  'openai',
+  'balanced',
+  'You are a helpful assistant',
+  { toolsDir: './my-tools' }
+);
+
+// Use the tool by its filename (without .ts extension)
+const response = await caller.call(
+  'What is the weather in London?',
+  {
+    tools: ['getWeather'], // Just the filename
+    settings: { toolChoice: 'auto' }
+  }
+);
+
+console.log(response[0].content);
+```
+
+## Model Selection With Function Folder Tools
+
+Function-folder tools affect dynamic model selection. When a caller uses a preset or policy, `callllm` loads the effective tool definitions first, then resolves a model that supports the required tool-calling mode.
+
+```typescript
+const caller = new LLMCaller(['openai', 'gemini'], 'cheap', 'You are a helpful assistant', {
+  toolsDir: './my-tools'
+});
+
+const response = await caller.call('What is the weather in London?', {
+  tools: ['getWeather']
+});
+
+console.log(response[0].metadata?.model); // selected tool-capable model
+```
+
+Streaming with tools additionally requires streaming tool-call support:
+
+```typescript
+for await (const chunk of caller.stream('Track weather changes', {
+  tools: ['getWeather']
+})) {
+  process.stdout.write(chunk.content);
+}
+```
+
+Exact models remain strict. If an exact model does not support the tool requirements, the call fails with a model resolution error instead of silently switching models.
+
+## Creating Tool Function Files
+
+Each tool function file must follow these rules:
+
+1. The file must export a function named `toolFunction`.
+2. The file name (without `.ts` extension) becomes the tool name.
+3. The function must have a comment directly above it describing what it does.
+4. Parameters should have descriptions (either in JSDoc tags or comments on type properties).
+
+### Function Description Comments
+
+You can describe the `toolFunction` using either:
+
+* **JSDoc style:**
+  ```typescript
+  /**
+   * Get current temperature for a given location.
+   * (Add @param tags here too if not using separate types)
+   */
+  export function toolFunction(...) { /* ... */ }
+  ```
+* **Standard comments:**
+  ```typescript
+  // Get current temperature for a given location.
+  export function toolFunction(...) { /* ... */ }
+  
+  /* Or use a block comment like this */
+  export function toolFunction(...) { /* ... */ }
+  ```
+  The parser will extract the text from the comment immediately preceding the function definition.
+
+### Parameter Definitions and Descriptions
+
+The recommended way to define parameters is using a separate TypeScript `type` for the parameters object. This allows for better organization and more flexible commenting.
+
+**Describing Parameters:**
+
+You can describe individual parameters in several ways:
+
+1. **JSDoc `@param` tags (in function comment):** If using an inline type for parameters.
+  ```typescript
+  /**
+   * Calculate the tip amount for a bill.
+   *
+   * @param params - The parameters object
+   * @param params.amount - The bill amount in dollars
+   * @param params.percentage - The tip percentage (default: 15)
+   */
+  export function toolFunction(params: { 
+    amount: number; 
+    percentage?: number 
+  }): { /* ... */ } { /* ... */ }
+  ```
+2. **JSDoc comment on type property:**
+  ```typescript
+  export type DistanceParams = {
+    /**
+     * Starting point latitude
+     */
+    startLat: number;
+    // ... other params
+  };
+  ```
+3. **Standard comment on type property:**
+  ```typescript
+  export type GetFactParams = {
+    // The topic to get a fact about.
+    topic: Topic;
+    // The mood to get a fact in. 
+    mood?: 'funny' | 'serious' | 'inspiring'; // ... other moods
+  };
+  ```
+  The parser will use the comment immediately preceding the property definition.
+
+### Using Enums and String Literal Unions
+
+To restrict a parameter to a specific set of allowed values, you can use:
+
+* **TypeScript Enums:**
+
+  ```typescript
+  export enum Topic {
+      General = "general",
+      Animal = "animal",
+      Space = "space"
+  }
+  
+  export type GetFactParams = {
+      // The topic to get a fact about.
+      topic: Topic;
+      // ... other params
+  };
+  
+  // The generated schema will include: "enum": ["general", "animal", "space"]
+  ```
+* **String Literal Unions:**
+
+  ```typescript
+  export type GetFactParams = {
+      // ... other params
+      // The mood to get a fact in. 
+      mood?: 'funny' | 'serious' | 'inspiring' | 'educational';
+  };
+  
+  // The generated schema will include: "enum": ["funny", "serious", "inspiring", "educational"]
+  ```
+  The parser automatically detects both enums and string literal unions and adds the allowed values to the `enum` field in the generated JSON schema for the LLM.
+
+### Example with Various Styles (`getFact.ts` inspired)
+
+```typescript
+// Get a random fact about a topic, potentially in a certain mood.
+
+// Use an enum for predefined topics
+export enum Topic {
+    General = "general",
+    Animal = "animal",
+    Space = "space"
+}
+
+// Define parameters using a type
+export type GetFactParams = {
+    // The topic to get a fact about.
+    topic: Topic;
+    
+    // The mood to get a fact in. 
+    // Use a string literal union for moods.
+    mood?: 'funny' | 'serious' | 'inspiring' | 'educational' | 'historical' | 'scientific' | 'cultural' | 'general';
+}
+
+// toolFunction uses the defined type
+export function toolFunction(params: GetFactParams): { fact: string; source?: string } {
+    console.log(`getFact tool called with topic: ${params.topic} and mood: ${params.mood || 'any'}`);
+    
+    let factList = [...]; // Your implementation to select facts based on topic/mood
+    
+    // ... implementation ...
+    
+    const randomIndex = Math.floor(Math.random() * factList.length);
+    return factList[randomIndex];
+}
+```
+This example demonstrates:
+- A standard single-line comment for the function description.
+- A separate `type` definition (`GetFactParams`).
+- Parameter descriptions using standard `//` comments within the type definition.
+- Use of a TypeScript `enum` (`Topic`) for the required `topic` parameter.
+- Use of a string literal union for the optional `mood` parameter.
+
+The generated JSON schema passed to the LLM will correctly include the `enum` arrays for both `topic` and `mood`.
+
+## Configuration Options
+
+### Constructor options
+
+When creating a new `LLMCaller` instance, you can specify the functions directory:
+
+```typescript
+const caller = new LLMCaller(
+  'openai',
+  'fast',
+  'You are a helpful assistant',
+  { 
+    toolsDir: './my-tools',
+    // other options...
+  }
+);
+```
+
+### Per-call overrides
+
+You can override the functions directory for a specific call:
+
+```typescript
+const response = await caller.call(
+  'What is the weather in London?',
+  {
+    tools: ['getWeather'],
+    toolsDir: './other-tools', // Override for this call only
+    settings: { toolChoice: 'auto' }
+  }
+);
+```
+
+## Mixing Tool Types
+
+You can mix string function names with explicit `ToolDefinition` objects:
+
+```typescript
+import { ToolDefinition } from 'callllm';
+
+// Define an explicit tool
+const calculateTool: ToolDefinition = {
+  name: 'calculate',
+  description: 'Perform a calculation',
+  parameters: {
+    type: 'object',
+    properties: {
+      expression: {
+        type: 'string',
+        description: 'The mathematical expression to evaluate'
+      }
+    },
+    required: ['expression']
+  },
+  callFunction: async (params) => {
+    return { result: eval(params.expression) };
+  }
+};
+
+// Use both explicit and string-based tools
+const response = await caller.call(
+  'What is 15% of $85 and what is the weather in Paris?',
+  {
+    tools: [calculateTool, 'getWeather'], // Mix both types
+    settings: { toolChoice: 'auto' }
+  }
+);
+```
+
+## Best Practices
+
+1. **Organize by functionality**: Group related tools in the same directory.
+2. **Use descriptive filenames**: The filename becomes the tool name, so make it clear.
+3. **Document thoroughly**: Add comprehensive descriptions to help the LLM understand when to use the tool.
+4. **Handle errors gracefully**: Implement proper error handling in your tool functions.
+5. **Return typed data**: Use TypeScript return types to ensure consistent responses.
+
+## Technical Details
+
+- Tools are lazily loaded - they're only imported when needed.
+- The parsing is done once and cached for performance.
+- Tool function TypeScript files are parsed using [ts-morph](https://github.com/dsherret/ts-morph).
+- Comments and type information are extracted to create the tool schema.
+
+---
+
+# Source: docs/guides/streaming-history-large-inputs.md
+
+# Streaming, History, and Large Inputs
+
+This guide covers the parts of `callllm` that matter when your app moves beyond one-off prompts.
+
+## Streaming
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini');
+
+for await (const chunk of caller.stream('Write a release note.')) {
+  if (!chunk.isComplete) {
+    process.stdout.write(chunk.content);
+  } else {
+    console.log('\nFinal text:', chunk.contentText);
+    console.log('Usage:', chunk.metadata?.usage);
+  }
+}
+```
+
+Streaming chunks can contain:
+
+- `content`: incremental text
+- `reasoning`: incremental reasoning summary, if supported
+- `isFirstContentChunk`: true on the first content chunk
+- `isFirstReasoningChunk`: true on the first reasoning chunk
+- `toolCallChunks`: partial tool-call information
+- `toolCalls`: completed tool calls
+- `contentText`: final accumulated text on the complete chunk
+- `contentObject`: parsed structured output on the complete chunk
+
+```ts
+for await (const chunk of caller.stream('Analyze the tradeoff.', {
+  settings: {
+    reasoning: { effort: 'medium', summary: 'auto' }
+  }
+})) {
+  if (chunk.isFirstReasoningChunk) process.stdout.write('\nReasoning:\n');
+  if (chunk.reasoning) process.stdout.write(chunk.reasoning);
+
+  if (chunk.isFirstContentChunk) process.stdout.write('\nAnswer:\n');
+  if (chunk.content) process.stdout.write(chunk.content);
+}
+```
+
+## Usage During Streaming
+
+Use `usageBatchSize` to control usage callback frequency:
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are concise.', {
+  usageCallback: ({ usage }) => {
+    console.log('Usage delta:', usage);
+  }
+});
+
+for await (const chunk of caller.stream('Tell me a story.', {
+  usageBatchSize: 50
+})) {
+  process.stdout.write(chunk.content);
+}
+```
+
+The final complete chunk includes cumulative usage in `metadata.usage`.
+
+Streaming retry behavior differs from regular calls because a stream can fail before or after content has started. See [Settings, retries, and overrides](./docs/guides/retries-and-settings.md).
+
+## History Modes
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are helpful.', {
+  historyMode: 'dynamic'
+});
+```
+
+Modes:
+
+| Mode | Behavior | Use when |
+| --- | --- | --- |
+| `stateless` | only current user message and system message | independent tasks, cost control |
+| `dynamic` | truncate old history to fit selected model context | long conversations |
+| `full` | send all history | short chats where complete context matters |
+
+Override per call:
+
+```ts
+await caller.call('Answer independently.', {
+  historyMode: 'stateless'
+});
+```
+
+Manage history:
+
+```ts
+caller.addMessage('user', 'What is the capital of France?');
+caller.addMessage('assistant', 'Paris.');
+caller.updateSystemMessage('You are a geography tutor.');
+const serialized = caller.serializeHistory();
+caller.clearHistory();
+caller.deserializeHistory(serialized);
+```
+
+## Large Inputs
+
+`callllm` can split large `data` values into chunks:
+
+```ts
+const response = await caller.call({
+  text: 'Summarize each section of this document.',
+  data: veryLargeMarkdown,
+  endingMessage: 'Return the key risks.',
+  maxCharsPerChunk: 8000,
+  maxParallelRequests: 5
+});
+```
+
+For multi-chunk calls, the response array contains one response per chunk.
+
+For the exact prompt composition rules for `text`, `data`, and `endingMessage`, see [Message composition](./docs/guides/message-composition.md).
+
+## Markdown Splitting
+
+Markdown is split along semantic boundaries where possible:
+
+- headings
+- lists
+- tables
+- code blocks
+- paragraph boundaries
+
+This avoids cutting a document in the middle of a table or code block when possible.
+
+## Limits
+
+Constructor option:
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are helpful.', {
+  maxChunkIterations: 100,
+  parallelChunking: true
+});
+```
+
+Call option:
+
+```ts
+await caller.call('Analyze this data.', {
+  data,
+  maxChunkIterations: 50,
+  maxParallelRequests: 8
+});
+```
+
+Use these limits deliberately. Large chunked calls can create many provider requests and costs.
+
+---
+
+# Source: docs/guides/media.md
+
+# Media: Images, Video, and Audio
+
+`callllm` uses the same `LLMCaller` interface for text and media operations. Dynamic model selection infers the required media capability from the request.
+
+## Image Input
+
+Use `file` for one image or `files` for multiple images:
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-4o-mini');
+
+const response = await caller.call({
+  text: 'Extract the table from this image.',
+  file: './receipt.png',
+  input: {
+    image: { detail: 'high' }
+  }
+});
+
+console.log(response[0].content);
+console.log(response[0].metadata?.usage?.tokens.input.image);
+```
+
+Image sources can be local paths, URLs, or data URIs.
+
+For image-specific token, file placeholder, and operation details, see [Image details](./docs/reference/image-details.md).
+
+## Image Generation and Editing
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], 'fast');
+
+const result = await caller.call({
+  text: 'Generate a clean app icon for a task scheduler.',
+  output: {
+    image: {
+      size: '1024x1024',
+      quality: 'high'
+    }
+  },
+  outputPath: './task-icon.png'
+});
+
+console.log(result[0].metadata?.imageSavedPath);
+```
+
+Operation inference:
+
+| Request shape | Operation |
+| --- | --- |
+| `output.image` | generate |
+| `output.image` + `file` or one `files[]` item | edit |
+| `output.image` + multiple `files[]` items | composite edit |
+| `output.image` + `mask` | masked edit |
+
+## Video Generation
+
+Video generation is asynchronous. You can return a job immediately or wait until completion.
+
+```ts
+const caller = new LLMCaller('openai', 'sora-2');
+
+const response = await caller.call({
+  text: 'A short product animation of a dashboard loading.',
+  output: {
+    video: {
+      size: '1280x720',
+      seconds: 8,
+      wait: 'poll'
+    }
+  },
+  outputPath: './dashboard.mp4'
+});
+
+console.log(response[0].metadata?.videoStatus);
+console.log(response[0].metadata?.videoSavedPath);
+console.log(response[0].metadata?.usage?.costs.output.video);
+```
+
+Seed an image when the selected video model supports image input:
+
+```ts
+const response = await caller.call({
+  text: 'Animate this product screenshot with a subtle camera push.',
+  file: './dashboard.png',
+  output: {
+    video: {
+      size: '1280x720',
+      seconds: 4,
+      wait: 'poll'
+    }
+  },
+  outputPath: './dashboard-animation.mp4'
+});
+```
+
+Non-blocking:
+
+```ts
+const created = await caller.call({
+  text: 'A loading spinner animation.',
+  output: { video: { seconds: 4, wait: 'none' } }
+});
+
+const jobId = created[0].metadata?.videoJobId;
+const status = await caller.retrieveVideo(jobId!);
+```
+
+Download a completed job manually:
+
+```ts
+await caller.downloadVideo(jobId!, {
+  variant: 'video',
+  outputPath: './loading-spinner.mp4'
+});
+```
+
+Video usage is reported as media usage, not text tokens:
+
+```ts
+const usage = response[0].metadata?.usage;
+console.log(usage?.tokens.output.videoSeconds);
+console.log(usage?.costs.output.video);
+```
+
+Cost is estimated from model catalog metadata such as `videoPricePerSecond`. For example, the bundled OpenAI catalog currently lists `sora-2` at `0.10` per second and `sora-2-pro` at `0.30` per second. Provider pricing can change, so use these numbers as estimates and update catalog metadata if you need strict budgeting.
+
+## Speech Synthesis
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], 'fast');
+
+const speech = await caller.synthesizeSpeech({
+  input: 'Your report is ready.',
+  voice: 'alloy',
+  responseFormat: 'mp3',
+  outputPath: './report.mp3'
+});
+
+console.log(speech.audio.mime);
+console.log(speech.metadata?.audioSavedPath);
+console.log(speech.usage.costs.total);
+```
+
+Supported output formats:
+
+- `mp3`
+- `opus`
+- `aac`
+- `flac`
+- `wav`
+- `pcm`
+
+If the provider cannot return the requested format natively but returns another supported audio representation, `callllm` attempts to transcode locally with `ffmpeg`.
+
+## Voice Names
+
+The `voice` parameter is provider-dependent. You can pass native provider names. For convenience, Gemini also maps common OpenAI voice names to Gemini voices.
+
+```ts
+await caller.synthesizeSpeech({
+  input: 'Hello.',
+  voice: 'alloy',       // portable convenience name
+  responseFormat: 'mp3'
+});
+
+await caller.synthesizeSpeech({
+  input: 'Hello.',
+  voice: { id: 'Charon' }, // native Gemini voice
+  responseFormat: 'wav'
+});
+```
+
+If a provider rejects a voice name, the provider error is surfaced. Future docs should define a first-class portable voice taxonomy; today the safest production path is to use a known native voice for the selected provider or test the portable name with your target provider scope.
+
+## Speech-to-Text
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], 'fast');
+
+const transcript = await caller.transcribe({
+  file: './meeting.mp3',
+  language: 'en'
+});
+
+console.log(transcript.text);
+console.log(transcript.usage.tokens.input.audio);
+console.log(transcript.usage.durations?.inputAudioSeconds);
+```
+
+`file` can be a local path, URL, or data URI.
+
+## Large Audio Files
+
+Some providers cap transcription file size or duration. For local files, enable splitting:
+
+```ts
+const transcript = await caller.transcribe({
+  file: './long-meeting.mp3',
+  splitLargeFile: true,
+  splitChunkSeconds: 600
+});
+```
+
+This requires `ffmpeg` and `ffprobe` on `PATH`. If either is missing, `callllm` throws `TranscriptionFfmpegError` with platform-specific installation instructions.
+
+## Audio Translation
+
+```ts
+const translated = await caller.translateAudio({
+  file: './spanish-message.mp3'
+});
+
+console.log(translated.text);
+```
+
+Provider support varies. Dynamic selection filters to translation-capable models.
+
+---
+
+# Source: docs/guides/embeddings.md
+
+# Embeddings
+
+Embeddings convert text into vectors for semantic search, clustering, classification, recommendations, and RAG.
+
+## Basic Embedding
+
+```ts
+import { LLMCaller } from 'callllm';
+
+const caller = new LLMCaller('openai', 'cheap');
+
+const result = await caller.embeddings({
+  input: 'How do I reset my password?'
+});
+
+console.log(result.embeddings[0].embedding.length);
+console.log(result.metadata?.model);
+console.log(result.usage.costs.total);
+```
+
+Dynamic selection chooses an embedding-capable model.
+
+## Exact Model for Retrieval
+
+For retrieval indexes, use one exact embedding model for both documents and queries:
+
+```ts
+const EMBEDDING_MODEL = 'text-embedding-3-small';
+const caller = new LLMCaller('openai', EMBEDDING_MODEL);
+
+const documentVector = await caller.embeddings({
+  input: 'Refunds are processed within five business days.',
+  model: EMBEDDING_MODEL
+});
+
+const queryVector = await caller.embeddings({
+  input: 'When will I get my money back?',
+  model: EMBEDDING_MODEL
+});
+```
+
+Do not mix embedding models in the same vector index. Different models can produce different vector dimensions and different semantic spaces.
+
+For semantic search and RAG index design, see [Retrieval with embeddings](./docs/guides/retrieval-with-embeddings.md).
+
+## Batch Inputs
+
+```ts
+const result = await caller.embeddings({
+  input: [
+    'How do I reset my password?',
+    'Where can I download invoices?',
+    'How do I invite a teammate?'
+  ],
+  model: 'text-embedding-3-small'
+});
+
+console.log(result.embeddings.length);
+```
+
+## Dimensions
+
+Some models support custom dimensions:
+
+```ts
+const result = await caller.embeddings({
+  input: 'Short text',
+  model: 'text-embedding-3-small',
+  dimensions: 512
+});
+```
+
+Check capabilities:
+
+```ts
+const caps = caller.checkEmbeddingCapabilities('text-embedding-3-small');
+console.log(caps.dimensions);
+console.log(caps.defaultDimensions);
+```
+
+List available embedding models:
+
+```ts
+console.log(caller.getAvailableEmbeddingModels());
+```
+
+## Usage Callback
+
+```ts
+await caller.embeddings({
+  input: 'Track this embedding call.',
+  model: 'text-embedding-3-small',
+  usageCallback: ({ usage }) => {
+    console.log(usage.tokens.input.total, usage.costs.total);
+  }
+});
+```
+
+---
+
+# Source: docs/guides/retrieval-with-embeddings.md
+
+# Retrieval with Embeddings
+
+Start with [Embeddings](./docs/guides/embeddings.md) for the basic API. This guide focuses on retrieval systems: semantic search, RAG indexes, and model consistency.
+
+## The Main Rule
+
+Use the same exact embedding model for indexing and querying.
+
+```ts
+import { LLMCaller } from 'callllm';
+
+const EMBEDDING_MODEL = 'text-embedding-3-small';
+const caller = new LLMCaller('openai', { model: EMBEDDING_MODEL });
+
+const documentEmbedding = await caller.embeddings({
+  input: 'Refunds are processed within five business days.',
+  model: EMBEDDING_MODEL
+});
+
+const queryEmbedding = await caller.embeddings({
+  input: 'When will I get my money back?',
+  model: EMBEDDING_MODEL
+});
+```
+
+Do not mix embedding models inside one vector index. Different embedding models can have different dimensions and different vector spaces, so cosine similarity may become meaningless or impossible.
+
+## Store Model Metadata
+
+Persist the model and dimensions beside every stored vector:
+
+```ts
+type StoredVector = {
+  id: string;
+  text: string;
+  embedding: number[];
+  embeddingModel: string;
+  dimensions: number;
+};
+
+const result = await caller.embeddings({
+  input: documentText,
+  model: EMBEDDING_MODEL
+});
+
+const row: StoredVector = {
+  id: documentId,
+  text: documentText,
+  embedding: result.embeddings[0].embedding,
+  embeddingModel: result.model,
+  dimensions: result.embeddings[0].embedding.length
+};
+```
+
+This makes migrations explicit and prevents accidentally querying an old index with a new model.
+
+## Batch Indexing
+
+Batch inputs when the provider supports it:
+
+```ts
+const result = await caller.embeddings({
+  input: [
+    'Password reset instructions.',
+    'Invoice download instructions.',
+    'Workspace invite instructions.'
+  ],
+  model: EMBEDDING_MODEL
+});
+
+for (const item of result.embeddings) {
+  console.log(item.index, item.embedding.length);
+}
+```
+
+Track usage for batch jobs:
+
+```ts
+await caller.embeddings({
+  input: documents.map(d => d.text),
+  model: EMBEDDING_MODEL,
+  usageCallback: ({ usage }) => {
+    console.log(usage.tokens.input.total, usage.costs.total);
+  }
+});
+```
+
+## Query Flow
+
+A typical semantic search flow:
+
+```ts
+const query = await caller.embeddings({
+  input: 'How do I invite a teammate?',
+  model: EMBEDDING_MODEL
+});
+
+const queryVector = query.embeddings[0].embedding;
+const matches = await vectorStore.search({
+  vector: queryVector,
+  topK: 5,
+  filter: { embeddingModel: EMBEDDING_MODEL }
+});
+```
+
+Filtering by `embeddingModel` is important during migrations or when one database stores multiple indexes.
+
+## RAG Flow
+
+Use retrieved text as `data` for a normal model call:
+
+```ts
+const passages = matches.map(match => match.text).join('\n\n---\n\n');
+
+const answer = await chatCaller.call({
+  text: 'Answer the user using only the provided support passages.',
+  data: passages,
+  endingMessage: 'If the passages do not contain the answer, say so.'
+});
+
+console.log(answer[0].content);
+```
+
+Embedding and generation do not need to use the same model. Pin the embedding model for vector consistency, then choose a chat model or preset for answer generation.
+
+## Using Presets
+
+Presets are useful for one-off embedding jobs:
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], 'cheap');
+
+const result = await caller.embeddings({
+  input: 'Classify this short support message.'
+});
+
+console.log(result.metadata?.provider);
+console.log(result.metadata?.model);
+```
+
+For durable retrieval indexes, prefer an exact embedding model so future queries use the same vector space.
+
+## Custom Dimensions
+
+Some embedding models support custom dimensions:
+
+```ts
+const result = await caller.embeddings({
+  input: 'Short support message.',
+  model: 'text-embedding-3-small',
+  dimensions: 512
+});
+```
+
+If you use custom dimensions, store the dimension count and keep it consistent for all vectors in the same index.
+
+## Migration Strategy
+
+When changing embedding models:
+
+1. Create a new index or partition.
+2. Re-embed documents with the new model.
+3. Query the new index with the same new model.
+4. Keep old and new indexes separate until migration is complete.
+5. Delete the old index only after traffic has moved.
+
+Do not compare vectors generated by different models as part of one ranking pass.
+
+---
+
+# Source: docs/guides/telemetry-and-usage.md
+
+# Telemetry and Usage
+
+`callllm` treats usage and telemetry as production features, not afterthoughts. Responses include normalized usage where available, and the telemetry collector can emit conversations, LLM calls, tool calls, prompts, choices, and costs.
+
+## Response Usage
+
+```ts
+const response = await caller.call('Summarize this ticket.', {
+  data: ticketText
+});
+
+console.log(response[0].metadata?.usage);
+```
+
+Usage shape:
+
+```ts
+type Usage = {
+  tokens: {
+    input: {
+      total: number;
+      cached: number;
+      image?: number;
+      audio?: number;
+    };
+    output: {
+      total: number;
+      reasoning: number;
+      image?: number;
+      audio?: number;
+      videoSeconds?: number;
+    };
+    total: number;
+  };
+  costs: {
+    input: {
+      total: number;
+      cached: number;
+      audio?: number;
+    };
+    output: {
+      total: number;
+      reasoning: number;
+      image?: number;
+      video?: number;
+      audio?: number;
+    };
+    total: number;
+  };
+  durations?: {
+    inputAudioSeconds?: number;
+  };
+};
+```
+
+Cost is an estimate based on provider usage metadata and catalog prices.
+
+## Usage Callback
+
+Use `usageCallback` for real-time reporting:
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are concise.', {
+  callerId: 'conversation-42',
+  usageCallback: ({ callerId, usage, timestamp }) => {
+    console.log(callerId, usage.costs.total, new Date(timestamp).toISOString());
+  }
+});
+```
+
+Override the caller ID:
+
+```ts
+caller.setCallerId('conversation-43');
+```
+
+Set or replace the callback:
+
+```ts
+caller.setUsageCallback(({ usage }) => {
+  console.log(usage.tokens.total);
+});
+```
+
+## Streaming Usage
+
+```ts
+for await (const chunk of caller.stream('Write a short story.', {
+  usageBatchSize: 50
+})) {
+  process.stdout.write(chunk.content);
+  if (chunk.isComplete) {
+    console.log(chunk.metadata?.usage);
+  }
+}
+```
+
+Callbacks are emitted incrementally. The final chunk contains cumulative usage.
+
+## Model Metadata
+
+Every operation includes stable model-selection metadata where possible:
+
+```ts
+response[0].metadata?.provider;
+response[0].metadata?.model;
+response[0].metadata?.selectionMode;
+```
+
+Use these fields for logs, metrics, audit trails, and cost attribution.
+
+## OpenTelemetry
+
+Enable OpenTelemetry:
+
+```env
+CALLLLM_OTEL_ENABLED=true
+OTEL_SERVICE_NAME=my-app
+OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com/v1/traces
+```
+
+The provider emits normalized GenAI-style spans/events for LLM calls, prompts, choices, chunks, tool calls, and usage.
+
+## Opik
+
+Enable Opik:
+
+```env
+CALLLLM_OPIK_ENABLED=true
+OPIK_API_KEY=...
+OPIK_WORKSPACE=...
+OPIK_PROJECT_NAME=llm
+OPIK_LOG_LEVEL=ERROR
+```
+
+When Opik is enabled, prompts, responses, usage, selected provider/model, and conversation summaries can be recorded.
+
+## Redaction
+
+Before enabling production telemetry, decide what data may leave your application:
+
+```env
+CALLLLM_OTEL_REDACT_PROMPTS=true
+CALLLLM_OTEL_REDACT_RESPONSES=true
+CALLLLM_OTEL_REDACT_TOOL_ARGS=true
+CALLLLM_OTEL_MAX_CONTENT_LENGTH=2000
+```
+
+Exact redaction support depends on the telemetry provider.
+
+## Logging
+
+```env
+LOG_LEVEL=error
+```
+
+`LOG_LEVEL` controls framework logs. It does not suppress output printed by your own script or by third-party SDKs unless those SDKs are also configured.
+
+For Opik noise, set:
+
+```env
+OPIK_LOG_LEVEL=ERROR
+```
+
+To disable Opik:
+
+```env
+CALLLLM_OPIK_ENABLED=false
+```
+
+---
+
+# Source: docs/guides/errors-and-troubleshooting.md
+
+# Errors and Troubleshooting
+
+LLM applications fail in predictable ways: bad credentials, unsupported models, provider rate limits, invalid JSON, tool failures, and missing media dependencies. This page maps those failures to what you should do.
+
+## Common Failures
+
+| Symptom | Likely cause | What to do |
+| --- | --- | --- |
+| API key error | missing or invalid provider key | set the provider env var or pass `apiKey` / `providerApiKeys` |
+| `ProviderNotFoundError` | unknown provider key | use one of `openai`, `gemini`, `openrouter`, `cerebras`, `venice` |
+| `ModelNotFoundError` | model not in provider scope | check spelling or provider scope |
+| `AmbiguousModelError` | exact model exists in multiple providers | use `{ provider, model }` |
+| `ModelSelectionConfigError` | invalid selection object | use a preset, exact model, or non-empty policy |
+| `ModelResolutionError` | no model satisfies requirements/constraints | inspect provider scope, request requirements, constraints |
+| `CapabilityError` | exact model lacks required capability | choose capable exact model or use a preset/policy |
+| invalid `contentObject` | model returned invalid JSON | inspect `content`, `validationErrors`, schema, and prompt |
+| tool failure | tool threw or returned invalid result | validate tool args and handle tool exceptions |
+| `TranscriptionFfmpegError` | `ffmpeg`/`ffprobe` missing for audio splitting/transcoding | install ffmpeg and ensure it is on `PATH` |
+
+## Model Resolution Errors
+
+Dynamic model selection errors are designed to be actionable. They include:
+
+- provider scope
+- capabilities required by request
+- rejected candidates and reasons
+
+Example fixes:
+
+```ts
+// Too strict: may reject all image models
+new LLMCaller(['openai', 'gemini'], {
+  preset: 'cheap',
+  constraints: { maxImagePricePerImage: 0.001 }
+});
+
+// Relax the constraint or use an exact image-capable model
+new LLMCaller(['openai', 'gemini'], {
+  preset: 'cheap',
+  constraints: { maxImagePricePerImage: 0.05 }
+});
+```
+
+## Exact Model Capability Errors
+
+Exact models do not auto-switch:
+
+```ts
+const caller = new LLMCaller('openai', { model: 'gpt-5-mini' });
+await caller.embeddings({ input: 'hello' }); // fails if model is not embedding-capable
+```
+
+Fix:
+
+```ts
+const caller = new LLMCaller('openai', 'cheap');
+await caller.embeddings({ input: 'hello' });
+```
+
+Or pin an exact embedding model:
+
+```ts
+await caller.embeddings({
+  input: 'hello',
+  model: 'text-embedding-3-small'
+});
+```
+
+## JSON Validation
+
+```ts
+const result = await caller.call('Return JSON.', {
+  jsonSchema: { name: 'Result', schema },
+  responseFormat: 'json'
+});
+
+const first = result[0];
+if (!first.contentObject) {
+  console.error(first.content);
+  console.error(first.metadata?.validationErrors);
+}
+```
+
+Fixes:
+
+- simplify the schema
+- add clearer field descriptions
+- use `jsonMode: 'native-only'` if native JSON is required
+- use a more capable model or `premium` preset
+- handle validation errors as part of your app flow
+
+## Audio and ffmpeg
+
+`ffmpeg`/`ffprobe` are required for:
+
+- large local transcription splitting
+- speech output transcoding when provider output format differs from requested format
+- audio duration estimation where needed
+
+Install:
+
+```bash
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install ffmpeg
+```
+
+Verify:
+
+```bash
+ffmpeg -version
+ffprobe -version
+```
+
+The Node process must see both commands on `PATH`.
+
+## Noisy Logs
+
+Set:
+
+```env
+LOG_LEVEL=error
+OPIK_LOG_LEVEL=ERROR
+```
+
+Remember:
+
+- `LOG_LEVEL` only controls framework logger output
+- examples may print streamed tokens and usage intentionally
+- telemetry SDKs may need their own log variables
+- disabling telemetry providers is the quietest option for local experiments
+
+## Provider Rate Limits
+
+Retries use exponential backoff for retryable provider errors. Configure:
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are helpful.', {
+  settings: { maxRetries: 3 }
+});
+```
+
+For chunked large inputs, reduce `maxParallelRequests` if you hit rate limits:
+
+```ts
+await caller.call('Analyze these records.', {
+  data,
+  maxParallelRequests: 2
+});
+```
+
+---
+
+# Source: docs/guides/retries-and-settings.md
+
+# Settings, Retries, and Overrides
+
+This guide explains how settings flow through `LLMCaller` and how retry behavior works.
+
+## Settings Layers
+
+Settings can be provided in two places:
+
+1. Constructor defaults
+2. Per-call overrides
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are concise.', {
+  settings: {
+    temperature: 0.2,
+    maxTokens: 500,
+    maxRetries: 3
+  }
+});
+
+const response = await caller.call('Draft a status update.', {
+  settings: {
+    temperature: 0.5
+  }
+});
+```
+
+Per-call settings override constructor settings. In this example, the effective settings are:
+
+- `temperature: 0.5`
+- `maxTokens: 500`
+- `maxRetries: 3`
+
+## Update Defaults
+
+```ts
+caller.updateSettings({
+  temperature: 0.7,
+  maxRetries: 2
+});
+```
+
+`updateSettings()` changes defaults for future calls. It does not rewrite past history.
+
+## Common Settings
+
+```ts
+settings: {
+  temperature: 0.3,
+  maxTokens: 1000,
+  topP: 0.9,
+  frequencyPenalty: 0,
+  presencePenalty: 0,
+  verbosity: 'low',
+  maxRetries: 3,
+  jsonMode: 'fallback',
+  toolChoice: 'auto',
+  reasoning: {
+    effort: 'medium',
+    summary: 'auto'
+  }
+}
+```
+
+Provider-specific options can be passed through `providerOptions`:
+
+```ts
+await caller.call('Use this provider option.', {
+  settings: {
+    providerOptions: {
+      // provider-specific values
+    }
+  }
+});
+```
+
+## Per-Call Model Override
+
+`settings.providerOptions.model` is preserved as a compatibility escape hatch:
+
+```ts
+await caller.call('Use a different model for this request.', {
+  settings: {
+    providerOptions: {
+      model: 'gpt-5-mini'
+    }
+  }
+});
+```
+
+This override is treated as an exact model inside the constructor provider scope. It is not interpreted as a preset and is still validated against the request requirements.
+
+Prefer constructor model selection for new code:
+
+```ts
+new LLMCaller('openai', { model: 'gpt-5-mini' });
+```
+
+## Retry Behavior
+
+`callllm` retries retryable provider failures with exponential backoff.
+
+```ts
+const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are helpful.', {
+  settings: {
+    maxRetries: 3
+  }
+});
+```
+
+Regular calls:
+
+1. Attempt provider call
+2. If the error is retryable, wait with backoff
+3. Retry up to `maxRetries`
+4. Throw the final error if all attempts fail
+
+Streaming calls have two retry surfaces:
+
+- initial stream creation can be retried
+- mid-stream failures can be retried by the stream retry wrapper where supported
+
+## Exponential Backoff
+
+The default retry manager uses exponential backoff with a base delay of 1000 ms:
+
+- retry 1: about 1 second
+- retry 2: about 2 seconds
+- retry 3: about 4 seconds
+
+Provider rate limits, transient network failures, and server errors are typical retry candidates. Authentication, invalid request, schema, and capability errors should be fixed rather than retried.
+
+## Content Retries
+
+`shouldRetryDueToContent` controls retries for incomplete or invalid model content, separate from network/provider retries:
+
+```ts
+await caller.call('Return valid JSON.', {
+  responseFormat: 'json',
+  settings: {
+    shouldRetryDueToContent: true
+  }
+});
+```
+
+## Rate-Limit Guidance
+
+For large chunked requests, `maxParallelRequests` controls concurrency:
+
+```ts
+await caller.call('Analyze each record.', {
+  data: records,
+  maxParallelRequests: 2
+});
+```
+
+Lower concurrency if a provider returns rate-limit errors.
+
+---
+
+# Source: docs/reference/api.md
+
+# API Reference
+
+This page lists the main public API. For examples and guidance, use the guides. For exact normalized return shapes, see [Response types](./docs/reference/response-types.md). For model catalog fields and custom model registration, see [Models and capabilities](./docs/reference/models-and-capabilities.md).
+
+## `LLMCaller`
+
+```ts
+import { LLMCaller } from 'callllm';
+
+const caller = new LLMCaller(providerScope, modelOrSelection, systemMessage?, options?);
+```
+
+## Text
+
+```ts
+caller.call(input, options?): Promise<UniversalChatResponse[]>
+```
+
+`input` can be a string or `LLMCallOptions`.
+
+```ts
+const response = await caller.call('Hello');
+console.log(response[0].content);
+```
+
+## Streaming
+
+```ts
+caller.stream(input, options?): AsyncGenerator<UniversalStreamResponse>
+```
+
+```ts
+for await (const chunk of caller.stream('Hello')) {
+  process.stdout.write(chunk.content);
+}
+```
+
+## Embeddings
+
+```ts
+caller.embeddings(options): Promise<EmbeddingResponse>
+caller.getAvailableEmbeddingModels(): string[]
+caller.checkEmbeddingCapabilities(modelName): EmbeddingCapabilityInfo
+```
+
+## Audio
+
+```ts
+caller.transcribe(options): Promise<TranscriptionResponse>
+caller.translateAudio(options): Promise<TranslationResponse>
+caller.synthesizeSpeech(options): Promise<SpeechResponse>
+caller.getAvailableAudioModels(): string[]
+caller.checkAudioCapabilities(modelName): AudioCapabilityInfo
+```
+
+## Video
+
+```ts
+caller.retrieveVideo(videoId): Promise<VideoStatus>
+caller.downloadVideo(videoId, options?): Promise<void>
+```
+
+Video generation starts through `call()` with `output.video`.
+
+## Models
+
+```ts
+caller.getAvailableModels(): ModelInfo[]
+caller.getModel(nameOrAlias, capabilityRequirements?): ModelInfo | undefined
+caller.addModel(model): void
+caller.updateModel(modelName, updates): void
+caller.setModel({ provider?, nameOrAlias, apiKey?, capabilityRequirements? }): void
+```
+
+Prefer constructor model selection for new code. Use `setModel` for long-lived caller instances that must switch model/provider at runtime.
+
+## Settings
+
+```ts
+caller.updateSettings(settings): void
+caller.setCallerId(callerId): void
+caller.setUsageCallback(callback): void
+caller.setParallelChunking(enabled): void
+```
+
+## Tools
+
+```ts
+caller.addTool(tool): void
+caller.addTools(tools): Promise<void>
+caller.removeTool(name): void
+caller.updateTool(name, partial): void
+caller.listTools(): ToolDefinition[]
+caller.getTool(name): ToolDefinition | undefined
+caller.addToolResult(toolCallId, result, toolName?, isError?): void
+```
+
+## History
+
+```ts
+caller.getHistoryMode(): 'full' | 'dynamic' | 'stateless'
+caller.getMessages(includeSystemMessage?): UniversalMessage[]
+caller.addMessage(role, content, additionalFields?): void
+caller.setMessages(messages): void
+caller.clearHistory(): void
+caller.updateSystemMessage(systemMessage, preserveHistory?): void
+caller.serializeHistory(): string
+caller.deserializeHistory(serialized): void
+caller.getLastMessageByRole(role): UniversalMessage | undefined
+caller.getLastMessages(count): UniversalMessage[]
+caller.getHistorySummary(options?): HistorySummary[]
+caller.getHistoryManager(): HistoryManager
+```
+
+## MCP
+
+```ts
+caller.getMcpServerToolSchemas(serverKey): Promise<McpToolSchema[]>
+caller.callMcpTool(serverKey, toolName, args, options?): Promise<unknown>
+caller.connectToMcpServer(serverKey): Promise<void>
+caller.disconnectMcpServers(): Promise<void>
+```
+
+## Main Exported Types
+
+```ts
+RegisteredProviders
+LLMCallerOptions
+UniversalChatResponse
+UniversalStreamResponse
+UniversalChatSettings
+UniversalMessage
+Usage
+ModelInfo
+ModelCapabilities
+ToolDefinition
+ToolCall
+UsageCallback
+UsageData
+MCPServerConfig
+MCPServersMap
+MCPRequestOptions
+```
+
+## Exported Classes
+
+```ts
+LLMCaller
+TelemetryCollector
+ModelManager
+TokenCalculator
+ToolsManager
+HistoryManager
+MCPServiceAdapter
+TranscriptionFfmpegError
+```
+
+Some internal error classes are available from subpath exports such as `callllm/core`; the package root exports the high-level public classes above.
+
+## See Also
+
+- [Configuration](./docs/reference/configuration.md)
+- [Response types](./docs/reference/response-types.md)
+- [Models and capabilities](./docs/reference/models-and-capabilities.md)
+- [History](./docs/reference/history.md)
+- [MCP](./docs/reference/mcp.md)
+- [Image details](./docs/reference/image-details.md)
+- [Settings, retries, and overrides](./docs/guides/retries-and-settings.md)
+
+---
+
+# Source: docs/reference/configuration.md
+
+# Configuration Reference
+
+## Constructor
+
+```ts
+new LLMCaller(providerScope, modelOrSelection, systemMessage?, options?)
+```
+
+```ts
+type ProviderScope = RegisteredProviders | RegisteredProviders[];
+```
+
+Registered providers:
+
+```ts
+'openai' | 'gemini' | 'openrouter' | 'cerebras' | 'venice'
+```
+
+## Model Selection
+
+```ts
+type ModelOrSelection =
+  | string
+  | { model: string; provider?: RegisteredProviders }
+  | {
+      preset?: 'cheap' | 'fast' | 'balanced' | 'premium';
+      prefer?: Partial<Record<'cost' | 'latency' | 'throughput' | 'quality' | 'context', number>>;
+      constraints?: ModelConstraints;
+      resolution?: { explain?: boolean };
+    };
+```
+
+Empty selection objects are invalid.
+
+## `LLMCallerOptions`
+
+```ts
+type LLMCallerOptions = {
+  apiKey?: string;
+  providerApiKeys?: Partial<Record<RegisteredProviders, string>>;
+  callerId?: string;
+  usageCallback?: UsageCallback;
+  settings?: UniversalChatSettings;
+  historyMode?: 'full' | 'dynamic' | 'stateless';
+  toolsDir?: string;
+  tools?: (ToolDefinition | string | MCPServersMap)[];
+  maxIterations?: number;
+  maxChunkIterations?: number;
+  parallelChunking?: boolean;
+  telemetryCollector?: TelemetryCollector;
+};
+```
+
+Additional dependency-injection options exist for tests and advanced integrations.
+
+Defaults to know:
+
+- `historyMode` defaults to `stateless`.
+- `maxIterations` defaults to `5` for tool-call loops.
+- `maxChunkIterations` defaults to `70` for large-input chunking.
+- `settings.maxRetries` defaults to the retry controller default when unset; set it explicitly for production workflows.
+
+## Chat Settings
+
+```ts
+type UniversalChatSettings = {
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  verbosity?: 'low' | 'medium' | 'high';
+  maxRetries?: number;
+  toolChoice?: 'none' | 'auto' | { type: 'function'; function: { name: string } };
+  user?: string;
+  stop?: string | string[];
+  n?: number;
+  logitBias?: Record<string, number>;
+  shouldRetryDueToContent?: boolean;
+  jsonMode?: 'native-only' | 'fallback' | 'force-prompt';
+  providerOptions?: Record<string, unknown>;
+  reasoning?: {
+    effort?: 'minimal' | 'low' | 'medium' | 'high';
+    summary?: 'auto' | 'concise' | 'detailed' | null;
+  };
+};
+```
+
+Settings can be set in the constructor, changed with `updateSettings()`, and overridden per call. See [Settings, retries, and overrides](./docs/guides/retries-and-settings.md).
+
+`settings.providerOptions.model` is a compatibility escape hatch for exact per-call model overrides. Prefer constructor model selection for new code.
+
+## Call Options
+
+```ts
+type LLMCallOptions = {
+  text?: string;
+  file?: string;
+  files?: string[];
+  mask?: string;
+  input?: {
+    image?: { detail?: 'low' | 'high' | 'auto' };
+  };
+  output?: {
+    image?: {
+      generate?: boolean;
+      edit?: boolean;
+      editWithMask?: boolean;
+      quality?: 'low' | 'medium' | 'high' | 'auto';
+      size?: string;
+      format?: 'png' | 'jpeg' | 'webp';
+      background?: 'transparent' | 'auto';
+      compression?: number;
+      style?: string;
+    };
+    video?: {
+      size?: string;
+      seconds?: number;
+      wait?: 'none' | 'poll';
+      variant?: 'video' | 'thumbnail' | 'spritesheet';
+    };
+  };
+  outputPath?: string;
+  usageCallback?: UsageCallback;
+  usageBatchSize?: number;
+  data?: string | object;
+  endingMessage?: string;
+  settings?: UniversalChatSettings;
+  jsonSchema?: { name?: string; schema: JSONSchemaDefinition };
+  responseFormat?: 'json' | 'text' | { type: 'json_object' };
+  tools?: (ToolDefinition | string | MCPServersMap)[];
+  toolsDir?: string;
+  historyMode?: 'full' | 'dynamic' | 'stateless';
+  maxCharsPerChunk?: number;
+  maxChunkIterations?: number;
+  maxParallelRequests?: number;
+};
+```
+
+For `text`, `data`, `endingMessage`, chunking, and response-array behavior, see [Message composition](./docs/guides/message-composition.md).
+
+## Environment Variables
+
+Provider keys:
+
+```env
+OPENAI_API_KEY=...
+GEMINI_API_KEY=...
+OPENROUTER_API_KEY=...
+CEREBRAS_API_KEY=...
+VENICE_API_KEY=...
+```
+
+Logging:
+
+```env
+LOG_LEVEL=error
+OPIK_LOG_LEVEL=ERROR
+```
+
+Telemetry:
+
+```env
+CALLLLM_OTEL_ENABLED=true
+CALLLLM_OPIK_ENABLED=true
+```
+
+MCP:
+
+```env
+MCP_TOOL_CALL_TIMEOUT_MS=60000
+```
+
+---
+
+# Source: docs/reference/models-and-capabilities.md
+
+# Models and Capabilities Reference
+
+Model metadata is the catalog that powers validation, usage estimates, and dynamic model selection. Most users only need presets or exact model names, but custom models and provider contributors should understand this shape.
+
+## Inspect Available Models
+
+```ts
+const caller = new LLMCaller('openai', 'balanced');
+
+const models = caller.getAvailableModels();
+for (const model of models) {
+  console.log(model.name, model.maxRequestTokens, model.capabilities);
+}
+```
+
+Get one model:
+
+```ts
+const model = caller.getModel('gpt-5-mini');
+```
+
+## `ModelInfo`
+
+```ts
+type ModelInfo = {
+  name: string;
+  canonicalSlug?: string;
+  isUncensored?: boolean;
+  inputPricePerMillion: number;
+  inputCachedPricePerMillion?: number;
+  outputPricePerMillion: number;
+  imageInputPricePerMillion?: number;
+  imageOutputPricePerMillion?: number;
+  imagePricePerImage?: number;
+  videoPricePerSecond?: number;
+  audioInputPricePerMillion?: number;
+  audioOutputPricePerMillion?: number;
+  audioPricePerSecond?: number;
+  ttsPricePerMillionChars?: number;
+  transcriptionMaxFileBytes?: number;
+  transcriptionMaxDurationSeconds?: number;
+  maxRequestTokens: number;
+  maxResponseTokens: number;
+  tokenizationModel?: string;
+  capabilities?: ModelCapabilities;
+  characteristics: {
+    qualityIndex: number;
+    outputSpeed: number;
+    firstTokenLatency: number;
+  };
+};
+```
+
+Pricing fields are used for estimated cost. Capability fields are used for hard filtering. Characteristics are used for preset and policy scoring.
+
+## `ModelCapabilities`
+
+Capabilities describe what a model can do:
+
+```ts
+type ModelCapabilities = {
+  streaming?: boolean;
+  toolCalls?: boolean | {
+    nonStreaming: boolean;
+    streamingMode: 'none' | 'onComplete' | 'deltas';
+    parallel?: boolean;
+  };
+  parallelToolCalls?: boolean;
+  batchProcessing?: boolean;
+  reasoning?: boolean;
+  embeddings?: boolean | {
+    maxInputLength?: number;
+    dimensions?: number[];
+    defaultDimensions?: number;
+    encodingFormats?: ('float' | 'base64')[];
+  };
+  audio?: boolean | {
+    transcribe?: boolean;
+    translate?: boolean;
+    synthesize?: boolean;
+    supportedInputFormats?: string[];
+    supportedOutputFormats?: string[];
+    maxInputDuration?: number;
+    maxOutputChars?: number;
+    voices?: string[];
+  };
+  input: {
+    text: true | object;
+    image?: true | {
+      formats?: string[];
+      maxDimensions?: [number, number];
+      maxSize?: number;
+    };
+    audio?: true | object;
+    video?: true | object;
+  };
+  output: {
+    text: true | {
+      textOutputFormats: ('text' | 'json')[];
+    };
+    image?: true | {
+      generate?: boolean;
+      edit?: boolean;
+      editWithMask?: boolean;
+      formats?: string[];
+      dimensions?: Array<[number, number]>;
+    };
+    video?: true | {
+      sizes?: string[];
+      maxSeconds?: number;
+      variants?: string[];
+    };
+    audio?: true | object;
+  };
+};
+```
+
+If a capability is absent, the resolver treats it as unsupported for hard requirements.
+
+## Custom Models
+
+Add a model to the current caller catalog:
+
+```ts
+caller.addModel({
+  name: 'my-company-router',
+  inputPricePerMillion: 1,
+  outputPricePerMillion: 3,
+  maxRequestTokens: 128000,
+  maxResponseTokens: 8192,
+  tokenizationModel: 'gpt-4o',
+  capabilities: {
+    streaming: true,
+    toolCalls: true,
+    input: { text: true },
+    output: {
+      text: { textOutputFormats: ['text', 'json'] }
+    }
+  },
+  characteristics: {
+    qualityIndex: 75,
+    outputSpeed: 120,
+    firstTokenLatency: 800
+  }
+});
+```
+
+Update a model:
+
+```ts
+caller.updateModel('my-company-router', {
+  outputPricePerMillion: 2.5
+});
+```
+
+## Tokenization Model
+
+`tokenizationModel` tells the local token counter which tokenizer to use when provider usage is unavailable:
+
+```ts
+caller.addModel({
+  name: 'custom-model',
+  tokenizationModel: 'gpt-4',
+  // other ModelInfo fields...
+});
+```
+
+If `tokenizationModel` is omitted, the framework first tries the model's own name and then falls back to approximate counting.
+
+## Capability Validation
+
+Exact models are validated against the request:
+
+```ts
+const caller = new LLMCaller('openai', { model: 'gpt-5-mini' });
+
+await caller.call({
+  text: 'Create an icon.',
+  output: { image: { size: '1024x1024' } }
+}); // fails if gpt-5-mini is not image-output capable
+```
+
+Presets and policies filter models before scoring:
+
+```ts
+const caller = new LLMCaller(['openai', 'gemini'], 'fast');
+await caller.embeddings({ input: 'hello' }); // selects an embedding-capable model
+```
+
+## Pricing Freshness
+
+Catalog pricing and model characteristics can become outdated. Treat cost as an estimate and update model metadata when provider pricing changes. For strict budget enforcement, use constraints such as `maxOutputPricePerMillion`, `maxImagePricePerImage`, or `maxVideoPricePerSecond`.
+
+---
+
+# Source: docs/reference/response-types.md
+
+# Response Types Reference
+
+This page documents the normalized response shapes returned by `callllm`.
+
+## Chat Response
+
+```ts
+type UniversalChatResponse<T = unknown> = {
+  content: string | null;
+  contentObject?: T;
+  reasoning?: string;
+  image?: {
+    data: string;
+    dataSource?: 'url' | 'base64' | 'file';
+    mime: string;
+    width: number;
+    height: number;
+    operation: 'generate' | 'edit' | 'edit-masked' | 'composite';
+  };
+  role: string;
+  messages?: UniversalMessage[];
+  toolCalls?: ToolCall[];
+  metadata?: Metadata;
+};
+```
+
+Typical use:
+
+```ts
+const response = await caller.call('Hello');
+const first = response[0];
+
+console.log(first.content);
+console.log(first.metadata?.usage);
+```
+
+## Stream Response
+
+```ts
+type UniversalStreamResponse<T = unknown> = {
+  content: string;
+  reasoning?: string;
+  contentText?: string;
+  reasoningText?: string;
+  isFirstContentChunk?: boolean;
+  isFirstReasoningChunk?: boolean;
+  contentObject?: T;
+  image?: UniversalChatResponse['image'];
+  role: string;
+  isComplete: boolean;
+  messages?: UniversalMessage[];
+  toolCalls?: ToolCall[];
+  toolCallResults?: Array<{
+    id: string;
+    name: string;
+    result: string;
+  }>;
+  toolCallChunks?: unknown[];
+  metadata?: Metadata;
+};
+```
+
+During streaming:
+
+- use `content` for incremental text
+- use `contentText` on the final chunk for accumulated text
+- use `contentObject` on the final chunk for parsed JSON
+- use `reasoning` / `reasoningText` when reasoning summaries are requested and supported
+
+## Metadata
+
+```ts
+type Metadata = {
+  finishReason?: FinishReason;
+  usage?: Usage;
+  provider?: string;
+  model?: string;
+  selectionMode?: 'exact' | 'preset' | 'policy';
+  modelResolution?: ModelResolution;
+  validationErrors?: Array<{ message: string; path: (string | number)[] }>;
+  jsonRepaired?: boolean;
+  imageSavedPath?: string;
+  imageUrl?: string;
+  videoJobId?: string;
+  videoStatus?: 'queued' | 'in_progress' | 'completed' | 'failed';
+  videoProgress?: number;
+  videoSavedPath?: string;
+  videoError?: string | object;
+  audioSavedPath?: string;
+  transcriptionChunkCount?: number;
+  [key: string]: unknown;
+};
+```
+
+Stable model-selection metadata:
+
+```ts
+response[0].metadata?.provider;
+response[0].metadata?.model;
+response[0].metadata?.selectionMode;
+```
+
+Diagnostic model-resolution metadata appears only when `resolution.explain: true`.
+
+## Usage
+
+```ts
+type Usage = {
+  tokens: {
+    input: {
+      total: number;
+      cached: number;
+      image?: number;
+      audio?: number;
+    };
+    output: {
+      total: number;
+      reasoning: number;
+      image?: number;
+      audio?: number;
+      videoSeconds?: number;
+    };
+    total: number;
+  };
+  costs: {
+    input: {
+      total: number;
+      cached: number;
+      audio?: number;
+    };
+    output: {
+      total: number;
+      reasoning: number;
+      image?: number;
+      video?: number;
+      audio?: number;
+    };
+    total: number;
+  };
+  durations?: {
+    inputAudioSeconds?: number;
+  };
+};
+```
+
+## Embedding Response
+
+```ts
+type EmbeddingResponse = {
+  embeddings: Array<{
+    embedding: number[];
+    index: number;
+    object: 'embedding';
+  }>;
+  model: string;
+  usage: Usage;
+  metadata?: Metadata;
+};
+```
+
+## Audio Responses
+
+Transcription and translation:
+
+```ts
+type TranscriptionResponse = {
+  text: string;
+  language?: string;
+  duration?: number;
+  model: string;
+  usage: Usage;
+  metadata?: Metadata;
+};
+```
+
+Speech:
+
+```ts
+type SpeechResponse = {
+  audio: {
+    data: string;
+    mime: string;
+    format: 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm';
+    sizeBytes: number;
+  };
+  model: string;
+  usage: Usage;
+  metadata?: Metadata;
+};
+```
+
+## Finish Reasons
+
+```ts
+enum FinishReason {
+  STOP = 'stop',
+  LENGTH = 'length',
+  CONTENT_FILTER = 'content_filter',
+  TOOL_CALLS = 'tool_calls',
+  NULL = 'null',
+  ERROR = 'error'
+}
+```
+
+---
+
+# Source: docs/reference/history.md
+
+# History Reference
+
+The core component responsible for managing conversation history is the `HistoryManager` class, which is integrated into `LLMCaller`. `LLMCaller` provides several methods to interact with this history.
+
+Here are the primary ways you can add, manage, and influence the history used in your calls:
+
+1.  **Adding Messages Incrementally**:
+    You can add individual messages (user, assistant, tool, etc.) to the history using the `addMessage` method on your `LLMCaller` instance. Messages added this way contribute to the ongoing conversation history.
+
+    ```typescript
+    import { LLMCaller } from 'callllm';
+
+    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.');
+
+    // Add a user message
+    caller.addMessage('user', 'What is the capital of France?');
+
+    // Add the assistant's response (assuming you received it from a previous call)
+    caller.addMessage('assistant', 'The capital of France is Paris.');
+
+    // Add another user message
+    caller.addMessage('user', 'What is its population?');
+
+    // When you make the next call, these messages will be included based on the history mode
+    // const response = await caller.call('...');
+    ```
+    Messages with roles like `'tool'` or `'function'` can also be added, often including a `toolCallId` to link them to a previous assistant message that requested the tool.
+
+2.  **Setting/Replacing the Entire History**:
+    If you need to load a previous conversation state or set the history programmatically, you can use `setMessages`. This replaces the entire current history with the provided array of messages.
+
+    ```typescript
+    import { LLMCaller, UniversalMessage } from 'callllm';
+
+    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.');
+
+    const previousConversation: UniversalMessage[] = [
+        { role: 'system', content: 'You are a helpful assistant.' },
+        { role: 'user', content: 'What is 1 + 1?' },
+        { role: 'assistant', content: '1 + 1 equals 2.' },
+    ];
+
+    caller.setMessages(previousConversation);
+
+    // Now the history contains the messages from `previousConversation`
+    // const response = await caller.call('...');
+    ```
+
+3.  **Clearing History**:
+    To start a fresh conversation, you can clear all previous messages using `clearHistory`. This method re-initializes the history with the initial `systemMessage` provided during the `LLMCaller` constructor.
+
+    ```typescript
+    import { LLMCaller } from 'callllm';
+
+    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.');
+
+    // ... add some messages ...
+    caller.addMessage('user', 'Message 1');
+    console.log('History size before clear:', caller.getMessages().length); // Will be > 0
+
+    caller.clearHistory(); // Clears messages and re-adds the system message
+
+    console.log('History size after clear:', caller.getMessages().length); // Will be 1 (system message)
+    ```
+
+4.  **Inspecting History Mode**:
+    Frameworks or higher-level logic can check the current `historyMode` to decide if they should persist or restore state. Use `getHistoryMode()` to retrieve the active mode.
+
+    ```typescript
+    const mode = caller.getHistoryMode();
+    
+    if (mode === 'stateless') {
+        console.log('History persistence skipped');
+    }
+    ```
+
+5.  **Updating the System Message**:
+    The initial system message is crucial for setting the AI's persona and instructions. You can update it using `updateSystemMessage`. You can choose whether to preserve the existing conversation history (`preserveHistory = true`, default) or clear it (`preserveHistory = false`).
+
+    ```typescript
+    import { LLMCaller } from 'callllm';
+
+    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.');
+
+    // Change the system message and keep history
+    caller.updateSystemMessage('You are now an expert in history.', true);
+
+    // Change the system message and clear history
+    caller.updateSystemMessage('You are now a creative writer.', false);
+    ```
+
+6.  **Controlling History Behavior (`historyMode`)**:
+    The library offers different modes to control how the historical messages stored in the `HistoryManager` are included in the actual API call requests sent to the LLM provider. This is managed by the `historyMode` setting.
+
+    You can set the `historyMode` during `LLMCaller` initialization or override it for specific `call` or `stream` requests:
+
+    ```typescript
+    import { LLMCaller } from 'callllm';
+
+    // Set default history mode in constructor
+    const callerFullHistory = new LLMCaller('openai', 'gpt-4o-mini', '...', {
+        historyMode: 'full'
+    });
+
+    // Override history mode for a specific call
+    const responseStateless = await callerFullHistory.call('What is the current time?', {
+        historyMode: 'stateless' // This call will be stateless, but future calls on callerFullHistory will default to 'full'
+    });
+
+    const streamDynamic = await callerFullHistory.stream('Analyze this long document...', {
+        historyMode: 'dynamic' // This streaming call will use dynamic truncation
+    });
+    ```
+
+    The available `historyMode` values are:
+    *   `'full'`: Sends *all* messages currently in the `HistoryManager` (including the system message) to the model. Best for preserving full conversation context.
+    *   `'dynamic'`: Intelligently truncates the history to fit within the model's `maxRequestTokens`. It prioritizes the system message, the first user message, and the most recent messages. Useful for long conversations to avoid hitting token limits while retaining recent context.
+    *   `'stateless'`: Default mode. Only sends the current user message and the system message (if one is set in `HistoryManager`) to the model. No previous conversation turns are included. Each call is independent. Most token-efficient.
+
+    When the caller uses a preset or policy, dynamic history truncation uses the model resolved for the current request, not just the constructor string. This matters when the same caller can select different models for text, tools, image input, or reasoning requests:
+
+    ```typescript
+    const caller = new LLMCaller(['openai', 'gemini'], 'balanced', 'You are concise.', {
+        historyMode: 'dynamic'
+    });
+
+    const response = await caller.call('Continue the discussion', {
+        settings: {
+            maxTokens: 1200
+        }
+    });
+
+    console.log(response[0].metadata?.model); // model whose token limits were used
+    ```
+
+7.  **Accessing History**:
+    You can retrieve the current message history using methods like `getMessages()` (excluding the initial system message unless it was explicitly added back) or `getMessages(true)` (includes the initial system message). `getHistorySummary()` provides a condensed view.
+
+    ```typescript
+    // Get all messages including system message
+    const allMessages = caller.getMessages(true);
+
+    // Get messages excluding the initial system message
+    const historicalMessages = caller.getMessages();
+
+    // Get a summary of the history
+    const summary = caller.getHistorySummary({ maxContentLength: 50 });
+    ```
+
+By using these methods and the `historyMode` option, you have fine-grained control over how conversation history is managed and utilized in your interactions with the LLM.
+
+---
+
+# Source: docs/reference/mcp.md
+
+# MCP Server Tools
+
+The Model Context Protocol (MCP) allows callllm to use tools provided by external servers. This enables powerful capabilities like file system access, web browsing, API calls, and more.
+
+## Basic Usage
+
+The primary way to use MCP servers is through LLM interaction. In addition to function folders and explicit `ToolDefinition` objects, you can pass MCP server configurations:
+
+```typescript
+import { LLMCaller } from 'callllm';
+import type { MCPServersMap } from 'callllm';
+
+// MCP server configuration
+const mcpConfig: MCPServersMap = {
+  filesystem: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
+  }
+};
+
+// Initialize caller
+const caller = new LLMCaller('openai', 'fast');
+
+// Use MCP servers as tools in a call
+const response = await caller.call("List the files in the current directory", {
+  tools: [mcpConfig]  // Pass the MCP config
+});
+```
+
+The LLM will automatically discover the available tools from the MCP server and use them appropriately based on the user's request.
+
+## Model Selection With MCP Tools
+
+MCP tools participate in request-time model selection. The framework resolves effective tools before resolving a dynamic model, so presets and policies only choose models that can support the actual tool-calling mode.
+
+```typescript
+const caller = new LLMCaller(['openai', 'gemini'], 'cheap');
+
+const response = await caller.call("List the files in the current directory", {
+  tools: [mcpConfig]
+});
+
+console.log(response[0].metadata?.model); // selected tool-capable model
+```
+
+For streaming calls with tools, the selected model must support streaming tool calls:
+
+```typescript
+for await (const chunk of caller.stream("Watch the workspace and report changes", {
+  tools: [mcpConfig]
+})) {
+  process.stdout.write(chunk.content);
+}
+```
+
+If an optional MCP server fails to load and the call continues without that server's tools, model selection uses the tools that are actually available, not stale schemas from a previous attempt.
+
+## Direct Access Methods
+
+While LLM interaction is the primary method for using MCP tools, `LLMCaller` also implements the `MCPDirectAccess` interface which provides supplementary methods for special cases where you need to:
+
+1. Get information about available tools programmatically
+2. Call a specific tool directly without LLM involvement
+3. Handle tool responses in a specific way
+
+The `MCPDirectAccess` interface provides two supplementary methods:
+
+```typescript
+import type { MCPRequestOptions } from 'callllm';
+
+interface MCPDirectAccess {
+  // Get schema information about available tools
+  getMcpServerToolSchemas(serverName: string): Promise<McpToolSchema[]>;
+  
+  // Call a specific tool directly
+  callMcpTool(
+    serverName: string,
+    toolName: string,
+    parameters: Record<string, unknown>,
+    options?: MCPRequestOptions
+  ): Promise<unknown>;
+}
+```
+
+### Using Direct Access
+
+You can leverage the direct access calls to MCP servers whenever it's needed:
+
+```typescript
+import { LLMCaller } from 'callllm';
+import type { MCPServersMap } from 'callllm';
+
+// Initialize LLMCaller and set up MCP for LLM usage
+const caller = new LLMCaller('openai', 'fast');
+
+// Define your MCP server configuration
+const mcpConfig: MCPServersMap = {
+  filesystem: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '.']
+  }
+};
+
+// Add the MCP configuration to the caller
+await caller.addTools([mcpConfig]);
+
+// Explicitly connect to the server for direct access
+// You can use connectToMcpServer to preconnect to servers before calling tools.
+await caller.connectToMcpServer('filesystem');
+
+// Now you can access the tools directly
+const result = await caller.callMcpTool('filesystem', 'read_file', { path: 'package.json' });
+
+// You can also use this server in LLM calls without reconnecting to it, since it's already connected with connectToMcpServer
+const response = await caller.call('Read the README.md file and summarize it');
+
+// Clean up when done
+await caller.disconnectMcpServers();
+```
+
+The implementation efficiently reuses connections and avoids redundant server startups. When you:
+
+1. Call `addTools([mcpConfig])` - Saves the configuration for future use
+2. Call `connectToMcpServer('filesystem')` - Establishes a connection if not already connected
+3. Call `call(...)` - Reuses the existing connection without needing to reconnect
+
+This prevents duplicate server instances when using direct MCP tool calls together with LLM calls.
+
+Use `LLMCaller` direct-access methods for application code. `MCPServiceAdapter` is exported for advanced integrations, but public examples should not mutate private `LLMCaller` fields.
+
+### Working with Tool Schemas
+
+You can inspect available tools programmatically using `getMcpServerToolSchemas`:
+
+```typescript
+const schemas = await caller.getMcpServerToolSchemas('filesystem');
+
+// Log all available tools
+schemas.forEach(schema => {
+  console.log(`Tool: ${schema.name}`);
+  console.log(`Description: ${schema.description}`);
+  console.log(`Parameters:`, schema.parameters);
+});
+
+// Find a specific tool by name
+const listDirSchema = schemas.find(s => s.name === 'list_directory');
+if (listDirSchema) {
+  // Use schema.parameters to get Zod validation schema for the tool
+  // This can be used to validate parameters before calling the tool
+}
+```
+
+### Calling Tools Directly
+
+Use the `callMcpTool` method to execute specific tools:
+
+```typescript
+// Basic file reading
+const fileContent = await caller.callMcpTool(
+  'filesystem',  // server name
+  'read_file',   // tool name (the original name from the MCP server, not the LLM tool name)
+  { path: 'package.json' }  // parameters
+);
+```
+
+### Error Handling
+
+Handle potential errors when working with MCP tools:
+
+```typescript
+import { 
+  MCPConnectionError, 
+  MCPToolCallError, 
+  MCPAuthenticationError 
+} from 'callllm/core';
+
+try {
+  const result = await caller.callMcpTool('filesystem', 'read_file', { path: 'non_existent_file.txt' });
+  console.log('Success:', result);
+} catch (error) {
+  // Check for specific error types
+  if (error instanceof MCPConnectionError) {
+    console.error('Connection to MCP server failed:', error.message);
+  } else if (error instanceof MCPToolCallError) {
+    console.error('Tool call failed:', error.message);
+  } else if (error instanceof MCPAuthenticationError) {
+    console.error('Authentication failed:', error.message);
+  } else {
+    console.error('Unknown error:', error);
+  }
+}
+```
+
+## MCP SDK Integration
+
+`callllm` uses the official MCP SDK to connect to MCP servers. The implementation supports:
+
+1. Multiple transport types:
+   - **stdio** - For local server processes
+   - **http** - With both Streamable HTTP and SSE (Server-Sent Events) modes
+   - Future support for custom transports
+
+2. Authentication methods:
+   - **Basic auth** - Username/password authentication
+   - **Bearer token** - Simple token-based auth
+   - **OAuth** - For more secure integrations
+
+3. Automatic fallback strategies:
+   - Streamable HTTP to SSE fallback if the server doesn't support Streamable HTTP
+   - Automatic retry mechanisms for transient failures
+
+4. Error categorization:
+   - `MCPConnectionError` - For connection issues
+   - `MCPToolCallError` - For tool execution failures
+   - `MCPAuthenticationError` - For auth-related issues
+   - `MCPTimeoutError` - For timeout issues
+
+### Tool call timeout
+
+Each MCP `tools/call` request uses a **client-side** timeout in milliseconds. This matches the Model Context Protocol SDK’s default request window unless you override it.
+
+**Default:** 60 seconds (60_000 ms).
+
+**Precedence (highest first):**
+
+1. Per-call `timeout` in `MCPRequestOptions` (must be a positive finite number), passed to `MCPServiceAdapter.executeTool`, `executeMcpTool`, or `LLMCaller.callMcpTool`.
+2. Process environment variable `MCP_TOOL_CALL_TIMEOUT_MS` (positive integer; invalid or unset is ignored).
+3. Built-in default 60_000 ms.
+
+**Examples**
+
+Long-running tools (e.g. browser automation) without changing code for every call:
+
+```bash
+export MCP_TOOL_CALL_TIMEOUT_MS=300000
+```
+
+Per-call override:
+
+```typescript
+import type { MCPRequestOptions } from 'callllm';
+
+const opts: MCPRequestOptions = { timeout: 120_000 };
+await caller.callMcpTool('browser', 'navigate_and_extract', { url: 'https://example.com' }, opts);
+
+// Or via MCPServiceAdapter
+await adapter.executeMcpTool('browser', 'navigate_and_extract', { url: 'https://example.com' }, opts);
+```
+
+When the model invokes MCP tools through normal LLM tool execution (`convertToToolDefinition` → `executeTool` without per-call options), only the **default** and **`MCP_TOOL_CALL_TIMEOUT_MS`** apply. Use direct calls with `options` or set the env var for long jobs.
+
+### Transport Configuration Examples
+
+```typescript
+import type { MCPServersMap } from 'callllm';
+
+// Stdio transport (local process)
+const mcpConfig: MCPServersMap = {
+  filesystem: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '.'],
+    env: { 'DEBUG': 'true' }  // Optional environment variables
+  }
+};
+
+// HTTP transport with Streamable HTTP mode
+const mcpHttpConfig: MCPServersMap = {
+  remoteServer: {
+    url: 'https://api.example.com/mcp',
+    type: 'http',  // Explicitly specify transport type
+    mode: 'streamable',  // Use streamable HTTP mode
+    headers: {  // Optional headers
+      'Authorization': 'Bearer your-token'
+    }
+  }
+};
+
+// HTTP transport with SSE mode and OAuth
+const mcpOAuthConfig: MCPServersMap = {
+  oauthServer: {
+    url: 'https://api.secure.example.com/mcp',
+    type: 'http',
+    mode: 'sse',  // Use SSE mode
+    auth: {  // Authentication configuration
+      provider: oauthProvider  // OAuthProvider instance
+    }
+  }
+};
+```
+
+### HTTP Transport Modes
+
+When connecting to MCP servers over HTTP, two transport modes are available:
+
+- **streamable** - Uses HTTP streaming with chunked transfer encoding. This is the default mode when not specified.
+- **sse** - Uses Server-Sent Events (SSE) for event streaming.
+
+#### Mode Selection and Fallback Behavior
+
+By default, the adapter will:
+
+1. Use 'streamable' mode if no mode is specified
+2. Try connecting with Streamable HTTP first
+3. If Streamable HTTP fails (due to protocol mismatch, HTTP errors, or timeouts), fall back to SSE transport
+
+Setting `mode: 'sse'` explicitly:
+- Bypasses the Streamable HTTP attempt completely
+- Connects directly with SSE transport
+- Avoids waiting for timeouts when the server only supports SSE
+
+#### When to use each mode:
+
+- **streamable** - Use for newer MCP servers that support HTTP streaming. This is generally more efficient for large data transfers.
+- **sse** - Use for:
+  - MCP servers that only support SSE protocol
+  - When experiencing timeouts with Streamable HTTP (like with the skeet.build server)
+  - When you've verified SSE works more reliably in your environment
+
+For example, if you know a server requires SSE mode:
+
+```typescript
+import type { MCPServersMap } from 'callllm';
+
+const config: MCPServersMap = {
+  knownSseServer: {
+    url: 'https://api.example.com/mcp',
+    mode: 'sse'  // Skip StreamableHTTP and use SSE directly
+  }
+};
+```
+
+This configuration will connect directly via SSE without trying StreamableHTTP first, avoiding the timeout delay.
+
+### HTTP Transport Troubleshooting
+
+#### Common Connection Issues
+
+1. **Timeouts**
+
+   If you encounter timeout errors when connecting to an MCP server:
+   
+   ```
+   MCPConnectionError: Failed to connect to MCP server: Request timed out
+   ```
+   
+   Solution options:
+   - Set `mode: 'sse'` to bypass the StreamableHTTP attempt
+   - Check if the server is available and responding
+   - Verify network connectivity between your client and the server
+   - If behind corporate proxies or firewalls, check if streaming protocols are allowed
+
+2. **Protocol Compatibility**
+
+   Different MCP servers implement different transport protocols:
+   
+   - Some only support StreamableHTTP
+   - Some only support SSE
+   - Some support both but prefer one
+   
+   When first connecting to a new server, you may need to experiment with the mode setting to find the most reliable option.
+
+3. **Authentication Failures**
+
+   If authentication is failing:
+   
+   ```
+   MCPAuthenticationError: Authentication required for server
+   ```
+   
+   Ensure you've configured the appropriate auth method in your server config:
+   
+   ```typescript
+   {
+     // Bearer token auth
+     headers: {
+       "Authorization": "Bearer ${MY_TOKEN}" // Will be replaced with env var
+     }
+     
+     // Or OAuth
+     auth: {
+       oauth: {
+         redirectUrl: "http://localhost:3000/callback",
+         clientId: "my-client-id"
+       }
+     }
+   }
+   ```
+
+## Complete Examples
+
+See the following example files for complete working implementations:
+
+- [`examples/mcpClient.ts`](./examples/mcpClient.ts) - Using MCP with LLM interpretation
+- [`examples/mcpDirectTools.ts`](./examples/mcpDirectTools.ts) - Using MCP tools directly
+
+## Running the Examples
+
+To run the examples:
+
+```bash
+# Install the MCP filesystem server
+yarn add -D @modelcontextprotocol/server-filesystem
+
+# Run the LLM-based example
+yarn example:mcp
+
+# Run the direct tool call example
+yarn example:mcpDirect
+
+```
+
+## Available MCP Servers
+
+Here are some useful MCP servers you can use:
+
+- `@modelcontextprotocol/server-filesystem`: File system access
+- `@modelcontextprotocol/server-process`: Process execution
+- `@modelcontextprotocol/server-http`: HTTP requests
+
+Install these packages as development dependencies to use them in your project.
+
+## Custom MCP Servers
+
+You can also create your own MCP servers following the Model Context Protocol specification. See the [MCP documentation](https://github.com/contextscript/modelcontextprotocol) for more details.
+
+## Type Definitions
+
+### MCPServersMap
+
+Configuration for MCP servers:
+
+```typescript
+type MCPServersMap = Record<string, MCPServerConfig>;
+
+type MCPServerConfig = {
+  // Command to spawn for stdio transport
+  command?: string;
+  
+  // Arguments for the command
+  args?: string[];
+  
+  // URL for HTTP transport (alternative to command+args)
+  url?: string;
+  
+  // Transport type (inferred if not specified)
+  type?: 'stdio' | 'http' | 'custom';
+  
+  // HTTP mode (for HTTP transport)
+  mode?: 'streamable' | 'sse';
+  
+  // Headers for HTTP transport
+  headers?: Record<string, string>;
+  
+  // Authentication configuration
+  auth?: MCPAuthConfig;
+  
+  // Environment variables (for stdio transport)
+  env?: Record<string, string>;
+  
+  // Disable this server
+  disabled?: boolean;
+  
+  // Additional configuration options
+  // See MCPConfigTypes.ts for full details
+};
+```
+
+### MCPToolSchema
+
+Schema information for MCP tools:
+
+```typescript
+type McpToolSchema = {
+  // Original name of the tool on the MCP server
+  name: string;
+  
+  // Combined name used for LLM tool calling
+  llmToolName: string;
+  
+  // Tool description
+  description: string;
+  
+  // Zod schema for the tool's parameters
+  parameters: z.ZodObject<any>;
+  
+  // Server key for this tool
+  serverKey: string;
+};
+```
+
+---
+
+# Source: docs/reference/image-details.md
+
+# Working with Images in callllm
+
+> User-facing media documentation starts at [Media: images, video, and audio](./docs/guides/media.md). This page is a deeper image-specific reference.
+
+This guide explains how to use `callllm` with models that support image inputs and image generation/editing.
+
+## Prerequisites
+
+- A model that supports image input or image output, depending on the operation
+- Provider API key configured with access to multimodal models
+
+## Input Methods
+
+`callllm` supports two primary methods for including images in your LLM requests:
+
+### Method 1: Using `file` and `input.image.detail`
+
+This is the recommended approach for most use cases:
+
+```typescript
+const response = await caller.call({
+  text: "Analyze this image",
+  file: "https://example.com/path/to/image.jpg",
+  input: {
+    image: { detail: "high" }
+  }
+});
+```
+
+Parameters:
+
+- **file**: Path to an image file. Can be:
+  - URL string (web image)
+  - Local file path (will be read from disk)
+  - Base64-encoded image data
+
+- **input.image.detail**: Controls the resolution/detail level for the image:
+  - **"low"**: Lower resolution, fewer tokens, faster processing
+  - **"high"**: Higher resolution, more tokens, better for detailed analysis
+  - **"auto"** (default): Let the provider choose based on image content
+
+### Method 2: Using File Placeholders
+
+For advanced use cases or when embedding images directly in messages:
+
+```typescript
+const response = await caller.call("<file:path/to/image.jpg> What's in this image?");
+```
+
+- The placeholder format `<file:path>` will be detected and converted to the appropriate format for the provider.
+- This approach is especially useful when you want to include the image inline with your text prompt.
+- For multiple images, use multiple placeholders: `<file:image1.jpg> and <file:image2.jpg> Compare these images.`
+
+## Token Usage and Cost Considerations
+
+Images consume a significant number of tokens compared to text, which affects:
+
+1. **Context Window**: Images take up space in your context window, potentially limiting text content.
+2. **Token Usage**: Images typically use hundreds to thousands of tokens.
+3. **Cost**: Image tokens are billed at the same rate as text tokens, making image calls more expensive.
+
+### Token Consumption by Detail Level
+
+Approximate token usage for a typical image:
+
+| Detail Level | Approximate Tokens | Use Case |
+|--------------|-------------------|----------|
+| Low          | ~85 tokens        | Simple visual recognition, basic image content |
+| Auto         | ~130 tokens       | General purpose, provider optimized |
+| High         | ~170 tokens       | Detailed text recognition, complex visual analysis |
+
+### Tracking Image Token Usage
+
+`callllm` tracks image token usage in response metadata when the provider reports enough usage information or the framework can estimate it:
+
+```typescript
+const response = await caller.call("Analyze this image", {
+  file: "path/to/image.jpg"
+});
+
+// Access image token usage 
+const imageTokens = response[0].metadata?.usage?.tokens.input.image || 0;
+console.log(`Image used ${imageTokens} tokens`);
+```
+
+This information is also included in usage callbacks for real-time token monitoring.
+
+## Best Practices
+
+1. **Use appropriate detail level**: Choose "low" when detailed analysis isn't required.
+2. **Resize images before sending**: Sending smaller images reduces token usage.
+3. **Use streaming**: For better user experience when processing image-heavy requests.
+4. **Consider batching**: Group related image analyses to avoid multiple API calls.
+5. **Monitor usage**: Track image token consumption to control costs.
+
+## Provider-Specific Considerations
+
+- **OpenAI**: 
+  - GPT-4o supports both URLs and base64-encoded images
+  - Image tokens count against both input and output token limits
+
+- **Gemini**:
+  - Gemini image-capable models support image input through the Gemini adapter.
+  - Image generation and editing support depends on the selected model catalog entry.
+
+## Examples
+
+See [examples/imageInput.ts](./examples/imageInput.ts) for a complete working example.
+
+```typescript
+// Example with a web image
+const response = await caller.call({
+  text: "Describe this image",
+  file: "https://example.com/path/to/image.jpg",
+  input: { image: { detail: "high" } }
+});
+
+// Example with a local file
+const response = await caller.call({
+  text: "What text is in this image?",
+  file: "./screenshots/receipt.jpg",
+  input: { image: { detail: "high" } }
+});
+``` 
+
+## Image Output and Model Selection
+
+Image input chat and image output are different model requirements.
+
+- Image input chat requires a chat model with image input support.
+- Image output requires an image-capable model and a provider adapter that implements the image operation interface.
+
+When the constructor uses a preset or policy, `callllm` resolves the model at request time after it sees the actual image operation:
+
+```typescript
+const caller = new LLMCaller(['openai', 'gemini'], 'fast');
+
+const result = await caller.call({
+  text: 'Create a clean app icon',
+  output: { image: { size: '1024x1024', quality: 'high' } },
+  outputPath: './icon.png'
+});
+
+console.log(result[0].metadata?.provider);
+console.log(result[0].metadata?.model);
+console.log(result[0].metadata?.selectionMode); // preset
+```
+
+The resolver infers the image operation from the request:
+
+| Request shape | Inferred operation |
+| --- | --- |
+| `output.image` only | generate |
+| `output.image` plus `file` or one `files[]` item | edit |
+| `output.image` plus multiple `files[]` items | composite edit |
+| `output.image` plus `mask` | masked edit |
+
+These inferred capabilities are hard filters. If the selected exact model cannot perform the requested operation, the call fails instead of silently switching models.
+
+For advanced routing, use a policy:
+
+```typescript
+const caller = new LLMCaller(['openai', 'gemini'], {
+  preset: 'balanced',
+  prefer: { cost: 0.35, latency: 0.25 },
+  constraints: {
+    maxImagePricePerImage: 0.05
+  },
+  resolution: { explain: true }
+});
+```
+
+---
+
+# Source: docs/migration/model-selection.md
+
+# Model Selection Migration Notes
+
+This release keeps the existing `LLMCaller` constructor shape:
+
+```ts
+new LLMCaller(provider, modelOrSelection, systemMessage?, options?)
+```
+
+Existing exact model usage remains valid:
+
+```ts
+new LLMCaller('openai', 'gpt-5-mini');
+```
+
+Existing simple selection strings also remain valid:
+
+```ts
+new LLMCaller('openai', 'fast');
+new LLMCaller('openai', 'cheap');
+new LLMCaller('openai', 'balanced');
+new LLMCaller('openai', 'premium');
+```
+
+## Alias to Preset Semantics
+
+The strings `fast`, `cheap`, `balanced`, and `premium` should now be understood as presets, not fixed aliases.
+
+Previously, code could reasonably expect an alias-like name to resolve to a particular model. Now these values represent dynamic policies. They resolve at request time after the framework infers the operation and required capabilities.
+
+For example, the same caller can select different models for:
+
+- normal chat
+- streaming
+- tool calling
+- image input
+- image generation or editing
+- video generation
+- embeddings
+- audio transcription, translation, or speech synthesis
+- reasoning requests
+
+This is intentional. It prevents a text-only model from being selected for image generation, an embedding request, or a tool call.
+
+## Exact Models Are Strict
+
+Exact model strings are still exact:
+
+```ts
+new LLMCaller('openai', 'gpt-5-mini');
+```
+
+Exact models are not scored, replaced, or upgraded. They are validated against the actual request. If the exact model cannot satisfy the request, the call fails with a model resolution error.
+
+## Preset Name Collisions
+
+If a provider has a real model named `fast`, `cheap`, `balanced`, or `premium`, use the explicit exact-model form:
+
+```ts
+new LLMCaller('some-provider', { model: 'fast' });
+```
+
+This forces exact model mode.
+
+## Multi-Provider Scope
+
+Provider arrays are now supported:
+
+```ts
+new LLMCaller(['openai', 'gemini', 'openrouter'], 'balanced');
+```
+
+The provider array is the maximum provider scope. The resolver never selects outside that list.
+
+Exact model strings across provider arrays must be unambiguous. If more than one scoped provider has the same model name, specify the provider:
+
+```ts
+new LLMCaller(['cerebras', 'venice'], {
+  provider: 'venice',
+  model: 'llama-3.3-70b'
+});
+```
+
+## Policy Objects
+
+Advanced users can use policies:
+
+```ts
+new LLMCaller(['openai', 'gemini'], {
+  preset: 'fast',
+  prefer: {
+    cost: 0.25
+  },
+  constraints: {
+    maxOutputPricePerMillion: 5
+  }
+});
+```
+
+`prefer` is soft scoring. `constraints` are hard filters.
+
+Empty selection objects are invalid:
+
+```ts
+new LLMCaller('openai', {}); // invalid
+```
+
+Use `balanced` or `{ preset: 'balanced' }`.
+
+## Per-Call Provider Option Override
+
+`settings.providerOptions.model` is preserved for compatibility:
+
+```ts
+await caller.call('Use this exact model once', {
+  settings: {
+    providerOptions: {
+      model: 'gpt-5-mini'
+    }
+  }
+});
+```
+
+It is treated as an exact model override inside the constructor provider scope. It is not interpreted as a preset and it is capability-validated. Prefer constructor exact selection for new code.
+
+## Response Metadata
+
+Responses now include stable metadata:
+
+```ts
+response[0].metadata?.provider;
+response[0].metadata?.model;
+response[0].metadata?.selectionMode;
+```
+
+When `resolution.explain: true` is enabled, responses can include `metadata.modelResolution`. This object is diagnostic and may change as scoring and catalogs evolve.
+
+## Embeddings
+
+Embedding calls can now use constructor presets and policies, and the resolver will choose embedding-capable models. For retrieval indexes, exact model selection is still recommended so stored documents and queries use the same vector space.
