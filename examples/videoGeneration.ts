@@ -8,7 +8,7 @@ const __dirname = getDirname(import.meta.url);
 dotenv.config();
 
 async function run() {
-    const caller = new LLMCaller('openai', 'sora-2-pro');
+    const caller = new LLMCaller('gemini', 'premium');
 
 
     // Blocking example: create, poll, and auto-download to output/video.mp4

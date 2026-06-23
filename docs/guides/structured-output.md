@@ -60,6 +60,44 @@ const response = await caller.call('Create metadata for this article.', {
 
 The schema layer sanitizes/coerces schemas for provider compatibility where possible.
 
+Prefer Zod over a JSON Schema string when post-response validation matters. String JSON Schema is accepted on the outbound path but is not enforced against responses, so `metadata.validationErrors` will not be populated. JSON Schema as a plain object is also accepted.
+
+## How Schemas Are Normalized for Providers
+
+`callllm` rewrites your schema before sending it to providers that require strict structured output (for example OpenAI). The rewrite is conservative and predictable:
+
+- every property is forced into `required`
+- `additionalProperties: false` is set on every object level
+- validation keywords such as `minimum`, `maximum`, `minLength`, `pattern`, `format` are removed
+- `default` values are removed
+- root-level unions are downgraded to a generic JSON object format
+- descriptions (`.describe(...)`) are preserved and reach the model
+
+This means:
+
+- the model is expected to emit every declared field on every call
+- constraints like `min`, `max`, `regex`, `refine` are only enforced after the response, not by the provider
+- a `.default(value)` is applied during response coercion, not by the provider
+
+## Zod Feature Mapping
+
+| Zod | Outbound schema | Response handling |
+| --- | --- | --- |
+| `z.string()`, `z.number()`, `z.boolean()` | direct type mapping | direct |
+| `z.enum([...])` | string with `enum` values | direct |
+| `z.array(item)` | array with `items` | direct |
+| `z.object({...})` | object with all keys required and `additionalProperties: false` | direct |
+| `z.record(K, V)` | object with `additionalProperties: V` (open map) | direct |
+| `.describe('...')` | copied to `description` | n/a |
+| `.optional()` | forced back into `required` for strict providers | `null` on optional fields is pruned during validation |
+| `.nullable()` | unwrapped to inner type | `null` is accepted at validation time |
+| `.default(value)` | removed from outbound schema | applied during response coercion if field is missing |
+| `.min(n)`, `.max(n)`, `.regex(...)`, `.refine(...)` | removed from outbound schema | enforced by Zod against the response |
+| `z.union([...])`, `z.discriminatedUnion(...)` | flattened to selector + per-option fields, root-level unions downgraded | unflattened back to original shape |
+| `.passthrough()` | not supported | n/a |
+
+If `jsonSchema.name` is set, the response is unwrapped from `{ [name]: data }` automatically.
+
 ## JSON Modes
 
 Configure JSON behavior with `settings.jsonMode`:
@@ -124,7 +162,11 @@ if (!first.contentObject) {
 ## Guidance
 
 - Use Zod for TypeScript-first application code.
-- Use JSON Schema when interoperating with existing API schemas.
+- Use JSON Schema when interoperating with existing API schemas, and keep your own validation if you rely on it.
 - Use `native-only` when provider-native structured output is a hard requirement.
 - Use `fallback` when model flexibility matters more than native JSON mode.
 - Keep schemas small and explicit. Deep or ambiguous schemas are harder for models.
+- For strict providers, prefer required fields with `.nullable()` or empty strings/arrays over `.optional()`. Optional fields are still required on the wire for strict providers.
+- Treat `.min`, `.max`, `.regex`, and `.refine` as post-response validation only. The model is not told about them, so they should not be your primary way to shape output. Convey shape in `.describe(...)` and use refinements as a safety net.
+- Keep a plain `z.object(...)` at the root. Root-level unions degrade to generic JSON object mode.
+- For multi-stage extraction pipelines, keep the LLM-facing schema flat (arrays of flat records, strings, numbers, enums) and convert to your internal nested domain shape deterministically after validation.

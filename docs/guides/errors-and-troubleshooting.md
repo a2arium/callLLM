@@ -81,10 +81,28 @@ if (!first.contentObject) {
 }
 ```
 
+`metadata.validationErrors` is an array of `{ path: (string | number)[], message: string }`. `path` is the location of the failing field in the response object.
+
+JSON validation failures are retried up to `maxRetries`. Each retry replays the same request without injecting the prior validation error back into the prompt. If the schema is unsatisfiable by the model, retries will not converge. Fix the schema rather than raising `maxRetries`.
+
+To inspect the failing field instead of triggering a silent retry, set `maxRetries: 0`:
+
+```ts
+const result = await caller.call('Return JSON.', {
+  jsonSchema: { name: 'Result', schema },
+  responseFormat: 'json',
+  settings: { maxRetries: 0 }
+});
+
+console.log(result[0].metadata?.validationErrors);
+```
+
 Fixes:
 
 - simplify the schema
 - add clearer field descriptions
+- avoid `.refine`, `.min`, `.max`, and `.regex` as your primary shape contract. They are removed from the schema sent to providers and only run on the response, so a strict refinement can fail every retry without the provider being aware of it.
+- prefer required fields with `.nullable()` or empty strings/arrays over `.optional()`
 - use `jsonMode: 'native-only'` if native JSON is required
 - use a more capable model or `premium` preset
 - handle validation errors as part of your app flow

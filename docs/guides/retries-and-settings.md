@@ -130,6 +130,10 @@ The default retry manager uses exponential backoff with a base delay of 1000 ms:
 
 Provider rate limits, transient network failures, and server errors are typical retry candidates. Authentication, invalid request, schema, and capability errors should be fixed rather than retried.
 
+## JSON Validation Retries
+
+When a response fails JSON parsing or schema validation, the call is retried up to `maxRetries`. Each retry replays the same request. The prior validation error is not injected back into the prompt. If the schema is unsatisfiable by the model, retries will not converge, so fix the schema instead of raising `maxRetries`. See [Structured Output](./structured-output.md) for schema patterns that survive strict provider modes, and [Errors and Troubleshooting](./errors-and-troubleshooting.md) for inspecting `metadata.validationErrors`.
+
 ## Content Retries
 
 `shouldRetryDueToContent` controls retries for incomplete or invalid model content, separate from network/provider retries:
