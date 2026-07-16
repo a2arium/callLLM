@@ -223,6 +223,10 @@ export type VideoOutputOpts = {
 
 // Define the new options structure for call/stream methods
 export type LLMCallOptions = {
+    /** Abort this operation. The signal is runtime-only and is not sent in provider payloads. */
+    signal?: AbortSignal;
+    /** Abort this operation after the given positive integer number of milliseconds. */
+    timeoutMs?: number;
     /** Optional text prompt (alternative to passing string directly) */
     text?: string;
     /** Optional file path, URL, or base64 data for image input */

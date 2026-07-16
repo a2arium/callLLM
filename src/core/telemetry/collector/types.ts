@@ -65,6 +65,9 @@ export type ChoiceEvent = {
 };
 
 export type ConversationSummary = {
+    callId?: string;
+    terminalAt?: number;
+    terminalReason?: import('../../../interfaces/ExecutionInterfaces.ts').LLMTerminalReason;
     totalTokens?: number;
     totalCost?: number;
     llmCallsCount?: number;
@@ -97,5 +100,4 @@ export type TelemetryProvider = {
     flush?(): Promise<void> | void;
     shutdown?(): Promise<void> | void;
 };
-
 

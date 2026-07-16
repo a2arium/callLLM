@@ -1,4 +1,6 @@
-export type UsageCallback = (usage: UsageData) => void | Promise<void>;
+import type { LLMExecutionControl } from './ExecutionInterfaces.ts';
+
+export type UsageCallback = (usage: UsageData, control?: LLMExecutionControl) => void | Promise<void>;
 
 export type UsageData = {
     callerId: string;

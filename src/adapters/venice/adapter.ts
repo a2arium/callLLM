@@ -10,6 +10,8 @@ import { RetryManager } from '../../core/retry/RetryManager.ts';
 import { VeniceConverter } from './converter.ts';
 import { VeniceStreamHandler } from './stream.ts';
 import { mapVeniceError, VeniceAdapterError } from './errors.ts';
+import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
+import { resolveLLMCancellationError } from '../../core/execution/errors.ts';
 
 /**
  * Adapter for Venice.ai using standard OpenAI Chat Completions API
@@ -49,19 +51,23 @@ export class VeniceAdapter extends BaseAdapter implements LLMProvider, LLMProvid
         this.streamHandler = undefined;
     }
 
-    async chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse> {
+    async chatCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<UniversalChatResponse> {
         const providerParams = await (this.converter as VeniceConverter).convertToProviderParams(model, params);
         try {
-            const response = await this.client.chat.completions.create(providerParams as any);
+            const response = control?.signal
+                ? await this.client.chat.completions.create(providerParams as any, { signal: control.signal })
+                : await this.client.chat.completions.create(providerParams as any);
             return (this.converter as VeniceConverter).convertFromProviderResponse(response);
         } catch (err) {
+            const cancellation = resolveLLMCancellationError(err, control?.signal);
+            if (cancellation) throw cancellation;
             const mapped = mapVeniceError(err);
             logger.error('API call failed:', mapped);
             throw mapped;
         }
     }
 
-    async streamCall(model: string, params: UniversalChatParams): Promise<AsyncIterable<UniversalStreamResponse>> {
+    async streamCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<AsyncIterable<UniversalStreamResponse>> {
         const log = logger.createLogger({ prefix: 'VeniceAdapter.streamCall' });
         log.debug('Validating and converting params for streaming:', params);
 
@@ -69,10 +75,14 @@ export class VeniceAdapter extends BaseAdapter implements LLMProvider, LLMProvid
         log.debug('Converted Venice streaming params:', veniceParams);
 
         try {
-            const stream = await this.client.chat.completions.create(veniceParams as any);
+            const stream = control?.signal
+                ? await this.client.chat.completions.create(veniceParams as any, { signal: control.signal })
+                : await this.client.chat.completions.create(veniceParams as any);
             this.streamHandler = new VeniceStreamHandler(this.tokenCalculator);
             return this.streamHandler.handleStream(stream as any);
         } catch (error: unknown) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             const mapped = mapVeniceError(error);
             log.error('Streaming call failed:', mapped);
             throw mapped;

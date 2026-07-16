@@ -12,6 +12,7 @@ import type {
     TranslationResponse,
     SpeechResponse
 } from '../../interfaces/UniversalInterfaces.ts';
+import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
 import type { LLMProvider } from '../../interfaces/LLMProvider.ts';
 
 export class AdapterError extends Error {
@@ -35,8 +36,8 @@ export abstract class BaseAdapter implements LLMProvider {
         this.config = config;
     }
 
-    abstract chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse>;
-    abstract streamCall(model: string, params: UniversalChatParams): Promise<AsyncIterable<UniversalStreamResponse>>;
+    abstract chatCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<UniversalChatResponse>;
+    abstract streamCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<AsyncIterable<UniversalStreamResponse>>;
     abstract convertToProviderParams(model: string, params: UniversalChatParams): unknown;
     abstract convertFromProviderResponse(response: unknown): UniversalChatResponse;
     abstract convertFromProviderStreamResponse(response: unknown): UniversalStreamResponse;
@@ -72,4 +73,4 @@ export abstract class BaseAdapter implements LLMProvider {
             throw new AdapterError('API key is required');
         }
     }
-} 
+}

@@ -10,6 +10,8 @@ import { RetryManager } from '../../core/retry/RetryManager.ts';
 import { CerebrasConverter } from './converter.ts';
 import { CerebrasStreamHandler } from './stream.ts';
 import { mapCerebrasError, CerebrasAdapterError } from './errors.ts';
+import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
+import { resolveLLMCancellationError } from '../../core/execution/errors.ts';
 
 /**
  * Adapter for Cerebras Cloud SDK chat/completions
@@ -52,7 +54,7 @@ export class CerebrasAdapter extends BaseAdapter implements LLMProvider {
         this.streamHandler = undefined;
     }
 
-    async chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse> {
+    async chatCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'CerebrasAdapter.chatCall' });
         log.debug('Validating and converting params:', params);
 
@@ -62,20 +64,24 @@ export class CerebrasAdapter extends BaseAdapter implements LLMProvider {
 
         try {
             // Use chat.completions.create per SDK
-            const response = await this.client.chat.completions.create(cerebrasParams as unknown as Parameters<typeof this.client.chat.completions.create>[0]);
+            const response = control?.signal
+                ? await this.client.chat.completions.create(cerebrasParams as any, { signal: control.signal })
+                : await this.client.chat.completions.create(cerebrasParams as any);
 
             // Convert back to universal response
             const universalResponse = this.converter.convertFromProviderResponse(response);
             log.debug('Converted universal response:', universalResponse);
             return universalResponse;
         } catch (error: unknown) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             const mapped = mapCerebrasError(error);
             logger.createLogger({ prefix: 'CerebrasAdapter.chatCall' }).error('API call failed:', mapped);
             throw mapped;
         }
     }
 
-    async streamCall(model: string, params: UniversalChatParams): Promise<AsyncIterable<UniversalStreamResponse>> {
+    async streamCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<AsyncIterable<UniversalStreamResponse>> {
         const log = logger.createLogger({ prefix: 'CerebrasAdapter.streamCall' });
         log.debug('Validating and converting params for streaming:', params);
 
@@ -85,14 +91,21 @@ export class CerebrasAdapter extends BaseAdapter implements LLMProvider {
 
         try {
             // Create stream from SDK
-            const stream = await this.client.chat.completions.create(
-                cerebrasParams as unknown as Parameters<typeof this.client.chat.completions.create>[0]
-            );
+            const stream = control?.signal
+                ? await this.client.chat.completions.create(
+                    cerebrasParams as any,
+                    { signal: control.signal }
+                )
+                : await this.client.chat.completions.create(
+                    cerebrasParams as any
+                );
 
             // Initialize stream handler
             this.streamHandler = new CerebrasStreamHandler(this.tokenCalculator);
-            return this.streamHandler.handleStream(stream as AsyncIterable<unknown>);
+            return this.streamHandler.handleStream(stream as unknown as AsyncIterable<unknown>);
         } catch (error: unknown) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             const mapped = mapCerebrasError(error);
             logger.createLogger({ prefix: 'CerebrasAdapter.streamCall' }).error('Streaming call failed:', mapped);
             throw mapped;
@@ -114,5 +127,3 @@ export class CerebrasAdapter extends BaseAdapter implements LLMProvider {
 }
 
 export default CerebrasAdapter;
-
-

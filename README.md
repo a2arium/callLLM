@@ -494,6 +494,31 @@ yarn example:speechSynthesis
 yarn example:speechTranscription
 ```
 
+## Cancellation and deadlines
+
+`call()` and `stream()` accept either an external `AbortSignal`, a deadline in milliseconds, or both:
+
+```ts
+import { LLMAbortError, LLMTimeoutError } from 'callllm';
+
+const controller = new AbortController();
+
+try {
+  const response = await caller.call('Summarize this', {
+    signal: controller.signal,
+    timeoutMs: 30_000
+  });
+} catch (error) {
+  if (error instanceof LLMTimeoutError) console.error(`Timed out after ${error.timeoutMs}ms`);
+  else if (error instanceof LLMAbortError) console.error('Cancelled');
+  else throw error;
+}
+```
+
+`timeoutMs` must be an integer from `1` through `2_147_483_647`. A stream deadline starts when `stream()` is invoked, not when its first item is read. Local tools and usage callbacks may accept an optional second `{ signal }` argument for cooperative cancellation.
+
+Provider cancellation is best effort: a remote media job may continue after the local operation has stopped. Cancelled controlled calls do not commit conversation history or final image/video output files, and late usage callbacks are suppressed.
+
 ## License
 
 MIT

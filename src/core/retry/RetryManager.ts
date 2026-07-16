@@ -39,7 +39,8 @@ export class RetryManager {
      */
     async executeWithRetry<T>(
         operation: () => Promise<T>,
-        shouldRetry: (error: unknown) => boolean
+        shouldRetry: (error: unknown) => boolean,
+        control?: LLMExecutionControl
     ): Promise<T> {
         let attempt = 0;
         let lastError: unknown;
@@ -47,6 +48,7 @@ export class RetryManager {
         // Loop until a successful operation or until retries are exhausted.
         while (attempt <= (this.config.maxRetries ?? 3)) {
             try {
+                throwIfAborted(control?.signal);
                 if (attempt > 0) {
                     // Extract retry reason from the error
                     let retryReason = 'Unknown reason';
@@ -60,6 +62,9 @@ export class RetryManager {
                 // Execute and return the successful result from the operation.
                 return await operation();
             } catch (error) {
+                if (isLLMCancellationError(error) || control?.signal?.aborted) {
+                    throw cancellationReason(control?.signal, error);
+                }
                 lastError = error;
                 // If the error is not deemed retryable, do not continue trying.
                 if (!shouldRetry(error)) break;
@@ -71,7 +76,7 @@ export class RetryManager {
                 // Calculate an exponential backoff delay.
                 const delay = baseDelay * Math.pow(2, attempt); // Use attempt for delay calculation
                 // Wait for the specified delay before the next attempt.
-                await new Promise(resolve => setTimeout(resolve, delay));
+                await abortableDelay(delay, control?.signal);
             }
         }
         // If all retry attempts fail, throw an error with the details of the last encountered error.
@@ -84,3 +89,33 @@ export class RetryManager {
         }
     }
 }
+
+function cancellationReason(signal?: AbortSignal, fallback?: unknown): Error {
+    if (isLLMCancellationError(signal?.reason)) return signal.reason;
+    if (isLLMCancellationError(fallback)) return fallback;
+    return new LLMAbortError('LLM operation was aborted', { cause: signal?.reason ?? fallback });
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) throw cancellationReason(signal);
+}
+
+function abortableDelay(delay: number, signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
+    if (!signal) return new Promise(resolve => setTimeout(resolve, delay));
+
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, delay);
+        const onAbort = (): void => {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', onAbort);
+            reject(cancellationReason(signal));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
+import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
+import { LLMAbortError, isLLMCancellationError } from '../execution/errors.ts';

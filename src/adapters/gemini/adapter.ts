@@ -27,6 +27,30 @@ import { GeminiStreamHandler } from './stream.ts';
 import { mapGeminiError, GeminiAdapterError } from './errors.ts';
 import type { GeminiResponse } from './types.ts';
 import { normalizeUsage } from '../../core/telemetry/UsageNormalizer.ts';
+import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
+import { resolveLLMCancellationError } from '../../core/execution/errors.ts';
+
+function withAbortSignal<T extends Record<string, any>>(params: T, signal?: AbortSignal): T {
+    if (!signal) return params;
+    return { ...params, config: { ...(params.config ?? {}), abortSignal: signal } };
+}
+
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+    if (!signal) return new Promise(resolve => setTimeout(resolve, ms));
+    if (signal.aborted) return Promise.reject(resolveLLMCancellationError(signal.reason, signal));
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        const onAbort = (): void => {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', onAbort);
+            reject(resolveLLMCancellationError(signal.reason, signal));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
 
 /**
  * Adapter for Google Gemini using the @google/genai SDK
@@ -60,7 +84,7 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
         this.streamHandler = undefined;
     }
 
-    async chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse> {
+    async chatCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'GeminiAdapter.chatCall' });
         log.debug('Converting params for model:', model);
 
@@ -68,7 +92,7 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
         log.debug('Converted Gemini params for model:', model);
 
         try {
-            const response = await this.client.models.generateContent(geminiParams);
+            const response = await this.client.models.generateContent(withAbortSignal(geminiParams, control?.signal));
             const universalResponse = this.converter.convertFromProviderResponse(response as GeminiResponse, model);
             log.debug('Converted universal response:', {
                 hasContent: universalResponse.content !== null,
@@ -76,13 +100,15 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
             });
             return universalResponse;
         } catch (error: unknown) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             const mapped = mapGeminiError(error);
             logger.createLogger({ prefix: 'GeminiAdapter.chatCall' }).error('API call failed:', mapped);
             throw mapped;
         }
     }
 
-    async streamCall(model: string, params: UniversalChatParams): Promise<AsyncIterable<UniversalStreamResponse>> {
+    async streamCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<AsyncIterable<UniversalStreamResponse>> {
         const log = logger.createLogger({ prefix: 'GeminiAdapter.streamCall' });
         log.debug('Converting params for streaming, model:', model);
 
@@ -90,10 +116,12 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
         log.debug('Converted Gemini streaming params for model:', model);
 
         try {
-            const stream = await this.client.models.generateContentStream(geminiParams);
+            const stream = await this.client.models.generateContentStream(withAbortSignal(geminiParams, control?.signal));
             this.streamHandler = new GeminiStreamHandler(this.tokenCalculator);
             return this.streamHandler.handleStream(stream);
         } catch (error: unknown) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             const mapped = mapGeminiError(error);
             logger.createLogger({ prefix: 'GeminiAdapter.streamCall' }).error('Streaming call failed:', mapped);
             throw mapped;
@@ -144,7 +172,7 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
         }
     }
 
-    async imageCall(model: string, op: ImageOp, params: ImageCallParams): Promise<UniversalChatResponse> {
+    async imageCall(model: string, op: ImageOp, params: ImageCallParams, control?: LLMExecutionControl): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'GeminiAdapter.imageCall' });
         log.debug('Image call:', { model, op });
 
@@ -181,7 +209,7 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
                 config,
             };
 
-            const response = await this.client.models.generateContent(geminiParams as any);
+            const response = await this.client.models.generateContent(withAbortSignal(geminiParams as any, control?.signal));
             const universal = this.converter.convertFromProviderResponse(response as GeminiResponse, model);
 
             // If the response has an image, set the operation type and save to file
@@ -207,6 +235,8 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
 
             return universal;
         } catch (error: unknown) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             const mapped = mapGeminiError(error);
             log.error('Image call failed:', mapped);
             throw mapped;
@@ -638,7 +668,7 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
     // LLMProviderVideo (Veo)
     // ═══════════════════════════════════════════
 
-    async videoCall(model: string, params: VideoCallParams): Promise<UniversalChatResponse> {
+    async videoCall(model: string, params: VideoCallParams, control?: LLMExecutionControl): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'GeminiAdapter.videoCall' });
         log.debug('Video call:', { model });
 
@@ -682,14 +712,14 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
             const operation = await this.client.models.generateVideos({
                 model,
                 source: source as any,
-                config: Object.keys(config).length > 0 ? config as any : undefined,
+                config: { ...config, ...(control?.signal ? { abortSignal: control.signal } : {}) } as any,
             });
 
             // If polling is requested, wait for completion
             if (params.wait === 'poll') {
                 let op = operation;
                 while (!op.done) {
-                    await new Promise(resolve => setTimeout(resolve, 10000));
+                    await abortableDelay(10000, control?.signal);
                     op = await this.client.operations.getVideosOperation({ operation: op } as any);
                 }
 
@@ -768,6 +798,8 @@ export class GeminiAdapter extends BaseAdapter implements LLMProvider, LLMProvid
                 },
             };
         } catch (error: unknown) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             const mapped = mapGeminiError(error);
             log.error('Video call failed:', mapped);
             throw mapped;

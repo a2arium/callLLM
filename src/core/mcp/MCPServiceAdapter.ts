@@ -20,6 +20,7 @@ import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/au
 import { RetryManager } from '../retry/RetryManager.ts';
 import treeKill from 'tree-kill';
 import { ChildProcess } from 'child_process';
+import { resolveLLMCancellationError, isLLMCancellationError } from '../execution/errors.ts';
 
 // Promisify tree-kill to make it easier to use with async/await
 const treeKillAsync = (pid: number, signal?: string): Promise<void> => {
@@ -958,6 +959,8 @@ export class MCPServiceAdapter {
 
                 return tools;
             } catch (error) {
+                const cancellation = resolveLLMCancellationError(error, options?.signal);
+                if (cancellation) throw cancellation;
                 log.error(`Error fetching tools from server ${serverKey}:`, error);
 
                 // Check for authentication errors
@@ -1074,7 +1077,10 @@ export class MCPServiceAdapter {
 
         // Process arguments to handle any environment variable references
         const processedArgs = this.processArguments(serverKey, toolName, args);
-        const toolCallRequestOptions = { timeout: resolveMcpToolCallTimeoutMs(options) };
+        const toolCallRequestOptions = {
+            timeout: resolveMcpToolCallTimeoutMs(options),
+            ...(options?.signal ? { signal: options.signal } : {})
+        };
 
         // Define the operation to execute with potential retries
         const operation = async () => {
@@ -1201,8 +1207,9 @@ export class MCPServiceAdapter {
         // Otherwise use the retry manager
         try {
             log.debug(`Executing tool ${toolName} on server ${serverKey} with retry enabled`);
-            return await this.retryManager.executeWithRetry(operation, shouldRetryPredicate);
+            return await this.retryManager.executeWithRetry(operation, shouldRetryPredicate, options);
         } catch (error) {
+            if (isLLMCancellationError(error)) throw error;
             // Ensure all errors are properly wrapped
             if (error instanceof MCPAuthenticationError ||
                 error instanceof MCPToolCallError ||
@@ -1875,4 +1882,4 @@ export class MCPServiceAdapter {
     public listConfiguredServers(): string[] {
         return Array.from(this.serverConfigs.keys());
     }
-} 
+}

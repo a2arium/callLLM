@@ -22,6 +22,7 @@ import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
 import type { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts'
 import type { ConversationContext, LLMCallContext, PromptMessage } from '../telemetry/collector/types.ts'
 import type { ProviderExecutionContext } from '../caller/ProviderExecution.ts';
+import type { CallExecutionContext } from '../execution/CallExecutionContext.ts';
 
 export class ChatController {
     // Keep track of the orchestrator - needed for recursive calls
@@ -88,9 +89,15 @@ export class ChatController {
     async execute<T extends z.ZodType | undefined = undefined>(
         // Update signature to accept UniversalChatParams
         params: UniversalChatParams,
-        execution?: ProviderExecutionContext
+        execution?: ProviderExecutionContext,
+        context?: CallExecutionContext
     ): Promise<UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>> {
         const log = logger.createLogger({ prefix: 'ChatController.execute' });
+        const usageTracker = context?.usageCallback
+            ? new UsageTracker(new TokenCalculator(), context.usageCallback, context.callerId)
+            : this.usageTracker;
+        const telemetryCollector = context?.telemetryCollector ?? this.telemetryCollector;
+        const conversationCtx = context?.conversationContext ?? this.conversationCtx;
 
         log.debug('Executing chat call with params:', params);
 
@@ -111,16 +118,17 @@ export class ChatController {
         let llmSpanEnded = false;
 
         try {
+            context?.throwIfAborted();
             // --- Telemetry: Collector start LLM ---
             const provider = execution?.provider ?? this.providerManager.getProvider();
             const providerName = execution?.providerName
                 ?? (this.providerManager.getCurrentProviderName?.() as unknown as string)
                 ?? provider.constructor.name
                 ?? 'unknown';
-            if (this.telemetryCollector && this.conversationCtx) {
+            if (telemetryCollector && conversationCtx) {
                 // Build toolsAvailable list as just tool names
                 const toolsAvailable = (tools || []).map(t => t.name);
-                llmCtx = this.telemetryCollector.startLLM(this.conversationCtx, {
+                llmCtx = telemetryCollector.startLLM(conversationCtx, {
                     provider: String(providerName).toLowerCase(),
                     model,
                     streaming: false,
@@ -134,7 +142,7 @@ export class ChatController {
                     content: typeof m.content === 'string' ? m.content : String(m.content ?? ''),
                     sequence: idx
                 }));
-                this.telemetryCollector.addPrompt(llmCtx, promptMessages);
+                telemetryCollector.addPrompt(llmCtx, promptMessages);
             }
 
             const mergedSettings = { ...settings }; // Work with a mutable copy
@@ -271,7 +279,11 @@ export class ChatController {
             let response = await localRetryManager.executeWithRetry(
                 async () => {
                     const exec = async () => {
-                        const resp = await provider.chatCall(model, chatParamsForProvider);
+                        const resp = context
+                            ? await context.awaitOrAbort(context.isControlled
+                                ? provider.chatCall(model, chatParamsForProvider, context)
+                                : provider.chatCall(model, chatParamsForProvider))
+                            : await provider.chatCall(model, chatParamsForProvider);
                         if (!resp) {
                             throw new Error('No response received from provider');
                         }
@@ -281,17 +293,28 @@ export class ChatController {
 
                         // Only calculate tokens if the provider didn't include usage data
                         if (!resp.metadata?.usage?.tokens?.input?.total) {
-                            const usage = await this.usageTracker.trackUsage(
+                            const usageOptions = {
+                                inputImageTokens: resp.metadata?.usage?.tokens?.input?.image,
+                                outputImageTokens: resp.metadata?.usage?.tokens?.output?.image
+                            };
+                            const usage = context?.isControlled
+                                ? await usageTracker.trackUsage(
                                 systemContentForUsage + '\n' + lastUserMessage,
                                 resp.content ?? '',
                                 modelInfo,
                                 resp.metadata?.usage?.tokens?.input?.cached,
                                 resp.metadata?.usage?.tokens?.output?.reasoning,
-                                {
-                                    inputImageTokens: resp.metadata?.usage?.tokens?.input?.image,
-                                    outputImageTokens: resp.metadata?.usage?.tokens?.output?.image
-                                }
-                            );
+                                usageOptions,
+                                context
+                            )
+                                : await usageTracker.trackUsage(
+                                    systemContentForUsage + '\n' + lastUserMessage,
+                                    resp.content ?? '',
+                                    modelInfo,
+                                    resp.metadata?.usage?.tokens?.input?.cached,
+                                    resp.metadata?.usage?.tokens?.output?.reasoning,
+                                    usageOptions
+                                );
 
                             resp.metadata.usage = usage;
                         } else {
@@ -300,7 +323,7 @@ export class ChatController {
                                 const existingTokens = resp.metadata.usage.tokens;
 
                                 // Calculate costs based on the provider's token counts
-                                resp.metadata.usage.costs = this.usageTracker.calculateCosts(
+                                resp.metadata.usage.costs = usageTracker.calculateCosts(
                                     existingTokens.input.total,
                                     existingTokens.output.total,
                                     modelInfo,
@@ -310,7 +333,7 @@ export class ChatController {
 
                                 // Add explicit callback trigger for provider-supplied usage data
                                 // This ensures the callback is triggered even when the provider returns usage data
-                                await this.usageTracker.triggerCallback(resp.metadata.usage);
+                                await usageTracker.triggerCallback(resp.metadata.usage, context);
                             }
                         }
 
@@ -359,7 +382,8 @@ export class ChatController {
                     // Use the centralized shouldRetryDueToLLMError utility
                     // This handles both content-triggered retries and HTTP status/network errors
                     return shouldRetryDueToLLMError(error);
-                }
+                },
+                context
             );
 
             // Ensure we have a valid response object before validation
@@ -376,10 +400,10 @@ export class ChatController {
 
             let finalResponse = response; // Assume original response is final unless resubmission happens
 
-            if (this.telemetryCollector && llmCtx) {
+            if (telemetryCollector && llmCtx) {
                 if (hasToolCalls) {
                     const tc = (response.toolCalls || []).map(tc => ({ id: tc.id, name: tc.name, arguments: tc.arguments }));
-                    this.telemetryCollector.addChoice(llmCtx, {
+                    telemetryCollector.addChoice(llmCtx, {
                         content: '',
                         contentLength: 0,
                         index: 0,
@@ -388,7 +412,7 @@ export class ChatController {
                         isToolCall: true,
                         toolCalls: tc
                     });
-                    this.telemetryCollector.endLLM(llmCtx, response.metadata?.usage as any, response.metadata?.model);
+                    telemetryCollector.endLLM(llmCtx, response.metadata?.usage as any, response.metadata?.model);
                     llmSpanEnded = true;
                 }
             }
@@ -411,11 +435,19 @@ export class ChatController {
                 // Track how many messages we had before tool execution
                 const historyCountBeforeTools = this.historyManager.getMessages(true).length;
 
-                const { requiresResubmission } = await this.toolOrchestrator.processToolCalls(
-                    response,
-                    params.tools || [], // Pass original tools
-                    this.mcpAdapterProvider // Pass the provider function
-                );
+                const toolProcessing = context?.needsPropagation
+                    ? this.toolOrchestrator.processToolCalls(
+                        response,
+                        params.tools || [],
+                        this.mcpAdapterProvider,
+                        context
+                    )
+                    : this.toolOrchestrator.processToolCalls(
+                        response,
+                        params.tools || [],
+                        this.mcpAdapterProvider
+                    );
+                const { requiresResubmission } = await toolProcessing;
 
                 // Fetch exactly the new tool messages added by ToolOrchestrator
                 const currentHistoryMessages = this.historyManager.getMessages(true);
@@ -427,7 +459,7 @@ export class ChatController {
                     log.debug('Resubmitting with updated messages including tool results');
 
                     // Call execute recursively, explicitly passing necessary context
-                    finalResponse = await this.execute<T>({
+                    const resubmissionParams = {
                         ...params, // Spread original params
                         messages: loopMessages.filter(m =>
                             !(m.role === 'user' && (m.metadata?.isFormatInstruction || String(m.content).startsWith('Format instructions:')))
@@ -439,7 +471,12 @@ export class ChatController {
                         },
                         jsonSchema: jsonSchema, // Explicitly pass original schema
                         responseFormat: effectiveResponseFormat // Explicitly pass original format
-                    }, execution);
+                    };
+                    finalResponse = context?.needsPropagation
+                        ? await this.execute<T>(resubmissionParams, execution, context)
+                        : execution
+                            ? await this.execute<T>(resubmissionParams, execution)
+                            : await this.execute<T>(resubmissionParams);
                 } else {
                     log.debug('Tool calls processed, no resubmission required.');
                     // If no resubmission, the original `response` might be the final one
@@ -475,15 +512,15 @@ export class ChatController {
             }
 
             // --- Telemetry: Collector end LLM (only if not already ended for tool_calls) ---
-            if (this.telemetryCollector && llmCtx && !llmSpanEnded) {
+            if (telemetryCollector && llmCtx && !llmSpanEnded) {
                 const content = validatedResponse.content ?? '';
-                this.telemetryCollector.addChoice(llmCtx, {
+                telemetryCollector.addChoice(llmCtx, {
                     content,
                     contentLength: content.length,
                     index: 0,
                     finishReason: validatedResponse.metadata?.finishReason || 'stop'
                 });
-                this.telemetryCollector.endLLM(llmCtx, validatedResponse.metadata?.usage as any, validatedResponse.metadata?.model);
+                telemetryCollector.endLLM(llmCtx, validatedResponse.metadata?.usage as any, validatedResponse.metadata?.model);
             }
             log.debug('Final validated response being returned:', validatedResponse);
             return validatedResponse;

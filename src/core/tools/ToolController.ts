@@ -7,6 +7,10 @@ import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
 // OpenTelemetry provider is handled behind the TelemetryCollector
 import type { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts'
 import type { ToolCallContext, ConversationContext } from '../telemetry/collector/types.ts'
+import type { CallExecutionContext } from '../execution/CallExecutionContext.ts';
+import { isLLMCancellationError } from '../execution/errors.ts';
+
+const TOOL_ITERATION_CONTEXT_KEY = Symbol('toolIterationCount');
 
 export class ToolController {
     private toolsManager: ToolsManager;
@@ -136,7 +140,8 @@ export class ToolController {
     async processToolCalls(
         response: UniversalChatResponse,
         callSpecificTools?: ToolDefinition[],
-        mcpAdapter?: MCPServiceAdapter | null
+        mcpAdapter?: MCPServiceAdapter | null,
+        context?: CallExecutionContext
     ): Promise<{
         messages: UniversalMessage[];
         toolCalls: {
@@ -149,11 +154,16 @@ export class ToolController {
         requiresResubmission: boolean;
     }> {
         const log = logger.createLogger({ prefix: 'ToolController.processToolCalls' });
-        if (this.iterationCount >= this.maxIterations) {
+        const telemetryCollector = context?.telemetryCollector ?? this.telemetryCollector;
+        const conversationCtx = context?.conversationContext ?? this.conversationCtx;
+        const iterationState = context?.getOrCreate(TOOL_ITERATION_CONTEXT_KEY, () => ({ count: 0 }));
+        const iterationCount = iterationState?.count ?? this.iterationCount;
+        if (iterationCount >= this.maxIterations) {
             log.warn(`Iteration limit exceeded: ${this.maxIterations}`);
             throw new ToolIterationLimitError(this.maxIterations);
         }
-        this.iterationCount++;
+        if (iterationState) iterationState.count++;
+        else this.iterationCount++;
 
         let requiresResubmission = false;
         const parsedToolCalls: { id?: string; name: string; arguments: Record<string, unknown> }[] = [];
@@ -217,8 +227,8 @@ export class ToolController {
 
             // Collector: start tool context when conversation context exists
             let toolCtx: ToolCallContext | undefined;
-            if (this.telemetryCollector && this.conversationCtx) {
-                toolCtx = this.telemetryCollector.startTool(this.conversationCtx, {
+            if (telemetryCollector && conversationCtx) {
+                toolCtx = telemetryCollector.startTool(conversationCtx, {
                     name,
                     type: tool?.metadata?.isMCP ? 'mcp' : 'function',
                     requestedId: id,
@@ -244,8 +254,8 @@ export class ToolController {
                     content: error,
                     metadata: { tool_call_id: toolCallId }
                 };
-                if (this.telemetryCollector && toolCtx) {
-                    this.telemetryCollector.endTool(toolCtx, undefined, notFoundError);
+                if (telemetryCollector && toolCtx) {
+                    telemetryCollector.endTool(toolCtx, undefined, notFoundError);
                 }
             } else {
                 // --- Execute the tool (Standard or MCP) --- 
@@ -266,7 +276,12 @@ export class ToolController {
                             throw new ToolExecutionError(name, 'Invalid MCP tool metadata.');
                         }
                         log.debug(`Executing MCP tool via adapter: ${serverKey}.${originalToolName}`);
-                        const mcpResultRaw = await mcpAdapter.executeMcpTool(serverKey, originalToolName, args || {});
+                        const mcpResultRaw = context?.isControlled
+                            ? await context.awaitOrAbort(mcpAdapter.executeMcpTool(serverKey, originalToolName, args || {}, {
+                                signal: context.signal,
+                                timeout: context.remainingMs
+                            }))
+                            : await mcpAdapter.executeMcpTool(serverKey, originalToolName, args || {});
                         log.debug(`MCP tool execution successful: ${serverKey}.${originalToolName}`);
                         // Type check the raw result
                         if (typeof mcpResultRaw === 'string' || (typeof mcpResultRaw === 'object' && mcpResultRaw !== null)) {
@@ -278,7 +293,11 @@ export class ToolController {
                     } else {
                         // --- Standard tool execution ---
                         if (typeof tool.callFunction === 'function') {
-                            result = await tool.callFunction(args || {});
+                            result = context
+                                ? await context.awaitOrAbort(context.isControlled
+                                    ? tool.callFunction(args || {}, context)
+                                    : tool.callFunction(args || {}))
+                                : await tool.callFunction(args || {});
                         } else {
                             log.error('Tool definition missing callFunction', { toolName: tool.name });
                             throw new ToolExecutionError(name, 'Tool definition missing callFunction');
@@ -293,11 +312,12 @@ export class ToolController {
                             content,
                             metadata: { tool_call_id: toolCallId }
                         };
-                        if (this.telemetryCollector && toolCtx) {
-                            this.telemetryCollector.endTool(toolCtx, result, undefined);
+                        if (telemetryCollector && toolCtx) {
+                            telemetryCollector.endTool(toolCtx, result, undefined);
                         }
                     }
                 } catch (err) {
+                    if (isLLMCancellationError(err) || context?.signal.aborted) throw err;
                     log.error('Error executing tool call', {
                         toolName: name,
                         error: err instanceof Error ? err.message : String(err)
@@ -308,8 +328,8 @@ export class ToolController {
                         content: error,
                         metadata: { tool_call_id: toolCallId }
                     };
-                    if (this.telemetryCollector && toolCtx) {
-                        this.telemetryCollector.endTool(toolCtx, undefined, err);
+                    if (telemetryCollector && toolCtx) {
+                        telemetryCollector.endTool(toolCtx, undefined, err);
                     }
                 }
             }
@@ -446,4 +466,4 @@ export class ToolController {
             throw new ToolExecutionError(tool.name, 'Tool function not defined.');
         }
     }
-} 
+}

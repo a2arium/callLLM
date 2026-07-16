@@ -70,7 +70,7 @@ import { StreamController } from '../streaming/StreamController.ts';
 import type { LLMProvider, LLMProviderAudio, LLMProviderEmbedding, LLMProviderImage, LLMProviderVideo } from '../../interfaces/LLMProvider.ts';
 import * as fs from 'fs';
 import * as path from 'path';
-import { HistoryManager } from '../history/HistoryManager.ts';
+import { HistoryManager, type HistoryTransaction } from '../history/HistoryManager.ts';
 import { logger } from '../../utils/logger.ts';
 import { PromptEnhancer } from '../prompt/PromptEnhancer.ts';
 import { ToolsFolderLoader } from '../tools/toolLoader/ToolsFolderLoader.ts';
@@ -97,6 +97,7 @@ import { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts
 import { OpenTelemetryProvider } from '../telemetry/providers/openTelemetry/OpenTelemetryProvider.ts'
 import { OpikProvider } from '../telemetry/providers/opik/OpikProvider.ts'
 import type { PromptMessage, ConversationInputOutput } from '../telemetry/collector/types.ts'
+import { CallExecutionContext } from '../execution/CallExecutionContext.ts';
 
 /**
  * Interface that matches the core functionality of StreamController
@@ -1388,7 +1389,8 @@ export class LLMCaller implements MCPDirectAccess {
     // Basic chat completion method - internal helper
     private async internalChatCall<T extends z.ZodTypeAny>(
         params: UniversalChatParams,
-        execution?: ProviderExecutionContext
+        execution?: ProviderExecutionContext,
+        context?: CallExecutionContext
     ): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'LLMCaller.internalChatCall' });
         log.debug(`Calling chat with ${params.messages?.length} messages`);
@@ -1400,9 +1402,11 @@ export class LLMCaller implements MCPDirectAccess {
         params.model = params.model || this.getResolvedModel();
 
         const { systemMessage, ...paramsForController } = params;
-        const chatResponse = execution
-            ? await this.chatController.execute(paramsForController as any, execution)
-            : await this.chatController.execute(paramsForController as any);
+        const chatResponse = context?.needsPropagation
+            ? await this.chatController.execute(paramsForController as any, execution, context)
+            : execution
+                ? await this.chatController.execute(paramsForController as any, execution)
+                : await this.chatController.execute(paramsForController as any);
 
         // Process image output if present (save to file if outputPath provided)
         // Note: outputPath handling will be moved to the public call/stream methods
@@ -1419,7 +1423,8 @@ export class LLMCaller implements MCPDirectAccess {
     private async internalStreamCall(
         // Takes the full parameter object
         params: UniversalChatParams,
-        execution?: ProviderExecutionContext
+        execution?: ProviderExecutionContext,
+        context?: CallExecutionContext
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
         this.toolController.resetIterationCount(); // Reset tool iteration
 
@@ -1437,6 +1442,7 @@ export class LLMCaller implements MCPDirectAccess {
                 callerId: this.callerId,
                 hasTools: Boolean(params.tools?.length)
             });
+            context?.setTelemetryContext(this.telemetryCollector, conversationCtx);
             if (this.telemetryCollector && conversationCtx) {
                 if (typeof (this.streamingService as any).setTelemetryContext === 'function') {
                     this.streamingService.setTelemetryContext(this.telemetryCollector, conversationCtx);
@@ -1446,18 +1452,26 @@ export class LLMCaller implements MCPDirectAccess {
                 }
             }
             // OTel spans are no longer created here; providers will emit via the collector
-            const create = async () => execution
+            const create = async () => context?.needsPropagation
                 ? await this.streamingService.createStream(
                     params,
                     params.model,
                     undefined,  // System message comes from history manager via params
-                    execution
+                    execution,
+                    context
                 )
-                : await this.streamingService.createStream(
-                    params,
-                    params.model,
-                    undefined  // System message comes from history manager via params
-                );
+                : execution
+                    ? await this.streamingService.createStream(
+                        params,
+                        params.model,
+                        undefined,
+                        execution
+                    )
+                    : await this.streamingService.createStream(
+                        params,
+                        params.model,
+                        undefined
+                    );
             const stream = await create();
 
             const self = this;
@@ -1518,6 +1532,9 @@ export class LLMCaller implements MCPDirectAccess {
                         };
 
                         await self.telemetryCollector.endConversation(conversationCtx, {
+                            callId: context?.callId,
+                            terminalAt: Date.now(),
+                            terminalReason: context?.reason ?? (success ? 'completed' : 'provider_error'),
                             totalTokens,
                             totalCost,
                             llmCallsCount,
@@ -1802,6 +1819,40 @@ export class LLMCaller implements MCPDirectAccess {
         return { messageParts, totalImageTokens, imageOperation };
     }
 
+    private prepareControlledOutputPath(context: CallExecutionContext, outputPath?: string): string | undefined {
+        if (!outputPath || !context.isControlled) return outputPath;
+        const extension = path.extname(outputPath);
+        const baseName = path.basename(outputPath, extension);
+        const temporaryPath = path.join(path.dirname(outputPath), `.${baseName}.${context.callId}.tmp${extension}`);
+        context.onCommit(async () => {
+            try {
+                await fs.promises.access(temporaryPath);
+            } catch {
+                return;
+            }
+            await fs.promises.rename(temporaryPath, outputPath);
+        });
+        context.onRollback(async () => {
+            try { await fs.promises.unlink(temporaryPath); } catch { /* absent or already cleaned */ }
+        });
+        return temporaryPath;
+    }
+
+    private registerControlledOutputMetadata(
+        context: CallExecutionContext,
+        response: UniversalChatResponse,
+        temporaryPath: string | undefined,
+        outputPath: string | undefined,
+        metadataKey: 'imageSavedPath' | 'videoSavedPath'
+    ): void {
+        if (!context.isControlled || !temporaryPath || !outputPath || temporaryPath === outputPath) return;
+        context.onCommit(() => {
+            if (response.metadata?.[metadataKey] === temporaryPath) {
+                response.metadata[metadataKey] = outputPath;
+            }
+        });
+    }
+
     /**
      * Helper method to build chat parameters consistently for both call() and stream()
      * Consolidates all pre-processing into a single code path to prevent divergence
@@ -1957,9 +2008,77 @@ export class LLMCaller implements MCPDirectAccess {
      * @param input A string message or options object containing prompt and/or file 
      * @param options Optional settings for the call
      */
-    public async *stream<T extends z.ZodTypeAny = z.ZodTypeAny>(
+    public stream<T extends z.ZodTypeAny = z.ZodTypeAny>(
         input: string | LLMCallOptions,
         options: LLMCallOptions = {}
+    ): AsyncGenerator<UniversalStreamResponse<T extends z.ZodTypeAny ? z.infer<T> : unknown>> {
+        const actualOptions = typeof input === 'string' ? { ...options } : input;
+        const context = new CallExecutionContext({
+            signal: actualOptions.signal,
+            timeoutMs: actualOptions.timeoutMs,
+            usageCallback: actualOptions.usageCallback,
+            callerId: this.callerId
+        });
+        const inner = this.executeStream<T>(input, options, context);
+        const historyManager = this.historyManager;
+        const historyTransaction: HistoryTransaction | undefined = context.isControlled
+            ? historyManager.beginTransaction()
+            : undefined;
+
+        return (async function* (): AsyncGenerator<UniversalStreamResponse<T extends z.ZodTypeAny ? z.infer<T> : unknown>> {
+            let completedNaturally = false;
+            try {
+                while (true) {
+                    context.throwIfAborted();
+                    const nextPromise = historyTransaction
+                        ? historyManager.runInTransaction(historyTransaction, () => inner.next())
+                        : inner.next();
+                    const next = await context.awaitOrAbort(nextPromise);
+                    if (next.done) {
+                        completedNaturally = true;
+                        context.beginCommit();
+                        await context.runCommitActions();
+                        if (historyTransaction) historyManager.commitTransaction(historyTransaction);
+                        context.complete();
+                        return;
+                    }
+                    const usage = next.value.metadata?.usage;
+                    if (usage && next.value.isComplete && context.usageCallback && context.callerId) {
+                        const usageData = {
+                            callerId: context.callerId,
+                            usage: normalizeUsage(usage),
+                            timestamp: Date.now()
+                        };
+                        await context.awaitOrAbort(Promise.resolve(context.isControlled
+                            ? context.usageCallback(usageData, context)
+                            : context.usageCallback(usageData)));
+                    }
+                    yield next.value;
+                }
+            } catch (error) {
+                context.fail(error);
+                throw error;
+            } finally {
+                if (!completedNaturally) {
+                    context.cancel();
+                    await context.rollback();
+                    try {
+                        if (historyTransaction) {
+                            await historyManager.runInTransaction(historyTransaction, () => inner.return?.(undefined));
+                        } else {
+                            await inner.return?.(undefined);
+                        }
+                    } catch { /* cancellation already owns the outcome */ }
+                }
+                context.dispose();
+            }
+        })();
+    }
+
+    private async *executeStream<T extends z.ZodTypeAny = z.ZodTypeAny>(
+        input: string | LLMCallOptions,
+        options: LLMCallOptions,
+        context: CallExecutionContext
     ): AsyncGenerator<UniversalStreamResponse<T extends z.ZodTypeAny ? z.infer<T> : unknown>> {
         const log = logger.createLogger({ prefix: 'LLMCaller.stream' });
 
@@ -2042,27 +2161,41 @@ export class LLMCaller implements MCPDirectAccess {
                     if (typeof videoProvider.videoCall !== 'function') {
                         throw new CapabilityError(`Provider "${streamMediaTarget?.providerName ?? this.getCurrentProviderName()}" does not support video generation`);
                     }
+                    const providerOutputPath = this.prepareControlledOutputPath(context, actualOptions.outputPath);
                     const providerResponse = await this.retryManager.executeWithRetry(
-                        () => videoProvider.videoCall(modelToUse, {
+                        () => context.awaitOrAbort(context.isControlled ? videoProvider.videoCall(modelToUse, {
                             prompt: actualOptions.text || '',
                             size: (videoOpts?.size as any) || undefined,
                             seconds: videoOpts?.seconds,
                             wait,
                             variant: videoOpts?.variant,
-                            outputPath: actualOptions.outputPath
-                        }),
-                        shouldRetryDueToLLMError
+                            outputPath: providerOutputPath
+                        }, context) : videoProvider.videoCall(modelToUse, {
+                            prompt: actualOptions.text || '',
+                            size: (videoOpts?.size as any) || undefined,
+                            seconds: videoOpts?.seconds,
+                            wait,
+                            variant: videoOpts?.variant,
+                            outputPath: providerOutputPath
+                        })),
+                        shouldRetryDueToLLMError,
+                        context
                     );
+                    this.registerControlledOutputMetadata(context, providerResponse, providerOutputPath, actualOptions.outputPath, 'videoSavedPath');
 
                     // Trigger usage callback if available
                     const usage = providerResponse.metadata?.usage;
-                    if (usage && this.usageCallback && this.callerId) {
+                    const usageCallback = context.usageCallback ?? this.usageCallback;
+                    if (usage && usageCallback && this.callerId) {
                         try {
-                            await Promise.resolve(this.usageCallback({
+                            const usageData = {
                                 callerId: this.callerId,
                                 usage: normalizeUsage(usage),
                                 timestamp: Date.now()
-                            }));
+                            };
+                            await context.awaitOrAbort(Promise.resolve(context.isControlled
+                                ? usageCallback(usageData, context)
+                                : usageCallback(usageData)));
                         } catch (_) {
                             // ignore callback errors
                         }
@@ -2087,7 +2220,6 @@ export class LLMCaller implements MCPDirectAccess {
                 actualOptions.settings.providerOptions.imageOperation = imageOperation;
             }
 
-            if (actualOptions.usageCallback) this.setUsageCallback(actualOptions.usageCallback);
             if (this.toolOrchestrator) this.toolOrchestrator.resetCalledTools();
 
             if (actualOptions.file) this.historyManager.addMessage('user', `<file:${actualOptions.file}>`, {});
@@ -2122,9 +2254,11 @@ export class LLMCaller implements MCPDirectAccess {
                 });
 
             if (finalProcessedMessages.length <= 1) {
-                const stream = execution
-                    ? await this.internalStreamCall(chatParams, execution)
-                    : await this.internalStreamCall(chatParams);
+                const stream = context.needsPropagation
+                    ? await this.internalStreamCall(chatParams, execution, context)
+                    : execution
+                        ? await this.internalStreamCall(chatParams, execution)
+                        : await this.internalStreamCall(chatParams);
                 for await (const chunk of stream as AsyncIterable<UniversalStreamResponse<T extends z.ZodTypeAny ? z.infer<T> : unknown>>) {
                     // Image output processing is handled within the adapters when outputPath is provided
                     // No additional processing needed here as the adapter handles outputPath automatically
@@ -2147,7 +2281,8 @@ export class LLMCaller implements MCPDirectAccess {
                         historyMode: chatParams.historyMode,
                         maxIterations: actualOptions.maxChunkIterations,
                         maxParallelRequests: actualOptions.maxParallelRequests,
-                        execution
+                        execution,
+                        context
                     })
                     : await this.chunkController.processChunks(finalProcessedMessages, {
                         model: chatParams.model,
@@ -2160,7 +2295,8 @@ export class LLMCaller implements MCPDirectAccess {
                         maxCharsPerChunk: actualOptions.maxCharsPerChunk,
                         historyMode: chatParams.historyMode,
                         maxIterations: actualOptions.maxChunkIterations,
-                        execution
+                        execution,
+                        context
                     });
                 responses.forEach(response => {
                     if (response.content && (!response.toolCalls || response.toolCalls.length === 0) && response.metadata?.finishReason !== 'tool_calls') {
@@ -2208,6 +2344,38 @@ export class LLMCaller implements MCPDirectAccess {
     public async call<T extends z.ZodTypeAny = z.ZodTypeAny>(
         message: string | LLMCallOptions,
         options: LLMCallOptions = {}
+    ): Promise<UniversalChatResponse[]> {
+        const actualOptions = typeof message === 'string' ? options : message;
+        const context = new CallExecutionContext({
+            signal: actualOptions.signal,
+            timeoutMs: actualOptions.timeoutMs,
+            usageCallback: actualOptions.usageCallback,
+            callerId: this.callerId
+        });
+        const historyTransaction = context.isControlled ? this.historyManager.beginTransaction() : undefined;
+        try {
+            const operation = historyTransaction
+                ? this.historyManager.runInTransaction(historyTransaction, () => this.executeCall<T>(message, options, context))
+                : this.executeCall<T>(message, options, context);
+            const result = await context.awaitOrAbort(operation);
+            context.beginCommit();
+            await context.runCommitActions();
+            if (historyTransaction) this.historyManager.commitTransaction(historyTransaction);
+            context.complete();
+            return result;
+        } catch (error) {
+            context.fail(error);
+            await context.rollback();
+            throw error;
+        } finally {
+            context.dispose();
+        }
+    }
+
+    private async executeCall<T extends z.ZodTypeAny = z.ZodTypeAny>(
+        message: string | LLMCallOptions,
+        options: LLMCallOptions,
+        context: CallExecutionContext
     ): Promise<UniversalChatResponse[]> {
         const log = logger.createLogger({ prefix: 'LLMCaller.call' });
 
@@ -2262,6 +2430,7 @@ export class LLMCaller implements MCPDirectAccess {
                         callerId: this.callerId,
                         hasTools: false
                     });
+                    context.setTelemetryContext(this.telemetryCollector, conversationCtx);
                     const providerName = videoTarget?.providerName
                         ?? (this.providerManager.getCurrentProviderName?.() as unknown as string)
                         ?? this.providerManager.getProvider().constructor.name
@@ -2286,18 +2455,29 @@ export class LLMCaller implements MCPDirectAccess {
                 if (typeof videoProvider.videoCall !== 'function') {
                     throw new CapabilityError(`Provider "${videoTarget?.providerName ?? this.getCurrentProviderName()}" does not support video generation`);
                 }
+                const providerOutputPath = this.prepareControlledOutputPath(context, opts.outputPath);
                 const providerResponse = await this.retryManager.executeWithRetry(
-                    () => videoProvider.videoCall(initialModel, {
+                    () => context.awaitOrAbort(context.isControlled ? videoProvider.videoCall(initialModel, {
                         prompt: opts.text || '',
                         image: opts.file || (opts.files && opts.files[0]) || undefined,
                         size: (videoOpts.size as any) || undefined,
                         seconds: videoOpts.seconds,
                         wait: videoOpts.wait || 'none',
                         variant: videoOpts.variant,
-                        outputPath: opts.outputPath
-                    }),
-                    shouldRetryDueToLLMError
+                        outputPath: providerOutputPath
+                    }, context) : videoProvider.videoCall(initialModel, {
+                        prompt: opts.text || '',
+                        image: opts.file || (opts.files && opts.files[0]) || undefined,
+                        size: (videoOpts.size as any) || undefined,
+                        seconds: videoOpts.seconds,
+                        wait: videoOpts.wait || 'none',
+                        variant: videoOpts.variant,
+                        outputPath: providerOutputPath
+                    })),
+                    shouldRetryDueToLLMError,
+                    context
                 );
+                this.registerControlledOutputMetadata(context, providerResponse, providerOutputPath, opts.outputPath, 'videoSavedPath');
 
                 log.info('videoCall completed', {
                     model: initialModel,
@@ -2327,7 +2507,15 @@ export class LLMCaller implements MCPDirectAccess {
                 }
 
                 if (this.telemetryCollector && conversationCtx) {
-                    await this.telemetryCollector.endConversation(conversationCtx, undefined, {
+                    await this.telemetryCollector.endConversation(conversationCtx, {
+                        callId: context.callId,
+                        terminalAt: Date.now(),
+                        terminalReason: 'completed',
+                        success: true,
+                        errorCount: 0,
+                        llmCallsCount: 1,
+                        toolCallsCount: 0
+                    }, {
                         initialMessages: [{
                             role: 'user',
                             content: opts.text || '',
@@ -2342,13 +2530,17 @@ export class LLMCaller implements MCPDirectAccess {
 
                 // Trigger usage callback if available
                 const usage = providerResponse.metadata?.usage;
-                if (usage && this.usageCallback && this.callerId) {
+                const usageCallback = context.usageCallback ?? this.usageCallback;
+                if (usage && usageCallback && this.callerId) {
                     try {
-                        await Promise.resolve(this.usageCallback({
+                        const usageData = {
                             callerId: this.callerId,
                             usage: normalizeUsage(usage),
                             timestamp: Date.now()
-                        }));
+                        };
+                        await context.awaitOrAbort(Promise.resolve(context.isControlled
+                            ? usageCallback(usageData, context)
+                            : usageCallback(usageData)));
                     } catch (_) {
                         // ignore callback errors
                     }
@@ -2444,12 +2636,13 @@ export class LLMCaller implements MCPDirectAccess {
                     }
 
                     // Create parameters for the image operation
+                    const providerOutputPath = this.prepareControlledOutputPath(context, opts.outputPath);
                     const imageParams: ImageCallParams = {
                         prompt: opts.text || '',
-                        outputPath: opts.outputPath,
+                        outputPath: providerOutputPath,
                         // Add callback parameters for usage tracking
                         callerId: this.callerId,
-                        usageCallback: this.usageCallback
+                        usageCallback: context.usageCallback ?? this.usageCallback
                     };
 
                     // Process image options
@@ -2545,6 +2738,7 @@ export class LLMCaller implements MCPDirectAccess {
                             callerId: this.callerId,
                             hasTools: false
                         });
+                        context.setTelemetryContext(this.telemetryCollector, conversationCtx);
 
                         if (this.telemetryCollector && conversationCtx) {
                             const providerName = imageOrChatTarget?.providerName
@@ -2600,9 +2794,13 @@ export class LLMCaller implements MCPDirectAccess {
                             throw new CapabilityError(`Provider "${imageOrChatTarget?.providerName ?? this.getCurrentProviderName()}" does not support image generation`);
                         }
                         const response = await this.retryManager.executeWithRetry(
-                            () => imageProvider.imageCall(modelToUse, imageOperation, imageParams),
-                            shouldRetryDueToLLMError
+                            () => context.awaitOrAbort(context.isControlled
+                                ? imageProvider.imageCall(modelToUse, imageOperation, imageParams, context)
+                                : imageProvider.imageCall(modelToUse, imageOperation, imageParams)),
+                            shouldRetryDueToLLMError,
+                            context
                         );
+                        this.registerControlledOutputMetadata(context, response, providerOutputPath, opts.outputPath, 'imageSavedPath');
 
                         // Emit an output image marker for telemetry consumers (generic addChoice)
                         if (this.telemetryCollector && llmCtx) {
@@ -2632,6 +2830,9 @@ export class LLMCaller implements MCPDirectAccess {
                             const responseModel = response.metadata?.model || modelToUse;
                             this.telemetryCollector.endLLM(llmCtx, usage, responseModel);
                             await this.telemetryCollector.endConversation(conversationCtx, {
+                                callId: context.callId,
+                                terminalAt: Date.now(),
+                                terminalReason: 'completed',
                                 totalTokens: usage?.tokens?.total,
                                 totalCost: usage?.costs?.total,
                                 llmCallsCount: 1,
@@ -2656,6 +2857,9 @@ export class LLMCaller implements MCPDirectAccess {
                             try {
                                 if (llmCtx) this.telemetryCollector.endLLM(llmCtx, undefined, modelToUse);
                                 await this.telemetryCollector.endConversation(conversationCtx, {
+                                    callId: context.callId,
+                                    terminalAt: Date.now(),
+                                    terminalReason: context.reason ?? 'provider_error',
                                     llmCallsCount: 1,
                                     toolCallsCount: 0,
                                     success: false,
@@ -2724,6 +2928,7 @@ export class LLMCaller implements MCPDirectAccess {
                 callerId: this.callerId,
                 hasTools: Boolean(chatParams.tools?.length)
             });
+            context.setTelemetryContext(this.telemetryCollector, conversationCtx);
             // Propagate telemetry context so ChatController/ToolController can create child spans
             if (this.telemetryCollector && conversationCtx) {
                 if (typeof (this.chatController as any).setTelemetryContext === 'function') {
@@ -2748,9 +2953,11 @@ export class LLMCaller implements MCPDirectAccess {
             try {
                 if (finalProcessedMessages.length <= 1) {
                     log.debug('Calling internalChatCall (single chunk)');
-                    const exec = async () => execution
-                        ? await this.internalChatCall<T>(chatParams, execution)
-                        : await this.internalChatCall<T>(chatParams);
+                    const exec = async () => context.needsPropagation
+                        ? await this.internalChatCall<T>(chatParams, execution, context)
+                        : execution
+                            ? await this.internalChatCall<T>(chatParams, execution)
+                            : await this.internalChatCall<T>(chatParams);
                     const response = await exec();
                     responses = [response];
                     llmCallsCount = 1;
@@ -2769,7 +2976,8 @@ export class LLMCaller implements MCPDirectAccess {
                             historyMode: chatParams.historyMode,
                             maxIterations: opts.maxChunkIterations,
                             maxParallelRequests: opts.maxParallelRequests,
-                            execution
+                            execution,
+                            context
                         })
                         : await this.chunkController.processChunks(finalProcessedMessages, {
                             model: chatParams.model,
@@ -2782,7 +2990,8 @@ export class LLMCaller implements MCPDirectAccess {
                             maxCharsPerChunk: opts.maxCharsPerChunk,
                             historyMode: chatParams.historyMode,
                             maxIterations: opts.maxChunkIterations,
-                            execution
+                            execution,
+                            context
                         });
                     responses = await execChunks();
                     llmCallsCount = responses.length;
@@ -2842,6 +3051,9 @@ export class LLMCaller implements MCPDirectAccess {
                 };
 
                 await this.telemetryCollector.endConversation(conversationCtx, {
+                    callId: context.callId,
+                    terminalAt: Date.now(),
+                    terminalReason: context.reason ?? (success ? 'completed' : 'provider_error'),
                     totalTokens,
                     totalCost,
                     llmCallsCount,

@@ -1,4 +1,5 @@
 import type { UsageCallback } from './UsageInterfaces.ts';
+import type { LLMExecutionControl } from './ExecutionInterfaces.ts';
 import type {
     UniversalChatParams,
     UniversalChatResponse,
@@ -22,8 +23,8 @@ export type { AudioOp } from './UniversalInterfaces.ts';
 
 export interface LLMProvider {
     // Basic chat methods
-    chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse>;
-    streamCall(model: string, params: UniversalChatParams): Promise<AsyncIterable<UniversalStreamResponse>>;
+    chatCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<UniversalChatResponse>;
+    streamCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<AsyncIterable<UniversalStreamResponse>>;
 
     // Conversion methods that each provider must implement
     convertToProviderParams(model: string, params: UniversalChatParams): unknown;
@@ -62,7 +63,7 @@ export type ImageCallParams = {
  * Interface for providers that support image generation/editing
  */
 export interface LLMProviderImage {
-    imageCall(model: string, op: ImageOp, params: ImageCallParams): Promise<UniversalChatResponse>;
+    imageCall(model: string, op: ImageOp, params: ImageCallParams, control?: LLMExecutionControl): Promise<UniversalChatResponse>;
 }
 
 // Parameters for video operations
@@ -82,7 +83,7 @@ export type VideoCallParams = {
  */
 export interface LLMProviderVideo {
     /** Create a video job (optionally poll until complete based on params.wait) */
-    videoCall(model: string, params: VideoCallParams): Promise<UniversalChatResponse>;
+    videoCall(model: string, params: VideoCallParams, control?: LLMExecutionControl): Promise<UniversalChatResponse>;
     /** Retrieve video job status */
     retrieveVideo(videoId: string): Promise<{ id: string; status: 'queued' | 'in_progress' | 'completed' | 'failed'; progress?: number; model?: string; seconds?: number; size?: string }>;
     /** Download video content (or thumbnail/spritesheet) */

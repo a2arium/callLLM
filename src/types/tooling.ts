@@ -41,7 +41,8 @@ export type ToolDefinition = {
     description: string;
     parameters: ToolParameters; // Use the stricter, object-based parameters type
     callFunction?: <TParams extends Record<string, unknown>, TResponse = unknown>(
-        params: TParams
+        params: TParams,
+        control?: import('../interfaces/ExecutionInterfaces.ts').LLMExecutionControl
     ) => Promise<TResponse>; // Keep generic default
     handler?: (args: any) => Promise<any>; // Added for backward compatibility with older code
     postCallLogic?: (rawResult: unknown) => Promise<string[]>; // Use unknown for flexibility
@@ -121,4 +122,4 @@ export class ToolExecutionError extends ToolError {
         super(`Execution of tool \"${toolName}\" failed: ${errorMessage}`);
         this.name = "ToolExecutionError";
     }
-} 
+}

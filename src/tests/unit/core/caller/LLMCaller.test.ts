@@ -89,7 +89,10 @@ describe('LLMCaller', () => {
       setMessages: jest.fn(),
       addToolCallToHistory: jest.fn(),
       captureStreamResponse: jest.fn(),
-      removeToolCallsWithoutResponses: jest.fn()
+      removeToolCallsWithoutResponses: jest.fn(),
+      beginTransaction: jest.fn().mockReturnValue({ baseSnapshot: [], messages: [], committed: false }),
+      runInTransaction: jest.fn((_transaction: unknown, operation: () => unknown) => operation()),
+      commitTransaction: jest.fn()
     } as unknown as jest.Mocked<HistoryManager>;
 
     // Mock the initializeWithSystemMessage to actually add the message
@@ -308,6 +311,39 @@ describe('LLMCaller', () => {
   afterEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
+  });
+
+  describe('cancellation controls', () => {
+    it('times out a provider call with the public typed error and does not commit history', async () => {
+      (llmCaller as any).requestProcessor = {
+        processRequest: jest.fn().mockResolvedValue(['test message'])
+      };
+      mockChatController.execute.mockImplementation(() => new Promise(() => undefined));
+
+      const call = llmCaller.call('test message', { timeoutMs: 20 });
+      const assertion = expect(call).rejects.toMatchObject({
+        code: 'LLM_TIMEOUT', timeoutMs: 20
+      });
+      await jest.advanceTimersByTimeAsync(20);
+      await assertion;
+
+      expect(mockHistoryManager.commitTransaction).not.toHaveBeenCalled();
+      expect(mockChatController.execute).toHaveBeenCalled();
+      expect(mockChatController.execute.mock.calls[0][2]).toMatchObject({
+        signal: expect.any(AbortSignal)
+      });
+    });
+
+    it('starts the stream deadline when stream() is invoked', async () => {
+      const stream = llmCaller.stream('test message', { timeoutMs: 20 });
+      await jest.advanceTimersByTimeAsync(20);
+
+      await expect(stream.next()).rejects.toMatchObject({
+        code: 'LLM_TIMEOUT', timeoutMs: 20
+      });
+      expect(mockStreamingService.createStream).not.toHaveBeenCalled();
+      expect(mockHistoryManager.commitTransaction).not.toHaveBeenCalled();
+    });
   });
 
   describe('constructor', () => {

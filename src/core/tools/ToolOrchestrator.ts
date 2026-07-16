@@ -7,6 +7,7 @@ import { logger } from '../../utils/logger.ts';
 import { type ToolCall, type ToolDefinition, ToolNotFoundError } from '../../types/tooling.ts';
 import { HistoryManager } from '../history/HistoryManager.ts';
 import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
+import type { CallExecutionContext } from '../execution/CallExecutionContext.ts';
 
 // Type to track called tools with their arguments
 type CalledTool = {
@@ -14,6 +15,8 @@ type CalledTool = {
     arguments: string; // JSON stringified arguments for comparison
     timestamp: number;
 };
+
+const CALLED_TOOLS_CONTEXT_KEY = Symbol('calledTools');
 
 
 /**
@@ -80,8 +83,10 @@ export class ToolOrchestrator {
     public async processToolCalls(
         response: UniversalChatResponse,
         callSpecificTools?: ToolDefinition[],
-        mcpAdapterProvider?: () => MCPServiceAdapter | null
+        mcpAdapterProvider?: () => MCPServiceAdapter | null,
+        context?: CallExecutionContext
     ): Promise<{ requiresResubmission: boolean; newToolCalls: number }> {
+        const calledTools = context?.getOrCreate<CalledTool[]>(CALLED_TOOLS_CONTEXT_KEY, () => []) ?? this.calledTools;
         // Reset iteration count at the beginning of each tool processing session
         this.toolController.resetIterationCount();
 
@@ -91,7 +96,7 @@ export class ToolOrchestrator {
 
             const filteredToolCalls = response.toolCalls.filter(call => {
                 const argStr = JSON.stringify(call.arguments || {});
-                const isDuplicate = this.calledTools.some(
+                const isDuplicate = calledTools.some(
                     t => t.name === call.name && t.arguments === argStr
                 );
 
@@ -101,7 +106,7 @@ export class ToolOrchestrator {
                 }
 
                 // Track this tool call
-                this.calledTools.push({
+                calledTools.push({
                     name: call.name,
                     arguments: argStr,
                     timestamp: Date.now()
@@ -128,7 +133,8 @@ export class ToolOrchestrator {
         const toolResult = await this.toolController.processToolCalls(
             response,
             callSpecificTools,
-            mcpAdapter
+            mcpAdapter,
+            context
         );
 
         // If no tool calls were found or processed, return early
@@ -196,4 +202,4 @@ export class ToolOrchestrator {
         };
     }
 
-} 
+}

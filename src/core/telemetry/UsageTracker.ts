@@ -4,6 +4,7 @@ import type { UsageCallback, UsageData } from '../../interfaces/UsageInterfaces.
 import { UsageTrackingProcessor } from '../streaming/processors/UsageTrackingProcessor.ts';
 import { logger } from '../../utils/logger.ts';
 import { normalizeUsage } from './UsageNormalizer.ts';
+import type { CallExecutionContext } from '../execution/CallExecutionContext.ts';
 
 /**
  * UsageTracker
@@ -37,7 +38,8 @@ export class UsageTracker {
             outputImageTokens?: number;
             generatedImages?: number;
             outputVideoDuration?: number;
-        }
+        },
+        context?: CallExecutionContext
     ): Promise<Usage> {
         const log = logger.createLogger({ prefix: 'UsageTracker.trackUsage' });
         const inputTokens = this.tokenCalculator.calculateTokens(input, modelInfo.tokenizationModel);
@@ -90,13 +92,16 @@ export class UsageTracker {
 
         if (this.callback && this.callerId) {
             log.debug(`Invoking usage callback for callerId: ${this.callerId}`);
-            await Promise.resolve(
-                this.callback({
+            const usageData = {
                     callerId: this.callerId,
                     usage: normalizeUsage(usage),
                     timestamp: Date.now()
-                })
+                };
+            const callbackPromise = Promise.resolve(
+                context?.isControlled ? this.callback(usageData, context) : this.callback(usageData)
             );
+            if (context) await context.awaitOrAbort(callbackPromise);
+            else await callbackPromise;
         } else {
             log.debug(`No usage callback invoked. Callback: ${Boolean(this.callback)}, CallerId: ${this.callerId}`);
         }
@@ -207,19 +212,22 @@ export class UsageTracker {
      * @param usage Usage data to send to the callback
      * @returns Promise that resolves when the callback completes
      */
-    async triggerCallback(usage: Usage): Promise<void> {
+    async triggerCallback(usage: Usage, context?: CallExecutionContext): Promise<void> {
         const log = logger.createLogger({ prefix: 'UsageTracker.triggerCallback' });
 
         if (this.callback && this.callerId) {
             log.debug(`Manually triggering usage callback for callerId: ${this.callerId}`);
 
-            await Promise.resolve(
-                this.callback({
+            const usageData = {
                     callerId: this.callerId,
                     usage,
                     timestamp: Date.now()
-                })
+                };
+            const callbackPromise = Promise.resolve(
+                context?.isControlled ? this.callback(usageData, context) : this.callback(usageData)
             );
+            if (context) await context.awaitOrAbort(callbackPromise);
+            else await callbackPromise;
         } else {
             log.debug(`Cannot trigger callback. Callback: ${Boolean(this.callback)}, CallerId: ${this.callerId}`);
         }

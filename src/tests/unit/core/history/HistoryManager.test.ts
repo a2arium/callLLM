@@ -1199,3 +1199,31 @@ describe('HistoryManager', () => {
     });
   });
 });
+
+describe('HistoryManager controlled transactions', () => {
+  it('keeps uncommitted changes private and merges concurrent commits', async () => {
+    const history = new HistoryManager('system');
+    const first = history.beginTransaction();
+    const second = history.beginTransaction();
+
+    await history.runInTransaction(first, async () => {
+      history.addMessage('user', 'first');
+      expect(history.getMessages(true).some(message => message.content === 'first')).toBe(true);
+    });
+    await history.runInTransaction(second, async () => {
+      history.addMessage('user', 'second');
+    });
+
+    expect(history.getMessages(true).some(message => message.content === 'first')).toBe(false);
+    history.commitTransaction(first);
+    history.commitTransaction(second);
+    expect(history.getMessages(true).map(message => message.content)).toEqual(['system', 'first', 'second']);
+  });
+
+  it('discards a transaction that is never committed', async () => {
+    const history = new HistoryManager('system');
+    const transaction = history.beginTransaction();
+    await history.runInTransaction(transaction, async () => history.addMessage('user', 'cancelled'));
+    expect(history.getMessages(true).map(message => message.content)).toEqual(['system']);
+  });
+});

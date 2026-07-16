@@ -16,8 +16,11 @@ export type {
     ModelCapabilities,
     ModelAlias,
     JSONSchemaDefinition,
-    ResponseFormat
+    ResponseFormat,
+    LLMCallOptions
 } from './interfaces/UniversalInterfaces.ts';
+export type { LLMExecutionControl, LLMTerminalReason } from './interfaces/ExecutionInterfaces.ts';
+export { LLMAbortError, LLMTimeoutError } from './core/execution/errors.ts';
 
 // Usage and Telemetry
 export type {

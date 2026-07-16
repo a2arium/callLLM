@@ -61,6 +61,8 @@ import { RetryManager } from '../../core/retry/RetryManager.ts';
 import { UsageTracker } from '../../core/telemetry/UsageTracker.ts';
 import { normalizeUsage } from '../../core/telemetry/UsageNormalizer.ts';
 import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
+import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
+import { resolveLLMCancellationError } from '../../core/execution/errors.ts';
 
 // Use the paths utility to get the directory name for resolving .env
 const adapterProjectRootForEnv = getDirname();
@@ -70,6 +72,23 @@ dotenv.config({ path: path.resolve(adapterProjectRootForEnv, '../../../.env') })
 
 // Set debug level
 const DEBUG_LEVEL = process.env.DEBUG_LEVEL || 'info'; // 'debug', 'info', 'error'
+
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+    if (!signal) return new Promise(resolve => setTimeout(resolve, ms));
+    if (signal.aborted) return Promise.reject(resolveLLMCancellationError(signal.reason, signal));
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        const onAbort = (): void => {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', onAbort);
+            reject(resolveLLMCancellationError(signal.reason, signal));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
 
 // Extend the ImageCallParams interface with usage tracking properties
 interface ExtendedImageCallParams extends BaseImageCallParams {
@@ -135,7 +154,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
         const log = logger.createLogger({ level: process.env.LOG_LEVEL as any || 'info', prefix: 'OpenAIResponseAdapter' });
     }
 
-    async chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse> {
+    async chatCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.chatCall' });
         log.debug('Validating universal params:', params);
 
@@ -161,13 +180,17 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
 
         try {
             // Use the SDK's responses.create method with native types
-            const response: Response = await this.client.responses.create(openAIParams);
+            const response: Response = control?.signal
+                ? await this.client.responses.create(openAIParams, { signal: control.signal })
+                : await this.client.responses.create(openAIParams);
 
             // Convert the native response to UniversalChatResponse using our converter
             const universalResponse = this.converter.convertFromOpenAIResponse(response as any);
             log.debug('Converted response:', universalResponse);
             return universalResponse;
         } catch (error: any) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             // Log the specific error received from the OpenAI SDK call
             console.error(`[OpenAIResponseAdapter.chatCall] API call failed. Error Status: ${error.status}, Error Response:`, error.response?.data || error.message);
             log.error('API call failed:', error);
@@ -191,7 +214,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
         }
     }
 
-    async videoCall(model: string, params: VideoCallParams): Promise<UniversalChatResponse> {
+    async videoCall(model: string, params: VideoCallParams, control?: LLMExecutionControl): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.videoCall' });
         log.debug('Starting video call', { model, params });
 
@@ -223,7 +246,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                     ...(size ? { size } : {}),
                     ...(secondsParam !== undefined ? { seconds: secondsParam } : {}),
                     ...(inputReference ? { input_reference: inputReference } : {}),
-                } as any);
+                } as any, { signal: control?.signal });
 
                 log.info('[OpenAIResponseAdapter.videoCall] Video job created, polling for completion:', {
                     jobId: videoJob.id,
@@ -233,8 +256,8 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 // Poll until completed or failed
                 let video = videoJob;
                 while (video.status !== 'completed' && video.status !== 'failed') {
-                    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between polls
-                    video = await (this.client as any).videos.retrieve(video.id);
+                    await abortableDelay(2000, control?.signal);
+                    video = await (this.client as any).videos.retrieve(video.id, { signal: control?.signal });
                     log.info('[OpenAIResponseAdapter.videoCall] Polling video status:', {
                         jobId: video.id,
                         status: video.status,
@@ -272,7 +295,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                         variant,
                         outputPath: params.outputPath
                     });
-                    const content = await (this.client as any).videos.downloadContent(video.id, { variant } as any);
+                    const content = await (this.client as any).videos.downloadContent(video.id, { variant } as any, { signal: control?.signal });
                     const arrayBuffer = await content.arrayBuffer();
                     await fs.promises.writeFile(params.outputPath, Buffer.from(arrayBuffer));
                     metadata.videoSavedPath = params.outputPath;
@@ -326,7 +349,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                     ...(size ? { size } : {}),
                     ...(secondsParam !== undefined ? { seconds: secondsParam } : {}),
                     ...(inputReference ? { input_reference: inputReference } : {}),
-                } as any);
+                } as any, { signal: control?.signal });
 
                 // For non-blocking mode, estimate cost based on requested duration
                 // Actual cost will depend on whether the job completes successfully
@@ -361,6 +384,8 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                 };
             }
         } catch (error: any) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.videoCall' });
             log.error('Video call failed:', error);
             if (error instanceof OpenAI.APIError) {
@@ -408,7 +433,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
         }
     }
 
-    async streamCall(model: string, params: UniversalChatParams): Promise<AsyncIterable<UniversalStreamResponse>> {
+    async streamCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<AsyncIterable<UniversalStreamResponse>> {
         const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.streamCall' });
         log.debug('Validating universal params:', params);
 
@@ -436,7 +461,9 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
         try {
             // Use the SDK's streaming capability with native types
             // The stream yields ResponseStreamEvent types
-            const stream: Stream<ResponseStreamEvent> = await this.client.responses.create(openAIParams);
+            const stream: Stream<ResponseStreamEvent> = control?.signal
+                ? await this.client.responses.create(openAIParams, { signal: control.signal })
+                : await this.client.responses.create(openAIParams);
 
             // Initialize a new StreamHandler with the tools if available
             if (params.tools && params.tools.length > 0) {
@@ -453,6 +480,8 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             // Process the stream with our handler, passing the native stream type
             return this.streamHandler.handleStream(stream);
         } catch (error: any) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             // Handle specific OpenAI API error types
             if (error instanceof OpenAI.APIError) {
                 if (error.status === 401) {
@@ -657,7 +686,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
      * @param params Parameters for the image operation
      * @returns A Promise resolving to a UniversalChatResponse containing the image data
      */
-    async imageCall(model: string, op: ImageOp, params: ExtendedImageCallParams): Promise<UniversalChatResponse> {
+    async imageCall(model: string, op: ImageOp, params: ExtendedImageCallParams, control?: LLMExecutionControl): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.imageCall' });
         log.debug('Processing image operation:', { model, op, prompt: params.prompt });
 
@@ -735,13 +764,13 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
 
                 switch (op) {
                     case 'generate':
-                        return await this.generateImage(model, params);
+                        return await this.generateImage(model, params, control?.signal);
                     case 'edit':
                         // Check for image files
                         if (!params.files || params.files.length === 0) {
                             throw new OpenAIResponseValidationError('Image edit operation requires at least one image file');
                         }
-                        return await this.editImage(model, params);
+                        return await this.editImage(model, params, control?.signal);
                     case 'edit-masked':
                         // Check for both image and mask files
                         if (!params.files || params.files.length === 0) {
@@ -750,18 +779,20 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
                         if (!params.mask) {
                             throw new OpenAIResponseValidationError('Image edit-masked operation requires a mask file');
                         }
-                        return await this.editImageWithMask(model, params);
+                        return await this.editImageWithMask(model, params, control?.signal);
                     case 'composite':
                         // Check for multiple image files
                         if (!params.files || params.files.length < 2) {
                             throw new OpenAIResponseValidationError('Image composite operation requires at least two image files');
                         }
-                        return await this.generateVariation(model, params);
+                        return await this.generateVariation(model, params, control?.signal);
                     default:
                         throw new OpenAIResponseValidationError(`Unsupported image operation: ${op}`);
                 }
-            }, shouldRetry);
+            }, shouldRetry, control);
         } catch (error: any) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             // Check for OpenAI API errors - use the error.name instead of instanceof to be more robust
             if (error && error.name === 'APIError' || error.status) {
                 if (error.status === 401) {
@@ -795,7 +826,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
     /**
      * Generate a new image using OpenAI 
      */
-    private async generateImage(model: string, params: ExtendedImageCallParams): Promise<UniversalChatResponse> {
+    private async generateImage(model: string, params: ExtendedImageCallParams, signal?: AbortSignal): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.generateImage' });
         log.debug('Generating image with OpenAI', { prompt: params.prompt, model });
 
@@ -860,7 +891,9 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
 
         try {
             // Call the OpenAI API to generate the image
-            const response = await this.client.images.generate(requestParams);
+            const response = signal
+                ? await this.client.images.generate(requestParams, { signal })
+                : await this.client.images.generate(requestParams);
 
             // Log the raw OpenAI response for debugging with truncated data
             log.debug('Raw OpenAI image generation response:', this.truncateLogData(response));
@@ -986,7 +1019,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
     /**
      * Edit an existing image using OpenAI's DALL-E model
      */
-    private async editImage(model: string, params: ExtendedImageCallParams): Promise<UniversalChatResponse> {
+    private async editImage(model: string, params: ExtendedImageCallParams, signal?: AbortSignal): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.editImage' });
         log.debug('Editing image with OpenAI');
 
@@ -1072,7 +1105,9 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             log.debug('Image edit parameters:', debugParams);
 
             // Call the OpenAI API to edit the image
-            const response = await this.client.images.edit(requestParams);
+            const response = signal
+                ? await this.client.images.edit(requestParams, { signal })
+                : await this.client.images.edit(requestParams);
 
             // Log raw OpenAI response for debugging
             log.debug('Raw OpenAI image edit response:', this.truncateLogData(response));
@@ -1177,7 +1212,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
     /**
      * Edit an image with a mask using OpenAI's DALL-E model
      */
-    private async editImageWithMask(model: string, params: ExtendedImageCallParams): Promise<UniversalChatResponse> {
+    private async editImageWithMask(model: string, params: ExtendedImageCallParams, signal?: AbortSignal): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.editImageWithMask' });
         log.debug('Editing image with mask using OpenAI');
 
@@ -1257,7 +1292,9 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             log.debug('Image edit with mask parameters:', debugParams);
 
             // Call the OpenAI API to edit the image with mask
-            const response = await this.client.images.edit(requestParams);
+            const response = signal
+                ? await this.client.images.edit(requestParams, { signal })
+                : await this.client.images.edit(requestParams);
 
             // Log raw OpenAI response for debugging
             log.debug('Raw OpenAI image edit with mask response:', this.truncateLogData(response));
@@ -1361,7 +1398,7 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
     /**
      * Generate variations or composites of multiple images
      */
-    private async generateVariation(model: string, params: ExtendedImageCallParams): Promise<UniversalChatResponse> {
+    private async generateVariation(model: string, params: ExtendedImageCallParams, signal?: AbortSignal): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.generateVariation' });
         log.debug('Generating image variation with OpenAI');
 
@@ -1397,7 +1434,9 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             log.debug('Image variation parameters:', debugParams);
 
             // Call the OpenAI API to generate image variations
-            const response = await this.client.images.createVariation(requestParams);
+            const response = signal
+                ? await this.client.images.createVariation(requestParams, { signal })
+                : await this.client.images.createVariation(requestParams);
 
             // Log raw OpenAI response for debugging
             log.debug('Raw OpenAI image variation response:', this.truncateLogData(response));

@@ -21,6 +21,7 @@ import {
     getProviderExecutionContext,
     type ProviderExecutionContext
 } from '../caller/ProviderExecution.ts';
+import type { CallExecutionContext } from '../execution/CallExecutionContext.ts';
 
 /**
  * StreamingService
@@ -94,7 +95,6 @@ export class StreamingService {
             level: process.env.LOG_LEVEL as any || 'info',
             prefix: 'StreamingService.constructor'
         });
-
         log.debug('Initialized StreamingService', {
             callerId,
             tokenBatchSize: options?.tokenBatchSize || 100,
@@ -116,12 +116,16 @@ export class StreamingService {
         params: UniversalChatParams,
         model: string,
         systemMessage?: string,
-        execution?: ProviderExecutionContext
+        execution?: ProviderExecutionContext,
+        context?: CallExecutionContext
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
         const log = logger.createLogger({
             level: process.env.LOG_LEVEL as any || 'info',
             prefix: 'StreamingService.createStream'
         });
+        const telemetryCollector = context?.telemetryCollector ?? this.telemetryCollector;
+        const conversationCtx = context?.conversationContext ?? this.conversationCtx;
+        let llmCtx: LLMCallContext | undefined;
 
         // Collector: start LLM for streaming
         const effectiveExecution = execution ?? getProviderExecutionContext(params);
@@ -131,17 +135,17 @@ export class StreamingService {
             ?? (this.providerManager.getCurrentProviderName?.() as unknown as string)
             ?? provider?.constructor?.name
             ?? 'unknown';
-        if (this.telemetryCollector) {
+        if (telemetryCollector) {
             // Ensure providers are ready so spans attach correctly
-            try { await (this.telemetryCollector as any).awaitReady?.(); } catch { /* ignore */ }
+            try { await (telemetryCollector as any).awaitReady?.(); } catch { /* ignore */ }
             // Only use the injected conversation context; do not auto-create here to avoid duplicates
-            if (!this.conversationCtx) {
+            if (!conversationCtx) {
                 const logMissing = logger.createLogger({ prefix: 'StreamingService.createStream' });
                 logMissing.debug('No injected conversationCtx; streaming will proceed without telemetry conversation');
             }
-            if (this.conversationCtx) {
+            if (conversationCtx) {
                 const toolsAvailable = (params.tools || []).map(t => t.name);
-                this.llmCtx = this.telemetryCollector.startLLM(this.conversationCtx, {
+                llmCtx = telemetryCollector.startLLM(conversationCtx, {
                     provider: String(providerName).toLowerCase(),
                     model,
                     streaming: true,
@@ -156,7 +160,7 @@ export class StreamingService {
                     content: typeof m.content === 'string' ? m.content : String(m.content ?? ''),
                     sequence: idx
                 }));
-                this.telemetryCollector.addPrompt(this.llmCtx, msgs);
+                telemetryCollector.addPrompt(llmCtx, msgs);
             }
         }
 
@@ -192,8 +196,8 @@ export class StreamingService {
         // Collector will handle usage; no-op here
 
         try {
-            const stream = await this.executeWithRetry(model, params, inputTokens, modelInfo, effectiveExecution);
-            return this.wrapStreamWithTelemetry(stream, undefined, model);
+            const stream = await this.executeWithRetry(model, params, inputTokens, modelInfo, effectiveExecution, context);
+            return this.wrapStreamWithTelemetry(stream, undefined, model, telemetryCollector, llmCtx);
         } catch (error) {
             throw error;
         }
@@ -207,7 +211,8 @@ export class StreamingService {
         params: UniversalChatParams,
         inputTokens: number,
         modelInfo: ModelInfo,
-        execution?: ProviderExecutionContext
+        execution?: ProviderExecutionContext,
+        context?: CallExecutionContext
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
         const log = logger.createLogger({
             prefix: 'StreamingService.executeWithRetry'
@@ -224,9 +229,10 @@ export class StreamingService {
 
             return await this.retryManager.executeWithRetry(
                 async () => {
-                    return await this.executeStreamRequest(model, params, inputTokens, modelInfo, execution);
+                    return await this.executeStreamRequest(model, params, inputTokens, modelInfo, execution, context);
                 },
-                shouldRetryDueToLLMError
+                shouldRetryDueToLLMError,
+                context
             );
         } catch (error) {
             log.error('Stream execution failed after retries', {
@@ -245,7 +251,8 @@ export class StreamingService {
         params: UniversalChatParams,
         inputTokens: number,
         modelInfo: ModelInfo,
-        execution?: ProviderExecutionContext
+        execution?: ProviderExecutionContext,
+        context?: CallExecutionContext
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
         const log = logger.createLogger({
             prefix: 'StreamingService.executeStreamRequest'
@@ -295,7 +302,11 @@ export class StreamingService {
             });
 
             // Request stream from provider
-            const providerStream = await provider.streamCall(model, params);
+            const providerStream = context
+                ? await context.awaitOrAbort(context.isControlled
+                    ? provider.streamCall(model, params, context)
+                    : provider.streamCall(model, params))
+                : await provider.streamCall(model, params);
 
             log.debug('Provider stream created', {
                 timeToCreateMs: Date.now() - startTime,
@@ -323,7 +334,9 @@ export class StreamingService {
     private async *wrapStreamWithTelemetry(
         stream: AsyncIterable<UniversalStreamResponse>,
         _span?: unknown,
-        model?: string
+        model?: string,
+        telemetryCollector: TelemetryCollector | undefined = this.telemetryCollector,
+        llmCtx: LLMCallContext | undefined = this.llmCtx
     ): AsyncIterable<UniversalStreamResponse> {
         let last: UniversalStreamResponse | undefined;
         let count = 0;
@@ -333,9 +346,9 @@ export class StreamingService {
                 count++;
                 last = chunk;
                 // If this chunk carries tool call requests, record them; end the LLM span only when complete
-                if (!llmSpanEnded && this.telemetryCollector && this.llmCtx && (chunk as any).toolCalls && (chunk as any).toolCalls.length > 0) {
+                if (!llmSpanEnded && telemetryCollector && llmCtx && (chunk as any).toolCalls && (chunk as any).toolCalls.length > 0) {
                     const toolCalls = (chunk as any).toolCalls.map((tc: any) => ({ id: tc.id, name: tc.name, arguments: tc.arguments }));
-                    this.telemetryCollector.addChoice(this.llmCtx, {
+                    telemetryCollector.addChoice(llmCtx, {
                         content: '',
                         contentLength: 0,
                         index: 0,
@@ -347,15 +360,15 @@ export class StreamingService {
                     });
                     // End the LLM span only if this is the final chunk for the call
                     if ((chunk as any).isComplete) {
-                        this.telemetryCollector.endLLM(this.llmCtx, (chunk as any)?.metadata?.usage as any, (chunk as any)?.metadata?.model);
+                        telemetryCollector.endLLM(llmCtx, (chunk as any)?.metadata?.usage as any, (chunk as any)?.metadata?.model);
                         llmSpanEnded = true;
                     }
                 } else {
                     // Regular content chunk
                     const hasContent = Boolean((chunk as any).contentText || chunk.content?.trim());
                     const choiceContent = (chunk as any).contentText || chunk.content || '';
-                    if (this.telemetryCollector && this.llmCtx) {
-                        this.telemetryCollector.addChoice(this.llmCtx, {
+                    if (telemetryCollector && llmCtx) {
+                        telemetryCollector.addChoice(llmCtx, {
                             content: hasContent ? String(choiceContent) : '',
                             contentLength: String(choiceContent).length,
                             index: 0,
@@ -368,17 +381,17 @@ export class StreamingService {
                 yield chunk;
             }
         } finally {
-            if (this.telemetryCollector && this.llmCtx && !llmSpanEnded) {
+            if (telemetryCollector && llmCtx && !llmSpanEnded) {
                 // Ensure we pass full text output and final usage to providers that need it (e.g., Opik)
                 const finalText = (last as any)?.contentText || (last as any)?.content || '';
                 // Add final choice event so non-stream span has complete output
-                this.telemetryCollector.addChoice(this.llmCtx, {
+                telemetryCollector.addChoice(llmCtx, {
                     content: finalText,
                     contentLength: String(finalText).length,
                     index: 0,
                     finishReason: (last as any)?.metadata?.finishReason || 'stop'
                 });
-                this.telemetryCollector.endLLM(this.llmCtx, (last as any)?.metadata?.usage as any, (last as any)?.metadata?.model);
+                telemetryCollector.endLLM(llmCtx, (last as any)?.metadata?.usage as any, (last as any)?.metadata?.model);
             }
         }
 

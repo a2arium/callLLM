@@ -10,6 +10,8 @@ import { RetryManager } from '../../core/retry/RetryManager.ts';
 import { OpenRouterConverter } from './converter.ts';
 import { OpenRouterStreamHandler } from './stream.ts';
 import { mapOpenRouterError, OpenRouterAdapterError } from './errors.ts';
+import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
+import { resolveLLMCancellationError } from '../../core/execution/errors.ts';
 
 /**
  * Adapter for OpenRouter using the native @openrouter/sdk.
@@ -50,22 +52,26 @@ export class OpenRouterAdapter extends BaseAdapter implements LLMProvider {
         this.streamHandler = undefined;
     }
 
-    async chatCall(model: string, params: UniversalChatParams): Promise<UniversalChatResponse> {
+    async chatCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<UniversalChatResponse> {
         const log = logger.createLogger({ prefix: 'OpenRouterAdapter.chatCall' });
         const callModelInput = this.converter.convertToCallModelInput(model, params);
 
         try {
-            const result = this.client.callModel(callModelInput);
+            const result = control?.signal
+                ? this.client.callModel(callModelInput, { signal: control.signal })
+                : this.client.callModel(callModelInput);
             const response = await result.getResponse();
             return this.converter.convertFromProviderResponse(response);
         } catch (err) {
+            const cancellation = resolveLLMCancellationError(err, control?.signal);
+            if (cancellation) throw cancellation;
             const mapped = mapOpenRouterError(err);
             log.error('API call failed:', mapped);
             throw mapped;
         }
     }
 
-    async streamCall(model: string, params: UniversalChatParams): Promise<AsyncIterable<UniversalStreamResponse>> {
+    async streamCall(model: string, params: UniversalChatParams, control?: LLMExecutionControl): Promise<AsyncIterable<UniversalStreamResponse>> {
         const log = logger.createLogger({ prefix: 'OpenRouterAdapter.streamCall' });
         log.debug('Validating and converting params for streaming:', params);
 
@@ -73,10 +79,14 @@ export class OpenRouterAdapter extends BaseAdapter implements LLMProvider {
         log.debug('Converted OpenRouter callModel input:', callModelInput);
 
         try {
-            const result = this.client.callModel(callModelInput);
+            const result = control?.signal
+                ? this.client.callModel(callModelInput, { signal: control.signal })
+                : this.client.callModel(callModelInput);
             this.streamHandler = new OpenRouterStreamHandler(this.converter, this.tokenCalculator);
             return this.streamHandler.handleStream(result);
         } catch (error: unknown) {
+            const cancellation = resolveLLMCancellationError(error, control?.signal);
+            if (cancellation) throw cancellation;
             const mapped = mapOpenRouterError(error);
             log.error('Streaming call failed:', mapped);
             throw mapped;

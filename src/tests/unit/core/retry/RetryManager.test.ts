@@ -1,8 +1,34 @@
 import { jest } from '@jest/globals';
 import { RetryManager } from '../../../../../src/core/retry/RetryManager.ts';
 import type { RetryConfig } from '../../../../../src/core/retry/RetryManager.ts';
+import { LLMAbortError } from '../../../../../src/core/execution/errors.ts';
 
 describe('RetryManager', () => {
+  it('does not start an operation when already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort('cancelled');
+    const operation = jest.fn<() => Promise<string>>().mockResolvedValue('unused');
+    const retryManager = new RetryManager({ maxRetries: 3 });
+
+    await expect(retryManager.executeWithRetry(operation, () => true, { signal: controller.signal }))
+      .rejects.toBeInstanceOf(LLMAbortError);
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it('aborts during retry backoff without another attempt', async () => {
+    jest.useFakeTimers();
+    const controller = new AbortController();
+    const operation = jest.fn<() => Promise<string>>().mockRejectedValue(new Error('retry me'));
+    const retryManager = new RetryManager({ baseDelay: 100, maxRetries: 3 });
+    const result = retryManager.executeWithRetry(operation, () => true, { signal: controller.signal });
+
+    await Promise.resolve();
+    controller.abort();
+    await expect(result).rejects.toBeInstanceOf(LLMAbortError);
+    expect(operation).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
+  });
+
   beforeAll(() => {
     process.env.NODE_ENV = 'test';
   });

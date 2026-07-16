@@ -19,6 +19,7 @@ import { HistoryManager } from '../history/HistoryManager.ts';
 import { toMessageParts } from '../../interfaces/UniversalInterfaces.ts';
 import type { ToolDefinition } from '../../types/tooling.ts';
 import type { ProviderExecutionContext } from '../caller/ProviderExecution.ts';
+import type { CallExecutionContext } from '../execution/CallExecutionContext.ts';
 
 /**
  * Error thrown when chunk iteration limit is exceeded
@@ -61,6 +62,7 @@ export type ChunkProcessingParams = {
     maxIterations?: number; // New: max iterations for this sequence
     maxParallelRequests?: number; // New: max parallel requests (batch size)
     execution?: ProviderExecutionContext;
+    context?: CallExecutionContext;
 };
 
 /**
@@ -101,12 +103,12 @@ export class ChunkController {
         messages: string[],
         params: ChunkProcessingParams
     ): Promise<UniversalChatResponse[]> {
-        this.resetIterationCount();
+        let iterationCount = 0;
         const log = logger.createLogger({ prefix: 'ChunkController.processChunks' });
         log.debug('Starting chunk processing', {
             messageCount: messages.length,
             maxIterations: this.maxIterations,
-            currentIteration: this.iterationCount,
+            currentIteration: iterationCount,
             maxCharsPerChunk: params.maxCharsPerChunk
         });
 
@@ -140,7 +142,7 @@ export class ChunkController {
                 log.info(`Processing chunk ${chunkIndex}/${messages.length}...`);
             }
             log.debug('Processing chunk', {
-                chunkIndex: this.iterationCount + 1,
+                chunkIndex: iterationCount + 1,
                 maxIterations: this.maxIterations,
                 chunkLength: chunkContent.length,
                 chunkPreview: chunkContent.substring(0, 100) + (chunkContent.length > 100 ? '...' : '')
@@ -148,20 +150,21 @@ export class ChunkController {
 
             const effectiveMaxIterations = params.maxIterations ?? this.maxIterations;
 
-            if (this.iterationCount >= effectiveMaxIterations) {
+            params.context?.throwIfAborted();
+            if (iterationCount >= effectiveMaxIterations) {
                 log.warn(`Chunk iteration limit exceeded: ${effectiveMaxIterations}`, {
-                    currentIteration: this.iterationCount,
+                    currentIteration: iterationCount,
                     totalChunks: messages.length,
                     processedChunks: responses.length
                 });
                 throw new ChunkIterationLimitError(effectiveMaxIterations);
             }
-            this.iterationCount++;
+            iterationCount++;
 
             log.debug('Incremented iteration count', {
-                currentIteration: this.iterationCount,
+                currentIteration: iterationCount,
                 maxIterations: this.maxIterations,
-                remaining: this.maxIterations - this.iterationCount
+                remaining: this.maxIterations - iterationCount
             });
 
             chunkProcessingHistory.addMessage('user', chunkContent);
@@ -180,19 +183,21 @@ export class ChunkController {
             };
 
             log.debug('Calling ChatController.execute', {
-                iteration: this.iterationCount,
+                iteration: iterationCount,
                 messageCount: chatParams.messages.length,
                 hasJsonSchema: Boolean(params.jsonSchema),
                 hasTools: Boolean(params.tools && params.tools.length > 0)
             });
 
             // Call execute with the full UniversalChatParams object
-            const response = params.execution
-                ? await this.chatController.execute(chatParams, params.execution)
-                : await this.chatController.execute(chatParams);
+            const response = params.context?.needsPropagation
+                ? await this.chatController.execute(chatParams, params.execution, params.context)
+                : params.execution
+                    ? await this.chatController.execute(chatParams, params.execution)
+                    : await this.chatController.execute(chatParams);
 
             log.debug('Received response from ChatController', {
-                iteration: this.iterationCount,
+                iteration: iterationCount,
                 hasContent: Boolean(response?.content),
                 contentLength: response?.content?.length || 0,
                 hasToolCalls: Boolean(response?.toolCalls && response.toolCalls.length > 0),
@@ -221,7 +226,7 @@ export class ChunkController {
             } else {
                 // Handle the case where chatController.execute returns undefined/null
                 log.warn('ChatController.execute returned no response for a chunk', {
-                    iteration: this.iterationCount,
+                    iteration: iterationCount,
                     chunkLength: chunkContent.length
                 });
                 // Depending on desired behavior, you might push a placeholder or skip
@@ -229,7 +234,7 @@ export class ChunkController {
         }
 
         log.debug('Chunk processing completed', {
-            totalIterations: this.iterationCount,
+            totalIterations: iterationCount,
             maxIterations: this.maxIterations,
             responseCount: responses.length,
             totalChunks: messages.length
@@ -400,17 +405,13 @@ export class ChunkController {
             log.info(`Processing ${totalChunks} parallel chunks in batches of ${maxParallelRequests}...`);
         }
 
-        for (let i = 0; i < totalChunks; i += maxParallelRequests) {
-            const batch = messages.slice(i, i + maxParallelRequests);
-            const batchNum = Math.floor(i / maxParallelRequests) + 1;
-            const totalBatches = Math.ceil(totalChunks / maxParallelRequests);
-
-            if (totalChunks > maxParallelRequests) {
-                log.info(`Processing batch ${batchNum}/${totalBatches} (${batch.length} chunks)...`);
-            }
-
-            const batchPromises = batch.map(async (chunkContent, relativeIndex) => {
-                const globalIndex = i + relativeIndex;
+        let nextIndex = 0;
+        const worker = async (): Promise<void> => {
+            while (true) {
+                params.context?.throwIfAborted();
+                const globalIndex = nextIndex++;
+                if (globalIndex >= totalChunks) return;
+                const chunkContent = messages[globalIndex];
                 const chunkLog = logger.createLogger({ prefix: `ChunkController.processChunksParallel.chunk${globalIndex + 1}` });
 
                 // Create a separate history manager for this chunk
@@ -444,24 +445,25 @@ export class ChunkController {
                 };
 
                 try {
-                    const response = params.execution
-                        ? await this.chatController.execute(chunkChatParams, params.execution)
-                        : await this.chatController.execute(chunkChatParams);
+                    const response = params.context?.needsPropagation
+                        ? await this.chatController.execute(chunkChatParams, params.execution, params.context)
+                        : params.execution
+                            ? await this.chatController.execute(chunkChatParams, params.execution)
+                            : await this.chatController.execute(chunkChatParams);
 
                     // Store result in the correct position
                     results[globalIndex] = response;
 
                     chunkLog.debug(`Chunk ${globalIndex + 1}/${messages.length} completed`);
-                    return response;
                 } catch (error) {
                     chunkLog.error(`Error processing chunk ${globalIndex + 1}`, { error });
-                    throw error; // Re-throw to fail the batch/process
+                    throw error;
                 }
-            });
+            }
+        };
 
-            // Wait for the current batch to complete
-            await Promise.all(batchPromises);
-        }
+        const workerCount = Math.min(maxParallelRequests, totalChunks);
+        await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
         // Update iteration count to reflect actual work done
         this.iterationCount = messages.length;

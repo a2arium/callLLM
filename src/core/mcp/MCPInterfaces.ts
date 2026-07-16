@@ -6,6 +6,8 @@
  * Options for MCP SDK requests
  */
 export type MCPRequestOptions = {
+    /** Abort the request. */
+    signal?: AbortSignal;
     /**
      * Timeout in milliseconds for this MCP `tools/call` request.
      * Overrides `MCP_TOOL_CALL_TIMEOUT_MS` and the default 60s when set to a positive finite number.
@@ -93,4 +95,4 @@ export type GetPromptResult = {
     contentType?: string;
     /** Flag indicating the method is not supported */
     _mcpMethodNotSupported?: boolean;
-}; 
+};

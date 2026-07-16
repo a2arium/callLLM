@@ -139,6 +139,9 @@ export { SchemaFormatter } from './schema/SchemaFormatter.ts';
 
 // Core retry functionality
 export { RetryManager } from './retry/RetryManager.ts';
+export { CallExecutionContext, validateTimeoutMs } from './execution/CallExecutionContext.ts';
+export { LLMAbortError, LLMTimeoutError, isLLMCancellationError } from './execution/errors.ts';
+export type { LLMExecutionControl, LLMTerminalReason } from '../interfaces/ExecutionInterfaces.ts';
 
 // Core telemetry exports
 export { UsageTracker } from './telemetry/UsageTracker.ts';

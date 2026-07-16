@@ -1,14 +1,62 @@
 import type { UniversalMessage } from '../../interfaces/UniversalInterfaces.ts';
 import { logger } from '../../utils/logger.ts';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+export type HistoryTransaction = {
+    readonly baseSnapshot: UniversalMessage[];
+    messages: UniversalMessage[];
+    committed: boolean;
+};
 
 /**
  * Manages conversation history with different modes of operation
  */
 export class HistoryManager {
-    private historicalMessages: UniversalMessage[] = [];
+    private baseHistoricalMessages: UniversalMessage[] = [];
+    private readonly transactionStorage = new AsyncLocalStorage<HistoryTransaction>();
     private systemMessage: UniversalMessage | null = null;
     private initialSystemMessage: boolean = false;
     private includeSystemInHistory: boolean = true;
+
+    private get historicalMessages(): UniversalMessage[] {
+        return this.transactionStorage.getStore()?.messages ?? this.baseHistoricalMessages;
+    }
+
+    private set historicalMessages(messages: UniversalMessage[]) {
+        const transaction = this.transactionStorage.getStore();
+        if (transaction) transaction.messages = messages;
+        else this.baseHistoricalMessages = messages;
+    }
+
+    /** Begin an isolated history view for a controlled call. */
+    public beginTransaction(): HistoryTransaction {
+        const baseSnapshot = this.baseHistoricalMessages.map(message => ({ ...message }));
+        return {
+            baseSnapshot,
+            messages: baseSnapshot.map(message => ({ ...message })),
+            committed: false
+        };
+    }
+
+    public runInTransaction<T>(transaction: HistoryTransaction, operation: () => T): T {
+        return this.transactionStorage.run(transaction, operation);
+    }
+
+    /** Commit only this call's appended messages when the base history was unchanged. */
+    public commitTransaction(transaction: HistoryTransaction): void {
+        if (transaction.committed) return;
+        transaction.committed = true;
+        const prefixUnchanged = transaction.baseSnapshot.length <= transaction.messages.length &&
+            transaction.baseSnapshot.every((message, index) =>
+                JSON.stringify(message) === JSON.stringify(transaction.messages[index])
+            );
+        if (prefixUnchanged) {
+            const appended = transaction.messages.slice(transaction.baseSnapshot.length);
+            this.baseHistoricalMessages.push(...appended);
+        } else {
+            this.baseHistoricalMessages = transaction.messages.map(message => ({ ...message }));
+        }
+    }
 
     constructor(systemPrompt?: string) {
         if (systemPrompt === '') {
@@ -546,4 +594,4 @@ export class HistoryManager {
         log.debug(`Removed ${messagesToRemove.length} assistant messages with unmatched tool calls`);
         return messagesToRemove.length;
     }
-} 
+}
