@@ -47,3 +47,5 @@ test-*.*
 test-output.mp4
 test-output.mp4
 test_*
+
+models-*.json
