@@ -878,7 +878,8 @@ export class OpikProvider implements TelemetryProvider {
                     ...(span.data?.metadata || {}),
                     'original_usage.prompt_tokens': promptTokens,
                     'original_usage.completion_tokens': completionTokens,
-                    'original_usage.total_tokens': totalTokens
+                    'original_usage.total_tokens': totalTokens,
+                    ...(usage?.measurements?.length ? { usage_measurements: usage.measurements } : {})
                 },
                 // Close the span atomically in the same update to avoid race with end()
                 endTime: new Date()
@@ -1066,4 +1067,3 @@ export class OpikProvider implements TelemetryProvider {
         this.client = undefined;
     }
 }
-

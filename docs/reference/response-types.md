@@ -149,6 +149,12 @@ type Usage = {
     total?: number;
     unit: 'seconds';
   };
+  measurements?: Array<{
+    name: string;
+    value: number;
+    unit: string;
+    source: 'provider' | 'estimated';
+  }>;
 };
 ```
 
@@ -166,6 +172,23 @@ type EmbeddingResponse = {
   metadata?: Metadata;
 };
 ```
+
+## Rerank Response
+
+```ts
+type RerankResponse = {
+  results: Array<{
+    index: number;
+    documentId?: string;
+    relevanceScore?: number;
+  }>;
+  model: string;
+  usage: Usage;
+  metadata?: Metadata;
+};
+```
+
+Results are returned in provider ranking order. `index` always points to the original input array. `documentId` is present when the corresponding input used a typed text document with an ID. Score ranges and calibration are provider/model specific.
 
 ## Audio Responses
 

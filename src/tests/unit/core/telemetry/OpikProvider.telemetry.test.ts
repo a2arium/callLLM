@@ -78,7 +78,8 @@ describe('OpikProvider telemetry', () => {
         // End LLM with usage
         provider.endLLM(llm, {
             tokens: { input: { total: 100, cached: 0 }, output: { total: 10, reasoning: 0 }, total: 110 },
-            costs: { input: { total: 0.001, cached: 0 }, output: { total: 0.0001, reasoning: 0 }, total: 0.0011 }
+            costs: { input: { total: 0.001, cached: 0 }, output: { total: 0.0001, reasoning: 0 }, total: 0.0011 },
+            measurements: [{ name: 'searches', value: 1, unit: 'search', source: 'provider' }]
         } as any, 'gpt-4o-mini-2024');
 
         // End conversation and include input/output for trace
@@ -91,6 +92,9 @@ describe('OpikProvider telemetry', () => {
         expect(spanUpdate?.output?.response).toBe('final text');
         expect(spanUpdate?.input?.images?.[0]?.source).toBe('base64');
         expect(typeof spanUpdate?.input?.images?.[0]?.base64).toBe('string');
+        expect(spanUpdate?.metadata?.usage_measurements).toEqual([
+            { name: 'searches', value: 1, unit: 'search', source: 'provider' }
+        ]);
 
         const traceUpdate = store.updates.filter((u: any) => u.type === 'trace.update').pop()?.payload;
         expect(traceUpdate?.input?.images?.[0]?.source).toBe('base64');
@@ -128,5 +132,4 @@ describe('OpikProvider telemetry', () => {
         expect(traceUpdate2?.input?.images?.length).toBeGreaterThan(0);
     });
 });
-
 

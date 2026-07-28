@@ -421,7 +421,13 @@ export class ChatController {
             if (hasToolCalls && this.toolController && this.toolOrchestrator && this.historyManager) {
                 log.debug('Tool calls detected, processing...');
 
-                this.historyManager.addMessage('assistant', response.content ?? '', { toolCalls: response.toolCalls });
+                const providerMetadata = response.metadata?.providerState
+                    ? { providerState: response.metadata.providerState }
+                    : undefined;
+                this.historyManager.addMessage('assistant', response.content ?? '', {
+                    toolCalls: response.toolCalls,
+                    ...(providerMetadata ? { metadata: providerMetadata } : {})
+                });
 
                 // We need to build the next iteration's messages based on what we sent THIS time
                 // to avoid losing the user message when historyMode is 'stateless'
@@ -429,7 +435,8 @@ export class ChatController {
                 loopMessages.push({
                     role: 'assistant',
                     content: response.content ?? '',
-                    toolCalls: response.toolCalls
+                    toolCalls: response.toolCalls,
+                    ...(providerMetadata ? { metadata: providerMetadata } : {})
                 });
 
                 // Track how many messages we had before tool execution
@@ -508,7 +515,13 @@ export class ChatController {
                 // If the *final* response doesn't have tool calls, add it to history.
                 // This handles cases where the initial response had tool calls, but the *final* one after resubmission doesn't.
                 // Also handles cases where there were no tool calls at all.
-                this.historyManager.addMessage('assistant', validatedResponse.content ?? '', { toolCalls: validatedResponse.toolCalls });
+                const providerMetadata = validatedResponse.metadata?.providerState
+                    ? { providerState: validatedResponse.metadata.providerState }
+                    : undefined;
+                this.historyManager.addMessage('assistant', validatedResponse.content ?? '', {
+                    toolCalls: validatedResponse.toolCalls,
+                    ...(providerMetadata ? { metadata: providerMetadata } : {})
+                });
             }
 
             // --- Telemetry: Collector end LLM (only if not already ended for tool_calls) ---

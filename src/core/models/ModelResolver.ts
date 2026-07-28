@@ -312,6 +312,7 @@ export function describeRequestRequirements(requirements: RequestRequirements): 
     if (requirements.audioOutput?.required) descriptions.push('audio output');
     if (requirements.videoOutput?.required) descriptions.push('video output');
     if (requirements.embeddings?.required) descriptions.push('embeddings');
+    if (requirements.reranking?.required) descriptions.push('reranking');
     if (requirements.audioApi?.required) descriptions.push(`audio API${requirements.audioApi.operations?.length ? ` (${requirements.audioApi.operations.join(', ')})` : ''}`);
     if (requirements.toolCalls?.required) descriptions.push(`tool calling${requirements.toolCalls.streaming ? ' with streaming' : ''}${requirements.toolCalls.parallel ? ' with parallel calls' : ''}`);
     if (requirements.streaming?.required) descriptions.push('streaming');
@@ -321,6 +322,7 @@ export function describeRequestRequirements(requirements: RequestRequirements): 
     if (requirements.providerInterfaces?.imageCall) descriptions.push('provider image interface');
     if (requirements.providerInterfaces?.videoCall) descriptions.push('provider video interface');
     if (requirements.providerInterfaces?.embeddingCall) descriptions.push('provider embedding interface');
+    if (requirements.providerInterfaces?.rerankCall) descriptions.push('provider rerank interface');
     if (requirements.providerInterfaces?.audioCall) descriptions.push('provider audio interface');
 
     return descriptions;

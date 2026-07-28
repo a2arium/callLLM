@@ -226,6 +226,14 @@ export class OpenTelemetryProvider implements TelemetryProvider {
                 if (usage.costs) {
                     (attrs as any)['gen_ai.usage.cost'] = usage.costs.total;
                 }
+                for (const measurement of usage.measurements ?? []) {
+                    span.addEvent('callllm.usage.measurement', {
+                        'callllm.usage.measurement.name': measurement.name,
+                        'callllm.usage.measurement.value': measurement.value,
+                        'callllm.usage.measurement.unit': measurement.unit,
+                        'callllm.usage.measurement.source': measurement.source
+                    });
+                }
             }
 
             span.setAttributes(attrs);
@@ -283,5 +291,4 @@ export class OpenTelemetryProvider implements TelemetryProvider {
         delete (globalThis as any)[`__callllm_tool_${ctx.toolCallId}`];
     }
 }
-
 

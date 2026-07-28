@@ -3,6 +3,7 @@ import { CerebrasAdapter } from './cerebras/adapter.ts';
 import { VeniceAdapter } from './venice/adapter.ts';
 import { OpenRouterAdapter } from './openrouter/adapter.ts';
 import { GeminiAdapter } from './gemini/adapter.ts';
+import { SiliconFlowAdapter } from './siliconflow/adapter.ts';
 import type { AdapterConstructor } from './types.ts';
 import { ProviderNotFoundError } from './types.ts';
 
@@ -18,6 +19,7 @@ const ADAPTER_REGISTRY = {
     'venice': VeniceAdapter as AdapterConstructor,
     'openrouter': OpenRouterAdapter as AdapterConstructor,
     'gemini': GeminiAdapter as AdapterConstructor,
+    'siliconflow': SiliconFlowAdapter as AdapterConstructor,
 } as const;
 
 export const adapterRegistry = new Map<string, AdapterConstructor>(
@@ -49,4 +51,4 @@ export const getAdapterConstructor = (providerName: string): AdapterConstructor 
         throw new ProviderNotFoundError(providerName);
     }
     return AdapterClass;
-}; 
+};

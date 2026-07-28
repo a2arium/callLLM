@@ -8,6 +8,7 @@ export type SelectionOperation =
     | 'tools'
     | 'reasoning'
     | 'embeddings'
+    | 'rerank'
     | 'imageInput'
     | 'imageOutput'
     | 'video'
@@ -19,6 +20,7 @@ export type ScoreContext = {
     operation?: SelectionOperation;
     estimatedInputTokens?: number;
     estimatedOutputTokens?: number;
+    documentCount?: number;
     providerOrder?: readonly string[];
 };
 
@@ -216,6 +218,8 @@ export function getOperationCost(
             return firstDefined(model.ttsPricePerMillionChars, model.audioOutputPricePerMillion, model.outputPricePerMillion);
         case 'embeddings':
             return model.inputPricePerMillion;
+        case 'rerank':
+            return getRerankCost(model, context);
         case 'text':
         case 'json':
         case 'tools':
@@ -292,6 +296,7 @@ function getQualityMetric(model: ModelInfo, _operation: SelectionOperation): num
 function getDimensionRelevance(operation: SelectionOperation): Record<PreferenceDimension, boolean> {
     switch (operation) {
         case 'embeddings':
+        case 'rerank':
             return { cost: true, latency: true, throughput: false, quality: true, context: true };
         case 'imageOutput':
         case 'video':
@@ -311,11 +316,23 @@ function getDimensionRelevance(operation: SelectionOperation): Record<Preference
 }
 
 function isNonTextMediaOperation(operation: SelectionOperation): boolean {
-    return operation === 'imageOutput'
+    return operation === 'rerank'
+        || operation === 'imageOutput'
         || operation === 'video'
         || operation === 'audioTranscribe'
         || operation === 'audioTranslate'
         || operation === 'audioSpeech';
+}
+
+function getRerankCost(model: ModelInfo, context: ScoreContext): number | undefined {
+    const pricing = model.rerankPricing;
+    if (!pricing) return model.inputPricePerMillion;
+    const units = pricing.unit === 'token'
+        ? context.estimatedInputTokens
+        : pricing.unit === 'document'
+            ? context.documentCount
+            : 1;
+    return units === undefined ? pricing.price / pricing.per : (units * pricing.price) / pricing.per;
 }
 
 function checkOptionalPrice(reasons: string[], label: string, value: number | undefined, max: number): void {
@@ -344,4 +361,3 @@ function providerIndex(provider: string, providerOrder: readonly string[]): numb
 function firstDefined(...values: Array<number | undefined>): number | undefined {
     return values.find(value => value !== undefined);
 }
-

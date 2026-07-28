@@ -10,6 +10,7 @@ export type ProviderInterfaceName =
     | 'imageCall'
     | 'videoCall'
     | 'embeddingCall'
+    | 'rerankCall'
     | 'audioCall';
 
 export type ProviderPoolInterfaceSupport = {
@@ -18,6 +19,7 @@ export type ProviderPoolInterfaceSupport = {
     imageCall: boolean;
     videoCall: boolean;
     embeddingCall: boolean;
+    rerankCall: boolean;
     audioCall: boolean;
 };
 
@@ -87,6 +89,7 @@ export class ProviderPool {
             imageCall: typeof providerInstance.imageCall === 'function',
             videoCall: typeof providerInstance.videoCall === 'function',
             embeddingCall: typeof providerInstance.embeddingCall === 'function',
+            rerankCall: typeof providerInstance.rerankCall === 'function',
             audioCall: typeof providerInstance.audioCall === 'function'
         };
     }

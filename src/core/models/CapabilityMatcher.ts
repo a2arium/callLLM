@@ -38,6 +38,14 @@ export type RequestRequirements = {
         dimensions?: number;
         encodingFormat?: 'float' | 'base64';
     };
+    reranking?: {
+        required: boolean;
+        documentType?: 'text' | 'image';
+        documentCount?: number;
+        estimatedQueryTokens?: number;
+        estimatedDocumentTokens?: number;
+        estimatedTotalTokens?: number;
+    };
     audioApi?: {
         required: boolean;
         operations?: ('transcribe' | 'translate' | 'synthesize')[];
@@ -64,6 +72,7 @@ export type RequestRequirements = {
         imageCall?: boolean;
         videoCall?: boolean;
         embeddingCall?: boolean;
+        rerankCall?: boolean;
         audioCall?: boolean;
     };
 };
@@ -72,6 +81,7 @@ export type ProviderInterfaceSupport = {
     imageCall?: boolean;
     videoCall?: boolean;
     embeddingCall?: boolean;
+    rerankCall?: boolean;
     audioCall?: boolean;
 };
 
@@ -159,6 +169,10 @@ export function explainCapabilityMatch(
 
     if (requirements.embeddings?.required && !supportsEmbeddings(capabilities, requirements.embeddings)) {
         reasons.push(formatEmbeddingReason(requirements.embeddings));
+    }
+
+    if (requirements.reranking?.required && !supportsReranking(capabilities, requirements.reranking)) {
+        reasons.push(formatRerankingReason(requirements.reranking));
     }
 
     if (requirements.audioApi?.required && !supportsAudioApi(capabilities, requirements.audioApi)) {
@@ -303,6 +317,21 @@ export function supportsEmbeddings(
     return true;
 }
 
+export function supportsReranking(
+    capabilities: ModelCapabilities,
+    requirement: NonNullable<RequestRequirements['reranking']>
+): boolean {
+    const capability = capabilities.reranking;
+    if (!capability) return false;
+    if (capability === true) return true;
+    if (requirement.documentType && capability.documentTypes && !capability.documentTypes.includes(requirement.documentType)) return false;
+    if (requirement.documentCount !== undefined && capability.maxDocuments !== undefined && requirement.documentCount > capability.maxDocuments) return false;
+    if (requirement.estimatedQueryTokens !== undefined && capability.maxQueryTokens !== undefined && requirement.estimatedQueryTokens > capability.maxQueryTokens) return false;
+    if (requirement.estimatedDocumentTokens !== undefined && capability.maxDocumentTokens !== undefined && requirement.estimatedDocumentTokens > capability.maxDocumentTokens) return false;
+    if (requirement.estimatedTotalTokens !== undefined && capability.maxTotalTokens !== undefined && requirement.estimatedTotalTokens > capability.maxTotalTokens) return false;
+    return true;
+}
+
 export function supportsAudioApi(
     capabilities: ModelCapabilities,
     requirement: NonNullable<RequestRequirements['audioApi']>
@@ -397,6 +426,7 @@ function checkProviderInterfaces(
     if (required.imageCall && available.imageCall !== true) reasons.push('provider imageCall interface is not available');
     if (required.videoCall && available.videoCall !== true) reasons.push('provider videoCall interface is not available');
     if (required.embeddingCall && available.embeddingCall !== true) reasons.push('provider embeddingCall interface is not available');
+    if (required.rerankCall && available.rerankCall !== true) reasons.push('provider rerankCall interface is not available');
     if (required.audioCall && available.audioCall !== true) reasons.push('provider audioCall interface is not available');
 
     return reasons;
@@ -442,6 +472,17 @@ function formatEmbeddingReason(requirement: NonNullable<RequestRequirements['emb
         : 'embeddings are not supported';
 }
 
+function formatRerankingReason(requirement: NonNullable<RequestRequirements['reranking']>): string {
+    const details = [
+        requirement.documentType ? `document type ${requirement.documentType}` : undefined,
+        requirement.documentCount !== undefined ? `${requirement.documentCount} documents` : undefined,
+        requirement.estimatedTotalTokens !== undefined ? `${requirement.estimatedTotalTokens} estimated tokens` : undefined
+    ].filter(Boolean);
+    return details.length
+        ? `reranking does not support required options: ${details.join(', ')}`
+        : 'reranking is not supported';
+}
+
 function formatAudioApiReason(requirement: NonNullable<RequestRequirements['audioApi']>): string {
     const details = [
         requirement.operations?.length ? `operations ${requirement.operations.join(', ')}` : undefined,
@@ -463,4 +504,3 @@ function formatToolReason(requirement: NonNullable<RequestRequirements['toolCall
         ? `tool calling does not support required modes: ${details.join(', ')}`
         : 'tool calling is not supported';
 }
-

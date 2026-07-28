@@ -25,7 +25,9 @@ import type {
     TranslationResponse,
     SpeechCallOptions,
     SpeechResponse,
-    Metadata
+    Metadata,
+    RerankCallOptions,
+    RerankResponse
 } from '../../interfaces/UniversalInterfaces.ts';
 import { toMessageParts } from '../../interfaces/UniversalInterfaces.ts';
 import { z } from 'zod';
@@ -42,6 +44,7 @@ import { resolveModel, type ModelResolutionMode, type ResolvedModel } from '../m
 import {
     inferChatRequestRequirements,
     inferEmbeddingRequestRequirements,
+    inferRerankRequestRequirements,
     inferSpeechRequestRequirements,
     inferTranscriptionRequestRequirements,
     inferTranslationRequestRequirements
@@ -92,12 +95,14 @@ import {
 import { BaseAdapter } from '../../adapters/base/baseAdapter.ts';
 import type { ImageOp, ImageCallParams } from '../../interfaces/LLMProvider.ts';
 import { EmbeddingController } from '../embeddings/EmbeddingController.ts';
+import { RerankController } from '../rerank/RerankController.ts';
 import { AudioController } from '../audio/AudioController.ts';
 import { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts'
 import { OpenTelemetryProvider } from '../telemetry/providers/openTelemetry/OpenTelemetryProvider.ts'
 import { OpikProvider } from '../telemetry/providers/opik/OpikProvider.ts'
 import type { PromptMessage, ConversationInputOutput } from '../telemetry/collector/types.ts'
 import { CallExecutionContext } from '../execution/CallExecutionContext.ts';
+import { LLMTimeoutError } from '../execution/errors.ts';
 
 /**
  * Interface that matches the core functionality of StreamController
@@ -200,6 +205,7 @@ export class LLMCaller implements MCPDirectAccess {
     private parallelChunking: boolean; // Whether to process chunks in parallel
     // Embedding controller
     private embeddingController?: EmbeddingController;
+    private rerankController?: RerankController;
     private audioController?: AudioController;
     private telemetryCollector?: TelemetryCollector;
 
@@ -529,6 +535,138 @@ export class LLMCaller implements MCPDirectAccess {
             response,
             this.toResolvedModelMetadata(target?.resolved, modelName, options.model ? { model: options.model } : this.modelSelection)
         );
+    }
+
+    /**
+     * Rerank candidate documents against a query using a supported reranker model.
+     */
+    public async rerank(options: RerankCallOptions): Promise<RerankResponse> {
+        const context = new CallExecutionContext({
+            signal: options.signal,
+            timeoutMs: options.timeoutMs,
+            usageCallback: options.usageCallback,
+            callerId: this.callerId
+        });
+        let conversationCtx: ReturnType<TelemetryCollector['startConversation']> | undefined;
+        let llmCtx: ReturnType<TelemetryCollector['startLLM']> | undefined;
+        let llmEnded = false;
+        try {
+            const inferred = inferRerankRequestRequirements(options);
+            const target = this.resolveExecutionTarget(
+                inferred.requirements,
+                options.model ? { model: options.model } : undefined,
+                inferred.scoreContext
+            );
+            const modelName = target?.model ?? options.model ?? this.model;
+            const adapter = (target?.provider ?? this.providerManager.getProvider()) as unknown as BaseAdapter;
+            const controller = new RerankController(adapter);
+            this.rerankController = controller;
+
+            conversationCtx = this.telemetryCollector?.startConversation('call', { operation: 'rerank' });
+            if (conversationCtx && this.telemetryCollector) {
+                llmCtx = this.telemetryCollector.startLLM(conversationCtx, {
+                    provider: target?.providerName ?? this.getCurrentProviderName(),
+                    model: modelName,
+                    streaming: false,
+                    settings: { operation: 'rerank', documentCount: options.documents.length }
+                });
+                this.telemetryCollector.addPrompt(llmCtx, [{
+                    role: 'user',
+                    content: JSON.stringify({
+                        query: options.query,
+                        documents: options.documents.map(document => typeof document === 'string' ? document : document.text)
+                    }),
+                    sequence: 0
+                }]);
+            }
+
+            const response = await context.awaitOrAbort(this.retryManager.executeWithRetry(
+                () => controller.rerank(modelName, options, context),
+                shouldRetryDueToLLMError,
+                context
+            ));
+            const resolvedResponse = this.addResolvedModelMetadata(
+                response,
+                this.toResolvedModelMetadata(
+                    target?.resolved,
+                    modelName,
+                    options.model ? { model: options.model } : this.modelSelection
+                )
+            );
+
+            if (llmCtx && this.telemetryCollector) {
+                const resultContent = JSON.stringify(resolvedResponse.results);
+                this.telemetryCollector.addChoice(llmCtx, {
+                    content: resultContent,
+                    contentLength: resultContent.length,
+                    sequence: 0
+                });
+                this.telemetryCollector.endLLM(llmCtx, resolvedResponse.usage, resolvedResponse.model);
+                llmEnded = true;
+            }
+            if (conversationCtx && this.telemetryCollector) {
+                await this.telemetryCollector.endConversation(conversationCtx, {
+                    terminalAt: Date.now(),
+                    terminalReason: 'completed',
+                    totalTokens: resolvedResponse.usage.tokens.total,
+                    totalCost: resolvedResponse.usage.costs.total,
+                    llmCallsCount: 1,
+                    success: true,
+                    errorCount: 0
+                });
+            }
+
+            const callback = options.usageCallback ?? this.usageCallback;
+            if (callback && this.callerId) {
+                await context.awaitOrAbort(Promise.resolve(
+                    context.isControlled
+                        ? callback({ callerId: this.callerId, usage: normalizeUsage(resolvedResponse.usage), timestamp: Date.now() }, context)
+                        : callback({ callerId: this.callerId, usage: normalizeUsage(resolvedResponse.usage), timestamp: Date.now() })
+                ));
+            }
+            context.complete();
+            return resolvedResponse;
+        } catch (error) {
+            context.fail(error);
+            if (llmCtx && !llmEnded && this.telemetryCollector) {
+                this.telemetryCollector.endLLM(llmCtx);
+                llmEnded = true;
+            }
+            if (conversationCtx && this.telemetryCollector) {
+                await this.telemetryCollector.endConversation(conversationCtx, {
+                    terminalAt: Date.now(),
+                    terminalReason: error instanceof LLMTimeoutError
+                        ? 'timeout'
+                        : context.signal.aborted ? 'cancelled' : 'provider_error',
+                    llmCallsCount: llmCtx ? 1 : 0,
+                    success: false,
+                    errorCount: 1
+                });
+            }
+            throw error;
+        } finally {
+            context.dispose();
+        }
+    }
+
+    public getAvailableRerankModels(): string[] {
+        return this.modelManager
+            .getAvailableModels()
+            .filter(model => Boolean(model.capabilities?.reranking))
+            .map(model => model.name);
+    }
+
+    public checkRerankCapabilities(modelName: string): {
+        supported: boolean;
+        documentTypes?: Array<'text' | 'image'>;
+        maxDocuments?: number;
+        maxQueryTokens?: number;
+        maxDocumentTokens?: number;
+        maxTotalTokens?: number;
+    } {
+        const capability = ModelManager.getCapabilities(modelName).reranking;
+        if (!capability) return { supported: false };
+        return capability === true ? { supported: true } : { supported: true, ...capability };
     }
 
     /**
@@ -1166,6 +1304,7 @@ export class LLMCaller implements MCPDirectAccess {
             imageCall: boolean;
             videoCall: boolean;
             embeddingCall: boolean;
+            rerankCall: boolean;
             audioCall: boolean;
         }>> = {};
 
@@ -1176,6 +1315,7 @@ export class LLMCaller implements MCPDirectAccess {
                     imageCall: providerSupport.imageCall,
                     videoCall: providerSupport.videoCall,
                     embeddingCall: providerSupport.embeddingCall,
+                    rerankCall: providerSupport.rerankCall,
                     audioCall: providerSupport.audioCall
                 };
             } catch {
@@ -1183,6 +1323,7 @@ export class LLMCaller implements MCPDirectAccess {
                     imageCall: false,
                     videoCall: false,
                     embeddingCall: false,
+                    rerankCall: false,
                     audioCall: false
                 };
             }

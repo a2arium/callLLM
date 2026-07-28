@@ -4,7 +4,8 @@ export const reasoningScenario: Scenario = {
     id: 'reasoning',
     title: 'Reasoning model (minimal effort)',
     requirements: {
-        textOutput: { required: true, formats: ['text'] }
+        textOutput: { required: true, formats: ['text'] },
+        reasoning: { required: true }
     },
     run: async ({ caller }) => {
         const resp = await caller.call('Solve: If x + 3 = 7, what is x? Show concise reasoning.', {
@@ -21,5 +22,4 @@ export const reasoningScenario: Scenario = {
         return { pass, score: pass ? 1 : 0.5, reason: pass ? 'Contains correct answer 4' : 'Missing explicit 4' };
     }
 };
-
 

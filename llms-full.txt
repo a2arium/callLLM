@@ -2,7 +2,7 @@
 
 > Curated full documentation bundle for AI coding assistants and RAG ingestion. Generated from the repository Markdown sources.
 
-Last updated: 2026-05-11
+Last updated: 2026-07-28
 
 For the compact index, see [llms.txt](./llms.txt).
 
@@ -140,6 +140,7 @@ GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...
 CEREBRAS_API_KEY=...
 VENICE_API_KEY=...
+SILICONFLOW_API_KEY=...
 ```
 
 ## Run Locally
@@ -282,6 +283,7 @@ The same request model also applies to:
 - **Audio**: speech-to-text, translation, and text-to-speech with local `ffmpeg` transcoding when provider input/output needs conversion.
 - **Video**: asynchronous video jobs with status polling, download helpers, usage seconds, and estimated video cost.
 - **Embeddings**: exact embedding models for retrieval systems or dynamic embedding-capable selection for one-off jobs.
+- **Reranking**: provider-neutral query/document reranking with typed document IDs, capability-aware selection, and normalized usage.
 - **Large inputs**: split large strings, objects, and markdown into model-sized chunks.
 - **MCP and function folders**: expose external tool servers or load local tool files by name.
 
@@ -398,6 +400,7 @@ Guides:
 - [Streaming, history, and large inputs](./docs/guides/streaming-history-large-inputs.md)
 - [Media: images, video, and audio](./docs/guides/media.md)
 - [Embeddings](./docs/guides/embeddings.md)
+- [Reranking](./docs/guides/reranking.md)
 - [Telemetry and usage](./docs/guides/telemetry-and-usage.md)
 - [Settings, retries, and overrides](./docs/guides/retries-and-settings.md)
 
@@ -435,8 +438,11 @@ Provider registry keys and environment variables:
 | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 | Cerebras | `cerebras` | `CEREBRAS_API_KEY` |
 | Venice | `venice` | `VENICE_API_KEY` |
+| SiliconFlow | `siliconflow` | `SILICONFLOW_API_KEY` |
 
 Support is model-specific. Dynamic selection filters by the actual model capabilities before scoring. Structured JSON output is available through `callllm` for all chat-capable providers: native JSON mode is used when available, and prompt/schema fallback is used otherwise unless `jsonMode: 'native-only'` is requested.
+
+SiliconFlow currently supports chat, streaming, reasoning, function tools, reranking, usage/cost mapping, and JSON object mode through this adapter. Provider-specific chat parameters can be passed under `settings.providerOptions.siliconflow`, for example `{ enable_thinking: true, thinking_budget: 8192 }`. Reranking supports the cataloged Qwen3 reranker models through `caller.rerank()`. Embedding, image, audio, and video endpoints are not yet exposed by this adapter.
 
 ## Production Notes
 
@@ -494,6 +500,31 @@ yarn example:speechSynthesis
 yarn example:speechTranscription
 ```
 
+## Cancellation and deadlines
+
+`call()` and `stream()` accept either an external `AbortSignal`, a deadline in milliseconds, or both:
+
+```ts
+import { LLMAbortError, LLMTimeoutError } from 'callllm';
+
+const controller = new AbortController();
+
+try {
+  const response = await caller.call('Summarize this', {
+    signal: controller.signal,
+    timeoutMs: 30_000
+  });
+} catch (error) {
+  if (error instanceof LLMTimeoutError) console.error(`Timed out after ${error.timeoutMs}ms`);
+  else if (error instanceof LLMAbortError) console.error('Cancelled');
+  else throw error;
+}
+```
+
+`timeoutMs` must be an integer from `1` through `2_147_483_647`. A stream deadline starts when `stream()` is invoked, not when its first item is read. Local tools and usage callbacks may accept an optional second `{ signal }` argument for cooperative cancellation.
+
+Provider cancellation is best effort: a remote media job may continue after the local operation has stopped. Cancelled controlled calls do not commit conversation history or final image/video output files, and late usage callbacks are suppressed.
+
 ## License
 
 MIT
@@ -533,6 +564,7 @@ GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...
 CEREBRAS_API_KEY=...
 VENICE_API_KEY=...
+SILICONFLOW_API_KEY=...
 ```
 
 You can also pass a key when constructing `LLMCaller`:
@@ -714,6 +746,7 @@ Users normally do not manually declare capabilities. The framework infers them f
 | `output.image` | image generation/editing |
 | `output.video` | video generation |
 | `embeddings()` | embeddings |
+| `rerank()` | reranking and a provider rerank interface |
 | `transcribe()` | audio transcription |
 | `translateAudio()` | audio translation |
 | `synthesizeSpeech()` | speech synthesis |
@@ -796,6 +829,8 @@ Responses include a normalized `usage` object when the provider or local estimat
 
 Cost values are estimates from model catalog pricing and provider usage metadata where available.
 
+Non-token operations may also report named `measurements` such as searches, documents, or requests. This keeps billing meters explicit without pretending every provider operation is token-priced.
+
 ## What callllm Does Not Promise
 
 `callllm` normalizes provider APIs. It does not make model output deterministic or guarantee provider parity for every feature. If a workflow needs strict correctness:
@@ -830,6 +865,7 @@ GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...
 CEREBRAS_API_KEY=...
 VENICE_API_KEY=...
+SILICONFLOW_API_KEY=...
 ```
 
 ## Core Examples
@@ -869,6 +905,7 @@ Audio transcoding and large-file transcription require `ffmpeg` and `ffprobe` on
 | Command | What it demonstrates |
 | --- | --- |
 | `yarn example:embeddings` | embeddings, dimensions, batch inputs, usage |
+| `yarn example:reranking` | retrieval reranking, document IDs, scores, usage |
 | `yarn example:reasoning` | reasoning settings |
 | `yarn example:loadHistory` | loading saved history |
 
@@ -1145,6 +1182,44 @@ const response = await caller.call('Create metadata for this article.', {
 
 The schema layer sanitizes/coerces schemas for provider compatibility where possible.
 
+Prefer Zod over a JSON Schema string when post-response validation matters. String JSON Schema is accepted on the outbound path but is not enforced against responses, so `metadata.validationErrors` will not be populated. JSON Schema as a plain object is also accepted.
+
+## How Schemas Are Normalized for Providers
+
+`callllm` rewrites your schema before sending it to providers that require strict structured output (for example OpenAI). The rewrite is conservative and predictable:
+
+- every property is forced into `required`
+- `additionalProperties: false` is set on every object level
+- validation keywords such as `minimum`, `maximum`, `minLength`, `pattern`, `format` are removed
+- `default` values are removed
+- root-level unions are downgraded to a generic JSON object format
+- descriptions (`.describe(...)`) are preserved and reach the model
+
+This means:
+
+- the model is expected to emit every declared field on every call
+- constraints like `min`, `max`, `regex`, `refine` are only enforced after the response, not by the provider
+- a `.default(value)` is applied during response coercion, not by the provider
+
+## Zod Feature Mapping
+
+| Zod | Outbound schema | Response handling |
+| --- | --- | --- |
+| `z.string()`, `z.number()`, `z.boolean()` | direct type mapping | direct |
+| `z.enum([...])` | string with `enum` values | direct |
+| `z.array(item)` | array with `items` | direct |
+| `z.object({...})` | object with all keys required and `additionalProperties: false` | direct |
+| `z.record(K, V)` | object with `additionalProperties: V` (open map) | direct |
+| `.describe('...')` | copied to `description` | n/a |
+| `.optional()` | forced back into `required` for strict providers | `null` on optional fields is pruned during validation |
+| `.nullable()` | unwrapped to inner type | `null` is accepted at validation time |
+| `.default(value)` | removed from outbound schema | applied during response coercion if field is missing |
+| `.min(n)`, `.max(n)`, `.regex(...)`, `.refine(...)` | removed from outbound schema | enforced by Zod against the response |
+| `z.union([...])`, `z.discriminatedUnion(...)` | flattened to selector + per-option fields, root-level unions downgraded | unflattened back to original shape |
+| `.passthrough()` | not supported | n/a |
+
+If `jsonSchema.name` is set, the response is unwrapped from `{ [name]: data }` automatically.
+
 ## JSON Modes
 
 Configure JSON behavior with `settings.jsonMode`:
@@ -1209,10 +1284,14 @@ if (!first.contentObject) {
 ## Guidance
 
 - Use Zod for TypeScript-first application code.
-- Use JSON Schema when interoperating with existing API schemas.
+- Use JSON Schema when interoperating with existing API schemas, and keep your own validation if you rely on it.
 - Use `native-only` when provider-native structured output is a hard requirement.
 - Use `fallback` when model flexibility matters more than native JSON mode.
 - Keep schemas small and explicit. Deep or ambiguous schemas are harder for models.
+- For strict providers, prefer required fields with `.nullable()` or empty strings/arrays over `.optional()`. Optional fields are still required on the wire for strict providers.
+- Treat `.min`, `.max`, `.regex`, and `.refine` as post-response validation only. The model is not told about them, so they should not be your primary way to shape output. Convey shape in `.describe(...)` and use refinements as a safety net.
+- Keep a plain `z.object(...)` at the root. Root-level unions degrade to generic JSON object mode.
+- For multi-stage extraction pipelines, keep the LLM-facing schema flat (arrays of flat records, strings, numbers, enums) and convert to your internal nested domain shape deterministically after validation.
 
 ---
 
@@ -2125,6 +2204,8 @@ Provider support varies. Dynamic selection filters to translation-capable models
 
 Embeddings convert text into vectors for semantic search, clustering, classification, recommendations, and RAG.
 
+For a second-stage relevance model that reorders retrieved candidates, see [Reranking](./docs/guides/reranking.md).
+
 ## Basic Embedding
 
 ```ts
@@ -2330,6 +2411,24 @@ const matches = await vectorStore.search({
 
 Filtering by `embeddingModel` is important during migrations or when one database stores multiple indexes.
 
+## Optional Reranking Stage
+
+Vector similarity is efficient for candidate retrieval; a reranker can improve precision over the final candidate set:
+
+```ts
+const ranked = await rerankCaller.rerank({
+  query: 'How do I invite a teammate?',
+  documents: matches.map(match => ({
+    type: 'text' as const,
+    id: match.id,
+    text: match.text
+  })),
+  topN: 5
+});
+```
+
+Use the returned indices or document IDs to construct the final context. Reranker scores are model-specific, so validate thresholds per model instead of assuming a universal score scale. See [Reranking](./docs/guides/reranking.md).
+
 ## RAG Flow
 
 Use retrieved text as `data` for a normal model call:
@@ -2390,6 +2489,157 @@ When changing embedding models:
 5. Delete the old index only after traffic has moved.
 
 Do not compare vectors generated by different models as part of one ranking pass.
+
+---
+
+# Source: docs/guides/reranking.md
+
+# Reranking
+
+Reranking scores a set of candidate documents against one query. It is usually the second stage of retrieval: a vector or keyword search produces a broad candidate set, then a reranker improves the final ordering.
+
+## Basic Reranking
+
+```ts
+import { LLMCaller } from 'callllm';
+
+const caller = new LLMCaller('siliconflow', 'cheap');
+
+const response = await caller.rerank({
+  query: 'How do I reset my password?',
+  documents: [
+    'Download invoices from Billing.',
+    'Reset your password from the sign-in screen.',
+    'Invite teammates from Workspace settings.'
+  ],
+  topN: 2
+});
+
+for (const result of response.results) {
+  console.log(result.index, result.relevanceScore);
+}
+```
+
+Presets and policies are resolved against reranking capability and provider-interface support. A chat or embedding model is never selected merely because it accepts text.
+
+## Stable Document IDs
+
+Use typed text documents when downstream code should not depend on array positions:
+
+```ts
+const response = await caller.rerank({
+  query: 'forgotten password',
+  documents: [
+    { type: 'text', id: 'billing', text: 'Download an invoice.' },
+    { type: 'text', id: 'password', text: 'Reset a forgotten password.' }
+  ]
+});
+
+console.log(response.results[0].documentId);
+```
+
+`documentId` is copied from the input document. Plain strings remain supported. IDs must be non-empty and unique within one request.
+
+## Retrieval Pipeline
+
+Retrieve more candidates than you ultimately send to generation:
+
+```ts
+const candidates = await vectorStore.search({
+  vector: queryVector,
+  topK: 30
+});
+
+const ranked = await reranker.rerank({
+  query: userQuestion,
+  documents: candidates.map(candidate => ({
+    type: 'text' as const,
+    id: candidate.id,
+    text: candidate.text
+  })),
+  topN: 5
+});
+
+const passages = ranked.results
+  .map(result => candidates.find(candidate => candidate.id === result.documentId)?.text)
+  .filter((text): text is string => Boolean(text));
+```
+
+Reranking is stateless and does not read or update chat history.
+
+## Exact Models and Portability
+
+Use an exact model when model behavior is part of the retrieval contract:
+
+```ts
+const caller = new LLMCaller(
+  'siliconflow',
+  { model: 'Qwen/Qwen3-Reranker-0.6B' }
+);
+```
+
+Use a preset or policy when provider portability and dynamic selection matter:
+
+```ts
+const caller = new LLMCaller(['siliconflow', 'another-provider'], {
+  preset: 'balanced',
+  resolution: { explain: true }
+});
+```
+
+The universal contract intentionally exposes only portable inputs and outputs: query, text documents, optional `topN`, stable indices/IDs, and optional relevance scores. Provider-only controls belong under `settings.providerOptions.<provider>`.
+
+## SiliconFlow Options
+
+```ts
+await caller.rerank({
+  query,
+  documents,
+  settings: {
+    providerOptions: {
+      siliconflow: {
+        max_chunks_per_doc: 8,
+        overlap_tokens: 40
+      }
+    }
+  }
+});
+```
+
+SiliconFlow chunking controls are accepted only for models that document them. Universal request fields such as `model`, `query`, `documents`, `top_n`, and `return_documents` cannot be overridden through provider options.
+
+## Cancellation, Timeouts, and Usage
+
+```ts
+const response = await caller.rerank({
+  query,
+  documents,
+  timeoutMs: 10_000,
+  signal: abortController.signal,
+  usageCallback: ({ usage }) => {
+    console.log(usage.tokens.input.total, usage.costs.total);
+  }
+});
+```
+
+One successful rerank call invokes the effective usage callback once. Usage contains normalized token and cost fields where available. Providers with non-token billing can also populate `usage.measurements`.
+
+## Response Shape
+
+```ts
+type RerankResponse = {
+  results: Array<{
+    index: number;
+    documentId?: string;
+    relevanceScore?: number;
+  }>;
+  model: string;
+  usage: Usage;
+  metadata?: Metadata;
+};
+```
+
+Results preserve provider ranking order. The framework validates unique in-range indices and finite scores, but it does not impose a provider-independent score range or threshold because reranker score semantics differ.
 
 ---
 
@@ -2456,10 +2706,18 @@ type Usage = {
     total?: number;
     unit: 'seconds';
   };
+  measurements?: Array<{
+    name: string;
+    value: number;
+    unit: string;
+    source: 'provider' | 'estimated';
+  }>;
 };
 ```
 
 Cost is an estimate based on provider usage metadata and catalog prices.
+
+`measurements` carries operation-specific billing meters that do not fit token or duration fields, for example searches, documents, or requests. OpenTelemetry emits these as usage measurement events, and Opik includes them in usage metadata.
 
 ## Usage Callback
 
@@ -2661,10 +2919,28 @@ if (!first.contentObject) {
 }
 ```
 
+`metadata.validationErrors` is an array of `{ path: (string | number)[], message: string }`. `path` is the location of the failing field in the response object.
+
+JSON validation failures are retried up to `maxRetries`. Each retry replays the same request without injecting the prior validation error back into the prompt. If the schema is unsatisfiable by the model, retries will not converge. Fix the schema rather than raising `maxRetries`.
+
+To inspect the failing field instead of triggering a silent retry, set `maxRetries: 0`:
+
+```ts
+const result = await caller.call('Return JSON.', {
+  jsonSchema: { name: 'Result', schema },
+  responseFormat: 'json',
+  settings: { maxRetries: 0 }
+});
+
+console.log(result[0].metadata?.validationErrors);
+```
+
 Fixes:
 
 - simplify the schema
 - add clearer field descriptions
+- avoid `.refine`, `.min`, `.max`, and `.regex` as your primary shape contract. They are removed from the schema sent to providers and only run on the response, so a strict refinement can fail every retry without the provider being aware of it.
+- prefer required fields with `.nullable()` or empty strings/arrays over `.optional()`
 - use `jsonMode: 'native-only'` if native JSON is required
 - use a more capable model or `premium` preset
 - handle validation errors as part of your app flow
@@ -2868,6 +3144,10 @@ The default retry manager uses exponential backoff with a base delay of 1000 ms:
 
 Provider rate limits, transient network failures, and server errors are typical retry candidates. Authentication, invalid request, schema, and capability errors should be fixed rather than retried.
 
+## JSON Validation Retries
+
+When a response fails JSON parsing or schema validation, the call is retried up to `maxRetries`. Each retry replays the same request. The prior validation error is not injected back into the prompt. If the schema is unsatisfiable by the model, retries will not converge, so fix the schema instead of raising `maxRetries`. See [Structured Output](./docs/guides/structured-output.md) for schema patterns that survive strict provider modes, and [Errors and Troubleshooting](./docs/guides/errors-and-troubleshooting.md) for inspecting `metadata.validationErrors`.
+
 ## Content Retries
 
 `shouldRetryDueToContent` controls retries for incomplete or invalid model content, separate from network/provider retries:
@@ -2942,6 +3222,16 @@ caller.embeddings(options): Promise<EmbeddingResponse>
 caller.getAvailableEmbeddingModels(): string[]
 caller.checkEmbeddingCapabilities(modelName): EmbeddingCapabilityInfo
 ```
+
+## Reranking
+
+```ts
+caller.rerank(options): Promise<RerankResponse>
+caller.getAvailableRerankModels(): string[]
+caller.checkRerankCapabilities(modelName): RerankingCapabilityInfo
+```
+
+`rerank()` accepts a query and an array of strings or typed text documents. It is stateless and does not modify chat history. See [Reranking](./docs/guides/reranking.md).
 
 ## Audio
 
@@ -3031,6 +3321,9 @@ UniversalStreamResponse
 UniversalChatSettings
 UniversalMessage
 Usage
+RerankCallOptions
+RerankDocument
+RerankResponse
 ModelInfo
 ModelCapabilities
 ToolDefinition
@@ -3086,7 +3379,7 @@ type ProviderScope = RegisteredProviders | RegisteredProviders[];
 Registered providers:
 
 ```ts
-'openai' | 'gemini' | 'openrouter' | 'cerebras' | 'venice'
+'openai' | 'gemini' | 'openrouter' | 'cerebras' | 'venice' | 'siliconflow'
 ```
 
 ## Model Selection
@@ -3212,6 +3505,28 @@ type LLMCallOptions = {
 
 For `text`, `data`, `endingMessage`, chunking, and response-array behavior, see [Message composition](./docs/guides/message-composition.md).
 
+## Rerank Call Options
+
+```ts
+type RerankCallOptions = {
+  query: string;
+  documents: readonly (
+    | string
+    | { type: 'text'; text: string; id?: string }
+  )[];
+  model?: string;
+  topN?: number;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  usageCallback?: UsageCallback;
+  settings?: {
+    providerOptions?: Record<string, unknown>;
+  };
+};
+```
+
+Provider-specific reranker controls must be namespaced, for example `settings.providerOptions.siliconflow`. Portable fields such as query, documents, and `topN` stay at the top level.
+
 ## Environment Variables
 
 Provider keys:
@@ -3222,6 +3537,7 @@ GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...
 CEREBRAS_API_KEY=...
 VENICE_API_KEY=...
+SILICONFLOW_API_KEY=...
 ```
 
 Logging:
@@ -3287,6 +3603,11 @@ type ModelInfo = {
   audioOutputPricePerMillion?: number;
   audioPricePerSecond?: number;
   ttsPricePerMillionChars?: number;
+  rerankPricing?: {
+    unit: 'token' | 'search' | 'document' | 'request';
+    price: number;
+    per: number;
+  };
   transcriptionMaxFileBytes?: number;
   transcriptionMaxDurationSeconds?: number;
   maxRequestTokens: number;
@@ -3323,6 +3644,13 @@ type ModelCapabilities = {
     dimensions?: number[];
     defaultDimensions?: number;
     encodingFormats?: ('float' | 'base64')[];
+  };
+  reranking?: boolean | {
+    documentTypes?: ('text' | 'image')[];
+    maxDocuments?: number;
+    maxQueryTokens?: number;
+    maxDocumentTokens?: number;
+    maxTotalTokens?: number;
   };
   audio?: boolean | {
     transcribe?: boolean;
@@ -3435,6 +3763,7 @@ Presets and policies filter models before scoring:
 ```ts
 const caller = new LLMCaller(['openai', 'gemini'], 'fast');
 await caller.embeddings({ input: 'hello' }); // selects an embedding-capable model
+await caller.rerank({ query: 'hello', documents: ['hello world'] }); // selects a reranker
 ```
 
 ## Pricing Freshness
@@ -3596,6 +3925,12 @@ type Usage = {
     total?: number;
     unit: 'seconds';
   };
+  measurements?: Array<{
+    name: string;
+    value: number;
+    unit: string;
+    source: 'provider' | 'estimated';
+  }>;
 };
 ```
 
@@ -3613,6 +3948,23 @@ type EmbeddingResponse = {
   metadata?: Metadata;
 };
 ```
+
+## Rerank Response
+
+```ts
+type RerankResponse = {
+  results: Array<{
+    index: number;
+    documentId?: string;
+    relevanceScore?: number;
+  }>;
+  model: string;
+  usage: Usage;
+  metadata?: Metadata;
+};
+```
+
+Results are returned in provider ranking order. `index` always points to the original input array. `documentId` is present when the corresponding input used a typed text document with an ID. Score ranges and calibration are provider/model specific.
 
 ## Audio Responses
 

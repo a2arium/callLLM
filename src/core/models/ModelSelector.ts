@@ -52,6 +52,10 @@ export type CapabilityRequirement = {
         encodingFormat?: 'float' | 'base64';
     };
 
+    reranking?: {
+        required: boolean;
+    };
+
     /** Reasoning capability requirements */
     reasoning?: {
         /** Whether reasoning is required */
@@ -155,6 +159,10 @@ export class ModelSelector {
             if (!this.supportsEmbeddings(capabilities, requirements.embeddings)) {
                 return false;
             }
+        }
+
+        if (requirements.reranking?.required && !capabilities.reranking) {
+            return false;
         }
 
         // Check reasoning requirements
@@ -505,4 +513,4 @@ export class ModelSelector {
     private static calculateQualityScore(model: ModelInfo): number {
         return model.characteristics.qualityIndex / 100;
     }
-} 
+}

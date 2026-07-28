@@ -132,6 +132,7 @@ async function run() {
                         'image-generate', 'image-edit', 'image-masked-edit',
                         'audio-round-trip', 'text-to-speech', 'audio-translate',
                         'multimodal-input', 'video-generate',
+                        'rerank',
                     ];
                     if (specializedIds.includes(scenario.id)) {
                         try {
@@ -177,9 +178,14 @@ async function run() {
 
                 // If scenario needs images, ensure provider implements image interface
                 const needsImages = Boolean(scenario.requirements.imageOutput?.required || scenario.requirements.imageInput?.required);
+                const needsRerank = Boolean(scenario.requirements.reranking?.required);
                 const pm: any = (caller as any)["providerManager"];
                 if (needsImages && pm && typeof pm.supportsImageGeneration === 'function' && !pm.supportsImageGeneration()) {
                     console.log(`[skip] ${provider} provider doesn’t support image API for '${scenario.id}'`);
+                    continue;
+                }
+                if (needsRerank && pm && typeof pm.supportsReranking === 'function' && !pm.supportsReranking()) {
+                    console.log(`[skip] ${provider} provider doesn’t support reranking for '${scenario.id}'`);
                     continue;
                 }
 
@@ -195,6 +201,11 @@ async function run() {
                     } else if (scenario.judge) {
                         const j = await scenario.judge({ provider, model: modelName, caller }, res);
                         pass = j.pass; score = j.score; reason = j.reason;
+                    }
+                    if (scenario.id === 'rerank' && usageEvents.length !== 1) {
+                        pass = false;
+                        score = 0;
+                        reason = `Expected exactly one usage callback, received ${usageEvents.length}`;
                     }
 
                     const totalCost = res.usage?.costs?.total;
@@ -238,5 +249,3 @@ run().catch(err => {
     console.error(err);
     process.exit(1);
 });
-
-

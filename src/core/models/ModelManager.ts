@@ -5,6 +5,7 @@ import { defaultModels as cerebrasModels } from '../../adapters/cerebras/models.
 import { defaultModels as veniceModels } from '../../adapters/venice/models.ts';
 import { defaultModels as openrouterModels } from '../../adapters/openrouter/models.ts';
 import { defaultModels as geminiModels } from '../../adapters/gemini/models.ts';
+import { defaultModels as siliconFlowModels } from '../../adapters/siliconflow/models.ts';
 import type { RegisteredProviders } from '../../adapters/index.ts';
 
 export class ModelManager {
@@ -58,6 +59,9 @@ export class ModelManager {
                 break;
             case 'gemini':
                 geminiModels.forEach(model => this.models.set(model.name, model));
+                break;
+            case 'siliconflow':
+                siliconFlowModels.forEach(model => this.models.set(model.name, model));
                 break;
             default:
                 throw new Error(`Unsupported provider: ${providerName}`);
@@ -123,6 +127,14 @@ export class ModelManager {
         // Check for negative prices
         if (model.inputPricePerMillion < 0) throw new Error('Invalid model configuration');
         if (model.outputPricePerMillion < 0) throw new Error('Invalid model configuration');
+        if (model.rerankPricing && (
+            model.rerankPricing.price < 0 ||
+            !Number.isFinite(model.rerankPricing.price) ||
+            model.rerankPricing.per <= 0 ||
+            !Number.isFinite(model.rerankPricing.per)
+        )) {
+            throw new Error('Invalid rerank pricing configuration');
+        }
 
         // Check for negative token values
         if (!isVideoOnlyOutput && !isStandaloneAudioOnly && model.maxRequestTokens < 0) {
@@ -147,4 +159,4 @@ export class ModelManager {
             return nameOrAlias;
         }
     }
-} 
+}

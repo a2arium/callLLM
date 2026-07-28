@@ -488,11 +488,12 @@ export class HistoryManager {
     public captureStreamResponse(
         content: string,
         isComplete: boolean,
-        contentText?: string
+        contentText?: string,
+        additionalFields: Record<string, unknown> = {}
     ): void {
         // If this is the last chunk, add the complete response to history
         if (isComplete && (content || contentText)) {
-            this.addMessage('assistant', contentText || content);
+            this.addMessage('assistant', contentText || content, additionalFields);
         }
     }
 

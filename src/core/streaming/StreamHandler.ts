@@ -292,7 +292,10 @@ export class StreamHandler {
                         const assistantMessage: UniversalMessage = {
                             role: 'assistant',
                             content: contentAccumulator.getAccumulatedContent(),
-                            toolCalls: mappedToolCalls
+                            toolCalls: mappedToolCalls,
+                            ...(chunk.metadata?.providerState
+                                ? { metadata: { providerState: chunk.metadata.providerState } }
+                                : {})
                         };
 
                         // Add the message to the history manager to maintain conversation context
@@ -300,7 +303,12 @@ export class StreamHandler {
                             this.historyManager.addMessage(
                                 assistantMessage.role,
                                 assistantMessage.content,
-                                { toolCalls: mappedToolCalls }
+                                {
+                                    toolCalls: mappedToolCalls,
+                                    ...(assistantMessage.metadata
+                                        ? { metadata: assistantMessage.metadata }
+                                        : {})
+                                }
                             );
                         }
 

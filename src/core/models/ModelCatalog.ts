@@ -5,6 +5,7 @@ import { defaultModels as cerebrasModels } from '../../adapters/cerebras/models.
 import { defaultModels as veniceModels } from '../../adapters/venice/models.ts';
 import { defaultModels as openrouterModels } from '../../adapters/openrouter/models.ts';
 import { defaultModels as geminiModels } from '../../adapters/gemini/models.ts';
+import { defaultModels as siliconFlowModels } from '../../adapters/siliconflow/models.ts';
 import type { ExactModelSelection, ProviderScope } from './ModelSelection.ts';
 import { ModelSelectionConfigError } from './ModelSelection.ts';
 
@@ -20,7 +21,8 @@ export const DEFAULT_PROVIDER_MODEL_CATALOGS: Record<RegisteredProviders, readon
     cerebras: cerebrasModels,
     venice: veniceModels,
     openrouter: openrouterModels,
-    gemini: geminiModels
+    gemini: geminiModels,
+    siliconflow: siliconFlowModels
 };
 
 export class ModelNotFoundError extends Error {
@@ -165,4 +167,3 @@ export function resolveExactModel(
 
     return matches[0];
 }
-

@@ -1,10 +1,10 @@
 ## adapters-e2e
 
-Capability-driven end-to-end scenarios for adapter conformance. This suite runs real examples (chat, streaming, JSON, tools, images, embeddings, history) against registered providers and auto-skips unsupported cases using model capabilities.
+Capability-driven end-to-end scenarios for adapter conformance. This suite runs real examples (chat, streaming, JSON, tools, images, embeddings, reranking, history) against registered providers and auto-skips unsupported cases using model capabilities.
 
 ### What it does
 - Discovers providers via `src/adapters/index.ts`
-- Selects models per scenario using `CapabilityRequirement` (streaming, tools, JSON, images, embeddings)
+- Selects models per scenario using `CapabilityRequirement` (streaming, tools, JSON, images, embeddings, reranking)
 - Runs non-stream and stream flows with per-chunk logging (when enabled)
 - Uses LLM-as-a-judge (OpenAI by default) or schema checks
 - Reports costs, tokens, chunk counts, and previews
@@ -17,6 +17,7 @@ Capability-driven end-to-end scenarios for adapter conformance. This suite runs 
   - `yarn adapters:e2e --providers=openai,my-provider`
 - Filter by scenario(s):
   - `yarn adapters:e2e --scenarios=simple-chat,streaming-chat`
+  - `yarn adapters:e2e --provider=siliconflow --scenarios=rerank`
 - Filter by model(s):
   - `yarn adapters:e2e --provider=venice --models=qwen3-4b,venice-uncensored`
 - Run all models for a provider:
@@ -34,6 +35,7 @@ Capability-driven end-to-end scenarios for adapter conformance. This suite runs 
 - One-line status per scenario with: provider, model, testId, score, cost, tokens, chunks, timeout, JSON keys, image info
 - Explicit pass/fail line: `RESULT: PASSED|FAILED • testId=...`
 - `usageCallbacks=N` shows how many times `usageCallback` fired during the test
+- The reranking scenario requires exactly one successful usage callback
 
 ### Adding scenarios
 - Create a file under `adapters-e2e/scenarios/` exporting `Scenario`
@@ -44,4 +46,3 @@ Capability-driven end-to-end scenarios for adapter conformance. This suite runs 
 ### Notes
 - Some providers coalesce streaming to one chunk; streaming judges accept single-chunk content with lower score
 - Tool-folder scenarios require `toolsDir` and tool names; the runner configures `toolsDir` for that scenario
-

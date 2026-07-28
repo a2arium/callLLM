@@ -43,6 +43,16 @@ caller.getAvailableEmbeddingModels(): string[]
 caller.checkEmbeddingCapabilities(modelName): EmbeddingCapabilityInfo
 ```
 
+## Reranking
+
+```ts
+caller.rerank(options): Promise<RerankResponse>
+caller.getAvailableRerankModels(): string[]
+caller.checkRerankCapabilities(modelName): RerankingCapabilityInfo
+```
+
+`rerank()` accepts a query and an array of strings or typed text documents. It is stateless and does not modify chat history. See [Reranking](../guides/reranking.md).
+
 ## Audio
 
 ```ts
@@ -131,6 +141,9 @@ UniversalStreamResponse
 UniversalChatSettings
 UniversalMessage
 Usage
+RerankCallOptions
+RerankDocument
+RerankResponse
 ModelInfo
 ModelCapabilities
 ToolDefinition

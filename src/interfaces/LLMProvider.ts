@@ -16,7 +16,9 @@ import type {
     SpeechParams,
     TranscriptionResponse,
     TranslationResponse,
-    SpeechResponse
+    SpeechResponse,
+    RerankParams,
+    RerankResponse
 } from './UniversalInterfaces.ts';
 
 export type { AudioOp } from './UniversalInterfaces.ts';
@@ -95,6 +97,14 @@ export interface LLMProviderVideo {
  */
 export interface LLMProviderEmbedding {
     embeddingCall(model: string, params: EmbeddingParams): Promise<EmbeddingResponse>;
+}
+
+export interface LLMProviderRerank {
+    rerankCall(
+        model: string,
+        params: RerankParams,
+        control?: LLMExecutionControl
+    ): Promise<RerankResponse>;
 }
 
 /**

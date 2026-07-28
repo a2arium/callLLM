@@ -140,6 +140,7 @@ GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...
 CEREBRAS_API_KEY=...
 VENICE_API_KEY=...
+SILICONFLOW_API_KEY=...
 ```
 
 ## Run Locally
@@ -282,6 +283,7 @@ The same request model also applies to:
 - **Audio**: speech-to-text, translation, and text-to-speech with local `ffmpeg` transcoding when provider input/output needs conversion.
 - **Video**: asynchronous video jobs with status polling, download helpers, usage seconds, and estimated video cost.
 - **Embeddings**: exact embedding models for retrieval systems or dynamic embedding-capable selection for one-off jobs.
+- **Reranking**: provider-neutral query/document reranking with typed document IDs, capability-aware selection, and normalized usage.
 - **Large inputs**: split large strings, objects, and markdown into model-sized chunks.
 - **MCP and function folders**: expose external tool servers or load local tool files by name.
 
@@ -398,6 +400,7 @@ Guides:
 - [Streaming, history, and large inputs](docs/guides/streaming-history-large-inputs.md)
 - [Media: images, video, and audio](docs/guides/media.md)
 - [Embeddings](docs/guides/embeddings.md)
+- [Reranking](docs/guides/reranking.md)
 - [Telemetry and usage](docs/guides/telemetry-and-usage.md)
 - [Settings, retries, and overrides](docs/guides/retries-and-settings.md)
 
@@ -435,8 +438,11 @@ Provider registry keys and environment variables:
 | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 | Cerebras | `cerebras` | `CEREBRAS_API_KEY` |
 | Venice | `venice` | `VENICE_API_KEY` |
+| SiliconFlow | `siliconflow` | `SILICONFLOW_API_KEY` |
 
 Support is model-specific. Dynamic selection filters by the actual model capabilities before scoring. Structured JSON output is available through `callllm` for all chat-capable providers: native JSON mode is used when available, and prompt/schema fallback is used otherwise unless `jsonMode: 'native-only'` is requested.
+
+SiliconFlow currently supports chat, streaming, reasoning, function tools, reranking, usage/cost mapping, and JSON object mode through this adapter. Provider-specific chat parameters can be passed under `settings.providerOptions.siliconflow`, for example `{ enable_thinking: true, thinking_budget: 8192 }`. Reranking supports the cataloged Qwen3 reranker models through `caller.rerank()`. Embedding, image, audio, and video endpoints are not yet exposed by this adapter.
 
 ## Production Notes
 

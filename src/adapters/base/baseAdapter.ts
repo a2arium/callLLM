@@ -10,7 +10,9 @@ import type {
     SpeechParams,
     TranscriptionResponse,
     TranslationResponse,
-    SpeechResponse
+    SpeechResponse,
+    RerankParams,
+    RerankResponse
 } from '../../interfaces/UniversalInterfaces.ts';
 import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
 import type { LLMProvider } from '../../interfaces/LLMProvider.ts';
@@ -46,6 +48,9 @@ export abstract class BaseAdapter implements LLMProvider {
      * Optional embedding support. Providers that support embeddings should implement this.
      */
     embeddingCall?(model: string, params: EmbeddingParams): Promise<EmbeddingResponse>;
+
+    /** Optional query/document reranking support. */
+    rerankCall?(model: string, params: RerankParams, control?: LLMExecutionControl): Promise<RerankResponse>;
 
     /**
      * Convert embedding parameters to provider-specific format.

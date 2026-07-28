@@ -64,6 +64,7 @@ Users normally do not manually declare capabilities. The framework infers them f
 | `output.image` | image generation/editing |
 | `output.video` | video generation |
 | `embeddings()` | embeddings |
+| `rerank()` | reranking and a provider rerank interface |
 | `transcribe()` | audio transcription |
 | `translateAudio()` | audio translation |
 | `synthesizeSpeech()` | speech synthesis |
@@ -145,6 +146,8 @@ Responses include a normalized `usage` object when the provider or local estimat
 ```
 
 Cost values are estimates from model catalog pricing and provider usage metadata where available.
+
+Non-token operations may also report named `measurements` such as searches, documents, or requests. This keeps billing meters explicit without pretending every provider operation is token-priced.
 
 ## What callllm Does Not Promise
 

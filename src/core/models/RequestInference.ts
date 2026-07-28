@@ -3,7 +3,8 @@ import type {
     LLMCallOptions,
     SpeechCallOptions,
     TranscriptionCallOptions,
-    TranslationCallOptions
+    TranslationCallOptions,
+    RerankCallOptions
 } from '../../interfaces/UniversalInterfaces.ts';
 import type { RequestRequirements } from './CapabilityMatcher.ts';
 import type { SelectionOperation, ScoreContext } from './ModelScoring.ts';
@@ -130,6 +131,39 @@ export function inferEmbeddingRequestRequirements(options: EmbeddingCallOptions)
         requirements,
         operation: 'embeddings',
         scoreContext: { operation: 'embeddings' }
+    };
+}
+
+export function inferRerankRequestRequirements(options: RerankCallOptions): InferredModelRequest {
+    const texts = Array.isArray(options.documents)
+        ? options.documents.map(document => typeof document === 'string'
+            ? document
+            : typeof document?.text === 'string' ? document.text : '')
+        : [];
+    const estimatedQueryTokens = Math.ceil((typeof options.query === 'string' ? options.query.length : 0) / 4);
+    const documentTokenCounts = texts.map(text => Math.ceil(text.length / 4));
+    const estimatedDocumentTokens = documentTokenCounts.length > 0 ? Math.max(...documentTokenCounts) : 0;
+    const estimatedTotalTokens = estimatedQueryTokens + documentTokenCounts.reduce((sum, count) => sum + count, 0);
+    return {
+        requirements: {
+            textInput: true,
+            reranking: {
+                required: true,
+                documentType: 'text',
+                documentCount: texts.length,
+                estimatedQueryTokens,
+                estimatedDocumentTokens,
+                estimatedTotalTokens
+            },
+            tokenBudget: { estimatedInputTokens: estimatedTotalTokens },
+            providerInterfaces: { rerankCall: true }
+        },
+        operation: 'rerank',
+        scoreContext: {
+            operation: 'rerank',
+            estimatedInputTokens: estimatedTotalTokens,
+            documentCount: texts.length
+        }
     };
 }
 

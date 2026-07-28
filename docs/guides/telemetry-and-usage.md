@@ -59,10 +59,18 @@ type Usage = {
     total?: number;
     unit: 'seconds';
   };
+  measurements?: Array<{
+    name: string;
+    value: number;
+    unit: string;
+    source: 'provider' | 'estimated';
+  }>;
 };
 ```
 
 Cost is an estimate based on provider usage metadata and catalog prices.
+
+`measurements` carries operation-specific billing meters that do not fit token or duration fields, for example searches, documents, or requests. OpenTelemetry emits these as usage measurement events, and Opik includes them in usage metadata.
 
 ## Usage Callback
 

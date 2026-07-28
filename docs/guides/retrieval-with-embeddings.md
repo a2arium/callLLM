@@ -105,6 +105,24 @@ const matches = await vectorStore.search({
 
 Filtering by `embeddingModel` is important during migrations or when one database stores multiple indexes.
 
+## Optional Reranking Stage
+
+Vector similarity is efficient for candidate retrieval; a reranker can improve precision over the final candidate set:
+
+```ts
+const ranked = await rerankCaller.rerank({
+  query: 'How do I invite a teammate?',
+  documents: matches.map(match => ({
+    type: 'text' as const,
+    id: match.id,
+    text: match.text
+  })),
+  topN: 5
+});
+```
+
+Use the returned indices or document IDs to construct the final context. Reranker scores are model-specific, so validate thresholds per model instead of assuming a universal score scale. See [Reranking](reranking.md).
+
 ## RAG Flow
 
 Use retrieved text as `data` for a normal model call:

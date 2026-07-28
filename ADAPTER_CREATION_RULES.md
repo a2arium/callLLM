@@ -145,6 +145,7 @@ metadata?: Metadata;
   - `capabilities.toolCalls`, including streaming and parallel modes
   - `capabilities.reasoning`
   - `capabilities.embeddings`
+  - `capabilities.reranking`
   - `capabilities.audio`
   - `capabilities.input.image`
   - `capabilities.output.text.textOutputFormats`
@@ -160,6 +161,7 @@ metadata?: Metadata;
   - image prices
   - video prices
   - audio/TTS prices when available
+  - `rerankPricing` with the provider's actual billing unit and denominator
 - Provider/model identity is provider-qualified internally. Do not rely on model names being unique across providers.
 
 ### Optional operation interfaces
@@ -169,6 +171,7 @@ Implement optional provider interfaces when the provider supports them:
 - `imageCall` for image generation, edit, composite edit, and masked edit
 - `videoCall`, `retrieveVideo`, `downloadVideo` for video jobs and downloads
 - `embeddingCall` for embeddings
+- `rerankCall` for query/document reranking
 - audio APIs for transcription, translation, and speech synthesis
 
 These interfaces are part of request-time model selection. A candidate model must satisfy both model capability metadata and provider interface availability.
@@ -905,8 +908,8 @@ export class YourProviderStreamHandler {
   - If provider returns token usage, map it to `Usage` and compute costs via model pricing.
   - If not, estimate output tokens (use `TokenCalculator`) and combine with model pricing for cost metadata. For streaming, update per-delta.
 
-- Images and embeddings (optional)
-  - Implement `LLMProviderImage` or `LLMProviderEmbedding` when supported; convert params to provider format and convert responses with usage and costs.
+- Images, embeddings, and reranking (optional)
+  - Implement `LLMProviderImage`, `LLMProviderEmbedding`, or `LLMProviderRerank` when supported; convert params to provider format and convert responses with usage and costs.
 
 - Errors
   - Catch provider SDK exceptions and map to auth/ratelimit/network/validation/service errors; include retry-after seconds if available.
@@ -933,8 +936,10 @@ const ADAPTER_REGISTRY = {
   - Response conversion (content, toolCalls, metadata, usage/costs).
   - Stream conversion (deltas, toolCallChunks, finish reasons).
   - Error mapping cases.
+  - Optional operation conversion and transport, including reranking when supported.
 - Integration/e2e:
   - Add scenarios under `adapters-e2e/scenarios/` mirroring `streaming`, `streamingTools`, `jsonOutput`, `usageTracking`.
+  - Add a capability-gated reranking scenario when `rerankCall` is implemented.
 - Verify with existing examples by swapping provider where feasible.
 
 ### Definition of Done checklist

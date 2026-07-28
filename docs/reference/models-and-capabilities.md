@@ -37,6 +37,11 @@ type ModelInfo = {
   audioOutputPricePerMillion?: number;
   audioPricePerSecond?: number;
   ttsPricePerMillionChars?: number;
+  rerankPricing?: {
+    unit: 'token' | 'search' | 'document' | 'request';
+    price: number;
+    per: number;
+  };
   transcriptionMaxFileBytes?: number;
   transcriptionMaxDurationSeconds?: number;
   maxRequestTokens: number;
@@ -73,6 +78,13 @@ type ModelCapabilities = {
     dimensions?: number[];
     defaultDimensions?: number;
     encodingFormats?: ('float' | 'base64')[];
+  };
+  reranking?: boolean | {
+    documentTypes?: ('text' | 'image')[];
+    maxDocuments?: number;
+    maxQueryTokens?: number;
+    maxDocumentTokens?: number;
+    maxTotalTokens?: number;
   };
   audio?: boolean | {
     transcribe?: boolean;
@@ -185,6 +197,7 @@ Presets and policies filter models before scoring:
 ```ts
 const caller = new LLMCaller(['openai', 'gemini'], 'fast');
 await caller.embeddings({ input: 'hello' }); // selects an embedding-capable model
+await caller.rerank({ query: 'hello', documents: ['hello world'] }); // selects a reranker
 ```
 
 ## Pricing Freshness

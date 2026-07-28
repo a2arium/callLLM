@@ -17,8 +17,14 @@ export type {
     ModelAlias,
     JSONSchemaDefinition,
     ResponseFormat,
-    LLMCallOptions
+    LLMCallOptions,
+    RerankDocument,
+    RerankCallOptions,
+    RerankParams,
+    RerankResult,
+    RerankResponse
 } from './interfaces/UniversalInterfaces.ts';
+export type { LLMProviderRerank } from './interfaces/LLMProvider.ts';
 export type { LLMExecutionControl, LLMTerminalReason } from './interfaces/ExecutionInterfaces.ts';
 export { LLMAbortError, LLMTimeoutError } from './core/execution/errors.ts';
 

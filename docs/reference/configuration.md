@@ -13,7 +13,7 @@ type ProviderScope = RegisteredProviders | RegisteredProviders[];
 Registered providers:
 
 ```ts
-'openai' | 'gemini' | 'openrouter' | 'cerebras' | 'venice'
+'openai' | 'gemini' | 'openrouter' | 'cerebras' | 'venice' | 'siliconflow'
 ```
 
 ## Model Selection
@@ -139,6 +139,28 @@ type LLMCallOptions = {
 
 For `text`, `data`, `endingMessage`, chunking, and response-array behavior, see [Message composition](../guides/message-composition.md).
 
+## Rerank Call Options
+
+```ts
+type RerankCallOptions = {
+  query: string;
+  documents: readonly (
+    | string
+    | { type: 'text'; text: string; id?: string }
+  )[];
+  model?: string;
+  topN?: number;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  usageCallback?: UsageCallback;
+  settings?: {
+    providerOptions?: Record<string, unknown>;
+  };
+};
+```
+
+Provider-specific reranker controls must be namespaced, for example `settings.providerOptions.siliconflow`. Portable fields such as query, documents, and `topN` stay at the top level.
+
 ## Environment Variables
 
 Provider keys:
@@ -149,6 +171,7 @@ GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...
 CEREBRAS_API_KEY=...
 VENICE_API_KEY=...
+SILICONFLOW_API_KEY=...
 ```
 
 Logging:

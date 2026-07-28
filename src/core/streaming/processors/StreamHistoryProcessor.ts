@@ -45,10 +45,20 @@ export class StreamHistoryProcessor implements IStreamProcessor {
                 const isToolCall = chunk.metadata?.finishReason === 'tool_calls';
 
                 if (!(hasTool || isToolCall)) {
-                    this.historyManager.captureStreamResponse(
-                        finalContent,
-                        true
-                    );
+                    const providerState = chunk.metadata?.providerState;
+                    if (providerState) {
+                        this.historyManager.captureStreamResponse(
+                            finalContent,
+                            true,
+                            undefined,
+                            { metadata: { providerState } }
+                        );
+                    } else {
+                        this.historyManager.captureStreamResponse(
+                            finalContent,
+                            true
+                        );
+                    }
                 }
             }
 

@@ -12,7 +12,8 @@ const ADAPTER_REGISTRY = {
   cerebras: CerebrasAdapter,
   venice: VeniceAdapter,
   openrouter: OpenRouterAdapter,
-  gemini: GeminiAdapter
+  gemini: GeminiAdapter,
+  siliconflow: SiliconFlowAdapter
 } as const;
 ```
 
@@ -32,6 +33,7 @@ A provider can implement one or more surfaces:
 - image provider
 - video provider
 - embedding provider
+- reranking provider
 - audio provider
 
 Dynamic model selection checks both model capabilities and adapter interface support. For example, a model with `output.image` still cannot be selected for image generation if the provider adapter does not implement `imageCall`.
@@ -73,6 +75,7 @@ Add tests for every implemented surface:
 - image
 - video
 - embeddings
+- reranking
 - audio
 - usage mapping
 - error mapping

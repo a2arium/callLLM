@@ -111,6 +111,7 @@ describe('ProviderPool', () => {
       imageCall: true,
       videoCall: false,
       embeddingCall: true,
+      rerankCall: false,
       audioCall: false
     });
     expect(pool.getInterfaceSupport('gemini')).toEqual({
@@ -119,6 +120,7 @@ describe('ProviderPool', () => {
       imageCall: false,
       videoCall: true,
       embeddingCall: false,
+      rerankCall: false,
       audioCall: true
     });
   });
@@ -215,4 +217,3 @@ function testRegistry(): Map<string, AdapterConstructor> {
     ['gemini', GeminiStub as unknown as AdapterConstructor]
   ]);
 }
-

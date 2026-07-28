@@ -7,6 +7,7 @@ import type {
     LLMProviderVideo,
     VideoCallParams,
     LLMProviderAudio,
+    LLMProviderRerank,
     AudioOp
 } from '../../interfaces/LLMProvider.ts';
 import type { AdapterConfig } from '../../adapters/base/baseAdapter.ts';
@@ -21,8 +22,11 @@ import type {
     SpeechParams,
     TranscriptionResponse,
     TranslationResponse,
-    SpeechResponse
+    SpeechResponse,
+    RerankParams,
+    RerankResponse
 } from '../../interfaces/UniversalInterfaces.ts';
+import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
 import { logger } from '../../utils/logger.ts';
 
 export class ProviderManager {
@@ -122,6 +126,26 @@ export class ProviderManager {
         }
 
         return embeddingProvider.embeddingCall(model, params);
+    }
+
+    public supportsReranking(): boolean {
+        return typeof (this.provider as unknown as { rerankCall?: unknown }).rerankCall === 'function';
+    }
+
+    public getRerankProvider(): LLMProviderRerank | null {
+        return this.supportsReranking() ? this.provider as unknown as LLMProviderRerank : null;
+    }
+
+    public async callRerankOperation(
+        model: string,
+        params: RerankParams,
+        control?: LLMExecutionControl
+    ): Promise<RerankResponse> {
+        const provider = this.getRerankProvider();
+        if (!provider) {
+            throw new Error(`Provider '${this.currentProviderName}' does not support reranking`);
+        }
+        return provider.rerankCall(model, params, control);
     }
 
     /** Video support checks */

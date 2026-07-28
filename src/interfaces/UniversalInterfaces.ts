@@ -388,6 +388,13 @@ export type Usage = {
         /** Unit for all duration fields. */
         unit: 'seconds';
     };
+    /** Provider billing or operation measurements not represented by tokens or durations. */
+    measurements?: Array<{
+        name: string;
+        value: number;
+        unit: string;
+        source: 'provider' | 'estimated';
+    }>;
 };
 
 export type ProcessingInfo = {
@@ -449,6 +456,11 @@ export type Metadata = {
     audioSavedPath?: string;
     /** Set when a long file was transcribed in multiple ffmpeg-sized segments */
     transcriptionChunkCount?: number;
+    /**
+     * Opaque provider state that must survive conversation history round-trips.
+     * Adapters own the namespaced values stored here; core code must not transform them.
+     */
+    providerState?: Record<string, unknown>;
 };
 
 export interface UniversalChatResponse<T = unknown> {
@@ -622,6 +634,15 @@ export type ModelCapabilities = {
         encodingFormats?: ('float' | 'base64')[];
     };
 
+    /** Whether the model supports query/document reranking. */
+    reranking?: boolean | {
+        documentTypes?: Array<'text' | 'image'>;
+        maxDocuments?: number;
+        maxQueryTokens?: number;
+        maxDocumentTokens?: number;
+        maxTotalTokens?: number;
+    };
+
     /**
      * Standalone audio API support (transcription, translation, TTS), distinct from chat multimodal input.audio/output.audio.
      */
@@ -763,6 +784,12 @@ export type ModelInfo = {
     audioPricePerSecond?: number;
     /** Price per million characters for TTS (provider-specific) */
     ttsPricePerMillionChars?: number;
+    /** Operation-specific reranking price meter. */
+    rerankPricing?: {
+        unit: 'token' | 'search' | 'document' | 'request';
+        price: number;
+        per: number;
+    };
     /**
      * Provider maximum audio file size (bytes) for a single transcription HTTP request.
      * Used with {@link TranscriptionParams.splitLargeFile} to decide when to pre-split (e.g. OpenAI 25 MiB).
@@ -911,6 +938,48 @@ export type EmbeddingCallOptions = {
     usageCallback?: UsageCallback;
     /** Batch size for usage callbacks when processing multiple inputs */
     usageBatchSize?: number;
+};
+
+export type RerankDocument =
+    | string
+    | {
+        type: 'text';
+        text: string;
+        id?: string;
+    };
+
+export type RerankCallOptions = {
+    query: string;
+    documents: readonly RerankDocument[];
+    model?: string;
+    topN?: number;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    usageCallback?: UsageCallback;
+    settings?: {
+        providerOptions?: Record<string, unknown>;
+    };
+};
+
+/** Normalized provider request. Application document IDs are retained by the controller. */
+export type RerankParams = {
+    query: string;
+    documents: readonly string[];
+    topN?: number;
+    providerOptions?: Record<string, unknown>;
+};
+
+export type RerankResult = {
+    index: number;
+    documentId?: string;
+    relevanceScore?: number;
+};
+
+export type RerankResponse = {
+    results: RerankResult[];
+    model: string;
+    usage: Usage;
+    metadata?: Metadata;
 };
 
 /** Operations routed through {@link LLMProviderAudio.audioCall}. */

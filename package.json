@@ -1,6 +1,6 @@
 {
   "name": "callllm",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "A capability-aware TypeScript runtime for production LLM calls.",
   "packageManager": "yarn@4.9.4",
   "type": "module",
@@ -40,6 +40,7 @@
     "llms.txt",
     "llms-full.txt",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
@@ -64,6 +65,7 @@
     "example:image": "tsx examples/imageInput.ts",
     "example:imageGenerate": "tsx examples/imageGenerationAndEditing.ts",
     "example:embeddings": "tsx examples/embeddings-example.ts",
+    "example:reranking": "tsx examples/reranking.ts",
     "example:modelSelection": "tsx examples/modelSelection.ts",
     "example:video": "tsx examples/videoGeneration.ts",
     "example:speechSynthesis": "tsx examples/speechSynthesis.ts",

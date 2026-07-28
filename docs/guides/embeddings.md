@@ -2,6 +2,8 @@
 
 Embeddings convert text into vectors for semantic search, clustering, classification, recommendations, and RAG.
 
+For a second-stage relevance model that reorders retrieved candidates, see [Reranking](reranking.md).
+
 ## Basic Embedding
 
 ```ts
