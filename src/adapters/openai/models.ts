@@ -3,6 +3,122 @@ import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
 export const defaultModels: ModelInfo[] = [
     // GPT-5 family
     {
+        name: 'gpt-5.6',
+        maxRequestTokens: 1050000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 5.0,
+        inputCachedPricePerMillion: 0.50,
+        outputPricePerMillion: 30.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 85,
+            outputSpeed: 160,
+            firstTokenLatency: 25000,
+        },
+    },
+    {
+        name: 'gpt-5.6-sol',
+        maxRequestTokens: 1050000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 5.0,
+        inputCachedPricePerMillion: 0.50,
+        outputPricePerMillion: 30.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 85,
+            outputSpeed: 160,
+            firstTokenLatency: 25000,
+        },
+    },
+    {
+        name: 'gpt-5.6-terra',
+        maxRequestTokens: 1050000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 2.50,
+        inputCachedPricePerMillion: 0.25,
+        outputPricePerMillion: 15.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 72,
+            outputSpeed: 170,
+            firstTokenLatency: 20000,
+        },
+    },
+    {
+        name: 'gpt-5.6-luna',
+        maxRequestTokens: 1050000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 1.0,
+        inputCachedPricePerMillion: 0.10,
+        outputPricePerMillion: 6.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 62,
+            outputSpeed: 190,
+            firstTokenLatency: 15000,
+        },
+    },
+    {
         name: 'gpt-5.5',
         maxRequestTokens: 1050000,
         maxResponseTokens: 128000,
