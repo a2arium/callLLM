@@ -37,6 +37,7 @@ export const defaultModels: ModelInfo[] = [
                 text: {
                     textOutputFormats: ['text', 'json'],
                     structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf',
                 },
             },
         },
@@ -79,6 +80,7 @@ export const defaultModels: ModelInfo[] = [
                 text: {
                     textOutputFormats: ['text', 'json'],
                     structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf',
                 },
             },
         },
@@ -121,6 +123,7 @@ export const defaultModels: ModelInfo[] = [
                 text: {
                     textOutputFormats: ['text', 'json'],
                     structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf',
                 },
             },
         },
@@ -167,6 +170,7 @@ export const defaultModels: ModelInfo[] = [
                 text: {
                     textOutputFormats: ['text', 'json'],
                     structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf',
                 },
             },
         },
@@ -209,6 +213,7 @@ export const defaultModels: ModelInfo[] = [
                 text: {
                     textOutputFormats: ['text', 'json'],
                     structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf',
                 },
             },
         },
@@ -246,6 +251,7 @@ export const defaultModels: ModelInfo[] = [
                 text: {
                     textOutputFormats: ['text', 'json'],
                     structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf',
                 },
             },
         },
@@ -311,6 +317,7 @@ export const defaultModels: ModelInfo[] = [
                 text: {
                     textOutputFormats: ['text'],
                     structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf',
                 },
                 image: {
                     generate: true,
@@ -343,6 +350,7 @@ export const defaultModels: ModelInfo[] = [
                 text: {
                     textOutputFormats: ['text'],
                     structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf',
                 },
                 image: {
                     generate: true,

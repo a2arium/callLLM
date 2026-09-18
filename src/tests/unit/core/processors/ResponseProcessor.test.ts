@@ -50,7 +50,10 @@ jest.unstable_mockModule('@/core/schema/UnionTransformer', () => {
   return {
     __esModule: true,
     flattenUnions: mockFlattenUnions,
-    unflattenData: mockUnflattenData
+    unflattenData: mockUnflattenData,
+    responseHasFlattenedUnionKeys: jest.fn(() => false),
+    OPTIONAL_UNION_OPTION_KEY: 'x-callllm-optional-union-option',
+    collapseNullableUnion: jest.fn(() => null)
   };
 });
 

@@ -20,7 +20,10 @@ jest.unstable_mockModule('@/core/schema/UnionTransformer', () => {
   return {
     __esModule: true,
     flattenUnions: mockFlattenUnions,
-    unflattenData: mockUnflattenData
+    unflattenData: mockUnflattenData,
+    responseHasFlattenedUnionKeys: jest.fn(() => false),
+    OPTIONAL_UNION_OPTION_KEY: 'x-callllm-optional-union-option',
+    collapseNullableUnion: jest.fn(() => null)
   };
 });
 
@@ -506,7 +509,7 @@ describe('OpenAI Response API Converter', () => {
         expect(result.reasoning?.effort).toBe('medium');
       });
 
-      it('should transform system messages for reasoning models', async () => {
+      it('should send system message via instructions for reasoning models', async () => {
         // Setup
         mockModelManager.getModel.mockReturnValue(reasoningModel);
 
@@ -521,21 +524,10 @@ describe('OpenAI Response API Converter', () => {
         const result = await converter.convertToOpenAIResponseParams('o3-mini', params);
 
         // Verify
-        expect(result.instructions).toBeUndefined(); // No instructions (system message) for reasoning models
+        expect(result.instructions).toBe('You are a comedy assistant.');
         expect(result.input).toBeDefined();
         expect(Array.isArray(result.input)).toBe(true);
-
-        // Mock the transformMessagesForReasoningModel method behavior
-        const expectedInputContent = params.messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content.includes('System Instructions') ?
-            msg.content :
-            `[System Instructions: ${params.systemMessage}]\n\n${msg.content}`
-        }));
-
-        // Instead of trying to access content directly, convert to JSON and check JSON structure
-        // This avoids dealing with the ResponseInputItem type directly
-        expect(JSON.stringify(result.input)).toContain('System Instructions: You are a comedy assistant');
+        expect(JSON.stringify(result.input)).not.toContain('System Instructions:');
         expect(JSON.stringify(result.input)).toContain('Tell me a joke');
       });
 
@@ -990,6 +982,133 @@ describe('OpenAI Response API Converter', () => {
         code: 'content_filter'
       });
       expect(result.content).toBe('');
+    });
+  });
+
+  describe('structured output unions and GPT-5 request shaping', () => {
+    const gpt5Model = {
+      name: 'gpt-5',
+      inputPricePerMillion: 1.25,
+      outputPricePerMillion: 10,
+      maxRequestTokens: 400000,
+      maxResponseTokens: 128000,
+      capabilities: {
+        reasoning: true,
+        input: { text: true },
+        output: {
+          text: {
+            textOutputFormats: ['text', 'json'],
+            structuredOutputs: true,
+            jsonSchemaUnions: 'anyOf' as const
+          }
+        }
+      },
+      characteristics: { qualityIndex: 90, outputSpeed: 100, firstTokenLatency: 1000 }
+    } as unknown as ModelInfo;
+
+    const flattenModel = {
+      ...gpt5Model,
+      name: 'custom-flatten',
+      capabilities: {
+        reasoning: false,
+        input: { text: true },
+        output: {
+          text: {
+            textOutputFormats: ['text', 'json'],
+            structuredOutputs: true,
+            jsonSchemaUnions: 'flatten' as const
+          }
+        }
+      }
+    } as unknown as ModelInfo;
+
+    const adjudicationSchema = z.object({
+      outcome: z.enum(['MATCH', 'NO_MATCH', 'ABSTAIN']),
+      canonicalEntityId: z.string().nullable().describe('Exact allowed candidate id or null'),
+      confidence: z.number().min(0).max(1),
+      reasonCode: z.string(),
+      rationale: z.string(),
+      supportingEvidence: z.array(z.string()).max(20),
+      contradictingEvidence: z.array(z.string()).max(20)
+    });
+
+    it('keeps nullable anyOf for GPT-5 and preserves verbosity/strict/instructions', async () => {
+      mockModelManager.getModel.mockReturnValue(gpt5Model);
+
+      const result = await converter.convertToOpenAIResponseParams('gpt-5', {
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: 'Adjudicate this case' }],
+        systemMessage: 'You are a conservative entity-resolution reasoner.',
+        settings: {
+          reasoning: { effort: 'low' },
+          verbosity: 'low'
+        },
+        jsonSchema: {
+          name: 'CallKgResolutionAdjudication',
+          schema: adjudicationSchema
+        },
+        responseFormat: 'json'
+      });
+
+      expect(result.instructions).toBe('You are a conservative entity-resolution reasoner.');
+      expect((result.text as any)?.verbosity).toBe('low');
+      const format = (result.text as any)?.format;
+      expect(format.type).toBe('json_schema');
+      expect(format.strict).toBe(true);
+      expect(format.name).toBe('CallKgResolutionAdjudication');
+      expect(format.schema.properties.canonicalEntityId.anyOf).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'string' }),
+          expect.objectContaining({ type: 'null' })
+        ])
+      );
+      expect(format.schema.properties.canonicalEntityId_selected).toBeUndefined();
+      expect(JSON.stringify(result.input)).not.toContain('System Instructions:');
+    });
+
+    it('collapses nullable unions without selectors in flatten mode', async () => {
+      mockModelManager.getModel.mockReturnValue(flattenModel);
+
+      const result = await converter.convertToOpenAIResponseParams('custom-flatten', {
+        model: 'custom-flatten',
+        messages: [{ role: 'user', content: 'Hi' }],
+        jsonSchema: {
+          name: 'CallKgResolutionAdjudication',
+          schema: adjudicationSchema
+        },
+        responseFormat: 'json'
+      });
+
+      const schema = (result.text as any)?.format?.schema;
+      expect(schema.properties.canonicalEntityId_selected).toBeUndefined();
+      expect(schema.properties.canonicalEntityId.type).toEqual(['string', 'null']);
+    });
+
+    it('flattens multi-variant unions with optional option fields only', async () => {
+      mockModelManager.getModel.mockReturnValue(flattenModel);
+      const multiSchema = z.object({
+        payload: z.union([
+          z.object({ kind: z.literal('text'), value: z.string() }),
+          z.object({ kind: z.literal('number'), value: z.number() })
+        ])
+      });
+
+      const result = await converter.convertToOpenAIResponseParams('custom-flatten', {
+        model: 'custom-flatten',
+        messages: [{ role: 'user', content: 'Hi' }],
+        jsonSchema: {
+          name: 'Multi',
+          schema: multiSchema
+        },
+        responseFormat: 'json'
+      });
+
+      const schema = (result.text as any)?.format?.schema;
+      expect(schema.required).toContain('payload_selected');
+      expect(schema.required).not.toContain('payload_text');
+      expect(schema.required).not.toContain('payload_number');
+      expect(schema.properties.payload_text).toBeDefined();
+      expect(schema.properties.payload_number).toBeDefined();
     });
   });
 });

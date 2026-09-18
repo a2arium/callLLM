@@ -14,7 +14,7 @@ export const defaultModels: ModelInfo[] = [
             batchProcessing: false,
             reasoning: true,
             input: { text: true },
-            output: { text: { textOutputFormats: ['text', 'json'] } },
+            output: { text: { textOutputFormats: ['text', 'json'], structuredOutputs: true, jsonSchemaUnions: 'anyOf' } },
         },
         characteristics: {
             qualityIndex: 85,
@@ -35,7 +35,7 @@ export const defaultModels: ModelInfo[] = [
             batchProcessing: false,
             reasoning: false,
             input: { text: true },
-            output: { text: { textOutputFormats: ['text', 'json'] } },
+            output: { text: { textOutputFormats: ['text', 'json'], structuredOutputs: true, jsonSchemaUnions: 'anyOf' } },
         },
         characteristics: {
             qualityIndex: 70,
@@ -56,7 +56,7 @@ export const defaultModels: ModelInfo[] = [
             batchProcessing: false,
             reasoning: false,
             input: { text: true },
-            output: { text: { textOutputFormats: ['text', 'json'] } },
+            output: { text: { textOutputFormats: ['text', 'json'], structuredOutputs: true, jsonSchemaUnions: 'anyOf' } },
         },
         characteristics: {
             qualityIndex: 60,
@@ -77,7 +77,7 @@ export const defaultModels: ModelInfo[] = [
             batchProcessing: false,
             reasoning: false,
             input: { text: true },
-            output: { text: { textOutputFormats: ['text', 'json'] } },
+            output: { text: { textOutputFormats: ['text', 'json'], structuredOutputs: true, jsonSchemaUnions: 'anyOf' } },
         },
         characteristics: {
             qualityIndex: 80,
@@ -98,7 +98,7 @@ export const defaultModels: ModelInfo[] = [
             batchProcessing: false,
             reasoning: true,
             input: { text: true },
-            output: { text: { textOutputFormats: ['text', 'json'] } },
+            output: { text: { textOutputFormats: ['text', 'json'], structuredOutputs: true, jsonSchemaUnions: 'anyOf' } },
         },
         characteristics: {
             qualityIndex: 78,
@@ -119,7 +119,7 @@ export const defaultModels: ModelInfo[] = [
             batchProcessing: false,
             reasoning: false,
             input: { text: true },
-            output: { text: { textOutputFormats: ['text', 'json'] } },
+            output: { text: { textOutputFormats: ['text', 'json'], structuredOutputs: true, jsonSchemaUnions: 'anyOf' } },
         },
         characteristics: {
             qualityIndex: 86,
@@ -140,7 +140,7 @@ export const defaultModels: ModelInfo[] = [
             batchProcessing: false,
             reasoning: true,
             input: { text: true },
-            output: { text: { textOutputFormats: ['text', 'json'] } },
+            output: { text: { textOutputFormats: ['text', 'json'], structuredOutputs: true, jsonSchemaUnions: 'anyOf' } },
         },
         characteristics: {
             qualityIndex: 90,
@@ -161,7 +161,7 @@ export const defaultModels: ModelInfo[] = [
             batchProcessing: false,
             reasoning: false,
             input: { text: true },
-            output: { text: { textOutputFormats: ['text', 'json'] } },
+            output: { text: { textOutputFormats: ['text', 'json'], structuredOutputs: true, jsonSchemaUnions: 'anyOf' } },
         },
         characteristics: {
             qualityIndex: 88,

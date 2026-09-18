@@ -39,14 +39,14 @@ export class ResponseProcessor {
                     typeof v === 'object' && v !== null && !Array.isArray(v)
                 );
                 let contentToValidate: unknown = parsedResponse.contentObject;
-                // Unflatten union options back into original structure using mapping derived from original schema
+                // Unflatten only when the model returned flattened selector/option fields
                 try {
-                    const { unflattenData, flattenUnions } = await import('../schema/UnionTransformer.js');
+                    const { unflattenData, flattenUnions, responseHasFlattenedUnionKeys } = await import('../schema/UnionTransformer.js');
                     if (isRecord(contentToValidate)) {
                         const originalSchemaObject = SchemaValidator.getSchemaObject(params.jsonSchema.schema) as unknown;
                         const originalObj: Record<string, unknown> = typeof originalSchemaObject === 'object' && originalSchemaObject !== null ? (originalSchemaObject as Record<string, unknown>) : {};
                         const { mapping } = flattenUnions(originalObj);
-                        if (mapping.length > 0) {
+                        if (mapping.length > 0 && responseHasFlattenedUnionKeys(contentToValidate, mapping)) {
                             const restored = unflattenData(contentToValidate, mapping as any);
                             parsedResponse = {
                                 ...parsedResponse,

@@ -49,3 +49,5 @@ test-output.mp4
 test_*
 
 models-*.json
+# Local live repro scripts (API keys / ad-hoc)
+scripts/repro-gpt5-adjudication.ts

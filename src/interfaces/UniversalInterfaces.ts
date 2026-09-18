@@ -719,6 +719,13 @@ export type ModelCapabilities = {
              * @default false
              */
             structuredOutputs?: boolean;
+            /**
+             * How property-level anyOf/oneOf unions are sent for native structured outputs.
+             * - 'anyOf': pass through JSON Schema anyOf (OpenAI, Gemini, Cerebras, etc.)
+             * - 'flatten': rewrite unions into selector + option fields for limited providers
+             * @default 'flatten'
+             */
+            jsonSchemaUnions?: 'anyOf' | 'flatten';
         };
 
         /**

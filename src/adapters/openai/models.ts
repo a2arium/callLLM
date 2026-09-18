@@ -21,7 +21,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -50,7 +51,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -79,7 +81,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -108,7 +111,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -137,7 +141,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -166,7 +171,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -196,7 +202,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -225,7 +232,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -254,7 +262,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -283,7 +292,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -312,7 +322,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -341,7 +352,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -431,7 +443,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -460,7 +473,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -516,7 +530,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -545,7 +560,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -574,7 +590,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -602,7 +619,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -631,7 +649,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 },
                 audio: true
             }
@@ -888,7 +907,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -920,7 +940,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         }
@@ -944,7 +965,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         },
@@ -977,7 +999,8 @@ export const defaultModels: ModelInfo[] = [
             output: {
                 text: {
                     textOutputFormats: ['text', 'json'],
-                    structuredOutputs: true
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
                 }
             }
         }

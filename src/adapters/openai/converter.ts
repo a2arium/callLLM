@@ -4,9 +4,9 @@ import { FinishReason } from '../../interfaces/UniversalInterfaces.ts';
 import { OpenAIResponseValidationError } from './errors.ts';
 import type { ToolDefinition, ToolParameters, ToolCall } from '../../types/tooling.ts';
 import { logger } from '../../utils/logger.ts';
-import { SchemaValidator } from '../../core/schema/SchemaValidator.ts';
 import { SchemaFormatter, isZodSchema } from '../../core/schema/SchemaFormatter.ts';
-import { SchemaSanitizer } from '../../core/schema/SchemaSanitizer.ts';
+import { prepareStructuredOutputSchema } from '../../core/schema/prepareStructuredOutputSchema.ts';
+import { OPTIONAL_UNION_OPTION_KEY } from '../../core/schema/UnionTransformer.ts';
 import { z } from 'zod';
 import type {
     ResponseCreateParams,
@@ -165,15 +165,13 @@ export class Converter {
             return openAITool;
         });
 
-        // If model has reasoning capabilities, transform system messages into user messages
+        // Instructions are supported on the Responses API for all models (including GPT-5 / reasoning).
         let input: EasyInputMessage[] = [];
-        let instructions: string | undefined = undefined;
+        const instructions: string | undefined = params.systemMessage || undefined;
 
         if (hasReasoningCapability) {
-            // For reasoning models, transform messages and incorporate system message into user message
-            input = this.transformMessagesForReasoningModel(params.messages, params.systemMessage);
-            // Don't set instructions for reasoning models
-            instructions = undefined;
+            // Map messages without folding system text into the user turn
+            input = this.transformMessagesForReasoningModel(params.messages);
         } else {
             // Process messages to handle file placeholders
             input = [];
@@ -369,7 +367,6 @@ export class Converter {
                 }
             }
 
-            instructions = params.systemMessage || undefined;
         }
 
         // Build parameters using native type structure
@@ -449,82 +446,58 @@ export class Converter {
         // Do not force defaults; leave unset unless explicitly derived or provided
         if (params.responseFormat === 'json' || (params.jsonSchema && params.jsonSchema.schema)) {
             // Set up text format configuration for the OpenAI Responses API
+            const existingTextConfig = (openAIParams.text as ResponseTextConfig) || {} as ResponseTextConfig;
             if (params.jsonSchema && params.jsonSchema.schema) {
                 // Handle schema-based JSON formatting with json_schema type
                 const formatConfig: any = {
-                    type: 'json_schema'
+                    type: 'json_schema',
+                    strict: true
                 };
 
                 if (params.jsonSchema.name) {
                     formatConfig.name = params.jsonSchema.name;
                 }
 
-                // Convert schema to appropriate format
-                if (isZodSchema(params.jsonSchema.schema)) {
-                    // Convert Zod schema to JSON Schema object, then prepare for OpenAI
-                    const jsonSchema = SchemaValidator.getSchemaObject(params.jsonSchema.schema);
-                    const { flattenUnions } = await import('../../core/schema/UnionTransformer.js');
-                    const { schema: flattenedSchema, mapping } = flattenUnions(jsonSchema as Record<string, unknown>);
-                    const sanitized = SchemaSanitizer.sanitize(flattenedSchema as Record<string, unknown>, {
-                        addHintsToDescriptions: true,
-                        // For unions, do not force all required to avoid forcing unused branches
-                        forceAllRequired: mapping.length === 0,
-                        forceNoAdditionalProps: true,
-                        normalizeDefs: true,
-                        stripMetaKeys: true,
-                        stripCompositionKeywords: true
-                    });
-                    formatConfig.schema = this.prepareResponseSchemaForOpenAI(sanitized as Record<string, unknown>);
-                } else if (typeof params.jsonSchema.schema === 'string') {
-                    try {
-                        // Parse JSON string and ensure additionalProperties: false is set at all levels
-                        const parsedSchema = JSON.parse(params.jsonSchema.schema);
-                        const sanitized = SchemaSanitizer.sanitize(SchemaFormatter.addAdditionalPropertiesFalse(parsedSchema) as Record<string, unknown>, {
-                            addHintsToDescriptions: true,
-                            forceAllRequired: true,
-                            forceNoAdditionalProps: true,
-                            normalizeDefs: true,
-                            stripMetaKeys: true,
-                            stripCompositionKeywords: true
-                        });
-                        formatConfig.schema = this.prepareResponseSchemaForOpenAI(sanitized as Record<string, unknown>);
-                    } catch (error) {
-                        log.info('Failed to parse JSON schema string');
-                        // Fallback to simple JSON object format
-                        formatConfig.type = 'json_object';
-                        delete formatConfig.schema;
+                try {
+                    let schemaInput: unknown = params.jsonSchema.schema;
+                    if (typeof params.jsonSchema.schema === 'string') {
+                        schemaInput = SchemaFormatter.addAdditionalPropertiesFalse(
+                            JSON.parse(params.jsonSchema.schema)
+                        );
+                    } else if (!isZodSchema(params.jsonSchema.schema)) {
+                        schemaInput = SchemaFormatter.addAdditionalPropertiesFalse(params.jsonSchema.schema);
                     }
-                } else {
-                    // Handle object schema directly and ensure additionalProperties: false is set
-                    const schemaWithAdditionalProps = SchemaFormatter.addAdditionalPropertiesFalse(params.jsonSchema.schema);
-                    const sanitized = SchemaSanitizer.sanitize(schemaWithAdditionalProps as Record<string, unknown>, {
-                        addHintsToDescriptions: true,
-                        forceAllRequired: true,
-                        forceNoAdditionalProps: true,
-                        normalizeDefs: true,
-                        stripMetaKeys: true,
-                        stripCompositionKeywords: true
-                    });
-                    formatConfig.schema = this.prepareResponseSchemaForOpenAI(sanitized as Record<string, unknown>);
-                }
 
-                // Decide if schema is safe to attach for OpenAI
-                const root = (formatConfig as any).schema as Record<string, unknown> | undefined;
-                const hasUnionAtRoot = root && (Array.isArray((root as any).oneOf) || Array.isArray((root as any).anyOf) || Array.isArray((root as any).allOf));
-                const isObjectRoot = root && (root as any).type === 'object';
-                if (!root || !isObjectRoot || hasUnionAtRoot) {
-                    // Fallback to json_object when schema isn't compatible
+                    const prepared = prepareStructuredOutputSchema(schemaInput, { modelInfo });
+                    formatConfig.schema = this.prepareResponseSchemaForOpenAI(prepared.schema as Record<string, unknown>);
+
+                    // Decide if schema is safe to attach for OpenAI
+                    const root = formatConfig.schema as Record<string, unknown> | undefined;
+                    const hasUnionAtRoot = root && (Array.isArray((root as any).oneOf) || Array.isArray((root as any).anyOf) || Array.isArray((root as any).allOf));
+                    const isObjectRoot = root && (root as any).type === 'object';
+                    if (!root || !isObjectRoot || hasUnionAtRoot) {
+                        // Fallback to json_object when schema isn't compatible
+                        openAIParams.text = {
+                            ...existingTextConfig,
+                            format: { type: 'json_object' }
+                        } as ResponseTextConfig;
+                    } else {
+                        openAIParams.text = {
+                            ...existingTextConfig,
+                            format: formatConfig
+                        } as ResponseTextConfig;
+                    }
+                } catch (error) {
+                    log.info('Failed to prepare JSON schema for OpenAI structured output');
                     openAIParams.text = {
+                        ...existingTextConfig,
                         format: { type: 'json_object' }
-                    } as ResponseTextConfig;
-                } else {
-                    openAIParams.text = {
-                        format: formatConfig
                     } as ResponseTextConfig;
                 }
             } else {
                 // Simple JSON format without schema
                 openAIParams.text = {
+                    ...existingTextConfig,
                     format: {
                         type: 'json_object'
                     }
@@ -571,39 +544,18 @@ export class Converter {
     }
 
     /**
-     * Transforms messages for reasoning models, incorporating system message into user messages
+     * Maps messages for reasoning models. System text is sent via `instructions`, not inlined.
      * @private
      */
     private transformMessagesForReasoningModel(
-        messages: UniversalMessage[],
-        systemMessage?: string
+        messages: UniversalMessage[]
     ): EasyInputMessage[] {
-        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.transformMessagesForReasoningModel' });
-
-        // Deep clone messages to avoid mutating the original
-        const transformedMessages = [...messages];
-
-        // If there's a system message and at least one user message,
-        // incorporate the system message into the first user message
-        if (systemMessage && transformedMessages.some(m => m.role === 'user')) {
-            // Find the first user message
-            const firstUserIndex = transformedMessages.findIndex(m => m.role === 'user');
-            if (firstUserIndex >= 0) {
-                const userMsg = transformedMessages[firstUserIndex];
-                // Combine system instruction with user message
-                transformedMessages[firstUserIndex] = {
-                    role: 'user',
-                    content: `[System Instructions: ${systemMessage}]\n\n${userMsg.content}`
-                };
-
-                log.debug('Incorporated system message into user message:', transformedMessages[firstUserIndex]);
-            }
-        }
-
-        return transformedMessages.map(message => ({
-            role: this.transformRoleToOpenAIResponseRole(message.role),
-            content: message.content
-        }));
+        return messages
+            .filter(message => message.role !== 'system')
+            .map(message => ({
+                role: this.transformRoleToOpenAIResponseRole(message.role),
+                content: message.content
+            }));
     }
 
     // Role mapping might need adjustment based on exact native roles allowed
@@ -1059,15 +1011,20 @@ export class Converter {
 
             // Identify originally optional fields (not in current required array)
             const originallyOptionalFields = allPropertyKeys.filter(key => !currentRequired.includes(key));
+            const optionalUnionOptionKeys = new Set<string>();
 
             // Process each property
             for (const [key, property] of Object.entries(properties)) {
                 if (typeof property === 'object' && property !== null) {
                     const prop = property as Record<string, unknown>;
+                    if (prop[OPTIONAL_UNION_OPTION_KEY] === true) {
+                        optionalUnionOptionKeys.add(key);
+                        delete prop[OPTIONAL_UNION_OPTION_KEY];
+                    }
                     ensureType(prop);
 
                     // If this field was originally optional, add suffix to description to hint optionality to the model
-                    if (originallyOptionalFields.includes(key)) {
+                    if (originallyOptionalFields.includes(key) || optionalUnionOptionKeys.has(key)) {
                         const currentDescription = (prop.description as string) || '';
                         const optionalSuffix = ' (optional field, leave empty if not applicable)';
                         if (!currentDescription.includes(optionalSuffix)) {
@@ -1080,9 +1037,11 @@ export class Converter {
                 }
             }
 
-            // OpenAI quirk: require that 'required' lists every key in properties
-            if (allPropertyKeys.length > 0) {
-                schema.required = allPropertyKeys;
+            // OpenAI quirk: require that 'required' lists every key in properties,
+            // except exclusive flattened union option fields (only one should be present).
+            const requiredKeys = allPropertyKeys.filter(key => !optionalUnionOptionKeys.has(key));
+            if (requiredKeys.length > 0) {
+                schema.required = requiredKeys;
             }
         }
 

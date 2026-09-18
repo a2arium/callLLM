@@ -3,8 +3,7 @@ import { FinishReason } from '../../interfaces/UniversalInterfaces.ts';
 import type { ToolDefinition, ToolCall } from '../../types/tooling.ts';
 import { logger } from '../../utils/logger.ts';
 import { ModelManager } from '../../core/models/ModelManager.ts';
-import { SchemaValidator } from '../../core/schema/SchemaValidator.ts';
-import { SchemaSanitizer } from '../../core/schema/SchemaSanitizer.ts';
+import { prepareStructuredOutputSchema } from '../../core/schema/prepareStructuredOutputSchema.ts';
 
 type CerebrasMessage = {
     role: 'system' | 'user' | 'assistant' | 'tool';
@@ -62,32 +61,16 @@ export class CerebrasConverter {
 
         // Map response format / JSON
         if (jsonSchema) {
-            const raw = SchemaValidator.getSchemaObject(jsonSchema.schema);
-            // Flatten unions to avoid Cerebras unsupported anyOf/oneOf
-            const { flattenUnions } = await import('../../core/schema/UnionTransformer.js');
-            const { schema: flattenedSchema, mapping } = flattenUnions(raw as Record<string, unknown>);
-            log.debug('Raw schema object before sanitization:', JSON.stringify(raw, null, 2));
-
-            // Cerebras supports arrays with items, but has strict requirements
-            // Sanitize to remove unsupported keywords while preserving array structures
-            let sanitized = SchemaSanitizer.sanitize(flattenedSchema as Record<string, unknown>, {
-                addHintsToDescriptions: true,
-                // Cerebras strict: force required/all props and no additional props
-                forceAllRequired: mapping.length === 0,
-                forceNoAdditionalProps: true,
-                normalizeDefs: true,
-                stripMetaKeys: true,
-                stripCompositionKeywords: true
-            });
-
-            log.debug('Sanitized schema being sent to Cerebras:', JSON.stringify(sanitized, null, 2));
+            const modelInfo = this.modelManager.getModel(model);
+            const prepared = prepareStructuredOutputSchema(jsonSchema.schema, { modelInfo });
+            log.debug('Prepared structured-output schema for Cerebras:', JSON.stringify(prepared.schema, null, 2));
 
             providerParams.response_format = {
                 type: 'json_schema',
                 json_schema: {
                     name: jsonSchema.name,
                     strict: true,
-                    schema: sanitized
+                    schema: prepared.schema
                 }
             };
 
