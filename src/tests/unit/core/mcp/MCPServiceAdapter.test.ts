@@ -456,6 +456,11 @@ const setupConnectedClient = async () => {
     connect: jest.fn().mockResolvedValue(undefined),
     close: jest.fn().mockResolvedValue(undefined),
     callTool: jest.fn(),
+    experimental: {
+      tasks: {
+        callToolStream: jest.fn().mockReturnValue((async function* () { /* empty */ })())
+      }
+    },
     listTools: jest.fn().mockResolvedValue({
       tools: [
         {
@@ -972,15 +977,15 @@ describe('MCP tools/call request timeout', () => {
   it('applies the same timeout resolution for streaming executeTool', async () => {
     adapter = await setupConnectedClient();
     const client = (adapter as any).sdkClients.get('test');
-    client.callTool.mockResolvedValue({});
 
     await adapter.executeTool('test', 'test_tool', {}, true, { retry: false });
 
-    expect(client.callTool).toHaveBeenCalledWith(
-      { name: 'test_tool', arguments: {}, stream: true },
+    expect(client.experimental.tasks.callToolStream).toHaveBeenCalledWith(
+      { name: 'test_tool', arguments: {} },
       undefined,
       { timeout: 60_000 }
     );
+    expect(client.callTool).not.toHaveBeenCalled();
   });
 });
 

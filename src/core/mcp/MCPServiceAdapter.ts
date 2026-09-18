@@ -1086,12 +1086,19 @@ export class MCPServiceAdapter {
         const operation = async () => {
             try {
                 if (stream) {
-                    // Streaming is not retryable since it returns an iterator
+                    // Streaming is not retryable since it returns an iterator.
+                    // MCP SDK 1.30+ removed params.stream; use experimental task streaming instead.
                     // TODO: Consider how to handle retries for initial stream connection errors
-                    return await client.callTool({
+                    if (!client.experimental?.tasks?.callToolStream) {
+                        throw new MCPToolCallError(
+                            serverKey,
+                            toolName,
+                            'Streaming tool calls require MCP SDK experimental.tasks.callToolStream support'
+                        );
+                    }
+                    return client.experimental.tasks.callToolStream({
                         name: toolName,
-                        arguments: processedArgs,
-                        stream: true
+                        arguments: processedArgs
                     }, undefined, toolCallRequestOptions) as unknown as AsyncIterator<T>;
                 } else {
                     return await client.callTool({

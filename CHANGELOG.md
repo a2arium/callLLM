@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.4
+
+- Fix MCP SDK 1.30 compatibility: streaming tool calls use `experimental.tasks.callToolStream` instead of removed `params.stream`.
+
 ## 0.4.3
 
 - Add `jsonSchemaUnions` model capability (`anyOf` | `flatten`) so providers that support JSON Schema unions keep `anyOf` (including nullable fields) instead of rewriting them.
