@@ -420,4 +420,53 @@ describe('ToolController', () => {
     // Shared toolCalls args reference is also updated in place
     expect(response.toolCalls?.[0].arguments.patch).toEqual({ status: 'closed' });
   });
+
+  test.each([
+    ['[]', 'array'],
+    ['null', 'null']
+  ] as const)('should not call callFunction when open-map field is encoded %s', async (encoded) => {
+    const fakeToolsManager = createFakeToolsManager();
+    const callFunction = jest.fn().mockResolvedValue({ ok: true } as unknown as never);
+    const updateAccount: ToolDefinition = {
+      name: 'update_account',
+      description: 'Update an account using a free-form patch object.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          patch: {
+            type: 'object',
+            additionalProperties: {}
+          }
+        },
+        required: ['id', 'patch'],
+        additionalProperties: false
+      },
+      callFunction: callFunction as ToolDefinition['callFunction']
+    };
+    mockGetTool_1.mockImplementation(((name: string) => {
+      return name === 'update_account' ? updateAccount : undefined;
+    }) as any);
+    fakeToolsManager.getTool = mockGetTool_1 as any;
+
+    const controller = new ToolController(fakeToolsManager);
+    const result = await controller.processToolCalls({
+      content: '',
+      role: 'assistant',
+      toolCalls: [
+        {
+          id: 'call_bad_patch',
+          name: 'update_account',
+          arguments: {
+            id: 'acct-1',
+            patch: encoded
+          }
+        }
+      ]
+    });
+
+    expect(callFunction).not.toHaveBeenCalled();
+    expect(result.toolCalls[0].error).toEqual(expect.stringContaining('patch'));
+    expect(result.toolCalls[0].error).toEqual(expect.stringContaining('must decode to an object'));
+  });
 });

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6
+
+- Reject non-object JSON (arrays, null, scalars, strings) when decoding open-map tool fields; only plain objects reach `callFunction`.
+
 ## 0.4.5
 
 - Encode free-form tool object fields (`additionalProperties: true` / schema object, or Zod `z.record`) as JSON strings for OpenAI and Gemini strict tool schemas, then decode them back to objects before `callFunction`.

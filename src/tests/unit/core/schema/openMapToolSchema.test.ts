@@ -281,5 +281,83 @@ describe('openMapToolSchema', () => {
             decodeOpenMapToolArguments(args, recordSchema);
             expect(args.patch).toEqual({ status: 'closed' });
         });
+
+        it.each([
+            ['[]', []],
+            ['null', null],
+            ['42', 42],
+            ['true', true],
+            ['"text"', 'text']
+        ] as const)('rejects encoded non-object JSON %j', (encoded) => {
+            const args = { id: 'acct-1', patch: encoded };
+            expect(() => decodeOpenMapToolArguments(args, recordSchema)).toThrow(OpenMapDecodeError);
+            try {
+                decodeOpenMapToolArguments(args, recordSchema);
+            } catch (error) {
+                expect(error).toBeInstanceOf(OpenMapDecodeError);
+                expect((error as OpenMapDecodeError).path).toBe('patch');
+                expect((error as OpenMapDecodeError).message).toMatch(/must decode to an object/);
+            }
+        });
+
+        it.each([
+            [[], 'array'],
+            [null, 'null'],
+            [42, 'number'],
+            [true, 'boolean'],
+            ['already-a-string', 'string']
+        ] as const)('rejects already-decoded non-object %s', (value) => {
+            const args = { id: 'acct-1', patch: value as unknown };
+            expect(() => decodeOpenMapToolArguments(args, recordSchema)).toThrow(OpenMapDecodeError);
+            try {
+                decodeOpenMapToolArguments(args, recordSchema);
+            } catch (error) {
+                expect(error).toBeInstanceOf(OpenMapDecodeError);
+                expect((error as OpenMapDecodeError).path).toBe('patch');
+            }
+        });
+
+        it('rejects non-object values at open-map items nested in arrays', () => {
+            const schema = {
+                type: 'object',
+                properties: {
+                    patches: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            additionalProperties: true
+                        }
+                    }
+                },
+                required: ['patches']
+            } as Record<string, unknown>;
+
+            for (const bad of ['[]', 'null', '42', true, null, []]) {
+                const args = { patches: [bad] };
+                expect(() => decodeOpenMapToolArguments(args, schema)).toThrow(OpenMapDecodeError);
+                try {
+                    decodeOpenMapToolArguments(args, schema);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(OpenMapDecodeError);
+                    expect((error as OpenMapDecodeError).path).toBe('patches[0]');
+                }
+            }
+        });
+
+        it('rejects jsonrepair results that are not objects', () => {
+            // Single-quoted bare value repairs to a JSON string / scalar, not an object.
+            const args = {
+                id: 'acct-1',
+                patch: "'not-an-object'"
+            };
+            expect(() => decodeOpenMapToolArguments(args, recordSchema)).toThrow(OpenMapDecodeError);
+            try {
+                decodeOpenMapToolArguments(args, recordSchema);
+            } catch (error) {
+                expect(error).toBeInstanceOf(OpenMapDecodeError);
+                expect((error as OpenMapDecodeError).path).toBe('patch');
+                expect((error as OpenMapDecodeError).message).toMatch(/must decode to an object/);
+            }
+        });
     });
 });

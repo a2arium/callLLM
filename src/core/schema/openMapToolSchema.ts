@@ -148,7 +148,7 @@ export function assertToolRootIsNotOpenMap(
     );
 }
 
-function parseJsonObject(value: string, path: string): unknown {
+function parseJsonValue(value: string, path: string): unknown {
     try {
         return JSON.parse(value);
     } catch {
@@ -164,6 +164,20 @@ function parseJsonObject(value: string, path: string): unknown {
     }
 }
 
+/**
+ * Open-map fields must be plain objects (non-null, non-array). Arrays, null,
+ * numbers, booleans, and strings violate the original object schema contract.
+ */
+function requireOpenMapObject(value: unknown, path: string): Record<string, unknown> {
+    if (!isRecord(value)) {
+        throw new OpenMapDecodeError(
+            path,
+            `JSON-encoded open-map field at "${path}" must decode to an object`
+        );
+    }
+    return value;
+}
+
 function decodeValue(
     value: unknown,
     schemaNode: unknown,
@@ -174,11 +188,12 @@ function decodeValue(
     }
 
     if (isOpenMapJsonSchema(schemaNode)) {
+        const fieldPath = path || '$';
         if (typeof value === 'string') {
-            return parseJsonObject(value, path || '$');
+            return requireOpenMapObject(parseJsonValue(value, fieldPath), fieldPath);
         }
-        // Already an object (or other non-string): leave as-is for idempotency.
-        return value;
+        // Already-decoded values: accept only plain objects (idempotent).
+        return requireOpenMapObject(value, fieldPath);
     }
 
     if (Array.isArray(value) && 'items' in schemaNode) {
