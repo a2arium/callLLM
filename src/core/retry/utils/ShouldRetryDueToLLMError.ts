@@ -1,4 +1,5 @@
 import { logger } from '../../../utils/logger.ts';
+import { isStructuredOutputError } from '../../processors/StructuredOutputError.ts';
 
 /**
  * List of HTTP status codes that should trigger a retry
@@ -52,14 +53,21 @@ export function shouldRetryDueToLLMError(error: unknown): boolean {
 
     if (!error) return false;
 
+    // Typed structured-output failures keep the same content-retry policy as
+    // the prior message-based JSON / validation errors (honor maxRetries).
+    if (isStructuredOutputError(error)) {
+        log.debug(`StructuredOutputError reason=${error.reason} is retryable`);
+        return true;
+    }
+
     // Handle status code in error objects from different providers
     if (error instanceof Error) {
         // Extract status code if present in the error
         let statusCode: number | undefined;
 
         // Handle OpenAI-style errors
-        if ('status' in error && typeof (error as any).status === 'number') {
-            statusCode = (error as any).status;
+        if ('status' in error && typeof (error as { status?: number }).status === 'number') {
+            statusCode = (error as { status: number }).status;
             log.debug(`Found status code ${statusCode} in error object`);
         }
 

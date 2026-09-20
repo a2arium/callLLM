@@ -406,7 +406,25 @@ export type Metadata = {
     finishReason?: FinishReason;
     created?: number;
     usage?: Usage;
-    refusal?: any;
+    refusal?: {
+        message?: string;
+        code?: string;
+    };
+    /** Native provider response status (e.g. OpenAI Responses `completed` / `incomplete` / `failed`). */
+    providerStatus?: string;
+    /** Native incomplete reason when status is incomplete (e.g. `max_output_tokens`). */
+    incompleteReason?: string;
+    /**
+     * Machine-readable structured-output failure reason when JSON/schema validation
+     * fails but the stream soft-attaches provenance instead of throwing.
+     */
+    structuredOutputReason?:
+        | 'refusal'
+        | 'max_output_tokens'
+        | 'empty'
+        | 'non_json'
+        | 'json_parse'
+        | 'schema_validation';
     provider?: string;
     model?: string;
     selectionMode?: 'exact' | 'preset' | 'policy';

@@ -239,11 +239,11 @@ describe('ResponseProcessor', () => {
         }
       };
 
-      const result = await processor.validateResponse(response, params, mockModelInfo);
-      expect(result.metadata?.validationErrors).toEqual([
-        { path: ['age'], message: 'Required' }
-      ]);
-      expect(result.metadata?.finishReason).toBe(FinishReason.CONTENT_FILTER);
+      await expect(processor.validateResponse(response, params, mockModelInfo)).rejects.toMatchObject({
+        name: 'StructuredOutputError',
+        reason: 'schema_validation',
+        validationErrors: [{ path: ['age'], message: 'Required' }]
+      });
     });
 
     it('should handle non-SchemaValidationError errors', async () => {
@@ -571,9 +571,10 @@ describe('ResponseProcessor', () => {
         }
       };
 
-      await expect(processor.validateResponse(response, params, mockModelInfo)).rejects.toThrow(
-        'Failed to parse JSON response: Invalid JSON structure'
-      );
+      await expect(processor.validateResponse(response, params, mockModelInfo)).rejects.toMatchObject({
+        name: 'StructuredOutputError',
+        reason: 'empty'
+      });
     });
 
     it('should use contentText from stream responses when available', async () => {
@@ -997,12 +998,11 @@ describe('ResponseProcessor', () => {
           }
         };
 
-        const result = await processor.validateResponse(response, params, mockModelInfo);
-        expect(result.metadata?.validationErrors).toEqual([
-          { path: ['age'], message: 'Required' }
-        ]);
-        expect(result.metadata?.finishReason).toBe(FinishReason.CONTENT_FILTER);
-        expect(result.metadata?.jsonRepaired).toBe(true);
+        await expect(processor.validateResponse(response, params, mockModelInfo)).rejects.toMatchObject({
+          name: 'StructuredOutputError',
+          reason: 'schema_validation',
+          validationErrors: [{ path: ['age'], message: 'Required' }]
+        });
       });
     });
 
@@ -1125,9 +1125,10 @@ describe('ResponseProcessor', () => {
         throw { toString: () => 'Unknown error' }; // Non-Error object that will result in 'Unknown error'
       });
 
-      await expect(processor['parseJson'](response)).rejects.toThrow(
-        'Failed to parse JSON response: Unknown error'
-      );
+      await expect(processor['parseJson'](response)).rejects.toMatchObject({
+        name: 'StructuredOutputError',
+        reason: 'json_parse'
+      });
     });
   });
 
@@ -1391,11 +1392,12 @@ describe('ResponseProcessor', () => {
         model: 'test-model'
       };
 
-      const result = await processor['validateWithSchema'](response, { schema: testSchema }, params);
-      expect(result.metadata?.validationErrors).toEqual([
-        { message: 'Required', path: ['age'] }
-      ]);
-      expect(result.metadata?.finishReason).toBe(FinishReason.CONTENT_FILTER);
+      await expect(processor['validateWithSchema'](response, { schema: testSchema }, params)).
+        rejects.toMatchObject({
+          name: 'StructuredOutputError',
+          reason: 'schema_validation',
+          validationErrors: [{ message: 'Required', path: ['age'] }]
+        });
     });
 
     it('should handle non-SchemaValidationError', async () => {
@@ -1446,10 +1448,12 @@ describe('ResponseProcessor', () => {
         model: 'test-model'
       };
 
-      const result = await processor['validateWithSchema'](response, { schema: testSchema }, params);
-      expect(result.metadata?.validationErrors).toEqual([
-        { message: 'Required', path: ['age'] }
-      ]);
+      await expect(processor['validateWithSchema'](response, { schema: testSchema }, params)).
+        rejects.toMatchObject({
+          name: 'StructuredOutputError',
+          reason: 'schema_validation',
+          validationErrors: [{ message: 'Required', path: ['age'] }]
+        });
     });
 
     it('should handle JSON parsing error during validation', async () => {

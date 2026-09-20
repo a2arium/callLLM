@@ -745,9 +745,15 @@ export class Converter {
             }
         }
 
-        // Set finish reason
+        // Set finish reason and preserve native status / incomplete reason for callers
         universalResponse.metadata = universalResponse.metadata || {};
         universalResponse.metadata.finishReason = finishReason;
+        if (response.status) {
+            universalResponse.metadata.providerStatus = response.status;
+        }
+        if (response.incomplete_details?.reason) {
+            universalResponse.metadata.incompleteReason = response.incomplete_details.reason;
+        }
 
         // Extract usage info from native usage structure
         if (response.usage) {
@@ -836,12 +842,15 @@ export class Converter {
             }
         }
 
-        // Text and function_call items are independent projections of the same
-        // native response. Presence of output_text must not suppress tool extraction.
+        // Text, refusal, and function_call items are independent projections of the
+        // same native response. Presence of output_text must not suppress tools;
+        // refusal content must be projected even when text is empty.
+        let refusalText = '';
         if (response.output_text) {
             log.debug(`Found output_text at top level: "${response.output_text}"`);
             textContent = response.output_text;
-        } else if (response.output && Array.isArray(response.output)) {
+        }
+        if (response.output && Array.isArray(response.output)) {
             const messageItem = response.output.find(item =>
                 item.type === 'message' &&
                 item.role === 'assistant' &&
@@ -850,10 +859,29 @@ export class Converter {
 
             if (messageItem && messageItem.content && Array.isArray(messageItem.content)) {
                 for (const contentItem of messageItem.content) {
-                    if (contentItem.type === 'output_text') {
+                    if (contentItem.type === 'output_text' && !response.output_text) {
                         textContent += contentItem.text || '';
+                    } else if (contentItem.type === 'refusal') {
+                        const part = (contentItem as { refusal?: string }).refusal || '';
+                        if (part) {
+                            refusalText += (refusalText ? '\n' : '') + part;
+                        }
                     }
                 }
+            }
+        }
+
+        if (refusalText) {
+            universalResponse.metadata = universalResponse.metadata || {};
+            // Prefer message-level refusal text over a prior failed-status error refusal
+            // when both somehow appear; completed refusal-only must not look like stop content.
+            universalResponse.metadata.refusal = {
+                ...(universalResponse.metadata.refusal || {}),
+                message: refusalText
+            };
+            if (!textContent && finishReason === FinishReason.STOP) {
+                // Completed refusal-only: not ordinary stop content for structured-output callers
+                universalResponse.metadata.finishReason = FinishReason.CONTENT_FILTER;
             }
         }
 

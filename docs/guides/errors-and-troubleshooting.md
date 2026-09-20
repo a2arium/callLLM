@@ -13,7 +13,7 @@ LLM applications fail in predictable ways: bad credentials, unsupported models, 
 | `ModelSelectionConfigError` | invalid selection object | use a preset, exact model, or non-empty policy |
 | `ModelResolutionError` | no model satisfies requirements/constraints | inspect provider scope, request requirements, constraints |
 | `CapabilityError` | exact model lacks required capability | choose capable exact model or use a preset/policy |
-| invalid `contentObject` | model returned invalid JSON | inspect `content`, `validationErrors`, schema, and prompt |
+| invalid `contentObject` / `StructuredOutputError` | model refused, hit `max_output_tokens`, returned non-JSON, or failed schema | inspect `err.reason`, `err.usage`, `err.refusal`, `err.rawContent` (or stream `metadata.structuredOutputReason`) |
 | tool failure | tool threw or returned invalid result | validate tool args and handle tool exceptions |
 | `TranscriptionFfmpegError` | `ffmpeg`/`ffprobe` missing for audio splitting/transcoding | install ffmpeg and ensure it is on `PATH` |
 

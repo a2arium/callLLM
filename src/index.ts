@@ -68,6 +68,17 @@ export { HistoryManager } from './core/history/HistoryManager.ts';
 /** Thrown when chunked transcription cannot run ffmpeg/ffprobe (see README Audio section). */
 export { TranscriptionFfmpegError } from './core/audio/transcriptionFfmpegError.ts';
 
+/** Typed structured-output / JSON-schema failure with response provenance. */
+export {
+    StructuredOutputError,
+    isStructuredOutputError
+} from './core/processors/StructuredOutputError.ts';
+export type {
+    StructuredOutputFailureReason,
+    StructuredOutputErrorOptions,
+    StructuredOutputValidationError
+} from './core/processors/StructuredOutputError.ts';
+
 // MCP functionality (most commonly used exports)
 export { MCPServiceAdapter } from './core/mcp/MCPServiceAdapter.ts';
 export type {

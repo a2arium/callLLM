@@ -7,6 +7,10 @@ import { enforceZodLiterals, enforceJsonLiterals } from '../schema/SchemaEnforce
 import { z } from 'zod';
 import { jsonrepair } from 'jsonrepair';
 import { logger } from '../../utils/logger.ts';
+import {
+    StructuredOutputError,
+    type StructuredOutputFailureReason
+} from './StructuredOutputError.ts';
 
 export class ResponseProcessor {
     constructor() { }
@@ -14,6 +18,8 @@ export class ResponseProcessor {
     /**
      * Validates a response based on the provided parameters.
      * This handles schema validation, JSON parsing, and content filtering.
+     * Structured-output failures throw {@link StructuredOutputError} with
+     * machine-readable reason + converted response provenance (usage, model, etc.).
      */
     public async validateResponse<T extends z.ZodType | undefined = undefined>(
         response: UniversalChatResponse,
@@ -28,6 +34,9 @@ export class ResponseProcessor {
             !(params.responseFormat && typeof params.responseFormat === 'object' && params.responseFormat.type === 'json_object')) {
             return response as UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>;
         }
+
+        // Classify provider-level failures before attempting JSON parse
+        this.throwIfProviderStructuredFailure(response);
 
         // For JSON responses, parse and validate
         try {
@@ -119,17 +128,26 @@ export class ResponseProcessor {
                     }
                 } catch (validationError) {
                     if (validationError instanceof SchemaValidationError) {
-                        return {
+                        const validationErrors = validationError.validationErrors.map(err => ({
+                            path: Array.isArray(err.path) ? err.path : [err.path],
+                            message: err.message
+                        }));
+                        const failedResponse: UniversalChatResponse = {
                             ...parsedResponse,
                             metadata: {
                                 ...parsedResponse.metadata,
-                                validationErrors: validationError.validationErrors.map(err => ({
-                                    path: Array.isArray(err.path) ? err.path : [err.path],
-                                    message: err.message
-                                })),
-                                finishReason: FinishReason.CONTENT_FILTER
+                                validationErrors,
+                                finishReason: FinishReason.CONTENT_FILTER,
+                                structuredOutputReason: 'schema_validation'
                             }
-                        } as UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>;
+                        };
+                        throw new StructuredOutputError({
+                            reason: 'schema_validation',
+                            message: 'Failed to validate response',
+                            response: failedResponse,
+                            validationErrors,
+                            cause: validationError
+                        });
                     }
 
                     // For non-SchemaValidationError, throw with the expected message format
@@ -143,6 +161,9 @@ export class ResponseProcessor {
 
             return parsedResponse as UniversalChatResponse<T extends z.ZodType ? z.infer<T> : unknown>;
         } catch (error: unknown) {
+            if (error instanceof StructuredOutputError) {
+                throw error;
+            }
             if (error instanceof SyntaxError || (error instanceof Error && error.message === 'Failed to parse JSON response')) {
                 throw error;
             }
@@ -151,6 +172,69 @@ export class ResponseProcessor {
             }
             throw new Error('Failed to validate response');
         }
+    }
+
+    /**
+     * Provider-level failures that must not be collapsed into a generic JSON parse error.
+     */
+    private throwIfProviderStructuredFailure(response: UniversalChatResponse): void {
+        const meta = response.metadata || {};
+        const content = typeof response.content === 'string' ? response.content.trim() : '';
+        const streamText = typeof (response as { contentText?: string }).contentText === 'string'
+            ? (response as { contentText?: string }).contentText!.trim()
+            : '';
+        const effectiveContent = streamText || content;
+
+        if (meta.refusal) {
+            throw new StructuredOutputError({
+                reason: 'refusal',
+                response
+            });
+        }
+
+        const isIncompleteTokens =
+            meta.finishReason === FinishReason.LENGTH ||
+            meta.incompleteReason === 'max_output_tokens';
+
+        if (isIncompleteTokens && !effectiveContent) {
+            throw new StructuredOutputError({
+                reason: 'max_output_tokens',
+                response
+            });
+        }
+    }
+
+    private structuredParseFailure(
+        response: UniversalChatResponse,
+        contentToParse: string,
+        cause?: unknown
+    ): StructuredOutputError {
+        const meta = response.metadata || {};
+        const isIncompleteTokens =
+            meta.finishReason === FinishReason.LENGTH ||
+            meta.incompleteReason === 'max_output_tokens';
+
+        let reason: StructuredOutputFailureReason;
+        if (isIncompleteTokens) {
+            reason = 'max_output_tokens';
+        } else if (!contentToParse) {
+            reason = 'empty';
+        } else if (!this.looksLikeJson(contentToParse)) {
+            reason = 'non_json';
+        } else {
+            reason = 'json_parse';
+        }
+
+        return new StructuredOutputError({
+            reason,
+            response,
+            cause
+        });
+    }
+
+    private looksLikeJson(content: string): boolean {
+        const trimmed = content.trim();
+        return trimmed.startsWith('{') || trimmed.startsWith('[');
     }
 
     /**
@@ -243,21 +327,25 @@ export class ResponseProcessor {
             parsedContent = JSON.parse(contentToParse) as T;
         } catch (parseError) {
             if (!(parseError instanceof Error)) {
-                throw new Error('Failed to parse JSON response: Unknown error');
+                throw this.structuredParseFailure(response, contentToParse, parseError);
             }
 
             if (!this.isLikelyRepairable(contentToParse)) {
-                throw new Error('Failed to parse JSON response: Invalid JSON structure');
+                throw this.structuredParseFailure(response, contentToParse, parseError);
             }
 
             const repairedJson = this.repairJson(contentToParse);
             if (!repairedJson) {
                 // If repairJson returns undefined, and the contentToParse was not empty and looked like JSON
                 if (contentToParse && (contentToParse.includes('{') || contentToParse.includes('['))) {
-                    throw new Error('Failed to parse JSON response: Unable to repair JSON');
+                    throw new StructuredOutputError({
+                        reason: 'json_parse',
+                        message: 'Failed to parse JSON response: Unable to repair JSON',
+                        response,
+                        cause: parseError
+                    });
                 } else {
-                    // If it was empty or didn't look like JSON, the original parseError is more relevant
-                    throw parseError;
+                    throw this.structuredParseFailure(response, contentToParse, parseError);
                 }
             }
 
@@ -269,7 +357,12 @@ export class ResponseProcessor {
             } catch (repairError) {
                 // If repair fails, use the original parseError's message if it's more specific, or a generic repair failure.
                 const originalParseMessage = (parseError as Error).message || 'Invalid JSON';
-                throw new Error(`Failed to parse JSON response: Invalid JSON after repair (original error: ${originalParseMessage})`);
+                throw new StructuredOutputError({
+                    reason: 'json_parse',
+                    message: `Failed to parse JSON response: Invalid JSON after repair (original error: ${originalParseMessage})`,
+                    response,
+                    cause: repairError
+                });
             }
         }
 
@@ -390,21 +483,30 @@ export class ResponseProcessor {
             };
         } catch (error) {
             if (error instanceof SchemaValidationError) {
-                return {
+                const validationErrors = error.validationErrors.map(err => ({
+                    message: err.message,
+                    path: Array.isArray(err.path) ? err.path : [err.path]
+                }));
+                const failedResponse: UniversalChatResponse = {
                     ...response,
                     content: JSON.stringify(contentToParse),
-                    contentObject: contentToParse as T extends z.ZodType ? z.infer<T> : unknown,
+                    contentObject: contentToParse,
                     metadata: {
                         ...response.metadata,
                         jsonRepaired: wasRepaired,
                         originalContent,
-                        validationErrors: error.validationErrors.map(err => ({
-                            message: err.message,
-                            path: Array.isArray(err.path) ? err.path : [err.path]
-                        })),
-                        finishReason: FinishReason.CONTENT_FILTER
+                        validationErrors,
+                        finishReason: FinishReason.CONTENT_FILTER,
+                        structuredOutputReason: 'schema_validation'
                     }
                 };
+                throw new StructuredOutputError({
+                    reason: 'schema_validation',
+                    message: 'Failed to validate response',
+                    response: failedResponse,
+                    validationErrors,
+                    cause: error
+                });
             }
             throw new Error(`Failed to validate response: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }

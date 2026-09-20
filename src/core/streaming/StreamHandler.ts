@@ -10,7 +10,8 @@ import { ContentAccumulator } from './processors/ContentAccumulator.ts';
 import { ReasoningProcessor } from './processors/ReasoningProcessor.ts';
 import { UsageTracker } from '../telemetry/UsageTracker.ts';
 import { z } from 'zod';
-import { SchemaValidator, SchemaValidationError } from '../schema/SchemaValidator.ts';
+import { SchemaValidationError } from '../schema/SchemaValidator.ts';
+import { isStructuredOutputError } from '../processors/StructuredOutputError.ts';
 import type { StreamChunk } from './types.ts';
 import { ToolController } from '../tools/ToolController.ts';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator.ts';
@@ -473,7 +474,9 @@ export class StreamHandler {
                                 log.info('Using prompt enhancement for JSON handling');
                                 const validatedResponse = await this.responseProcessor.validateResponse({
                                     content: cleanAccumulatedContent, // Use clean content
-                                    role: 'assistant'
+                                    role: 'assistant',
+                                    // Preserve stream-side provenance for typed failure classification
+                                    metadata: response.metadata
                                 }, {
                                     model: params.model,
                                     messages: [],
@@ -491,35 +494,69 @@ export class StreamHandler {
                                 }
                             } else {
                                 log.info('Using native JSON mode');
-                                // For native JSON mode, use direct schema validation
+                                // For native JSON mode, use direct schema validation via ResponseProcessor
+                                // so classification matches the non-streaming path.
                                 try {
                                     log.debug('Validating accumulated JSON content:', {
                                         contentLength: cleanAccumulatedContent.length, // Log clean length
                                         contentPreview: cleanAccumulatedContent.slice(0, 100) + (cleanAccumulatedContent.length > 100 ? '...' : '')
                                     });
 
-                                    // Parse the clean accumulated content directly from the accumulator
-                                    const parsedContent = JSON.parse(cleanAccumulatedContent); // <--- Use clean content
-
-                                    log.debug('Successfully parsed JSON, now validating against schema');
-                                    // Then validate against the schema
-                                    const parsedJson = SchemaValidator.validate(
-                                        parsedContent,
-                                        schema
-                                    );
+                                    const validatedResponse = await this.responseProcessor.validateResponse({
+                                        content: cleanAccumulatedContent,
+                                        role: 'assistant',
+                                        metadata: response.metadata
+                                    }, {
+                                        model: params.model,
+                                        messages: [],
+                                        jsonSchema: params.jsonSchema,
+                                        responseFormat: 'json'
+                                    }, modelInfo);
 
                                     log.debug('Schema validation passed successfully');
-                                    response.contentObject = parsedJson as any;
+                                    response.contentObject = validatedResponse.contentObject as any;
+                                    if (validatedResponse.metadata?.jsonRepaired) {
+                                        response.metadata = response.metadata || {};
+                                        response.metadata.jsonRepaired = true;
+                                        response.metadata.originalContent = validatedResponse.metadata.originalContent;
+                                    }
                                 } catch (validationError: unknown) {
                                     log.warn('JSON validation error in native mode:', validationError);
                                     response.metadata = response.metadata || {};
 
-                                    if (validationError instanceof SchemaValidationError) {
+                                    if (isStructuredOutputError(validationError)) {
+                                        const fields = validationError.toMetadataFields();
+                                        response.metadata.structuredOutputReason = fields.structuredOutputReason;
+                                        if (fields.providerStatus) response.metadata.providerStatus = fields.providerStatus;
+                                        if (fields.incompleteReason) response.metadata.incompleteReason = fields.incompleteReason;
+                                        if (fields.model) response.metadata.model = fields.model;
+                                        if (fields.usage) response.metadata.usage = fields.usage;
+                                        if (fields.refusal) response.metadata.refusal = fields.refusal as typeof response.metadata.refusal;
+                                        if (fields.originalContent !== undefined) {
+                                            response.metadata.originalContent = fields.originalContent ?? undefined;
+                                        }
+                                        if (validationError.validationErrors) {
+                                            response.metadata.validationErrors = validationError.validationErrors.map(err => ({
+                                                message: err.message,
+                                                path: Array.isArray(err.path) && err.path.length === 1
+                                                    ? err.path[0] as unknown as (string | number)[]
+                                                    : err.path
+                                            }));
+                                        } else {
+                                            response.metadata.validationErrors = [{
+                                                message: validationError.message,
+                                                path: ['']
+                                            }];
+                                        }
+                                        response.metadata.finishReason =
+                                            fields.finishReason ?? FinishReason.CONTENT_FILTER;
+                                    } else if (validationError instanceof SchemaValidationError) {
                                         const normalised = validationError.validationErrors.map(err => ({
                                             ...err,
                                             path: Array.isArray(err.path) && err.path.length === 1 ? err.path[0] : err.path
                                         }));
                                         response.metadata.validationErrors = normalised;
+                                        response.metadata.finishReason = FinishReason.CONTENT_FILTER;
                                     } else {
                                         // Improved handling of non-SchemaValidationError types
                                         response.metadata.validationErrors = [{
@@ -528,9 +565,8 @@ export class StreamHandler {
                                                 : String(validationError),
                                             path: [''] // Default path when specific path isn't available
                                         }];
+                                        response.metadata.finishReason = FinishReason.CONTENT_FILTER;
                                     }
-
-                                    response.metadata.finishReason = FinishReason.CONTENT_FILTER;
                                 }
                             }
                         } catch (error: unknown) {
@@ -538,12 +574,39 @@ export class StreamHandler {
                             response.metadata = response.metadata || {};
 
                             // Handle different error types consistently
-                            if (error instanceof SchemaValidationError) {
+                            if (isStructuredOutputError(error)) {
+                                const fields = error.toMetadataFields();
+                                response.metadata.structuredOutputReason = fields.structuredOutputReason;
+                                if (fields.providerStatus) response.metadata.providerStatus = fields.providerStatus;
+                                if (fields.incompleteReason) response.metadata.incompleteReason = fields.incompleteReason;
+                                if (fields.model) response.metadata.model = fields.model;
+                                if (fields.usage) response.metadata.usage = fields.usage;
+                                if (fields.refusal) response.metadata.refusal = fields.refusal as typeof response.metadata.refusal;
+                                if (fields.originalContent !== undefined) {
+                                    response.metadata.originalContent = fields.originalContent ?? undefined;
+                                }
+                                if (error.validationErrors) {
+                                    response.metadata.validationErrors = error.validationErrors.map(err => ({
+                                        message: err.message,
+                                        path: Array.isArray(err.path) && err.path.length === 1
+                                            ? err.path[0] as unknown as (string | number)[]
+                                            : err.path
+                                    }));
+                                } else {
+                                    response.metadata.validationErrors = [{
+                                        message: error.message,
+                                        path: ['']
+                                    }];
+                                }
+                                response.metadata.finishReason =
+                                    fields.finishReason ?? FinishReason.CONTENT_FILTER;
+                            } else if (error instanceof SchemaValidationError) {
                                 const normalised = error.validationErrors.map(err => ({
                                     ...err,
                                     path: Array.isArray(err.path) && err.path.length === 1 ? err.path[0] : err.path
                                 }));
                                 response.metadata.validationErrors = normalised;
+                                response.metadata.finishReason = FinishReason.CONTENT_FILTER;
                             } else {
                                 response.metadata.validationErrors = [{
                                     message: error instanceof Error
@@ -551,9 +614,8 @@ export class StreamHandler {
                                         : String(error),
                                     path: ['']
                                 }];
+                                response.metadata.finishReason = FinishReason.CONTENT_FILTER;
                             }
-
-                            response.metadata.finishReason = FinishReason.CONTENT_FILTER;
                         }
                     }
 

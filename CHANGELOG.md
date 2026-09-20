@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.10
+
+- Preserve machine-readable structured-output failure provenance: project OpenAI Responses refusal content into `metadata.refusal`, retain native `providerStatus` / `incompleteReason`, and throw `StructuredOutputError` with stable `reason` (`refusal`, `max_output_tokens`, `empty`, `non_json`, `json_parse`, `schema_validation`) plus usage/model/finish metadata through RetryManager (including `maxRetries: 0`). Streaming soft-attaches the same classification on the final chunk.
+
 ## 0.4.9
 
 - Keep the original tool catalogue on every recursive tool-loop continuation; clear sticky `toolChoice` only.

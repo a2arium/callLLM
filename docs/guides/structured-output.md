@@ -142,22 +142,39 @@ During streaming, `content` is the incremental text. The final chunk contains `c
 
 ## Handling Invalid Output
 
-LLM output can still be invalid. Your production code should handle:
+LLM output can still be invalid. On the non-streaming path, JSON/schema failures throw
+`StructuredOutputError` with a stable `reason` and the converted response provenance
+(`usage`, `model`, `finishReason`, `providerStatus`, `incompleteReason`, `refusal`,
+bounded `rawContent`). Branch on `reason`, not message text:
 
-- validation failures
-- repaired JSON (`metadata.jsonRepaired`)
-- validation errors (`metadata.validationErrors`)
-- missing `contentObject`
+| `reason` | Meaning |
+| --- | --- |
+| `refusal` | Provider refused (including Responses refusal content items) |
+| `max_output_tokens` | Incomplete due to output token limit |
+| `empty` | No content to parse |
+| `non_json` | Plaintext or other non-JSON under a JSON contract |
+| `json_parse` | Looks like JSON but could not be parsed/repaired |
+| `schema_validation` | Parsed JSON failed schema validation |
 
 ```ts
-const first = response[0];
+import { StructuredOutputError, isStructuredOutputError } from 'callllm';
 
-if (!first.contentObject) {
-  console.error('Raw output:', first.content);
-  console.error('Validation errors:', first.metadata?.validationErrors);
-  throw new Error('Model did not return valid structured output');
+try {
+  const [first] = await caller.call('…', { jsonSchema: { schema } });
+  // first.contentObject is validated
+} catch (err) {
+  if (isStructuredOutputError(err)) {
+    console.error(err.reason, err.usage, err.model, err.refusal ?? err.rawContent);
+  }
+  throw err;
 }
 ```
+
+Streaming keeps a soft attach: the final chunk may include `metadata.structuredOutputReason`
+plus `validationErrors` / usage / refusal instead of throwing, so stream consumers can
+inspect the same classification without aborting the iterator.
+
+Also handle repaired JSON (`metadata.jsonRepaired`) when validation succeeds after repair.
 
 ## Guidance
 

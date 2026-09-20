@@ -80,6 +80,17 @@ export class RetryManager {
             }
         }
         // If all retry attempts fail, throw an error with the details of the last encountered error.
+        // Preserve StructuredOutputError classification + response provenance (do not message-only wrap).
+        if (isStructuredOutputError(lastError)) {
+            if (attempt === 0) {
+                throw lastError.withMessage(
+                    `Operation failed without retrying (non-retryable error). Error: ${lastError.message}`
+                );
+            }
+            throw lastError.withMessage(
+                `Failed after ${attempt - 1} retries. Last error: ${lastError.message}. (Hint: Increase 'maxRetries' in settings if needed)`
+            );
+        }
         if (attempt === 0) {
             // No retries were attempted because the error was not retryable
             throw new Error(`Operation failed without retrying (non-retryable error). Error: ${(lastError instanceof Error) ? lastError.message : lastError}`);
@@ -119,3 +130,4 @@ function abortableDelay(delay: number, signal?: AbortSignal): Promise<void> {
 }
 import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
 import { LLMAbortError, isLLMCancellationError } from '../execution/errors.ts';
+import { isStructuredOutputError } from '../processors/StructuredOutputError.ts';

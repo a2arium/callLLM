@@ -1427,7 +1427,38 @@ describe('OpenAI Response API Converter', () => {
       const result = converter.convertFromOpenAIResponse(openAIResponse as any);
 
       expect(result.metadata?.finishReason).toBe('length');
+      expect(result.metadata?.providerStatus).toBe('incomplete');
+      expect(result.metadata?.incompleteReason).toBe('max_output_tokens');
       expect(result.content).toBe('This response was cut off');
+    });
+
+    test('should project message-level refusal content into metadata', () => {
+      const openAIResponse = {
+        id: 'resp_refuse',
+        created_at: Date.now(),
+        model: 'gpt-4o',
+        status: 'completed',
+        object: 'response',
+        output: [{
+          type: 'message',
+          role: 'assistant',
+          status: 'completed',
+          content: [{
+            type: 'refusal',
+            refusal: 'I cannot fulfill that request.'
+          }]
+        }]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+
+      expect(result.content).toBe('');
+      expect(result.metadata?.refusal).toEqual({
+        message: 'I cannot fulfill that request.'
+      });
+      expect(result.metadata?.providerStatus).toBe('completed');
+      // Refusal-only completed responses must not look like ordinary stop content
+      expect(result.metadata?.finishReason).toBe('content_filter');
     });
 
     test('should handle content safety issues', () => {

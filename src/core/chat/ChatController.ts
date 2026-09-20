@@ -3,6 +3,7 @@
 import { ProviderManager } from '../caller/ProviderManager.ts';
 import { ModelManager } from '../models/ModelManager.ts';
 import { ResponseProcessor } from '../processors/ResponseProcessor.ts';
+import { StructuredOutputError } from '../processors/StructuredOutputError.ts';
 import { RetryManager } from '../retry/RetryManager.ts';
 import { UsageTracker } from '../telemetry/UsageTracker.ts';
 import type { UniversalChatParams, UniversalChatResponse, UniversalMessage, UniversalChatSettings, JSONSchemaDefinition, HistoryMode, JsonModeType, ResponseFormat } from '../../interfaces/UniversalInterfaces.ts';
@@ -363,15 +364,19 @@ export class ChatController {
                                 responseFormat: effectiveResponseFormat
                             };
 
-                            // This will throw if parsing/validation fails, triggering a retry
+                            // This will throw StructuredOutputError if parsing/validation fails, triggering a retry
                             const validated = await this.responseProcessor.validateResponse<T>(
                                 resp,
                                 validationParams,
                                 modelInfo,
                                 { usePromptInjection, useSchemaInjection }
                             );
-                            if (!validated || (validated.metadata?.validationErrors?.length ?? 0) > 0) {
-                                throw new Error('Failed to validate response');
+                            if (!validated) {
+                                throw new StructuredOutputError({
+                                    reason: 'empty',
+                                    message: 'Failed to validate response',
+                                    response: resp
+                                });
                             }
                             return validated;
                         }
