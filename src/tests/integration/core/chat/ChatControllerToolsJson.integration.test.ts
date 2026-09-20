@@ -180,7 +180,10 @@ describe('Integration: ChatController - Tools with JSON Schema', () => {
     expect(secondCallParams.responseFormat).toBe('json');
     expect(secondCallParams.jsonSchema?.name).toEqual('SimpleDataResponse');
     expect(secondCallParams.jsonSchema?.schema).toEqual(SimpleDataSchema);
-    expect(secondCallParams.tools).toBeUndefined();
+    expect(secondCallParams.tools).toBeDefined();
+    expect(secondCallParams.tools).toHaveLength(1);
+    expect(secondCallParams.tools?.[0].name).toBe('get_simple_data');
+    expect(secondCallParams.settings?.toolChoice).toBeUndefined();
 
     // Check final response (accessing the first element of the array)
     expect(response).toBeDefined();

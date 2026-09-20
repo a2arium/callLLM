@@ -199,6 +199,39 @@ describe('ToolController', () => {
     await expect(controller.processToolCalls(dummyResponse)).resolves.toBeDefined(); // Updated call signature
   });
 
+  test('enforces maxIterations across recursive rounds without silent drops', async () => {
+    const fakeToolsManager = createFakeToolsManager();
+    const callFn = jest.fn().mockResolvedValue({ ok: true } as unknown as never);
+    const tool: ToolDefinition = {
+      name: 'ping',
+      description: '',
+      parameters: { type: 'object', properties: {} },
+      callFunction: callFn as any
+    };
+    mockGetTool_1.mockReturnValue(tool);
+    fakeToolsManager.getTool = mockGetTool_1 as any;
+    const controller = new ToolController(fakeToolsManager, 2);
+
+    await controller.processToolCalls({
+      content: '',
+      role: 'assistant',
+      toolCalls: [{ id: 'c1', name: 'ping', arguments: {} }]
+    });
+    await controller.processToolCalls({
+      content: '',
+      role: 'assistant',
+      toolCalls: [{ id: 'c2', name: 'ping', arguments: {} }]
+    });
+
+    await expect(controller.processToolCalls({
+      content: '',
+      role: 'assistant',
+      toolCalls: [{ id: 'c3', name: 'ping', arguments: {} }]
+    })).rejects.toThrow(ToolIterationLimitError);
+
+    expect(callFn).toHaveBeenCalledTimes(2);
+  });
+
   // Tests for getToolByName method
   describe('getToolByName', () => {
     test('should return tool when it exists in manager', () => {

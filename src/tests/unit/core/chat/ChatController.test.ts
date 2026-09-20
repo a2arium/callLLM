@@ -815,6 +815,175 @@ describe('ChatController', () => {
     expect(callFunction).toHaveBeenCalledWith({ id: 'at58506', patch: {} });
   });
 
+  it('retains tools on continuation while clearing toolChoice', async () => {
+    const tools: ToolDefinition[] = [{
+      name: 'close_account',
+      description: 'Close an account',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id']
+      }
+    }];
+
+    const toolCallResponse: UniversalChatResponse = {
+      content: '',
+      role: 'assistant',
+      metadata: { finishReason: FinishReason.TOOL_CALLS },
+      toolCalls: [{ id: 'call_1', name: 'close_account', arguments: { id: 'at58506' } }]
+    };
+
+    (mockProviderManager.getProvider().chatCall as any).
+      mockResolvedValueOnce(toolCallResponse).
+      mockResolvedValueOnce({
+        content: 'Done.',
+        role: 'assistant',
+        metadata: { finishReason: FinishReason.STOP }
+      });
+
+    (mockToolOrchestrator.processToolCalls as any).mockResolvedValueOnce({
+      requiresResubmission: true,
+      newToolCalls: 1
+    });
+
+    mockHistoryManager.getMessages = jest.fn().mockReturnValue([]);
+
+    await chatController.execute({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'Close it' }],
+      tools,
+      settings: { toolChoice: 'auto' }
+    });
+
+    expect(mockProviderManager.getProvider().chatCall).toHaveBeenCalledTimes(2);
+    const secondParams = (mockProviderManager.getProvider().chatCall as any).mock.calls[1][1];
+    expect(secondParams.tools).toEqual(tools);
+    expect(secondParams.settings?.toolChoice).toBeUndefined();
+  });
+
+  it('allows tool A then tool B then a third provider request before a text ending', async () => {
+    const callA = jest.fn().mockResolvedValue({ error: 'ambiguous' } as unknown as never);
+    const callB = jest.fn().mockResolvedValue({ ok: true } as unknown as never);
+    const tools: ToolDefinition[] = [
+      {
+        name: 'close_account',
+        description: 'Close',
+        parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+        callFunction: callA as any
+      },
+      {
+        name: 'get_account',
+        description: 'Get',
+        parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+        callFunction: callB as any
+      }
+    ];
+
+    const realToolController = new ToolController(new ToolsManager());
+    const realOrchestrator = new ToolOrchestrator(
+      realToolController,
+      chatController,
+      { createStream: jest.fn() } as any,
+      mockHistoryManager
+    );
+
+    const loopController = new ChatController(
+      mockProviderManager as unknown as ProviderManager,
+      mockModelManager,
+      mockResponseProcessor,
+      mockRetryManager,
+      mockUsageTracker,
+      realToolController,
+      realOrchestrator,
+      mockHistoryManager
+    );
+
+    (mockProviderManager.getProvider().chatCall as any).
+      mockResolvedValueOnce({
+        content: '',
+        role: 'assistant',
+        metadata: { finishReason: FinishReason.TOOL_CALLS },
+        toolCalls: [{ id: 'call_a', name: 'close_account', arguments: { id: 'at58506' } }]
+      }).
+      mockResolvedValueOnce({
+        content: '',
+        role: 'assistant',
+        metadata: { finishReason: FinishReason.TOOL_CALLS },
+        toolCalls: [{ id: 'call_b', name: 'get_account', arguments: { id: 'at58506' } }]
+      }).
+      mockResolvedValueOnce({
+        content: 'Account closed.',
+        role: 'assistant',
+        metadata: { finishReason: FinishReason.STOP }
+      });
+
+    mockHistoryManager.getMessages = jest.fn().mockReturnValue([]);
+
+    const result = await loopController.execute({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'Close the account' }],
+      tools
+    });
+
+    expect(callA).toHaveBeenCalledTimes(1);
+    expect(callB).toHaveBeenCalledTimes(1);
+    expect(mockProviderManager.getProvider().chatCall).toHaveBeenCalledTimes(3);
+    expect(result.content).toBe('Account closed.');
+  });
+
+  it('stops the tool loop at maxIterations by throwing', async () => {
+    const callFn = jest.fn().mockResolvedValue({ again: true } as unknown as never);
+    const tools: ToolDefinition[] = [{
+      name: 'ping',
+      description: 'Ping',
+      parameters: { type: 'object', properties: {} },
+      callFunction: callFn as any
+    }];
+
+    const realToolController = new ToolController(new ToolsManager(), 1);
+    const realOrchestrator = new ToolOrchestrator(
+      realToolController,
+      chatController,
+      { createStream: jest.fn() } as any,
+      mockHistoryManager
+    );
+
+    const loopController = new ChatController(
+      mockProviderManager as unknown as ProviderManager,
+      mockModelManager,
+      mockResponseProcessor,
+      mockRetryManager,
+      mockUsageTracker,
+      realToolController,
+      realOrchestrator,
+      mockHistoryManager
+    );
+
+    (mockProviderManager.getProvider().chatCall as any).
+      mockResolvedValueOnce({
+        content: '',
+        role: 'assistant',
+        metadata: { finishReason: FinishReason.TOOL_CALLS },
+        toolCalls: [{ id: 'call_1', name: 'ping', arguments: {} }]
+      }).
+      mockResolvedValueOnce({
+        content: '',
+        role: 'assistant',
+        metadata: { finishReason: FinishReason.TOOL_CALLS },
+        toolCalls: [{ id: 'call_2', name: 'ping', arguments: {} }]
+      });
+
+    mockHistoryManager.getMessages = jest.fn().mockReturnValue([]);
+
+    await expect(loopController.execute({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'Ping' }],
+      tools
+    })).rejects.toThrow(/iteration|Iteration/i);
+
+    expect(callFn).toHaveBeenCalledTimes(1);
+  });
+
   it('should use dynamic history mode to intelligently truncate messages', async () => {
     // Mock historyManager to return a set of messages
     const historyMessages: UniversalMessage[] = [

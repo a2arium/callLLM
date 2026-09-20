@@ -56,7 +56,7 @@ Additional dependency-injection options exist for tests and advanced integration
 Defaults to know:
 
 - `historyMode` defaults to `stateless`.
-- `maxIterations` defaults to `5` for tool-call loops.
+- `maxIterations` defaults to `5` for tool-call loops (counts recursive continuation rounds; the counter is not reset between tool batches within one top-level call).
 - `maxChunkIterations` defaults to `70` for large-input chunking.
 - `settings.maxRetries` defaults to the retry controller default when unset; set it explicitly for production workflows.
 

@@ -468,16 +468,17 @@ export class ChatController {
                     log.debug('Tool results require resubmission to model.');
                     log.debug('Resubmitting with updated messages including tool results');
 
-                    // Call execute recursively, explicitly passing necessary context
+                    // Call execute recursively, explicitly passing necessary context.
+                    // Keep the original tool catalogue so the model can act again;
+                    // clear toolChoice so an initial required/forced choice is not sticky.
                     const resubmissionParams = {
-                        ...params, // Spread original params
+                        ...params, // Spread original params (including tools)
                         messages: loopMessages.filter(m =>
                             !(m.role === 'user' && (m.metadata?.isFormatInstruction || String(m.content).startsWith('Format instructions:')))
                         ), // Use updated history, filtering out existing format instructions
-                        tools: undefined, // No tools needed for resubmission
                         settings: {
                             ...params.settings,
-                            toolChoice: undefined // No tool choice needed
+                            toolChoice: undefined
                         },
                         jsonSchema: jsonSchema, // Explicitly pass original schema
                         responseFormat: effectiveResponseFormat // Explicitly pass original format

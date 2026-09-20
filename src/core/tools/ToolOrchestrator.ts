@@ -9,10 +9,10 @@ import { HistoryManager } from '../history/HistoryManager.ts';
 import { MCPServiceAdapter } from '../mcp/MCPServiceAdapter.ts';
 import type { CallExecutionContext } from '../execution/CallExecutionContext.ts';
 
-// Type to track called tools with their arguments
+// Type to track already-executed tool call IDs (not name+args)
 type CalledTool = {
+    id: string;
     name: string;
-    arguments: string; // JSON stringified arguments for comparison
     timestamp: number;
 };
 
@@ -41,7 +41,7 @@ const CALLED_TOOLS_CONTEXT_KEY = Symbol('calledTools');
  */
 
 export class ToolOrchestrator {
-    // Track which tools have been called to prevent duplicate calls
+    // Track executed call IDs to prevent re-running the exact same provider call
     private calledTools: CalledTool[] = [];
 
     /**
@@ -87,28 +87,29 @@ export class ToolOrchestrator {
         context?: CallExecutionContext
     ): Promise<{ requiresResubmission: boolean; newToolCalls: number }> {
         const calledTools = context?.getOrCreate<CalledTool[]>(CALLED_TOOLS_CONTEXT_KEY, () => []) ?? this.calledTools;
-        // Reset iteration count at the beginning of each tool processing session
-        this.toolController.resetIterationCount();
 
-        // Filter out tool calls that have already been made with the same arguments
+        // Filter out tool calls whose call ID was already executed.
+        // Same name+args with a new call ID (e.g. retry after recoverable error) must run.
         if (response.toolCalls && response.toolCalls.length > 0) {
             logger.debug(`Processing ${response.toolCalls.length} tool calls`);
 
             const filteredToolCalls = response.toolCalls.filter(call => {
-                const argStr = JSON.stringify(call.arguments || {});
-                const isDuplicate = calledTools.some(
-                    t => t.name === call.name && t.arguments === argStr
-                );
+                const callId = call.id;
+                if (!callId) {
+                    // No id: always allow (controller will synthesize one)
+                    return true;
+                }
+
+                const isDuplicate = calledTools.some(t => t.id === callId);
 
                 if (isDuplicate) {
-                    logger.debug(`Skipping duplicate tool call: ${call.name} with args: ${argStr.substring(0, 100)}`);
+                    logger.debug(`Skipping already-executed tool call id: ${callId} (${call.name})`);
                     return false;
                 }
 
-                // Track this tool call
                 calledTools.push({
+                    id: callId,
                     name: call.name,
-                    arguments: argStr,
                     timestamp: Date.now()
                 });
 
@@ -117,7 +118,7 @@ export class ToolOrchestrator {
 
             // If all tool calls were duplicates, return early
             if (filteredToolCalls.length === 0 && response.toolCalls.length > 0) {
-                logger.debug('All tool calls were duplicates, skipping processing');
+                logger.debug('All tool calls were already executed, skipping processing');
                 return { requiresResubmission: false, newToolCalls: 0 };
             }
 
@@ -130,6 +131,7 @@ export class ToolOrchestrator {
         const mcpAdapter = mcpAdapterProvider ? mcpAdapterProvider() : null;
 
         // Process tools in the response, passing the adapter instance
+        // (iteration count is NOT reset here — maxIterations spans recursive rounds)
         const toolResult = await this.toolController.processToolCalls(
             response,
             callSpecificTools,

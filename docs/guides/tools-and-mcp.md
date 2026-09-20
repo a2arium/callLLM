@@ -224,6 +224,7 @@ Tool calls are application code. Treat tool arguments as untrusted input:
 - enforce authorization inside tools
 - handle tool errors and return useful failure messages when the model can recover
 - avoid passing raw secrets to the model
-- cap tool iteration with `maxIterations`
+- cap tool iteration with `maxIterations` (bounds recursive tool-loop rounds within one call)
+- tool continuations keep the original tool catalogue; an initial `toolChoice` is cleared so the model may act again or finish with text
 - use MCP timeouts for long-running tools
 - log tool calls and errors through telemetry

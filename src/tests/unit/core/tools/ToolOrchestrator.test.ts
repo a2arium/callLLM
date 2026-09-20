@@ -108,7 +108,7 @@ describe('ToolOrchestrator', () => {
 
       expect(result.requiresResubmission).toBe(true);
       expect(result.newToolCalls).toBe(1);
-      expect(toolController.resetIterationCount).toHaveBeenCalled();
+      expect(toolController.resetIterationCount).not.toHaveBeenCalled();
       expect(historyManager.addMessage).toHaveBeenCalledWith(
         'tool',
         'Error executing tool testTool: Tool error',
@@ -116,6 +116,93 @@ describe('ToolOrchestrator', () => {
           toolCallId: 'test-id'
         }
       );
+    });
+
+    it('executes a same-name same-args retry when the call id is new', async () => {
+      const firstResponse: UniversalChatResponse = {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'call_1',
+          name: 'close_account',
+          arguments: { id: 'at58506', reason: 'duplicate_account' }
+        }]
+      };
+      const retryResponse: UniversalChatResponse = {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'call_2',
+          name: 'close_account',
+          arguments: { id: 'at58506', reason: 'duplicate_account' }
+        }]
+      };
+
+      toolController.processToolCalls
+        .mockResolvedValueOnce({
+          toolCalls: [{
+            id: 'call_1',
+            toolName: 'close_account',
+            arguments: { id: 'at58506', reason: 'duplicate_account' },
+            result: 'ambiguous'
+          }],
+          messages: [],
+          requiresResubmission: true
+        })
+        .mockResolvedValueOnce({
+          toolCalls: [{
+            id: 'call_2',
+            toolName: 'close_account',
+            arguments: { id: 'at58506', reason: 'duplicate_account' },
+            result: 'ok'
+          }],
+          messages: [],
+          requiresResubmission: true
+        });
+
+      await toolOrchestrator.processToolCalls(firstResponse);
+      const second = await toolOrchestrator.processToolCalls(retryResponse);
+
+      expect(toolController.processToolCalls).toHaveBeenCalledTimes(2);
+      expect(second.requiresResubmission).toBe(true);
+      expect(second.newToolCalls).toBe(1);
+    });
+
+    it('skips an already-executed call id without invoking the controller', async () => {
+      const response: UniversalChatResponse = {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'call_1',
+          name: 'close_account',
+          arguments: { id: 'at58506' }
+        }]
+      };
+
+      toolController.processToolCalls.mockResolvedValueOnce({
+        toolCalls: [{
+          id: 'call_1',
+          toolName: 'close_account',
+          arguments: { id: 'at58506' },
+          result: 'ok'
+        }],
+        messages: [],
+        requiresResubmission: true
+      });
+
+      await toolOrchestrator.processToolCalls(response);
+      const duplicate = await toolOrchestrator.processToolCalls({
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'call_1',
+          name: 'close_account',
+          arguments: { id: 'at58506' }
+        }]
+      });
+
+      expect(toolController.processToolCalls).toHaveBeenCalledTimes(1);
+      expect(duplicate).toEqual({ requiresResubmission: false, newToolCalls: 0 });
     });
 
     it('should handle null/undefined tool result', async () => {

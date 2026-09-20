@@ -184,19 +184,35 @@ export class Converter {
         });
 
         // Instructions are supported on the Responses API for all models (including GPT-5 / reasoning).
-        let input: EasyInputMessage[] = [];
+        // Input may include EasyInputMessage and native function_call / function_call_output items.
+        let input: ResponseInputItem[] = [];
         const instructions: string | undefined = params.systemMessage || undefined;
 
         if (hasReasoningCapability) {
-            // Map messages without folding system text into the user turn
-            input = this.transformMessagesForReasoningModel(params.messages);
+            // System text is sent via `instructions`; preserve tool history as native items.
+            for (const message of params.messages) {
+                if (message.role === 'system') {
+                    continue;
+                }
+                if (this.appendFunctionCallHistory(message, input)) {
+                    continue;
+                }
+                input.push({
+                    role: this.transformRoleToOpenAIResponseRole(message.role),
+                    content: typeof message.content === 'string' ? message.content : String(message.content ?? '')
+                });
+            }
         } else {
-            // Process messages to handle file placeholders
+            // Process messages to handle file placeholders and native tool history
             input = [];
 
             let hasProcessedImage = false;
 
             for (const message of params.messages) {
+                if (this.appendFunctionCallHistory(message, input)) {
+                    continue;
+                }
+
                 // Check if the message content is a string
                 if (typeof message.content === 'string') {
                     const fileReferences = parseFileReferences(message.content);
@@ -577,28 +593,93 @@ export class Converter {
     }
 
     /**
-     * Maps messages for reasoning models. System text is sent via `instructions`, not inlined.
+     * Append native Responses function_call / function_call_output items for
+     * assistant toolCalls and tool-result messages. Returns true when the
+     * message was fully handled (caller should skip EasyInputMessage mapping).
      * @private
      */
-    private transformMessagesForReasoningModel(
-        messages: UniversalMessage[]
-    ): EasyInputMessage[] {
-        return messages
-            .filter(message => message.role !== 'system')
-            .map(message => ({
-                role: this.transformRoleToOpenAIResponseRole(message.role),
-                content: message.content
-            }));
+    private appendFunctionCallHistory(
+        message: UniversalMessage,
+        input: ResponseInputItem[]
+    ): boolean {
+        if (message.role === 'tool' || message.role === 'function') {
+            const callId = message.toolCallId;
+            if (!callId) {
+                logger.warn('Tool message missing toolCallId; omitting from Responses input');
+                return true;
+            }
+            const output = typeof message.content === 'string'
+                ? message.content
+                : JSON.stringify(message.content ?? '');
+            input.push({
+                type: 'function_call_output',
+                call_id: callId,
+                output
+            });
+            return true;
+        }
+
+        if (message.role === 'assistant' && message.toolCalls && message.toolCalls.length > 0) {
+            const text = typeof message.content === 'string' ? message.content : '';
+            if (text) {
+                input.push({
+                    role: 'assistant',
+                    content: text
+                });
+            }
+            for (const call of message.toolCalls) {
+                const callId = call.id || `fc_${Date.now()}`;
+                let name: string;
+                let argumentsJson: string;
+
+                if ('function' in call && call.function) {
+                    name = call.function.name;
+                    argumentsJson = typeof call.function.arguments === 'string'
+                        ? call.function.arguments
+                        : JSON.stringify(call.function.arguments || {});
+                } else {
+                    const toolCall = call as ToolCall;
+                    name = toolCall.name;
+                    argumentsJson = this.serializeToolCallArguments(toolCall.arguments);
+                }
+
+                input.push({
+                    type: 'function_call',
+                    call_id: callId,
+                    name,
+                    arguments: argumentsJson,
+                    id: callId
+                });
+            }
+            return true;
+        }
+
+        return false;
     }
 
-    // Role mapping might need adjustment based on exact native roles allowed
+    /**
+     * Serialize tool-call arguments for Responses function_call items.
+     * Preserves rawArguments when that is the stored malformed payload.
+     * @private
+     */
+    private serializeToolCallArguments(args: Record<string, unknown> | undefined): string {
+        if (
+            args &&
+            typeof args === 'object' &&
+            'rawArguments' in args &&
+            typeof args.rawArguments === 'string' &&
+            Object.keys(args).length === 1
+        ) {
+            return args.rawArguments;
+        }
+        return JSON.stringify(args || {});
+    }
+
+    // Role mapping for EasyInputMessage roles (tool history uses appendFunctionCallHistory)
     private transformRoleToOpenAIResponseRole(role: string): ResponseRole {
         switch (role) {
             case 'system':
                 return 'system';
-            case 'tool':
-            case 'function':
-                return 'system'; // Map tool/function roles to system
             case 'user':
                 return 'user';
             case 'developer':

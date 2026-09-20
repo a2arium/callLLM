@@ -325,11 +325,6 @@ export class StreamHandler {
                             toolCalls: completedToolCalls
                         };
 
-                        // Reset iteration count before processing tools for this chunk
-                        if (this.toolController && typeof this.toolController.resetIterationCount === 'function') {
-                            this.toolController.resetIterationCount();
-                        }
-
                         // Ensure the call on line ~293 has exactly three arguments
                         const toolProcessingResult = await this.toolOrchestrator.processToolCalls(
                             toolCallsResponse,
@@ -377,20 +372,8 @@ export class StreamHandler {
                         // If we have StreamingService, continue the stream with tool results
                         if (toolProcessingResult.requiresResubmission && this.streamingService) {
                             try {
-                                // Create continuation messages
+                                // Create continuation messages (tools/toolChoice stay via ...params)
                                 const currentMsgs = Array.isArray(currentMessages) ? currentMessages : [];
-
-                                const toolNames = completedToolCalls
-                                    .map((call) => call.name)
-                                    .filter(Boolean)
-                                    .join(', ');
-
-                                const systemInstructionMessage: UniversalMessage = {
-                                    role: 'system',
-                                    content:
-                                        `You have already called the following tools and received their results: ${toolNames}. ` +
-                                        'Do not call these tools again for the same information. Use the information you have to complete your response.',
-                                };
 
                                 // Check if the assistant message and tool results are already in currentMessages
                                 const hasAssistant = currentMsgs.some(m => m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0);
@@ -405,11 +388,13 @@ export class StreamHandler {
                                     continuationMessages.push(...toolMsgs);
                                 }
 
-                                continuationMessages.push(systemInstructionMessage);
-
                                 const continuationParams: UniversalChatParams = {
                                     ...params,
                                     messages: continuationMessages,
+                                    settings: {
+                                        ...params.settings,
+                                        toolChoice: undefined
+                                    }
                                 };
 
                                 const continuationStream =

@@ -88,6 +88,149 @@ describe('OpenAI Response API Converter', () => {
       }));
     });
 
+    test('encodes assistant toolCalls and tool results as native function_call items', async () => {
+      const universalParams: UniversalChatParams = {
+        messages: [
+          { role: 'user', content: 'Close the account' },
+          {
+            role: 'assistant',
+            content: 'I will close it.',
+            toolCalls: [{
+              id: 'call_1',
+              name: 'close_account',
+              arguments: { id: 'at58506', reason: 'duplicate_account' }
+            }]
+          },
+          {
+            role: 'tool',
+            content: JSON.stringify({ status: 'ambiguous' }),
+            toolCallId: 'call_1'
+          }
+        ],
+        model: 'gpt-4o',
+        tools: [{
+          name: 'close_account',
+          description: 'Close an account',
+          parameters: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              reason: { type: 'string' }
+            },
+            required: ['id', 'reason']
+          }
+        }]
+      };
+
+      const result = await converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+
+      expect(result.input).toEqual([
+        { role: 'user', content: 'Close the account' },
+        { role: 'assistant', content: 'I will close it.' },
+        {
+          type: 'function_call',
+          call_id: 'call_1',
+          name: 'close_account',
+          arguments: JSON.stringify({ id: 'at58506', reason: 'duplicate_account' }),
+          id: 'call_1'
+        },
+        {
+          type: 'function_call_output',
+          call_id: 'call_1',
+          output: JSON.stringify({ status: 'ambiguous' })
+        }
+      ]);
+      expect(result.tools).toHaveLength(1);
+    });
+
+    test('encodes tool history as native items for reasoning models without system substitutes', async () => {
+      mockModelManager.getModel.mockReturnValue({
+        name: 'gpt-5.4-mini-2026-03-17',
+        capabilities: {
+          reasoning: true,
+          toolCalls: true,
+          input: { text: true },
+          output: { text: { textOutputFormats: ['text', 'json'], structuredOutputs: true } }
+        }
+      } as any);
+
+      const universalParams: UniversalChatParams = {
+        messages: [
+          { role: 'system', content: 'You are the actor.' },
+          { role: 'user', content: 'Close the account' },
+          {
+            role: 'assistant',
+            content: '',
+            toolCalls: [{
+              id: 'call_1',
+              name: 'close_account',
+              arguments: { id: 'at58506' }
+            }]
+          },
+          {
+            role: 'tool',
+            content: '{"status":"ambiguous"}',
+            toolCallId: 'call_1'
+          }
+        ],
+        model: 'gpt-5.4-mini-2026-03-17',
+        systemMessage: 'You are the actor.'
+      };
+
+      const result = await converter.convertToOpenAIResponseParams(
+        'gpt-5.4-mini-2026-03-17',
+        universalParams
+      );
+
+      expect(result.instructions).toBe('You are the actor.');
+      expect(result.input).toEqual([
+        { role: 'user', content: 'Close the account' },
+        {
+          type: 'function_call',
+          call_id: 'call_1',
+          name: 'close_account',
+          arguments: JSON.stringify({ id: 'at58506' }),
+          id: 'call_1'
+        },
+        {
+          type: 'function_call_output',
+          call_id: 'call_1',
+          output: '{"status":"ambiguous"}'
+        }
+      ]);
+      expect(result.input?.some((item: any) => item.role === 'system')).toBe(false);
+      expect(result.input?.some((item: any) => item.type === 'function_call')).toBe(true);
+      expect(result.input?.some((item: any) => item.type === 'function_call_output')).toBe(true);
+    });
+
+    test('preserves rawArguments when serializing malformed tool call args', async () => {
+      const universalParams: UniversalChatParams = {
+        messages: [
+          { role: 'user', content: 'Call it' },
+          {
+            role: 'assistant',
+            content: '',
+            toolCalls: [{
+              id: 'fc_bad',
+              name: 'close_account',
+              arguments: { rawArguments: '{not-json' }
+            }]
+          }
+        ],
+        model: 'gpt-4o'
+      };
+
+      const result = await converter.convertToOpenAIResponseParams('gpt-4o', universalParams);
+
+      expect(result.input).toContainEqual({
+        type: 'function_call',
+        call_id: 'fc_bad',
+        name: 'close_account',
+        arguments: '{not-json',
+        id: 'fc_bad'
+      });
+    });
+
     test('should pass namespaced OpenAI store false to the Responses API', async () => {
       const universalParams: UniversalChatParams = {
         messages: [{ role: 'user', content: 'Do not retain this response.' }],

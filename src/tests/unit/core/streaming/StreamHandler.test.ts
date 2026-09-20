@@ -1205,6 +1205,65 @@ describe('StreamHandler', () => {
     }
   });
 
+  test('retains tools on streaming continuation and clears toolChoice', async () => {
+    const toolCalls: ToolCall[] = [{ name: 'testTool', arguments: { arg1: 'value1' }, id: 'call1' }];
+    const tools = [{
+      name: 'testTool',
+      description: 'A test tool',
+      parameters: { type: 'object' as const, properties: { arg1: { type: 'string' } }, required: ['arg1'] }
+    }];
+
+    setProcessToolCallsMock(jest.fn().mockResolvedValue({ requiresResubmission: true, newToolCalls: 1 }) as any);
+    mockGetCompletedToolCalls.mockReturnValue(toolCalls);
+    sharedMockContentAccumulatorInstance.completedToolCalls = toolCalls;
+    mockHistoryManagerInstance.getMessages.mockReturnValue([
+      { role: 'user', content: 'test' },
+      { role: 'assistant', content: '', toolCalls },
+      { role: 'tool', content: '{"ok":true}', toolCallId: 'call1' }
+    ]);
+
+    (streamHandlerInstance as any).toolController = mockToolControllerInstance;
+    (streamHandlerInstance as any).toolOrchestrator = mockToolOrchestratorInstance;
+    (streamHandlerInstance as any).streamingService = mockStreamingServiceInstance;
+
+    const inputStream = async function* (): AsyncIterable<UniversalStreamResponse> {
+      yield {
+        role: 'assistant',
+        content: '',
+        toolCalls: [toolCalls[0]],
+        isComplete: true,
+        metadata: {
+          finishReason: FinishReason.TOOL_CALLS,
+          usage: testUsageFromSuite
+        }
+      };
+    }();
+
+    const params: UniversalChatParams = {
+      ...defaultParamsFromSuite,
+      tools,
+      settings: { toolChoice: 'auto' }
+    };
+
+    for await (const _ of streamHandlerInstance.processStream(
+      inputStream,
+      params,
+      5,
+      mockModelInfoFromSuite
+    )) {
+      // consume
+    }
+
+    expect(mockToolOrchestratorInstance.processToolCalls).toHaveBeenCalled();
+    expect(mockStreamingServiceInstance.createStream).toHaveBeenCalled();
+    const continuationParams = (mockStreamingServiceInstance.createStream as jest.Mock).mock.calls[0][0] as UniversalChatParams;
+    expect(continuationParams.tools).toEqual(tools);
+    expect(continuationParams.settings?.toolChoice).toBeUndefined();
+    expect(continuationParams.messages?.some((m) =>
+      m.role === 'system' && typeof m.content === 'string' && m.content.includes('Do not call these tools again')
+    )).toBe(false);
+  });
+
   test('should detect and warn about orphaned tool messages', async () => {
     const validToolCall = { id: 'call123', name: 'testTool', arguments: { arg1: 'value1' } };
     const orphanedToolMessage: UniversalMessage = { role: 'tool', content: 'Orphaned result', toolCallId: 'orphaned_id' };

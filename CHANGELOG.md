@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.9
+
+- Keep the original tool catalogue on every recursive tool-loop continuation; clear sticky `toolChoice` only.
+- Encode OpenAI Responses continuations as native `function_call` / `function_call_output` input items with stable call IDs (no tool→system flattening).
+- Treat duplicate tool suppression by call ID only, so a same-name/same-args retry with a new call ID executes.
+- Enforce `maxIterations` across recursive tool rounds instead of resetting the counter every batch.
+
 ## 0.4.8
 
 - Preserve OpenAI Responses `function_call` items when top-level `output_text` is also present; text and tool extraction are now independent projections of the same native response.
