@@ -6,6 +6,11 @@ import type { ToolDefinition, ToolParameters, ToolCall } from '../../types/tooli
 import { logger } from '../../utils/logger.ts';
 import { SchemaFormatter, isZodSchema } from '../../core/schema/SchemaFormatter.ts';
 import { prepareStructuredOutputSchema } from '../../core/schema/prepareStructuredOutputSchema.ts';
+import {
+    assertToolRootIsNotOpenMap,
+    OpenMapToolSchemaError,
+    rewriteOpenMapsToJsonStrings
+} from '../../core/schema/openMapToolSchema.ts';
 import { OPTIONAL_UNION_OPTION_KEY } from '../../core/schema/UnionTransformer.ts';
 import { z } from 'zod';
 import type {
@@ -123,6 +128,19 @@ export class Converter {
                         missingProperties: missingProps
                     });
                 }
+            }
+
+            // Reject root-level open maps before rewrite (tool roots must stay typed objects).
+            try {
+                assertToolRootIsNotOpenMap(
+                    toolDef.parameters as unknown as Record<string, unknown>,
+                    toolDef.name
+                );
+            } catch (error) {
+                if (error instanceof OpenMapToolSchemaError) {
+                    throw new OpenAIResponseValidationError(error.message);
+                }
+                throw error;
             }
 
             // Start with the parameters prepared by the core logic (includes correct required array)
@@ -510,6 +528,21 @@ export class Converter {
         if (params.settings?.user) {
             openAIParams.user = params.settings.user;
         }
+
+        // OpenAI Responses-specific request controls live under the provider
+        // namespace so they cannot leak into other adapters. `store` is an
+        // experimental/data-governance control and must be explicit when used.
+        const openAIProviderOptions = params.settings?.providerOptions?.openai;
+        if (openAIProviderOptions !== undefined) {
+            if (openAIProviderOptions === null || typeof openAIProviderOptions !== 'object' || Array.isArray(openAIProviderOptions)) {
+                throw new OpenAIResponseValidationError('settings.providerOptions.openai must be an object');
+            }
+            const store = (openAIProviderOptions as Record<string, unknown>).store;
+            if (store !== undefined && typeof store !== 'boolean') {
+                throw new OpenAIResponseValidationError('settings.providerOptions.openai.store must be a boolean');
+            }
+            if (store !== undefined) openAIParams.store = store;
+        }
         // Setup metadata
         openAIParams.metadata = {};
 
@@ -782,13 +815,16 @@ export class Converter {
     }
 
     /**
-     * Prepares parameter schemas for OpenAI Response API by adding additionalProperties: false
-     * to the root schema and any nested object schemas
+     * Prepares parameter schemas for OpenAI Response API:
+     * - deep-clones so the caller's ToolDefinition.parameters is never mutated
+     * - rewrites nested open maps (records / additionalProperties:{}) to JSON strings
+     * - forces additionalProperties: false on remaining object nodes
+     * - strips leftover propertyNames (not permitted in OpenAI strict tools)
+     * - removes default keywords OpenAI does not support
      */
     private prepareParametersForOpenAIResponse(parameters: Record<string, unknown>): Record<string, unknown> {
         const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.prepareParametersForOpenAIResponse' });
 
-        // Log incoming parameters
         log.debug('Preparing parameters for OpenAI Response', {
             hasType: Boolean(parameters.type),
             type: parameters.type,
@@ -798,78 +834,16 @@ export class Converter {
             requiredCount: parameters.required ? (parameters.required as string[]).length : 0
         });
 
-        // Check for potential issues
-        if (!parameters.properties || Object.keys(parameters.properties as Record<string, unknown>).length === 0) {
-            log.info('Empty properties object in parameters', {
-                type: parameters.type,
-                hasRequired: Boolean(parameters.required)
-            });
+        // Deep clone first so nested rewrites never touch the caller-supplied schema.
+        const cloned = JSON.parse(JSON.stringify(parameters)) as Record<string, unknown>;
+
+        // Encode open maps as JSON strings before closing objects for strict mode.
+        const { schema: rewritten, encodedPaths } = rewriteOpenMapsToJsonStrings(cloned);
+        if (encodedPaths.length > 0) {
+            log.debug('Rewrote open-map tool fields to JSON strings', { encodedPaths });
         }
 
-        if (parameters.required && (parameters.required as string[]).length > 0) {
-            // Check if any required properties are missing from the properties object
-            if (parameters.properties) {
-                const properties = parameters.properties as Record<string, unknown>;
-                const missingProps = (parameters.required as string[]).filter(
-                    prop => !(prop in properties)
-                );
-                if (missingProps.length > 0) {
-                    log.info('Required properties not found in properties object', {
-                        missingProps,
-                        requiredProps: parameters.required,
-                        availableProps: Object.keys(properties)
-                    });
-                }
-            } else {
-                log.info('Required properties specified but no properties object exists', {
-                    requiredProps: parameters.required
-                });
-            }
-        }
-
-        // Clone the parameters to avoid modifying the original
-        const preparedParams: Record<string, unknown> = {
-            ...parameters,
-            additionalProperties: false
-        };
-
-        // Process nested properties if they exist
-        if (
-            preparedParams.properties &&
-            typeof preparedParams.properties === 'object'
-        ) {
-            const properties = preparedParams.properties as Record<string, unknown>;
-
-            log.debug('Processing nested properties', {
-                propertyCount: Object.keys(properties).length,
-                propertyNames: Object.keys(properties)
-            });
-
-            // Process each property that might be an object schema
-            for (const key in properties) {
-                const prop = properties[key];
-                // Remove 'default' property from each field (OpenAI doesn't support it)
-                if (typeof prop === 'object' && prop !== null && 'default' in prop) {
-                    log.debug(`Removing 'default' property from field '${key}'`);
-                    delete (prop as any).default;
-                }
-
-                if (
-                    typeof prop === 'object' &&
-                    prop !== null &&
-                    (prop as any).type === 'object'
-                ) {
-                    log.debug(`Processing nested object property '${key}'`, {
-                        propertyType: (prop as any).type,
-                        hasNestedProperties: Boolean((prop as any).properties),
-                        nestedPropertiesCount: (prop as any).properties ? Object.keys((prop as any).properties).length : 0
-                    });
-
-                    // Recursively process nested object schemas
-                    properties[key] = this.prepareParametersForOpenAIResponse(prop as Record<string, unknown>);
-                }
-            }
-        }
+        const preparedParams = this.closeObjectSchemaForOpenAIStrict(rewritten);
 
         log.debug('Prepared parameters result', {
             type: preparedParams.type,
@@ -879,6 +853,45 @@ export class Converter {
         });
 
         return preparedParams;
+    }
+
+    /**
+     * Recursively force closed object schemas for OpenAI strict tools.
+     * Operates only on already-cloned/rewritten trees.
+     */
+    private closeObjectSchemaForOpenAIStrict(node: Record<string, unknown>): Record<string, unknown> {
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.closeObjectSchemaForOpenAIStrict' });
+
+        if ('default' in node) {
+            delete node.default;
+        }
+        if ('propertyNames' in node) {
+            delete node.propertyNames;
+        }
+
+        if (node.type === 'object' || (node.properties && typeof node.properties === 'object')) {
+            node.additionalProperties = false;
+        }
+
+        if (node.properties && typeof node.properties === 'object' && !Array.isArray(node.properties)) {
+            const properties = node.properties as Record<string, unknown>;
+            for (const key of Object.keys(properties)) {
+                const prop = properties[key];
+                if (typeof prop === 'object' && prop !== null && !Array.isArray(prop)) {
+                    if ('default' in prop) {
+                        log.debug(`Removing 'default' property from field '${key}'`);
+                        delete (prop as Record<string, unknown>).default;
+                    }
+                    properties[key] = this.closeObjectSchemaForOpenAIStrict(prop as Record<string, unknown>);
+                }
+            }
+        }
+
+        if (node.items && typeof node.items === 'object' && !Array.isArray(node.items)) {
+            node.items = this.closeObjectSchemaForOpenAIStrict(node.items as Record<string, unknown>);
+        }
+
+        return node;
     }
 
     /**

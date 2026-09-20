@@ -27,7 +27,12 @@ export type ToolParameters = {
     type: 'object'; // Tools always expect an object wrapper
     properties: Record<string, ToolParameterSchema>;
     required?: string[];
-    additionalProperties?: boolean;  // Whether to allow additional properties not defined in the schema
+    /**
+     * Whether to allow additional properties not defined in the schema.
+     * JSON Schema allows a boolean or a nested schema object (e.g. for open maps / records).
+     * Strict providers (OpenAI, Gemini) rewrite nested open maps to JSON strings on the wire.
+     */
+    additionalProperties?: boolean | ToolParameterSchema;
 };
 
 /**

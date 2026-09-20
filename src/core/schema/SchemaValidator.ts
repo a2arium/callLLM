@@ -328,6 +328,12 @@ export class SchemaValidator {
             return SchemaFormatter.addAdditionalPropertiesFalse(json);
         }
 
+        if (schema && typeof schema === 'object' && !Array.isArray(schema)) {
+            return SchemaFormatter.addAdditionalPropertiesFalse(
+                JSON.parse(JSON.stringify(schema)) as Record<string, unknown>
+            );
+        }
+
         throw new Error('Unsupported schema type');
     }
 } 

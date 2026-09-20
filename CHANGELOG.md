@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.5
+
+- Encode free-form tool object fields (`additionalProperties: true` / schema object, or Zod `z.record`) as JSON strings for OpenAI and Gemini strict tool schemas, then decode them back to objects before `callFunction`.
+- Deep-clone OpenAI tool parameter schemas so caller-supplied `ToolDefinition.parameters` are no longer mutated during conversion.
+- Reject tool roots that are themselves open maps (nest the map under a named property instead).
+- Widen `ToolParameters.additionalProperties` to `boolean | ToolParameterSchema`.
+- Pass OpenAI Responses `store` through `settings.providerOptions.openai.store`.
+- Accept plain JSON Schema objects (not only Zod / string) in `SchemaValidator.getSchemaObject`.
+- Add `gpt-5.1-2025-11-13` to the OpenAI model catalog.
+
 ## 0.4.4
 
 - Fix MCP SDK 1.30 compatibility: streaming tool calls use `experimental.tasks.callToolStream` instead of removed `params.stream`.

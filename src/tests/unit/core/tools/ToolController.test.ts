@@ -368,4 +368,56 @@ describe('ToolController', () => {
       await expect(controller.executeToolCall(toolCall)).rejects.toThrow('Tool function not defined');
     });
   });
+
+  test('should decode JSON-string open-map fields before callFunction', async () => {
+    const fakeToolsManager = createFakeToolsManager();
+    const callFunction = jest.fn().mockResolvedValue({ ok: true } as unknown as never);
+    const updateAccount: ToolDefinition = {
+      name: 'update_account',
+      description: 'Update an account using a free-form patch object.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          patch: {
+            type: 'object',
+            propertyNames: { type: 'string' },
+            additionalProperties: {}
+          }
+        },
+        required: ['id', 'patch'],
+        additionalProperties: false
+      },
+      callFunction: callFunction as ToolDefinition['callFunction']
+    };
+    mockGetTool_1.mockImplementation(((name: string) => {
+      return name === 'update_account' ? updateAccount : undefined;
+    }) as any);
+    fakeToolsManager.getTool = mockGetTool_1 as any;
+
+    const controller = new ToolController(fakeToolsManager);
+    const response: UniversalChatResponse = {
+      content: '',
+      role: 'assistant',
+      toolCalls: [
+        {
+          id: 'call_patch',
+          name: 'update_account',
+          arguments: {
+            id: 'acct-1',
+            patch: '{"status":"closed"}'
+          }
+        }
+      ]
+    };
+
+    await controller.processToolCalls(response);
+
+    expect(callFunction).toHaveBeenCalledWith({
+      id: 'acct-1',
+      patch: { status: 'closed' }
+    });
+    // Shared toolCalls args reference is also updated in place
+    expect(response.toolCalls?.[0].arguments.patch).toEqual({ status: 'closed' });
+  });
 });

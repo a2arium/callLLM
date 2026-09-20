@@ -88,6 +88,81 @@ describe('OpenAI Response API Converter', () => {
       }));
     });
 
+    test('should pass namespaced OpenAI store false to the Responses API', async () => {
+      const universalParams: UniversalChatParams = {
+        messages: [{ role: 'user', content: 'Do not retain this response.' }],
+        model: 'gpt-5.4-mini-2026-03-17',
+        settings: {
+          providerOptions: {
+            openai: { store: false }
+          }
+        }
+      };
+
+      const result = await converter.convertToOpenAIResponseParams(
+        'gpt-5.4-mini-2026-03-17',
+        universalParams
+      );
+
+      expect(result.store).toBe(false);
+    });
+
+    test('should reject invalid namespaced OpenAI store controls', async () => {
+      const base: UniversalChatParams = {
+        messages: [{ role: 'user', content: 'Hello!' }],
+        model: 'gpt-5.4-mini-2026-03-17'
+      };
+
+      await expect(converter.convertToOpenAIResponseParams(
+        'gpt-5.4-mini-2026-03-17',
+        { ...base, settings: { providerOptions: { openai: { store: 'false' } } } }
+      )).rejects.toThrow('settings.providerOptions.openai.store must be a boolean');
+
+      await expect(converter.convertToOpenAIResponseParams(
+        'gpt-5.4-mini-2026-03-17',
+        { ...base, settings: { providerOptions: { openai: false } } }
+      )).rejects.toThrow('settings.providerOptions.openai must be an object');
+    });
+
+    test.each([
+      ['plain object', {
+        type: 'object',
+        additionalProperties: false,
+        properties: { correct: { type: 'boolean' } },
+        required: ['correct']
+      }],
+      ['serialized JSON Schema', JSON.stringify({
+        type: 'object',
+        additionalProperties: false,
+        properties: { correct: { type: 'boolean' } },
+        required: ['correct']
+      })]
+    ])('should preserve %s as strict Responses API json_schema', async (_label, schema) => {
+      const result = await converter.convertToOpenAIResponseParams(
+        'gpt-5.1-2025-11-13',
+        {
+          messages: [{ role: 'user', content: 'Return the assessment.' }],
+          model: 'gpt-5.1-2025-11-13',
+          jsonSchema: { name: 'Assessment', schema },
+          responseFormat: 'json'
+        }
+      );
+
+      expect(result.text).toEqual({
+        format: {
+          type: 'json_schema',
+          strict: true,
+          name: 'Assessment',
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { correct: { type: 'boolean' } },
+            required: ['correct']
+          }
+        }
+      });
+    });
+
     test('should set text.verbosity for GPT-5 models', async () => {
       const universalParams: UniversalChatParams = {
         messages: [{ role: 'user', content: 'Hello!' }],
@@ -194,6 +269,90 @@ describe('OpenAI Response API Converter', () => {
         }),
         strict: true
       });
+    });
+
+    test('should encode nested open-map tool fields as JSON strings without mutating caller schema', async () => {
+      const patchSchema = {
+        type: 'object',
+        propertyNames: { type: 'string' },
+        additionalProperties: {}
+      };
+      const toolDef: ToolDefinition = {
+        name: 'update_account',
+        description: 'Update an account using a free-form patch object.',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            patch: patchSchema
+          },
+          required: ['id', 'patch'],
+          additionalProperties: false
+        }
+      };
+
+      const result = await converter.convertToOpenAIResponseParams('gpt-4o', {
+        messages: [{ role: 'user', content: 'Update account' }],
+        tools: [toolDef],
+        model: 'gpt-4o'
+      });
+
+      const tool = result.tools?.[0] as {
+        type: string;
+        name: string;
+        strict: boolean;
+        parameters: Record<string, unknown>;
+      };
+      expect(tool).toMatchObject({
+        type: 'function',
+        name: 'update_account',
+        strict: true
+      });
+      expect(tool.parameters).toEqual({
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          patch: {
+            type: 'string',
+            description: expect.stringContaining('JSON-encoded object')
+          }
+        },
+        required: ['id', 'patch'],
+        additionalProperties: false
+      });
+      expect(JSON.stringify(tool.parameters)).not.toContain('propertyNames');
+
+      // Caller schema must remain the original open map
+      expect(toolDef.parameters.properties.patch).toBe(patchSchema);
+      expect(toolDef.parameters.properties.patch).toEqual({
+        type: 'object',
+        propertyNames: { type: 'string' },
+        additionalProperties: {}
+      });
+    });
+
+    test('should reject root-level open-map tool parameters', async () => {
+      const toolDef: ToolDefinition = {
+        name: 'update_account',
+        description: 'Root is an open map',
+        parameters: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {}
+        }
+      };
+
+      await expect(converter.convertToOpenAIResponseParams('gpt-4o', {
+        messages: [{ role: 'user', content: 'Update' }],
+        tools: [toolDef],
+        model: 'gpt-4o'
+      })).rejects.toThrow(OpenAIResponseValidationError);
+
+      await expect(converter.convertToOpenAIResponseParams('gpt-4o', {
+        messages: [{ role: 'user', content: 'Update' }],
+        tools: [toolDef],
+        model: 'gpt-4o'
+      })).rejects.toThrow(/update_account/);
     });
 
     test('should handle toolChoice in settings', async () => {

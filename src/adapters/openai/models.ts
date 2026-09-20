@@ -304,6 +304,36 @@ export const defaultModels: ModelInfo[] = [
         },
     },
     {
+        name: 'gpt-5.1-2025-11-13',
+        maxRequestTokens: 400000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 1.25,
+        inputCachedPricePerMillion: 0.125,
+        outputPricePerMillion: 10.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 70,
+            outputSpeed: 152,
+            firstTokenLatency: 29800,
+        },
+    },
+    {
         name: 'gpt-5-codex',
         maxRequestTokens: 400000,
         maxResponseTokens: 128000,

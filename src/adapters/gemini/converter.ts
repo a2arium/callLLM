@@ -5,6 +5,11 @@ import { logger } from '../../utils/logger.ts';
 import { ModelManager } from '../../core/models/ModelManager.ts';
 import { SchemaValidator } from '../../core/schema/SchemaValidator.ts';
 import { SchemaSanitizer } from '../../core/schema/SchemaSanitizer.ts';
+import {
+    assertToolRootIsNotOpenMap,
+    OpenMapToolSchemaError,
+    rewriteOpenMapsToJsonStrings
+} from '../../core/schema/openMapToolSchema.ts';
 import type { FunctionDeclaration } from '@google/genai';
 import { getMimeTypeFromExtension } from '../../core/file-data/fileData.ts';
 import { TokenCalculator } from '../../core/models/TokenCalculator.ts';
@@ -13,6 +18,7 @@ import type {
     GeminiGenerateParams,
     GeminiResponse,
 } from './types.ts';
+import { GeminiValidationError } from './errors.ts';
 
 export class GeminiConverter {
     constructor(private modelManager: ModelManager) {}
@@ -96,8 +102,24 @@ export class GeminiConverter {
                 };
 
                 if (t.parameters) {
-                    const rawParams = t.parameters as Record<string, unknown>;
-                    const sanitizedParams = SchemaSanitizer.sanitize(rawParams, {
+                    const rawParams = t.parameters as unknown as Record<string, unknown>;
+                    try {
+                        assertToolRootIsNotOpenMap(rawParams, t.name);
+                    } catch (error) {
+                        if (error instanceof OpenMapToolSchemaError) {
+                            throw new GeminiValidationError(error.message, error);
+                        }
+                        throw error;
+                    }
+                    // Encode open maps as JSON strings before SchemaSanitizer closes objects.
+                    const { schema: rewritten, encodedPaths } = rewriteOpenMapsToJsonStrings(rawParams);
+                    if (encodedPaths.length > 0) {
+                        log.debug('Rewrote open-map tool fields to JSON strings', {
+                            toolName: t.name,
+                            encodedPaths
+                        });
+                    }
+                    const sanitizedParams = SchemaSanitizer.sanitize(rewritten, {
                         addHintsToDescriptions: true,
                         normalizeDefs: true,
                         stripMetaKeys: true,

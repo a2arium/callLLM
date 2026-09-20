@@ -9,6 +9,10 @@ import type { TelemetryCollector } from '../telemetry/collector/TelemetryCollect
 import type { ToolCallContext, ConversationContext } from '../telemetry/collector/types.ts'
 import type { CallExecutionContext } from '../execution/CallExecutionContext.ts';
 import { isLLMCancellationError } from '../execution/errors.ts';
+import {
+    decodeOpenMapToolArguments,
+    OpenMapDecodeError
+} from '../schema/openMapToolSchema.ts';
 
 const TOOL_ITERATION_CONTEXT_KEY = Symbol('toolIterationCount');
 
@@ -124,6 +128,32 @@ export class ToolController {
         }
 
         return foundByOriginalName;
+    }
+
+    /**
+     * Decode JSON-string open-map fields back to objects using the original tool schema.
+     * Mutates `args` in place so shared toolCalls references see decoded values.
+     */
+    private decodeOpenMapArguments(
+        tool: ToolDefinition,
+        args: Record<string, unknown> | undefined
+    ): Record<string, unknown> {
+        const safeArgs = args || {};
+        if (!tool.parameters) return safeArgs;
+        try {
+            return decodeOpenMapToolArguments(
+                safeArgs,
+                tool.parameters as unknown as Record<string, unknown>
+            );
+        } catch (error) {
+            if (error instanceof OpenMapDecodeError) {
+                throw new ToolExecutionError(
+                    tool.name,
+                    `Invalid JSON for open-map field "${error.path}": ${error.message}`
+                );
+            }
+            throw error;
+        }
     }
 
     /**
@@ -262,6 +292,10 @@ export class ToolController {
                 try {
                     log.debug(`Executing tool definition found: ${tool.name}`, { isMCP: tool.metadata?.isMCP });
 
+                    // Decode open-map JSON strings (provider wire format) back to objects
+                    // using the original ToolDefinition.parameters before the native callback.
+                    const decodedArgs = this.decodeOpenMapArguments(tool, args);
+
                     // --- MCP Tool Execution Logic ---
                     if (tool.metadata?.isMCP) {
                         if (!mcpAdapter) {
@@ -277,11 +311,11 @@ export class ToolController {
                         }
                         log.debug(`Executing MCP tool via adapter: ${serverKey}.${originalToolName}`);
                         const mcpResultRaw = context?.isControlled
-                            ? await context.awaitOrAbort(mcpAdapter.executeMcpTool(serverKey, originalToolName, args || {}, {
+                            ? await context.awaitOrAbort(mcpAdapter.executeMcpTool(serverKey, originalToolName, decodedArgs, {
                                 signal: context.signal,
                                 timeout: context.remainingMs
                             }))
-                            : await mcpAdapter.executeMcpTool(serverKey, originalToolName, args || {});
+                            : await mcpAdapter.executeMcpTool(serverKey, originalToolName, decodedArgs);
                         log.debug(`MCP tool execution successful: ${serverKey}.${originalToolName}`);
                         // Type check the raw result
                         if (typeof mcpResultRaw === 'string' || (typeof mcpResultRaw === 'object' && mcpResultRaw !== null)) {
@@ -295,9 +329,9 @@ export class ToolController {
                         if (typeof tool.callFunction === 'function') {
                             result = context
                                 ? await context.awaitOrAbort(context.isControlled
-                                    ? tool.callFunction(args || {}, context)
-                                    : tool.callFunction(args || {}))
-                                : await tool.callFunction(args || {});
+                                    ? tool.callFunction(decodedArgs, context)
+                                    : tool.callFunction(decodedArgs))
+                                : await tool.callFunction(decodedArgs);
                         } else {
                             log.error('Tool definition missing callFunction', { toolName: tool.name });
                             throw new ToolExecutionError(name, 'Tool definition missing callFunction');
@@ -409,6 +443,8 @@ export class ToolController {
 
         log.debug(`Executing tool definition found: ${tool.name}`, { isMCP: tool.metadata?.isMCP });
 
+        const decodedArgs = this.decodeOpenMapArguments(tool, args);
+
         // --- MCP Tool Execution Logic --- 
         if (tool.metadata?.isMCP) {
             if (!mcpAdapter) {
@@ -425,7 +461,7 @@ export class ToolController {
 
             try {
                 log.debug(`Executing MCP tool via adapter: ${serverKey}.${originalToolName}`);
-                const resultRaw = await mcpAdapter.executeMcpTool(serverKey, originalToolName, args || {});
+                const resultRaw = await mcpAdapter.executeMcpTool(serverKey, originalToolName, decodedArgs);
                 log.debug(`MCP tool execution successful: ${serverKey}.${originalToolName}`);
                 // Type check the raw result
                 if (typeof resultRaw === 'string' || (typeof resultRaw === 'object' && resultRaw !== null)) {
@@ -446,7 +482,7 @@ export class ToolController {
         else if (tool.callFunction) { // Use callFunction
             try {
                 log.debug(`Executing standard function tool: ${tool.name}`);
-                const resultRaw = await tool.callFunction(args || {}); // Use callFunction
+                const resultRaw = await tool.callFunction(decodedArgs); // Use callFunction
                 log.debug(`Standard function tool execution successful: ${tool.name}`);
                 // Type check the raw result
                 if (typeof resultRaw === 'string' || (typeof resultRaw === 'object' && resultRaw !== null)) {

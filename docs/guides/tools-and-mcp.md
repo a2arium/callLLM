@@ -43,6 +43,43 @@ console.log(response[0].content);
 
 The tool schema is sent to the model. When the model calls the tool, `callllm` executes `callFunction`, adds the tool result to the conversation, and continues the model response.
 
+## Free-form tool objects (open maps)
+
+Some tools need an argument whose keys are not known when the tool is declared — for example a patch object or arbitrary metadata map. In JSON Schema that is an open map (`additionalProperties: true` or a nested schema; Zod `z.record(z.string(), z.unknown())`).
+
+Strict providers (OpenAI Responses tools with `strict: true`, and Gemini tool sanitization) cannot represent open maps. For those providers `callllm`:
+
+1. Rewrites nested open-map fields to `{ type: 'string' }` on the wire (the model passes a JSON string)
+2. Parses those strings back to objects before invoking `callFunction` / MCP execute
+3. Leaves your original `ToolDefinition.parameters` unchanged
+
+```ts
+import { LLMCaller, type ToolDefinition } from 'callllm';
+import { z } from 'zod';
+
+const Args = z.object({
+  id: z.string(),
+  patch: z.record(z.string(), z.unknown())
+});
+const { $schema: _meta, ...parameters } = z.toJSONSchema(Args);
+
+const updateAccount: ToolDefinition = {
+  name: 'update_account',
+  description: 'Update an account using a free-form patch object.',
+  parameters: parameters as ToolDefinition['parameters'],
+  callFunction: async ({ id, patch }) => {
+    // patch is already an object, e.g. { status: 'closed' }
+    return { id, patch };
+  }
+};
+```
+
+Notes:
+
+- Do **not** put an open map at the tool root. Nest it under a named property (as `patch` above). Root open maps are rejected before the HTTP call.
+- An application-side workaround that declares `patch` as `z.string()` and parses inside the callback still works; the library does not double-parse plain string fields.
+- Providers that already accept open objects (Venice, SiliconFlow, Cerebras tools) do not rewrite these fields.
+
 ## Call-Level Tools
 
 Constructor tools are available by default. Call-level tools are available only for that request:
