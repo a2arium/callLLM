@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.8
+
+- Preserve OpenAI Responses `function_call` items when top-level `output_text` is also present; text and tool extraction are now independent projections of the same native response.
+
 ## 0.4.7
 
 - Honor `shouldRetryDueToContent: false` on the non-streaming `ChatController` path (parity with streaming).

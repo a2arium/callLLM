@@ -1099,6 +1099,175 @@ describe('OpenAI Response API Converter', () => {
       expect(result.metadata?.finishReason).toBe('stop');
     });
 
+    test('should preserve function_call items when top-level output_text is also present', () => {
+      const openAIResponse = {
+        id: 'resp_mixed',
+        created_at: 0,
+        model: 'gpt-5.4-mini-2026-03-17',
+        object: 'response',
+        status: 'completed',
+        output_text: 'I will update it.',
+        output: [{
+          type: 'function_call',
+          id: 'fc_1',
+          call_id: 'call_1',
+          name: 'update_account',
+          arguments: JSON.stringify({ id: 'at58506', patch: {} })
+        }],
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          total_tokens: 15,
+          input_tokens_details: { cached_tokens: 0 },
+          output_tokens_details: { reasoning_tokens: 1 }
+        }
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+
+      expect(result.content).toBe('I will update it.');
+      expect(result.toolCalls).toEqual([{
+        id: 'fc_1',
+        name: 'update_account',
+        arguments: { id: 'at58506', patch: {} }
+      }]);
+      expect(result.metadata?.finishReason).toBe('stop');
+    });
+
+    test('should preserve function_call items with fallback assistant-message text without duplicating content', () => {
+      const openAIResponse = {
+        id: 'resp_mixed_fallback',
+        created_at: 0,
+        model: 'gpt-4o',
+        object: 'response',
+        status: 'completed',
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: 'I will update it.' }]
+          },
+          {
+            type: 'function_call',
+            id: 'fc_1',
+            name: 'update_account',
+            arguments: '{"id":"at58506"}'
+          }
+        ]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+
+      expect(result.content).toBe('I will update it.');
+      expect(result.toolCalls).toHaveLength(1);
+      expect(result.toolCalls?.[0]).toEqual({
+        id: 'fc_1',
+        name: 'update_account',
+        arguments: { id: 'at58506' }
+      });
+    });
+
+    test('should not duplicate text when top-level output_text and assistant-message text are both present', () => {
+      const openAIResponse = {
+        id: 'resp_mixed_both_text',
+        created_at: 0,
+        model: 'gpt-4o',
+        object: 'response',
+        status: 'completed',
+        output_text: 'I will update it.',
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: 'I will update it.' }]
+          },
+          {
+            type: 'function_call',
+            id: 'fc_1',
+            name: 'update_account',
+            arguments: '{"id":"at58506"}'
+          }
+        ]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+
+      expect(result.content).toBe('I will update it.');
+      expect(result.toolCalls).toHaveLength(1);
+      expect(result.toolCalls?.[0].name).toBe('update_account');
+    });
+
+    test('should preserve multiple function_call items in native order when text is also present', () => {
+      const openAIResponse = {
+        id: 'resp_multi',
+        created_at: 0,
+        model: 'gpt-4o',
+        object: 'response',
+        status: 'completed',
+        output_text: 'Working on it.',
+        output: [
+          { type: 'function_call', id: 'fc_a', name: 'first_tool', arguments: '{}' },
+          { type: 'function_call', id: 'fc_b', name: 'second_tool', arguments: '{}' }
+        ]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+
+      expect(result.content).toBe('Working on it.');
+      expect(result.toolCalls?.map((call: { name: string }) => call.name)).toEqual(['first_tool', 'second_tool']);
+      expect(result.toolCalls?.map((call: { id: string }) => call.id)).toEqual(['fc_a', 'fc_b']);
+    });
+
+    test('should keep text-only responses without inventing toolCalls', () => {
+      const openAIResponse = {
+        id: 'resp_text_only',
+        created_at: 0,
+        model: 'gpt-4o',
+        object: 'response',
+        status: 'completed',
+        output_text: 'Hello, how can I help you?',
+        output: [{
+          type: 'message',
+          role: 'assistant',
+          status: 'completed',
+          content: [{ type: 'output_text', text: 'Hello, how can I help you?' }]
+        }]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+
+      expect(result.content).toBe('Hello, how can I help you?');
+      expect(result.toolCalls).toBeUndefined();
+    });
+
+    test('should keep malformed function-call arguments as rawArguments', () => {
+      const openAIResponse = {
+        id: 'resp_raw',
+        created_at: 0,
+        model: 'gpt-4o',
+        object: 'response',
+        status: 'completed',
+        output_text: 'Calling the tool.',
+        output: [{
+          type: 'function_call',
+          id: 'fc_bad',
+          name: 'update_account',
+          arguments: '{not-json'
+        }]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+
+      expect(result.content).toBe('Calling the tool.');
+      expect(result.toolCalls?.[0]).toEqual({
+        id: 'fc_bad',
+        name: 'update_account',
+        arguments: { rawArguments: '{not-json' }
+      });
+    });
+
     test('should handle incomplete responses', () => {
       const openAIResponse = {
         id: 'resp_123',

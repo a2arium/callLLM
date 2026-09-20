@@ -7,6 +7,7 @@ import { ModelManager } from '../../../../core/models/ModelManager.ts';
 import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor.ts';
 import { UsageTracker } from '../../../../core/telemetry/UsageTracker.ts';
 import { ToolController } from '../../../../core/tools/ToolController.ts';
+import { ToolsManager } from '../../../../core/tools/ToolsManager.ts';
 import { ToolOrchestrator } from '../../../../core/tools/ToolOrchestrator.ts';
 import { HistoryManager } from '../../../../core/history/HistoryManager.ts';
 import { RetryManager } from '../../../../core/retry/RetryManager.ts';
@@ -746,6 +747,72 @@ describe('ChatController', () => {
 
     // Verify the orchestrator was called
     expect(newMockOrchestrator.processToolCalls).toHaveBeenCalled();
+  });
+
+  it('invokes the registered tool callback when a mixed text-and-tool response is returned', async () => {
+    const callFunction = jest.fn().mockResolvedValue({ ok: true } as unknown as never);
+    const updateAccount: ToolDefinition = {
+      name: 'update_account',
+      description: 'Update an account',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' }
+        },
+        required: ['id']
+      },
+      callFunction: callFunction as any
+    };
+
+    const realToolController = new ToolController(new ToolsManager());
+    const orchestrator = {
+      processToolCalls: jest.fn().mockImplementation(async (response: any, tools?: ToolDefinition[]) => {
+        await realToolController.processToolCalls(response, tools);
+        return { requiresResubmission: false, newToolCalls: 1 };
+      })
+    } as unknown as ToolOrchestrator;
+
+    const mixedController = new ChatController(
+      mockProviderManager as unknown as ProviderManager,
+      mockModelManager,
+      mockResponseProcessor,
+      mockRetryManager,
+      mockUsageTracker,
+      realToolController,
+      orchestrator,
+      mockHistoryManager
+    );
+
+    const mixedResponse: UniversalChatResponse = {
+      content: 'I will update it.',
+      role: 'assistant',
+      metadata: {
+        finishReason: FinishReason.STOP
+      },
+      toolCalls: [{
+        id: 'fc_1',
+        name: 'update_account',
+        arguments: { id: 'at58506', patch: {} }
+      }]
+    };
+
+    (mockProviderManager.getProvider().chatCall as any).mockResolvedValue(mixedResponse);
+
+    await mixedController.execute({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'Update the account' }],
+      tools: [updateAccount]
+    });
+
+    expect(orchestrator.processToolCalls).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: 'I will update it.',
+        toolCalls: [expect.objectContaining({ name: 'update_account', id: 'fc_1' })]
+      }),
+      [updateAccount],
+      expect.anything()
+    );
+    expect(callFunction).toHaveBeenCalledWith({ id: 'at58506', patch: {} });
   });
 
   it('should use dynamic history mode to intelligently truncate messages', async () => {

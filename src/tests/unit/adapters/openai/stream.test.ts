@@ -214,6 +214,66 @@ describe('StreamHandler', () => {
     expect(results[2].metadata?.finishReason).toBe(FinishReason.TOOL_CALLS);
   });
 
+  test('should preserve mixed output_text and function_call events independently', async () => {
+    const streamHandler = new StreamHandler([testTool]);
+
+    const mockEvents = [
+      {
+        type: 'response.output_text.delta',
+        delta: 'I will update it.'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.output_item.added',
+        item: {
+          type: 'function_call',
+          id: 'fc_1',
+          name: 'update_account'
+        }
+      } as ResponseStreamEvent,
+      {
+        type: 'response.function_call_arguments.delta',
+        item_id: 'fc_1',
+        delta: '{"id":"at58506"}'
+      } as ResponseStreamEvent,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_mixed',
+          model: 'gpt-4o',
+          status: 'completed',
+          output_text: 'I will update it.',
+          output: [
+            {
+              type: 'function_call',
+              id: 'fc_1',
+              name: 'update_account',
+              arguments: '{"id":"at58506"}'
+            }
+          ]
+        }
+      } as ResponseStreamEvent];
+
+    const mockStream = createMockStream(mockEvents);
+    const results = [];
+
+    for await (const chunk of streamHandler.handleStream(mockStream)) {
+      results.push(chunk);
+    }
+
+    const textChunks = results.filter((chunk) => chunk.content);
+    const toolChunks = results.filter((chunk) => chunk.toolCallChunks?.length);
+    const completed = results[results.length - 1];
+
+    expect(textChunks.map((chunk) => chunk.content).join('')).toBe('I will update it.');
+    expect(toolChunks[0].toolCallChunks?.[0]).toEqual(expect.objectContaining({
+      id: 'fc_1',
+      name: 'update_account'
+    }));
+    expect(toolChunks.some((chunk) => chunk.toolCallChunks?.[0].argumentsChunk === '{"id":"at58506"}')).toBe(true);
+    expect(completed.isComplete).toBe(true);
+    expect(completed.metadata?.finishReason).toBe(FinishReason.TOOL_CALLS);
+  });
+
   test('should handle content_part events', async () => {
     const streamHandler = new StreamHandler();
 

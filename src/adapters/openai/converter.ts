@@ -755,14 +755,12 @@ export class Converter {
             }
         }
 
-        // NEW: First check for output_text at the top level (reasoning models)
+        // Text and function_call items are independent projections of the same
+        // native response. Presence of output_text must not suppress tool extraction.
         if (response.output_text) {
             log.debug(`Found output_text at top level: "${response.output_text}"`);
             textContent = response.output_text;
-        }
-        // Then check the traditional message structure as a fallback
-        else if (response.output && Array.isArray(response.output)) {
-            // Find the main assistant message item
+        } else if (response.output && Array.isArray(response.output)) {
             const messageItem = response.output.find(item =>
                 item.type === 'message' &&
                 item.role === 'assistant' &&
@@ -776,8 +774,9 @@ export class Converter {
                     }
                 }
             }
+        }
 
-            // Extract function/tool calls
+        if (response.output && Array.isArray(response.output)) {
             this.extractDirectFunctionCalls(response.output, toolCalls);
         }
 
