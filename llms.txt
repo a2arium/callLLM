@@ -2,7 +2,7 @@
 
 > callllm is a capability-aware TypeScript runtime for production LLM calls. It lets developers describe request requirements such as text, structured JSON, tools, streaming, media, embeddings, reranking, cost, latency, and context size, then executes the request on a compatible provider/model with normalized output, usage, cost, and telemetry-ready metadata.
 
-Last updated: 2026-07-28
+Last updated: 2026-09-20
 
 For a single-file documentation bundle, see [llms-full.txt](./llms-full.txt).
 
