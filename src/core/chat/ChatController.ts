@@ -337,10 +337,13 @@ export class ChatController {
                             }
                         }
 
-                        // Pass the complete response object to consider tool calls in the retry decision
-                        const contentRetryResult = shouldRetryDueToContent(resp);
-                        if (contentRetryResult.shouldRetry) {
-                            throw new Error(`Response content triggered retry: ${contentRetryResult.reason}. First 255 chars: ${resp.content?.substring(0, 255)}`);
+                        // Content-quality retries (empty / forbidden phrases) — same opt-out as StreamController.
+                        // When shouldRetryDueToContent is explicitly false, return the response as-is.
+                        if (mergedSettings.shouldRetryDueToContent !== false) {
+                            const contentRetryResult = shouldRetryDueToContent(resp);
+                            if (contentRetryResult.shouldRetry) {
+                                throw new Error(`Response content triggered retry: ${contentRetryResult.reason}. First 255 chars: ${resp.content?.substring(0, 255)}`);
+                            }
                         }
 
                         // NEW: Validate/Parse JSON response inside the retry loop to trigger retries on failure

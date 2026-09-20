@@ -1084,4 +1084,165 @@ describe('ChatController', () => {
       delete (mockUsageTracker as any).callback;
     }
   });
+
+  describe('shouldRetryDueToContent on non-streaming path', () => {
+    const emptyResponse = (overrides: Partial<UniversalChatResponse> = {}): UniversalChatResponse => ({
+      content: '',
+      role: 'assistant',
+      metadata: {
+        finishReason: FinishReason.STOP,
+        usage: {
+          tokens: {
+            input: { total: 5, cached: 0 },
+            output: { total: 0, reasoning: 0 },
+            total: 5
+          },
+          costs: {
+            input: { total: 0.0001, cached: 0 },
+            output: { total: 0, reasoning: 0 },
+            total: 0.0001
+          }
+        }
+      },
+      toolCalls: [],
+      ...overrides
+    });
+
+    it('returns empty content when shouldRetryDueToContent is false', async () => {
+      const response = emptyResponse();
+      (mockProviderManager.getProvider().chatCall as any).mockResolvedValue(response);
+
+      const result = await chatController.execute({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'Hello' }],
+        settings: {
+          shouldRetryDueToContent: false,
+          maxRetries: 0
+        }
+      });
+
+      expect(result.content).toBe('');
+      expect(result.metadata?.usage).toBeDefined();
+      expect(result.metadata?.finishReason).toBe(FinishReason.STOP);
+      expect(mockProviderManager.getProvider().chatCall).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries empty content when shouldRetryDueToContent is true', async () => {
+      (mockProviderManager.getProvider().chatCall as any).mockResolvedValue(emptyResponse());
+
+      await expect(chatController.execute({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'Hello' }],
+        settings: {
+          shouldRetryDueToContent: true,
+          maxRetries: 0
+        }
+      })).rejects.toThrow(/Response content is empty|Failed after 0 retries/);
+
+      expect(mockProviderManager.getProvider().chatCall).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries empty content when shouldRetryDueToContent is omitted', async () => {
+      (mockProviderManager.getProvider().chatCall as any).mockResolvedValue(emptyResponse());
+
+      await expect(chatController.execute({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'Hello' }],
+        settings: { maxRetries: 0 }
+      })).rejects.toThrow(/Response content is empty|Failed after 0 retries/);
+
+      expect(mockProviderManager.getProvider().chatCall).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns empty content with tool calls regardless of the flag', async () => {
+      const withTools = emptyResponse({
+        toolCalls: [{
+          id: 'call_1',
+          name: 'test_tool',
+          arguments: { x: 1 }
+        }],
+        metadata: {
+          finishReason: FinishReason.TOOL_CALLS
+        }
+      });
+      (mockProviderManager.getProvider().chatCall as any).mockResolvedValue(withTools);
+
+      const result = await chatController.execute({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'Use a tool' }],
+        settings: {
+          shouldRetryDueToContent: true,
+          maxRetries: 0
+        },
+        tools: [{
+          name: 'test_tool',
+          description: 'A test tool',
+          parameters: {
+            type: 'object',
+            properties: { x: { type: 'number' } },
+            required: ['x']
+          }
+        }]
+      });
+
+      expect(result.toolCalls).toHaveLength(1);
+      expect(result.toolCalls?.[0].name).toBe('test_tool');
+      expect(mockProviderManager.getProvider().chatCall).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns forbidden phrase when shouldRetryDueToContent is false', async () => {
+      const forbidden = emptyResponse({
+        content: 'I cannot assist with that'
+      });
+      (mockProviderManager.getProvider().chatCall as any).mockResolvedValue(forbidden);
+
+      const result = await chatController.execute({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'Do something blocked' }],
+        settings: {
+          shouldRetryDueToContent: false,
+          maxRetries: 0
+        }
+      });
+
+      expect(result.content).toBe('I cannot assist with that');
+      expect(mockProviderManager.getProvider().chatCall).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries forbidden phrase when shouldRetryDueToContent is true', async () => {
+      (mockProviderManager.getProvider().chatCall as any).mockResolvedValue(
+        emptyResponse({ content: 'I cannot assist with that' })
+      );
+
+      await expect(chatController.execute({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'Do something blocked' }],
+        settings: {
+          shouldRetryDueToContent: true,
+          maxRetries: 0
+        }
+      })).rejects.toThrow(/forbidden phrase|Failed after 0 retries/);
+
+      expect(mockProviderManager.getProvider().chatCall).toHaveBeenCalledTimes(1);
+    });
+
+    it('honors shouldRetryDueToContent false from params.settings (merged settings)', async () => {
+      // ChatController receives already-merged settings from LLMCaller / updateSettings
+      (mockProviderManager.getProvider().chatCall as any).mockResolvedValue(emptyResponse());
+
+      const result = await chatController.execute({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'Hello' }],
+        settings: {
+          shouldRetryDueToContent: false,
+          maxRetries: 0,
+          temperature: 0.2
+        }
+      });
+
+      expect(result.content).toBe('');
+      expect(result.metadata?.finishReason).toBe(FinishReason.STOP);
+      expect(mockProviderManager.getProvider().chatCall).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -1,6 +1,6 @@
 {
   "name": "callllm",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "A capability-aware TypeScript runtime for production LLM calls.",
   "packageManager": "yarn@4.9.4",
   "type": "module",

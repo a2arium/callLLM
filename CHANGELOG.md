@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.7
+
+- Honor `shouldRetryDueToContent: false` on the non-streaming `ChatController` path (parity with streaming).
+
 ## 0.4.6
 
 - Reject non-object JSON (arrays, null, scalars, strings) when decoding open-map tool fields; only plain objects reach `callFunction`.

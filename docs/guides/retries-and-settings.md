@@ -136,7 +136,7 @@ When a response fails JSON parsing or schema validation, the call is retried up 
 
 ## Content Retries
 
-`shouldRetryDueToContent` controls retries for incomplete or invalid model content, separate from network/provider retries:
+`shouldRetryDueToContent` controls retries for incomplete or invalid model content, separate from network/provider retries. It applies to both `call()` and `stream()`; the default is `true`. Set it to `false` to return empty or refusal-like content to the caller instead of converting it into a retry failure:
 
 ```ts
 await caller.call('Return valid JSON.', {
