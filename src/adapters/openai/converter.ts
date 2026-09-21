@@ -914,22 +914,51 @@ export class Converter {
                 contentType: part.contentType
             }));
 
+        // Phase labels an assistant message as intermediate commentary or the final
+        // answer, so only a final_answer item is decisional. Selection never looks at
+        // bodies: equal text is still two items.
+        const finalAnswerParts = textParts.filter(part => part.phase === 'final_answer');
+        const unphasedParts = textParts.filter(part => part.phase === undefined || part.phase === null);
+        const commentaryParts = textParts.filter(part => part.phase === 'commentary');
+
+        const decisionalPart = finalAnswerParts.length === 1 && unphasedParts.length === 0
+            ? finalAnswerParts[0]
+            : finalAnswerParts.length === 0 && textParts.length === 1 && unphasedParts.length === 1
+                ? unphasedParts[0]
+                : undefined;
+
         const provenance: OutputTextProvenance = {
             outputTextCount: textParts.length,
             items: summaryItems,
-            ...(response.id ? { responseId: response.id } : {})
+            ...(response.id ? { responseId: response.id } : {}),
+            finalAnswerCount: finalAnswerParts.length,
+            commentaryCount: commentaryParts.length,
+            unphasedCount: unphasedParts.length,
+            ...(decisionalPart
+                ? {
+                    decisionalItem: {
+                        outputIndex: decisionalPart.outputIndex,
+                        contentIndex: decisionalPart.contentIndex,
+                        ...(decisionalPart.phase !== undefined ? { phase: decisionalPart.phase } : {})
+                    }
+                }
+                : {})
         };
         universalResponse.metadata = universalResponse.metadata || {};
         universalResponse.metadata.outputTextProvenance = provenance;
 
-        if (textParts.length === 1) {
-            // Single native item: use that text (byte-equal to SDK output_text for this case).
-            textContent = textParts[0].text;
-        } else if (textParts.length > 1) {
-            // Multi-item: do not project SDK's empty-separator join as decisional content.
-            // Structured-output callers fail closed with multiple_structured_outputs.
+        if (decisionalPart) {
+            // Exactly one authoritative item: project its body only, never a join.
+            textContent = decisionalPart.text;
+        } else if (textParts.length > 0) {
+            // No single authoritative item: do not project SDK's empty-separator join as
+            // decisional content. Structured-output callers fail closed.
             textContent = '';
-            log.debug(`Found ${textParts.length} native output_text items; withholding aggregated content`);
+            log.debug(
+                `Found ${textParts.length} native output_text items `
+                + `(final_answer=${finalAnswerParts.length}, commentary=${commentaryParts.length}, `
+                + `unphased=${unphasedParts.length}); withholding aggregated content`
+            );
         } else if (response.output_text) {
             // No enumerable native parts: keep legacy top-level projection for empty/edge paths.
             log.debug(`Found output_text at top level: "${response.output_text}"`);

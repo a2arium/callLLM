@@ -1385,6 +1385,10 @@ describe('OpenAI Response API Converter', () => {
       expect(result.metadata?.outputTextProvenance).toEqual({
         outputTextCount: 1,
         responseId: 'resp_text_only',
+        finalAnswerCount: 0,
+        commentaryCount: 0,
+        unphasedCount: 1,
+        decisionalItem: { outputIndex: 0, contentIndex: 0 },
         items: [expect.objectContaining({
           outputIndex: 0,
           contentIndex: 0,
@@ -1479,7 +1483,9 @@ describe('OpenAI Response API Converter', () => {
       const result = converter.convertFromOpenAIResponse(openAIResponse as any);
       const provenance = result.metadata?.outputTextProvenance;
 
-      expect(result.content).toBe('');
+      // Commentary is intermediate; only the final_answer body is decisional.
+      expect(result.content).toBe(padded);
+      expect(provenance?.decisionalItem).toEqual({ outputIndex: 2, contentIndex: 0, phase: 'final_answer' });
       expect(result.toolCalls).toBeUndefined();
       expect(result.reasoning).toBe('planning');
       expect(provenance?.outputTextCount).toBe(2);
@@ -1493,6 +1499,40 @@ describe('OpenAI Response API Converter', () => {
       expect(provenance?.items.every(i =>
         i.itemType === 'message' && i.role === 'assistant' && i.status === 'completed' && i.contentType === 'output_text'
       )).toBe(true);
+    });
+
+    test('does not invent a second output_text item from the SDK output_text join', () => {
+      const objectText = '{"action":"tool_call","toolName":"read_file"}';
+      const openAIResponse = {
+        id: 'resp_join_only',
+        created_at: 0,
+        model: 'gpt-5.4-mini-2026-03-17',
+        object: 'response',
+        status: 'completed',
+        // SDK addOutputText joins all parts with ''. Even if this getter looks duplicated,
+        // CallLLM must count native output[] messages only.
+        output_text: objectText + objectText,
+        output: [
+          {
+            id: 'rs_1',
+            type: 'reasoning',
+            summary: []
+          },
+          {
+            id: 'msg_only',
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: objectText }]
+          }
+        ]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+      expect(result.metadata?.outputTextProvenance?.outputTextCount).toBe(1);
+      expect(result.metadata?.outputTextProvenance?.items.map(i => i.outputIndex)).toEqual([1]);
+      expect(result.content).toBe(objectText);
+      expect(result.content).not.toBe(objectText + objectText);
     });
 
     test('records distinct hashes when two different output_text items are present', () => {
@@ -1607,6 +1647,119 @@ describe('OpenAI Response API Converter', () => {
         name: 'echo',
         arguments: { value: 'x' }
       }]);
+    });
+
+    describe('phase-aware decisional selection', () => {
+      const message = (
+        id: string,
+        text: string,
+        phase?: 'commentary' | 'final_answer' | null
+      ) => ({
+        id,
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        ...(phase !== undefined ? { phase } : {}),
+        content: [{ type: 'output_text', text }]
+      });
+
+      const nativeResponse = (id: string, items: unknown[], extra: Record<string, unknown> = {}) => ({
+        id,
+        created_at: 0,
+        model: 'gpt-5.4-mini-2026-03-17',
+        object: 'response',
+        status: 'completed',
+        output: items,
+        ...extra
+      });
+
+      test('projects only the final_answer body when commentary differs', () => {
+        const result = converter.convertFromOpenAIResponse(nativeResponse('resp_phase_diff', [
+          message('msg_c', 'Let me check the file first.', 'commentary'),
+          message('msg_f', '{"action":"answer","text":"done"}', 'final_answer')
+        ]) as any);
+
+        expect(result.content).toBe('{"action":"answer","text":"done"}');
+        const provenance = result.metadata?.outputTextProvenance;
+        expect(provenance?.outputTextCount).toBe(2);
+        expect(provenance?.finalAnswerCount).toBe(1);
+        expect(provenance?.commentaryCount).toBe(1);
+        expect(provenance?.unphasedCount).toBe(0);
+        expect(provenance?.items.map(i => i.itemId)).toEqual(['msg_c', 'msg_f']);
+        expect(provenance?.decisionalItem).toEqual({ outputIndex: 1, contentIndex: 0, phase: 'final_answer' });
+      });
+
+      test('projects the final_answer body when commentary is byte-identical', () => {
+        const body = '{"action":"answer","text":"done"}';
+        const result = converter.convertFromOpenAIResponse(nativeResponse('resp_phase_same', [
+          message('msg_c', body, 'commentary'),
+          message('msg_f', body, 'final_answer')
+        ]) as any);
+
+        // Same outcome as the differing-bodies case: equality plays no role in selection.
+        expect(result.content).toBe(body);
+        const provenance = result.metadata?.outputTextProvenance;
+        expect(provenance?.items[0].sha256).toBe(provenance?.items[1].sha256);
+        expect(provenance?.decisionalItem).toEqual({ outputIndex: 1, contentIndex: 0, phase: 'final_answer' });
+      });
+
+      test('withholds content when two final_answer items are present', () => {
+        const result = converter.convertFromOpenAIResponse(nativeResponse('resp_two_final', [
+          message('msg_f1', '{"a":1}', 'final_answer'),
+          message('msg_f2', '{"a":2}', 'final_answer')
+        ]) as any);
+
+        expect(result.content).toBe('');
+        expect(result.metadata?.outputTextProvenance?.finalAnswerCount).toBe(2);
+        expect(result.metadata?.outputTextProvenance?.decisionalItem).toBeUndefined();
+      });
+
+      test('withholds content when only commentary items are present', () => {
+        const result = converter.convertFromOpenAIResponse(nativeResponse('resp_commentary_only', [
+          message('msg_c1', 'thinking', 'commentary'),
+          message('msg_c2', 'still thinking', 'commentary')
+        ]) as any);
+
+        expect(result.content).toBe('');
+        expect(result.metadata?.outputTextProvenance?.commentaryCount).toBe(2);
+        expect(result.metadata?.outputTextProvenance?.finalAnswerCount).toBe(0);
+      });
+
+      test('withholds content when a final_answer coexists with an unphased item', () => {
+        const result = converter.convertFromOpenAIResponse(nativeResponse('resp_mixed_phase', [
+          message('msg_u', '{"a":1}'),
+          message('msg_f', '{"a":2}', 'final_answer')
+        ]) as any);
+
+        expect(result.content).toBe('');
+        const provenance = result.metadata?.outputTextProvenance;
+        expect(provenance?.finalAnswerCount).toBe(1);
+        expect(provenance?.unphasedCount).toBe(1);
+        expect(provenance?.decisionalItem).toBeUndefined();
+      });
+
+      test('treats an explicit null phase as unphased on a lone item', () => {
+        const result = converter.convertFromOpenAIResponse(nativeResponse('resp_null_phase', [
+          message('msg_n', '{"a":1}', null)
+        ]) as any);
+
+        expect(result.content).toBe('{"a":1}');
+        const provenance = result.metadata?.outputTextProvenance;
+        expect(provenance?.unphasedCount).toBe(1);
+        expect(provenance?.items[0].phase).toBeNull();
+        expect(provenance?.decisionalItem).toEqual({ outputIndex: 0, contentIndex: 0, phase: null });
+      });
+
+      test('keeps a single final_answer item plus function_call unchanged', () => {
+        const result = converter.convertFromOpenAIResponse(nativeResponse('resp_final_tool', [
+          message('msg_f', 'calling', 'final_answer'),
+          { type: 'function_call', id: 'fc_1', name: 'echo', arguments: '{"value":"x"}' }
+        ]) as any);
+
+        expect(result.content).toBe('calling');
+        expect(result.metadata?.outputTextProvenance?.outputTextCount).toBe(1);
+        expect(result.toolCalls).toEqual([{ id: 'fc_1', name: 'echo', arguments: { value: 'x' } }]);
+      });
     });
 
     test('should keep malformed function-call arguments as rawArguments', () => {

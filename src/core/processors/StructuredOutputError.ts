@@ -17,7 +17,8 @@ export type StructuredOutputFailureReason =
     | 'non_json'
     | 'json_parse'
     | 'schema_validation'
-    | 'multiple_structured_outputs';
+    | 'multiple_structured_outputs'
+    | 'missing_final_output';
 
 export type StructuredOutputValidationError = {
     message: string;
@@ -45,7 +46,8 @@ const DEFAULT_MESSAGES: Record<StructuredOutputFailureReason, string> = {
     non_json: 'Failed to parse JSON response: Invalid JSON structure',
     json_parse: 'Failed to parse JSON response: Invalid JSON structure',
     schema_validation: 'Failed to validate response',
-    multiple_structured_outputs: 'Structured output failed: more than one native output_text item'
+    multiple_structured_outputs: 'Structured output failed: more than one decisional native output_text item',
+    missing_final_output: 'Structured output failed: no final-answer output_text item in provider response'
 };
 
 /**

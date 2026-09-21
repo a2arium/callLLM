@@ -930,6 +930,71 @@ describe('ChatController', () => {
     expect(callFunction).toHaveBeenCalledWith({ value: 'x' });
   });
 
+  it('keeps tools blocked when commentary and final_answer items arrive with tool calls', async () => {
+    const callFunction = jest.fn().mockResolvedValue({ ok: true } as unknown as never);
+    const tools: ToolDefinition[] = [{
+      name: 'echo',
+      description: 'Echo',
+      parameters: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'] },
+      callFunction: callFunction as any
+    }];
+
+    const realToolController = new ToolController(new ToolsManager());
+    const orchestrator = {
+      processToolCalls: jest.fn().mockImplementation(async (response: any, toolsArg?: ToolDefinition[]) => {
+        await realToolController.processToolCalls(response, toolsArg);
+        return { requiresResubmission: false, newToolCalls: 0 };
+      })
+    } as unknown as ToolOrchestrator;
+
+    const loopController = new ChatController(
+      mockProviderManager as unknown as ProviderManager,
+      mockModelManager,
+      mockResponseProcessor,
+      new RetryManager({ baseDelay: 1, maxRetries: 0 }),
+      mockUsageTracker,
+      realToolController,
+      orchestrator,
+      mockHistoryManager
+    );
+
+    (mockProviderManager.getProvider().chatCall as any).mockResolvedValueOnce({
+      content: '{"action":"echo"}',
+      role: 'assistant',
+      metadata: {
+        finishReason: FinishReason.TOOL_CALLS,
+        outputTextProvenance: {
+          outputTextCount: 2,
+          responseId: 'resp_phase_tool',
+          items: [
+            { outputIndex: 0, contentIndex: 0, sha256: 'a', length: 9, phase: 'commentary' },
+            { outputIndex: 1, contentIndex: 0, sha256: 'b', length: 17, phase: 'final_answer' }
+          ],
+          finalAnswerCount: 1,
+          commentaryCount: 1,
+          unphasedCount: 0,
+          decisionalItem: { outputIndex: 1, contentIndex: 0, phase: 'final_answer' }
+        }
+      },
+      toolCalls: [{ id: 'call_1', name: 'echo', arguments: { value: 'x' } }]
+    });
+
+    await expect(loopController.execute({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'echo' }],
+      tools,
+      responseFormat: 'json',
+      jsonSchema: { name: 'Decision', schema: { type: 'object', properties: { action: { type: 'string' } } } },
+      settings: { maxRetries: 0 }
+    })).rejects.toMatchObject({
+      name: 'StructuredOutputError',
+      reason: 'multiple_structured_outputs'
+    });
+
+    expect(callFunction).not.toHaveBeenCalled();
+    expect(orchestrator.processToolCalls).not.toHaveBeenCalled();
+  });
+
   it('retains tools on continuation while clearing toolChoice', async () => {
     const tools: ToolDefinition[] = [{
       name: 'close_account',

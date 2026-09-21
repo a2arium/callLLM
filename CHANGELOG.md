@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.5
+
+- Make OpenAI structured-output selection phase-aware: when a reply carries exactly one `final_answer` assistant message, only that item's body is parsed and validated, and `commentary` items are treated as intermediate rather than competing decisions. Selection never compares bodies, so byte-identical items are still two items.
+- Fail closed with `multiple_structured_outputs` for two or more `final_answer` items, several unlabeled items, or a `final_answer` beside an unlabeled item; add reason `missing_final_output` for commentary-only replies. Multiple text items alongside native function calls remain blocked before tool orchestration.
+- Record `finalAnswerCount`, `commentaryCount`, `unphasedCount`, and the selected `decisionalItem` in bounded `outputTextProvenance`. Refusal and `max_output_tokens` precedence, single-item and single-text-plus-tool behavior, usage/cost/status/response-id provenance, and provider-storage handling are unchanged.
+
 ## 0.5.4
 
 - Enrich bounded `outputTextProvenance` with native item identity fields (`itemId`, `itemType`, `role`, `status`, `phase`, `contentType`) without retaining text bodies. Multi-item structured output still fails closed with `multiple_structured_outputs`; byte-identical items are not canonicalized.

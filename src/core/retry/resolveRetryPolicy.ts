@@ -12,7 +12,8 @@ const ALL_SO_REASONS: RetryStructuredOutputReason[] = [
     'non_json',
     'json_parse',
     'schema_validation',
-    'multiple_structured_outputs'
+    'multiple_structured_outputs',
+    'missing_final_output'
 ];
 
 export type ResolvedRetryPolicy = {

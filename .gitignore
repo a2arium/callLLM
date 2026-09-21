@@ -51,3 +51,5 @@ test_*
 models-*.json
 # Local live repro scripts (API keys / ad-hoc)
 scripts/repro-gpt5-adjudication.ts
+scripts/live-structured-output-probe.ts
+scripts/live-structured-output-burst.ts

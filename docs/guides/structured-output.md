@@ -155,6 +155,8 @@ bounded `rawContent`). Branch on `reason`, not message text:
 | `non_json` | Plaintext or other non-JSON under a JSON contract |
 | `json_parse` | Looks like JSON but could not be parsed/repaired |
 | `schema_validation` | Parsed JSON failed schema validation |
+| `multiple_structured_outputs` | More than one decisional native text item (see below) |
+| `missing_final_output` | Provider returned only intermediate commentary, no final answer |
 
 ```ts
 import { StructuredOutputError, isStructuredOutputError } from 'callllm';
@@ -175,6 +177,28 @@ plus `validationErrors` / usage / refusal instead of throwing, so stream consume
 inspect the same classification without aborting the iterator.
 
 Also handle repaired JSON (`metadata.jsonRepaired`) when validation succeeds after repair.
+
+## Multiple Native Text Items
+
+An OpenAI Responses reply can carry several assistant message items. The Responses API
+labels each one with a `phase`: `commentary` for intermediate text and `final_answer` for
+the answer. CallLLM selects the decisional item by that label, never by comparing bodies:
+
+- exactly one `final_answer` item and no unlabeled item: that item's body is the structured
+  content; `commentary` items are not parsed;
+- more than one `final_answer` item: `multiple_structured_outputs`, even when the bodies are
+  byte-identical;
+- only `commentary` items: `missing_final_output`;
+- exactly one item with no phase label: parsed as before (other providers, older payloads);
+- several unlabeled items, or a `final_answer` next to an unlabeled item: ambiguous, so
+  `multiple_structured_outputs`;
+- more than one text item together with native function calls: still fails closed, because
+  phase semantics for mixed text-plus-tool replies are not yet specified.
+
+Refusal and `max_output_tokens` classification take precedence over phase selection. Every
+item is recorded in bounded `metadata.outputTextProvenance` (counts, per-item `sha256`,
+`length`, `itemId`, `status`, `phase`, and the selected `decisionalItem`) with no text bodies,
+so failures stay auditable against the paid response.
 
 ## Guidance
 

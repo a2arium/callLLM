@@ -109,7 +109,8 @@ export type RetryStructuredOutputReason =
     | 'non_json'
     | 'json_parse'
     | 'schema_validation'
-    | 'multiple_structured_outputs';
+    | 'multiple_structured_outputs'
+    | 'missing_final_output';
 
 /**
  * Class-scoped retry policy. When present on settings, omitted classes default to 0.
@@ -537,13 +538,26 @@ export type OutputTextItemSummary = {
 
 /**
  * Bounded provenance for native text items before aggregation.
- * Used to fail closed when a structured-output response has more than one output_text item.
+ * Used to select the single authoritative structured-output item and to fail
+ * closed when a response carries more than one decisional candidate.
  */
 export type OutputTextProvenance = {
     outputTextCount: number;
     /** Cap typically 8; hashes/lengths/ids only — never full item bodies. */
     items: OutputTextItemSummary[];
     responseId?: string;
+    /** Count over all items (not capped) with `phase: 'final_answer'`. */
+    finalAnswerCount?: number;
+    /** Count over all items (not capped) with `phase: 'commentary'`. */
+    commentaryCount?: number;
+    /** Count over all items (not capped) whose phase is absent or null. */
+    unphasedCount?: number;
+    /** Item whose body was projected as decisional content, when one was selected. */
+    decisionalItem?: {
+        outputIndex: number;
+        contentIndex: number;
+        phase?: 'commentary' | 'final_answer' | null;
+    };
 };
 
 export type Metadata = {
@@ -569,7 +583,8 @@ export type Metadata = {
         | 'non_json'
         | 'json_parse'
         | 'schema_validation'
-        | 'multiple_structured_outputs';
+        | 'multiple_structured_outputs'
+        | 'missing_final_output';
     /** Bounded native output_text item provenance (OpenAI Responses). */
     outputTextProvenance?: OutputTextProvenance;
     provider?: string;

@@ -416,6 +416,7 @@ export class StreamController {
                         | 'json_parse'
                         | 'schema_validation'
                         | 'multiple_structured_outputs'
+                        | 'missing_final_output'
                         | undefined;
                     canRetry =
                         outerCounters.structuredOutput < resolvedPolicy.structuredOutput.maxRetries &&
