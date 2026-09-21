@@ -112,6 +112,7 @@ describe('ProviderPool', () => {
       videoCall: false,
       embeddingCall: true,
       rerankCall: false,
+      evaluateCall: false,
       audioCall: false
     });
     expect(pool.getInterfaceSupport('gemini')).toEqual({
@@ -121,6 +122,7 @@ describe('ProviderPool', () => {
       videoCall: true,
       embeddingCall: false,
       rerankCall: false,
+      evaluateCall: false,
       audioCall: true
     });
   });
