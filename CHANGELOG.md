@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.4
+
+- Enrich bounded `outputTextProvenance` with native item identity fields (`itemId`, `itemType`, `role`, `status`, `phase`, `contentType`) without retaining text bodies. Multi-item structured output still fails closed with `multiple_structured_outputs`; byte-identical items are not canonicalized.
+
 ## 0.5.3
 
 - Fail closed on OpenAI Responses structured-output replies that contain more than one native `output_text` item: throw `StructuredOutputError` with reason `multiple_structured_outputs` and bounded provenance before JSON parse or tool orchestration. Single-item content, refusals, and ordinary chat/tool loops are unchanged.

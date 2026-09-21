@@ -523,6 +523,16 @@ export type OutputTextItemSummary = {
     contentIndex: number;
     sha256: string;
     length: number;
+    /** Native output item id (e.g. OpenAI `msg_...`). Omitted when the provider did not send one. */
+    itemId?: string;
+    /** Native output item type (`message`). */
+    itemType?: string;
+    role?: string;
+    status?: string;
+    /** OpenAI assistant message phase when present (`commentary` | `final_answer`). */
+    phase?: 'commentary' | 'final_answer' | null;
+    /** Native content-part type (`output_text`). */
+    contentType?: string;
 };
 
 /**
@@ -531,7 +541,7 @@ export type OutputTextItemSummary = {
  */
 export type OutputTextProvenance = {
     outputTextCount: number;
-    /** Cap typically 8; hashes/lengths only — never full item bodies. */
+    /** Cap typically 8; hashes/lengths/ids only — never full item bodies. */
     items: OutputTextItemSummary[];
     responseId?: string;
 };

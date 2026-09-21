@@ -852,7 +852,17 @@ export class Converter {
         // Walk every message/content part for output_text provenance. Do not stop at
         // the first assistant message (SDK output_text joins all items with '').
         let refusalText = '';
-        const textParts: Array<{ outputIndex: number; contentIndex: number; text: string }> = [];
+        const textParts: Array<{
+            outputIndex: number;
+            contentIndex: number;
+            text: string;
+            itemId?: string;
+            itemType: 'message';
+            role: 'assistant';
+            status: string;
+            phase?: 'commentary' | 'final_answer' | null;
+            contentType: 'output_text';
+        }> = [];
 
         if (response.output && Array.isArray(response.output)) {
             response.output.forEach((item, outputIndex) => {
@@ -871,7 +881,13 @@ export class Converter {
                         textParts.push({
                             outputIndex,
                             contentIndex,
-                            text: contentItem.text || ''
+                            text: contentItem.text || '',
+                            ...(messageItem.id ? { itemId: messageItem.id } : {}),
+                            itemType: 'message',
+                            role: 'assistant',
+                            status: messageItem.status,
+                            ...(messageItem.phase !== undefined ? { phase: messageItem.phase } : {}),
+                            contentType: 'output_text'
                         });
                     } else if (contentItem.type === 'refusal') {
                         const part = (contentItem as { refusal?: string }).refusal || '';
@@ -889,7 +905,13 @@ export class Converter {
                 outputIndex: part.outputIndex,
                 contentIndex: part.contentIndex,
                 sha256: createHash('sha256').update(part.text, 'utf8').digest('hex'),
-                length: part.text.length
+                length: part.text.length,
+                ...(part.itemId ? { itemId: part.itemId } : {}),
+                itemType: part.itemType,
+                role: part.role,
+                status: part.status,
+                ...(part.phase !== undefined ? { phase: part.phase } : {}),
+                contentType: part.contentType
             }));
 
         const provenance: OutputTextProvenance = {

@@ -1389,7 +1389,11 @@ describe('OpenAI Response API Converter', () => {
           outputIndex: 0,
           contentIndex: 0,
           length: 'Hello, how can I help you?'.length,
-          sha256: expect.any(String)
+          sha256: expect.any(String),
+          itemType: 'message',
+          role: 'assistant',
+          status: 'completed',
+          contentType: 'output_text'
         })]
       });
       expect(result.toolCalls).toBeUndefined();
@@ -1431,6 +1435,64 @@ describe('OpenAI Response API Converter', () => {
       expect(result.metadata?.outputTextProvenance?.items[0].sha256)
         .toBe(result.metadata?.outputTextProvenance?.items[1].sha256);
       expect(result.metadata?.outputTextProvenance?.items[0].length).toBe(objectText.length);
+      expect(result.metadata?.outputTextProvenance?.items.map(i => i.itemId)).toEqual(['msg_1', 'msg_2']);
+    });
+
+    test('enumerates two distinct native messages after a reasoning item (incident shape)', () => {
+      // Observed 0.5.3 provenance: outputIndex 1 and 2, equal length/hash, skipped index 0.
+      const objectText = '{"action":"tool_call","toolName":"read_file","path":"/tmp/a"}';
+      const padded = objectText + ' '.repeat(96 - objectText.length);
+      expect(padded.length).toBe(96);
+
+      const openAIResponse = {
+        id: 'resp_00003d160c3a950b016ab17bfab6a087d2a17a1a40caec6264',
+        created_at: 0,
+        model: 'gpt-5.4-mini-2026-03-17',
+        object: 'response',
+        status: 'completed',
+        output_text: padded + padded,
+        output: [
+          {
+            id: 'rs_skipped',
+            type: 'reasoning',
+            summary: [{ type: 'summary_text', text: 'planning' }]
+          },
+          {
+            id: 'msg_a',
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            phase: 'commentary',
+            content: [{ type: 'output_text', text: padded }]
+          },
+          {
+            id: 'msg_b',
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            phase: 'final_answer',
+            content: [{ type: 'output_text', text: padded }]
+          }
+        ]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+      const provenance = result.metadata?.outputTextProvenance;
+
+      expect(result.content).toBe('');
+      expect(result.toolCalls).toBeUndefined();
+      expect(result.reasoning).toBe('planning');
+      expect(provenance?.outputTextCount).toBe(2);
+      expect(provenance?.responseId).toBe('resp_00003d160c3a950b016ab17bfab6a087d2a17a1a40caec6264');
+      expect(provenance?.items.map(i => i.outputIndex)).toEqual([1, 2]);
+      expect(provenance?.items.map(i => i.contentIndex)).toEqual([0, 0]);
+      expect(provenance?.items[0].sha256).toBe(provenance?.items[1].sha256);
+      expect(provenance?.items[0].length).toBe(96);
+      expect(provenance?.items.map(i => i.itemId)).toEqual(['msg_a', 'msg_b']);
+      expect(provenance?.items.map(i => i.phase)).toEqual(['commentary', 'final_answer']);
+      expect(provenance?.items.every(i =>
+        i.itemType === 'message' && i.role === 'assistant' && i.status === 'completed' && i.contentType === 'output_text'
+      )).toBe(true);
     });
 
     test('records distinct hashes when two different output_text items are present', () => {
