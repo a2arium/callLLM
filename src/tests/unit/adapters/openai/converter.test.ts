@@ -1703,15 +1703,29 @@ describe('OpenAI Response API Converter', () => {
         expect(provenance?.decisionalItem).toEqual({ outputIndex: 1, contentIndex: 0, phase: 'final_answer' });
       });
 
-      test('withholds content when two final_answer items are present', () => {
+      test('projects the last final_answer body when several are present', () => {
         const result = converter.convertFromOpenAIResponse(nativeResponse('resp_two_final', [
           message('msg_f1', '{"a":1}', 'final_answer'),
           message('msg_f2', '{"a":2}', 'final_answer')
         ]) as any);
 
-        expect(result.content).toBe('');
-        expect(result.metadata?.outputTextProvenance?.finalAnswerCount).toBe(2);
-        expect(result.metadata?.outputTextProvenance?.decisionalItem).toBeUndefined();
+        expect(result.content).toBe('{"a":2}');
+        const provenance = result.metadata?.outputTextProvenance;
+        expect(provenance?.finalAnswerCount).toBe(2);
+        expect(provenance?.items.map(i => i.itemId)).toEqual(['msg_f1', 'msg_f2']);
+        expect(provenance?.decisionalItem).toEqual({ outputIndex: 1, contentIndex: 0, phase: 'final_answer' });
+      });
+
+      test('projects the last final_answer body even with commentary interleaved', () => {
+        const result = converter.convertFromOpenAIResponse(nativeResponse('resp_interleaved', [
+          message('msg_f1', '{"a":1}', 'final_answer'),
+          message('msg_c', 'reconsidering', 'commentary'),
+          message('msg_f2', '{"a":2}', 'final_answer')
+        ]) as any);
+
+        expect(result.content).toBe('{"a":2}');
+        expect(result.metadata?.outputTextProvenance?.decisionalItem)
+          .toEqual({ outputIndex: 2, contentIndex: 0, phase: 'final_answer' });
       });
 
       test('withholds content when only commentary items are present', () => {

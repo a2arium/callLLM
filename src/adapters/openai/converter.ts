@@ -921,8 +921,10 @@ export class Converter {
         const unphasedParts = textParts.filter(part => part.phase === undefined || part.phase === null);
         const commentaryParts = textParts.filter(part => part.phase === 'commentary');
 
-        const decisionalPart = finalAnswerParts.length === 1 && unphasedParts.length === 0
-            ? finalAnswerParts[0]
+        // Several final_answer items resolve to the last one in native output order:
+        // later provider text supersedes earlier text of the same phase.
+        const decisionalPart = finalAnswerParts.length > 0 && unphasedParts.length === 0
+            ? finalAnswerParts[finalAnswerParts.length - 1]
             : finalAnswerParts.length === 0 && textParts.length === 1 && unphasedParts.length === 1
                 ? unphasedParts[0]
                 : undefined;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.6
+
+- Resolve repeated `final_answer` assistant messages to the last one in native output order instead of failing with `multiple_structured_outputs`. Selection still ignores text bodies; `finalAnswerCount` and `decisionalItem` in `outputTextProvenance` show when an earlier final answer was superseded.
+- Unlabeled-phase ambiguity, commentary-only replies (`missing_final_output`), and multiple text items alongside native function calls remain fail closed.
+
 ## 0.5.5
 
 - Make OpenAI structured-output selection phase-aware: when a reply carries exactly one `final_answer` assistant message, only that item's body is parsed and validated, and `commentary` items are treated as intermediate rather than competing decisions. Selection never compares bodies, so byte-identical items are still two items.

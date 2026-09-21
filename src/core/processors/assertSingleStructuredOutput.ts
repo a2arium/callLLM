@@ -21,12 +21,13 @@ export function isStructuredOutputRequest(
 }
 
 /**
- * Fail closed unless a structured-output request received exactly one decisional
- * native text item. Must run before JSON.parse and before tool orchestration.
+ * Fail closed unless a structured-output request yielded one decisional native
+ * text item. Must run before JSON.parse and before tool orchestration.
  *
  * Selection is phase-aware: OpenAI labels an assistant message as intermediate
- * commentary or the final answer, so a `commentary` item is not a competing
- * decision. Item bodies are never compared — equal text is still two items.
+ * commentary or the final answer, so `commentary` items are never decisional and
+ * repeated `final_answer` items resolve to the last one in native output order.
+ * Item bodies are never compared — selection ignores text equality.
  *
  * Providers without phase provenance keep the 0.5.3/0.5.4 cardinality rule.
  */
@@ -80,22 +81,16 @@ export function throwIfMultipleStructuredOutputs(
     const commentaryCount = provenance.commentaryCount ?? 0;
     const unphasedCount = provenance.unphasedCount ?? 0;
 
-    if (finalAnswerCount > 1) {
-        fail(
-            'multiple_structured_outputs',
-            `Structured output failed: ${finalAnswerCount} final_answer output_text items`
-        );
-    }
-
-    if (finalAnswerCount === 1) {
+    if (finalAnswerCount > 0) {
         if (unphasedCount > 0) {
             fail(
                 'multiple_structured_outputs',
-                'Structured output failed: one final_answer item coexists with '
+                `Structured output failed: ${finalAnswerCount} final_answer item(s) coexist with `
                 + `${unphasedCount} output_text item(s) of unknown phase`
             );
         }
-        // Commentary items alongside a single final answer are intermediate, not decisional.
+        // Commentary items alongside a final answer are intermediate, not decisional.
+        // Repeated final_answer items resolve to the last one in native order.
         return;
     }
 

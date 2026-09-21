@@ -140,25 +140,30 @@ describe('phase-aware structured output selection', () => {
     expect(result.contentObject).toEqual({ action: 'answer' });
   });
 
-  it('fails closed with multiple_structured_outputs on two final_answer items', async () => {
-    await expect(processor.validateResponse(
-      responseWith(provenanceFor(['final_answer', 'final_answer']), ''),
+  it('accepts the last of two final_answer items', async () => {
+    const provenance = provenanceFor(['final_answer', 'final_answer'], 1);
+    const result = await processor.validateResponse(
+      responseWith(provenance, finalBody),
       jsonParams(),
       modelInfo
-    )).rejects.toMatchObject({
-      name: 'StructuredOutputError',
-      reason: 'multiple_structured_outputs'
-    });
+    );
+
+    expect(result.contentObject).toEqual({ action: 'answer' });
+    expect(result.metadata?.outputTextProvenance?.finalAnswerCount).toBe(2);
+    expect(result.metadata?.outputTextProvenance?.decisionalItem?.outputIndex).toBe(1);
   });
 
-  it('fails closed with multiple_structured_outputs on two byte-identical final_answer items', async () => {
-    const provenance = provenanceFor(['final_answer', 'final_answer']);
+  it('accepts the last of two byte-identical final_answer items', async () => {
+    const provenance = provenanceFor(['final_answer', 'final_answer'], 1);
     provenance.items[1].sha256 = provenance.items[0].sha256;
 
-    const err = await processor.validateResponse(responseWith(provenance, ''), jsonParams(), modelInfo)
-      .then(() => null, (e: unknown) => e);
+    const result = await processor.validateResponse(
+      responseWith(provenance, finalBody),
+      jsonParams(),
+      modelInfo
+    );
 
-    expect((err as StructuredOutputError).reason).toBe('multiple_structured_outputs');
+    expect(result.contentObject).toEqual({ action: 'answer' });
   });
 
   it('fails with missing_final_output when only commentary items exist', async () => {
@@ -294,7 +299,7 @@ describe('phase-aware structured output selection', () => {
   });
 
   it('preserves provider accountability fields on a phase failure', () => {
-    const provenance = provenanceFor(['final_answer', 'final_answer']);
+    const provenance = provenanceFor([undefined, undefined]);
     const response = responseWith(provenance, '');
 
     const err = (() => {
@@ -311,7 +316,7 @@ describe('phase-aware structured output selection', () => {
     expect(err?.model).toBe('gpt-5.4-mini-2026-03-17');
     expect(err?.outputTextProvenance?.responseId).toBe('resp_phase');
     expect(err?.outputTextProvenance?.items.map(i => i.itemId)).toEqual(['msg_0', 'msg_1']);
-    expect(err?.outputTextProvenance?.finalAnswerCount).toBe(2);
+    expect(err?.outputTextProvenance?.unphasedCount).toBe(2);
   });
 
   it('classifies missing_final_output as a retryable structured-output reason', () => {
