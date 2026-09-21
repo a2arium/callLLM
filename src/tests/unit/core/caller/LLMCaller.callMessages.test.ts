@@ -8,8 +8,10 @@ import { ResponseProcessor } from '../../../../core/processors/ResponseProcessor
 import { RetryManager } from '../../../../core/retry/RetryManager.ts';
 import {
   CallMessagesValidationError,
+  ProviderStorageUnsupportedError,
   RequestContextOverflowError,
-  validateAndCloneRequestMessages
+  validateAndCloneRequestMessages,
+  applyProviderStoragePolicy
 } from '../../../../core/caller/callMessages.ts';
 import {
   FinishReason,
@@ -137,9 +139,10 @@ describe('LLMCaller.callMessages', () => {
   let caller: LLMCaller;
   let tokenCalculator: TokenCalculator;
 
-  function createCaller(opts?: { maxRequestTokens?: number }): LLMCaller {
+  function createCaller(opts?: { maxRequestTokens?: number; provider?: RegisteredProviders }): LLMCaller {
     historyManager = new HistoryManager(CONSTRUCTOR_SYSTEM);
     mockChatCall = jest.fn(async () => textResponse('ok'));
+    const providerName = opts?.provider ?? 'openai';
 
     const mockProvider = {
       chatCall: mockChatCall,
@@ -149,7 +152,7 @@ describe('LLMCaller.callMessages', () => {
 
     const mockProviderManager = {
       getProvider: jest.fn(() => mockProvider),
-      getCurrentProviderName: jest.fn(() => 'openai'),
+      getCurrentProviderName: jest.fn(() => providerName),
       getVideoProvider: jest.fn(() => null),
       getImageProvider: jest.fn(() => null),
       switchProvider: jest.fn()
@@ -170,7 +173,7 @@ describe('LLMCaller.callMessages', () => {
     };
 
     const mockProviderPool = {
-      getProviderScope: jest.fn(() => ['openai' as RegisteredProviders]),
+      getProviderScope: jest.fn(() => [providerName]),
       getProvider: jest.fn(() => mockProvider),
       getInterfaceSupport: jest.fn(() => ({
         chatCall: true,
@@ -183,14 +186,14 @@ describe('LLMCaller.callMessages', () => {
         audioCall: false
       })),
       hasProvider: jest.fn(() => true),
-      getInitializedProviders: jest.fn(() => ['openai' as RegisteredProviders])
+      getInitializedProviders: jest.fn(() => [providerName])
     };
 
     tokenCalculator = new TokenCalculator();
     jest.spyOn(tokenCalculator, 'calculateTokens').mockReturnValue(10);
     jest.spyOn(tokenCalculator, 'calculateTotalTokens').mockReturnValue(40);
 
-    return new LLMCaller('openai' as RegisteredProviders, MODEL_NAME, CONSTRUCTOR_SYSTEM, {
+    return new LLMCaller(providerName, MODEL_NAME, CONSTRUCTOR_SYSTEM, {
       historyManager,
       providerManager: mockProviderManager as never,
       modelManager: mockModelManager as never,
@@ -402,10 +405,11 @@ describe('LLMCaller.callMessages', () => {
         });
 
       const result = await caller.callMessages(seed, {
+        providerStorage: 'disabled',
         settings: {
           maxRetries: 2,
           providerOptions: {
-            openai: { store: false }
+            gateway: { order: ['openai'] }
           }
         }
       });
@@ -418,7 +422,102 @@ describe('LLMCaller.callMessages', () => {
       expect(seed).toEqual(seedCopy);
       for (const attempt of attempts) {
         expect(attempt.settings?.providerOptions?.openai).toEqual({ store: false });
+        expect(attempt.settings?.providerOptions?.gateway).toEqual({ order: ['openai'] });
       }
+    });
+  });
+
+  describe('providerStorage', () => {
+    it('maps disabled to openai.store false and preserves unrelated options', async () => {
+      await caller.callMessages([{ role: 'user', content: 'hi' }], {
+        providerStorage: 'disabled',
+        settings: {
+          temperature: 0,
+          providerOptions: {
+            openai: { user: 'bench' },
+            gateway: { tags: ['evo'] }
+          }
+        }
+      });
+
+      const settings = mockChatCall.mock.calls[0][1].settings;
+      expect(settings?.temperature).toBe(0);
+      expect(settings?.providerOptions?.openai).toEqual({ user: 'bench', store: false });
+      expect(settings?.providerOptions?.gateway).toEqual({ tags: ['evo'] });
+    });
+
+    it('omission leaves store unset', async () => {
+      await caller.callMessages([{ role: 'user', content: 'hi' }], {
+        settings: { providerOptions: { openai: { user: 'bench' } } }
+      });
+      expect(mockChatCall.mock.calls[0][1].settings?.providerOptions?.openai).toEqual({ user: 'bench' });
+    });
+
+    it('rejects contradictory openai.store true before provider contact', async () => {
+      await expect(caller.callMessages([{ role: 'user', content: 'hi' }], {
+        providerStorage: 'disabled',
+        settings: { providerOptions: { openai: { store: true } } }
+      })).rejects.toMatchObject({
+        name: 'CallMessagesValidationError',
+        code: 'CALL_MESSAGES_VALIDATION_ERROR',
+        reason: 'provider_storage_conflict'
+      });
+      expect(mockChatCall).not.toHaveBeenCalled();
+    });
+
+    it('fails closed for unsupported providers before provider contact', async () => {
+      caller = createCaller({ provider: 'gemini' });
+      await expect(caller.callMessages([{ role: 'user', content: 'hi' }], {
+        providerStorage: 'disabled'
+      })).rejects.toMatchObject({
+        name: 'ProviderStorageUnsupportedError',
+        code: 'PROVIDER_STORAGE_UNSUPPORTED',
+        provider: 'gemini',
+        policy: 'disabled'
+      });
+      expect(mockChatCall).not.toHaveBeenCalled();
+    });
+
+    it('rejects unknown providerStorage values', async () => {
+      await expect(caller.callMessages([{ role: 'user', content: 'hi' }], {
+        providerStorage: 'enabled' as 'disabled'
+      })).rejects.toBeInstanceOf(CallMessagesValidationError);
+      expect(mockChatCall).not.toHaveBeenCalled();
+    });
+
+    it('keeps disabled mapping identical across tool continuations', async () => {
+      const echoTool: ToolDefinition = {
+        name: 'echo',
+        description: 'Echo',
+        parameters: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'] },
+        callFunction: (async ({ value }: { value: string }) => ({ echoed: value })) as ToolDefinition['callFunction']
+      };
+
+      mockChatCall
+        .mockResolvedValueOnce({
+          content: '',
+          role: 'assistant',
+          metadata: { finishReason: FinishReason.TOOL_CALLS, usage: usageMeta()?.usage },
+          toolCalls: [{ id: 'call_1', name: 'echo', arguments: { value: 'x' } }]
+        })
+        .mockResolvedValueOnce(textResponse('done'));
+
+      await caller.callMessages([{ role: 'user', content: 'echo' }], {
+        providerStorage: 'disabled',
+        tools: [echoTool]
+      });
+
+      expect(mockChatCall).toHaveBeenCalledTimes(2);
+      for (const call of mockChatCall.mock.calls) {
+        expect(call[1].settings?.providerOptions?.openai).toEqual({ store: false });
+      }
+    });
+  });
+
+  describe('applyProviderStoragePolicy helper', () => {
+    it('is a no-op when policy is omitted', () => {
+      const settings = { temperature: 0.2 };
+      expect(applyProviderStoragePolicy(settings, undefined, 'openai')).toBe(settings);
     });
   });
 

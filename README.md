@@ -205,15 +205,13 @@ const response = await caller.callMessages([
   { role: 'assistant', content: '2.' },
   { role: 'user', content: 'And 2 + 2?' },
 ], {
-  settings: {
-    providerOptions: {
-      openai: { store: false }
-    }
-  }
+  providerStorage: 'disabled'
 });
 
 console.log(response[0].content);
 ```
+
+`providerStorage: 'disabled'` asks CallLLM to disable provider-side API storage on the resolved adapter (OpenAI → `store: false`). Unsupported providers fail closed before contact. This does not disable CallLLM telemetry.
 
 See [History reference](docs/reference/history.md) for how this differs from `setMessages` and `historyMode`.
 

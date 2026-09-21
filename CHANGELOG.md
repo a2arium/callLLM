@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2
+
+- Add provider-neutral `providerStorage: 'disabled'` on `callMessages()`: maps to OpenAI Responses `store: false`, fails closed for unsupported providers with `ProviderStorageUnsupportedError`, and rejects contradictions with `providerOptions.openai.store: true` before provider contact.
+
 ## 0.5.1
 
 - Add `LLMCaller.callMessages()` for atomic request-scoped text transcripts that never read or mutate persistent caller history.

@@ -20,6 +20,7 @@ export type {
     LLMCallOptions,
     CallMessagesOptions,
     RequestScopedTextMessage,
+    ProviderStoragePolicy,
     RerankDocument,
     RerankCallOptions,
     RerankParams,
@@ -58,7 +59,8 @@ export type { LLMExecutionControl, LLMTerminalReason } from './interfaces/Execut
 export { LLMAbortError, LLMTimeoutError } from './core/execution/errors.ts';
 export {
     CallMessagesValidationError,
-    RequestContextOverflowError
+    RequestContextOverflowError,
+    ProviderStorageUnsupportedError
 } from './core/caller/callMessages.ts';
 export { ProviderTransportError, isProviderTransportError } from './core/retry/ProviderTransportError.ts';
 export { resolveRetryPolicy } from './core/retry/resolveRetryPolicy.ts';

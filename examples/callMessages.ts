@@ -26,11 +26,7 @@ async function main() {
         { role: 'assistant', content: '2.' },
         { role: 'user', content: 'And 2 + 2?' }
     ], {
-        settings: {
-            providerOptions: {
-                openai: { store: false }
-            }
-        }
+        providerStorage: 'disabled'
     });
 
     console.log('Assistant:', response[0].content);

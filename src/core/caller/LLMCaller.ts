@@ -112,6 +112,7 @@ import type { PromptMessage, ConversationInputOutput } from '../telemetry/collec
 import { CallExecutionContext } from '../execution/CallExecutionContext.ts';
 import { LLMTimeoutError } from '../execution/errors.ts';
 import {
+    applyProviderStoragePolicy,
     assertCallMessagesOptions,
     RequestContextOverflowError,
     validateAndCloneRequestMessages
@@ -3417,13 +3418,21 @@ export class LLMCaller implements MCPDirectAccess {
         try {
             if (this.toolOrchestrator) this.toolOrchestrator.resetCalledTools();
 
+            const { providerStorage, ...callOptions } = options;
             const { chatParams, resolvedModelMetadata, execution } = await this.buildChatParams({
-                ...options,
+                ...callOptions,
                 processedMessages: [],
                 operationKind: 'call',
                 messagesOverride: operationMessages,
                 historyModeOverride: 'full'
             });
+
+            // Resolve storage policy against the selected adapter before any provider contact.
+            chatParams.settings = applyProviderStoragePolicy(
+                chatParams.settings,
+                providerStorage,
+                resolvedModelMetadata.provider
+            );
 
             const modelInfo = execution?.modelInfo
                 ?? this.findModelInfo(chatParams.model)

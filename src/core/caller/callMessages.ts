@@ -1,11 +1,17 @@
 import type {
     CallMessagesOptions,
+    ProviderStoragePolicy,
     RequestScopedTextMessage,
+    UniversalChatSettings,
     UniversalMessage
 } from '../../interfaces/UniversalInterfaces.ts';
 
 const ALLOWED_ROLES = new Set(['system', 'user', 'assistant']);
 const ALLOWED_MESSAGE_KEYS = new Set(['role', 'content']);
+const ALLOWED_PROVIDER_STORAGE_POLICIES = new Set<ProviderStoragePolicy>(['disabled']);
+
+/** Providers with a verified mapping for providerStorage: 'disabled'. */
+const PROVIDER_STORAGE_DISABLED_SUPPORT = new Set(['openai']);
 
 /** Keys that belong to LLMCallOptions but are not part of CallMessagesOptions. */
 const FORBIDDEN_CALL_MESSAGES_OPTION_KEYS = [
@@ -32,7 +38,8 @@ export type CallMessagesValidationReason =
     | 'extra_fields'
     | 'multiple_system'
     | 'final_not_user'
-    | 'unsupported_option';
+    | 'unsupported_option'
+    | 'provider_storage_conflict';
 
 export type CallMessagesValidationErrorOptions = {
     message: string;
@@ -83,6 +90,29 @@ export class RequestContextOverflowError extends Error {
         this.tokenCount = options.tokenCount;
         this.maxRequestTokens = options.maxRequestTokens;
         this.reservedResponseTokens = options.reservedResponseTokens;
+    }
+}
+
+export type ProviderStorageUnsupportedErrorOptions = {
+    message: string;
+    provider: string;
+    policy: ProviderStoragePolicy;
+};
+
+/**
+ * Thrown when providerStorage cannot be satisfied by the resolved provider.
+ * Fail-closed before any provider contact.
+ */
+export class ProviderStorageUnsupportedError extends Error {
+    public readonly name = 'ProviderStorageUnsupportedError';
+    public readonly code = 'PROVIDER_STORAGE_UNSUPPORTED' as const;
+    public readonly provider: string;
+    public readonly policy: ProviderStoragePolicy;
+
+    constructor(options: ProviderStorageUnsupportedErrorOptions) {
+        super(options.message);
+        this.provider = options.provider;
+        this.policy = options.policy;
     }
 }
 
@@ -194,4 +224,82 @@ export function assertCallMessagesOptions(options: CallMessagesOptions | undefin
             });
         }
     }
+
+    if (record.providerStorage !== undefined) {
+        if (typeof record.providerStorage !== 'string'
+            || !ALLOWED_PROVIDER_STORAGE_POLICIES.has(record.providerStorage as ProviderStoragePolicy)) {
+            throw new CallMessagesValidationError({
+                message: `callMessages providerStorage must be "disabled" when set (received ${JSON.stringify(record.providerStorage)})`,
+                reason: 'unsupported_option',
+                field: 'providerStorage'
+            });
+        }
+    }
+}
+
+function readOpenAIStore(settings: UniversalChatSettings | undefined): boolean | undefined {
+    const openai = settings?.providerOptions?.openai;
+    if (openai === undefined || openai === null || typeof openai !== 'object' || Array.isArray(openai)) {
+        return undefined;
+    }
+    const store = (openai as Record<string, unknown>).store;
+    return typeof store === 'boolean' ? store : undefined;
+}
+
+/**
+ * Translate providerStorage into verified provider-specific settings.
+ * Omission is a no-op. 'disabled' is fail-closed for unsupported providers.
+ * Does not claim to disable CallLLM telemetry, billing, or provider safety retention.
+ */
+export function applyProviderStoragePolicy(
+    settings: UniversalChatSettings | undefined,
+    policy: ProviderStoragePolicy | undefined,
+    provider: string
+): UniversalChatSettings | undefined {
+    if (policy === undefined) return settings;
+
+    if (policy !== 'disabled') {
+        throw new CallMessagesValidationError({
+            message: `callMessages providerStorage must be "disabled" when set (received ${JSON.stringify(policy)})`,
+            reason: 'unsupported_option',
+            field: 'providerStorage'
+        });
+    }
+
+    if (readOpenAIStore(settings) === true) {
+        throw new CallMessagesValidationError({
+            message: 'providerStorage: "disabled" conflicts with settings.providerOptions.openai.store: true',
+            reason: 'provider_storage_conflict',
+            field: 'providerStorage'
+        });
+    }
+
+    if (!PROVIDER_STORAGE_DISABLED_SUPPORT.has(provider)) {
+        throw new ProviderStorageUnsupportedError({
+            message: `providerStorage: "disabled" is not supported by provider "${provider}"`,
+            provider,
+            policy: 'disabled'
+        });
+    }
+
+    const existingProviderOptions = settings?.providerOptions ?? {};
+    const existingOpenAI = existingProviderOptions.openai;
+    const openaiBase =
+        existingOpenAI !== undefined
+            && existingOpenAI !== null
+            && typeof existingOpenAI === 'object'
+            && !Array.isArray(existingOpenAI)
+            ? { ...(existingOpenAI as Record<string, unknown>) }
+            : {};
+
+    return {
+        ...settings,
+        providerOptions: {
+            ...existingProviderOptions,
+            openai: {
+                ...openaiBase,
+                store: false
+            }
+        }
+    };
 }

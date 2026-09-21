@@ -5,12 +5,14 @@
 import type { LLMCaller } from '../dist/esm/core/caller/LLMCaller.js';
 import type {
     CallMessagesValidationError,
+    ProviderStorageUnsupportedError,
     RequestContextOverflowError
 } from '../dist/esm/core/caller/callMessages.js';
 import type { ProviderAdapter } from '../dist/esm/adapters/types.js';
 import type { StreamChunk, ToolCallChunk } from '../dist/esm/core/streaming/types.js';
 import type {
     CallMessagesOptions,
+    ProviderStoragePolicy,
     RerankCallOptions,
     RerankDocument,
     RerankResponse,
@@ -33,6 +35,8 @@ export type Verification = [
     LLMProviderRerank,
     RequestScopedTextMessage,
     CallMessagesOptions,
+    ProviderStoragePolicy,
     CallMessagesValidationError,
-    RequestContextOverflowError
+    RequestContextOverflowError,
+    ProviderStorageUnsupportedError
 ];

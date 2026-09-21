@@ -401,7 +401,22 @@ export type CallMessagesOptions = Omit<
     | 'maxCharsPerChunk'
     | 'maxChunkIterations'
     | 'maxParallelRequests'
->;
+> & {
+    /**
+     * Provider-neutral storage policy for the resolved adapter.
+     * - Omitted: provider default (existing behavior).
+     * - `'disabled'`: hard requirement to disable provider-side API storage
+     *   (OpenAI Responses → `store: false`). Unsupported providers fail closed
+     *   before contact. Does not suppress CallLLM telemetry or billing.
+     */
+    providerStorage?: ProviderStoragePolicy;
+};
+
+/**
+ * Provider-neutral API storage policy for request-scoped calls.
+ * Currently only `'disabled'` is defined; omission means provider default.
+ */
+export type ProviderStoragePolicy = 'disabled';
 
 export type UniversalChatParams = {
     messages: Array<UniversalMessage>;
