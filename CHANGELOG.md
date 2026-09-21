@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.3
+
+- Fail closed on OpenAI Responses structured-output replies that contain more than one native `output_text` item: throw `StructuredOutputError` with reason `multiple_structured_outputs` and bounded provenance before JSON parse or tool orchestration. Single-item content, refusals, and ordinary chat/tool loops are unchanged.
+
 ## 0.5.2
 
 - Add provider-neutral `providerStorage: 'disabled'` on `callMessages()`: maps to OpenAI Responses `store: false`, fails closed for unsupported providers with `ProviderStorageUnsupportedError`, and rejects contradictions with `providerOptions.openai.store: true` before provider contact.

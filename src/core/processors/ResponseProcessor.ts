@@ -11,6 +11,7 @@ import {
     StructuredOutputError,
     type StructuredOutputFailureReason
 } from './StructuredOutputError.ts';
+import { throwIfMultipleStructuredOutputs } from './assertSingleStructuredOutput.ts';
 
 export class ResponseProcessor {
     constructor() { }
@@ -37,6 +38,8 @@ export class ResponseProcessor {
 
         // Classify provider-level failures before attempting JSON parse
         this.throwIfProviderStructuredFailure(response);
+        // Multi-item native text must not reach contentObject / JSON.parse
+        throwIfMultipleStructuredOutputs(response, params);
 
         // For JSON responses, parse and validate
         try {

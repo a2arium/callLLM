@@ -1,5 +1,6 @@
 import type {
     FinishReason,
+    OutputTextProvenance,
     RetryAttemptEvent,
     UniversalChatResponse,
     Usage
@@ -15,7 +16,8 @@ export type StructuredOutputFailureReason =
     | 'empty'
     | 'non_json'
     | 'json_parse'
-    | 'schema_validation';
+    | 'schema_validation'
+    | 'multiple_structured_outputs';
 
 export type StructuredOutputValidationError = {
     message: string;
@@ -32,6 +34,8 @@ export type StructuredOutputErrorOptions = {
     /** Max characters of raw content retained on the error (default 4096). */
     maxRawContentLength?: number;
     retryHistory?: RetryAttemptEvent[];
+    /** Bounded native multi-item text summary when reason is multiple_structured_outputs. */
+    outputTextProvenance?: OutputTextProvenance;
 };
 
 const DEFAULT_MESSAGES: Record<StructuredOutputFailureReason, string> = {
@@ -40,7 +44,8 @@ const DEFAULT_MESSAGES: Record<StructuredOutputFailureReason, string> = {
     empty: 'Structured output failed: empty response content',
     non_json: 'Failed to parse JSON response: Invalid JSON structure',
     json_parse: 'Failed to parse JSON response: Invalid JSON structure',
-    schema_validation: 'Failed to validate response'
+    schema_validation: 'Failed to validate response',
+    multiple_structured_outputs: 'Structured output failed: more than one native output_text item'
 };
 
 /**
@@ -61,6 +66,7 @@ export class StructuredOutputError extends Error {
     public readonly model?: string;
     public readonly usage?: Usage;
     public readonly refusal?: unknown;
+    public readonly outputTextProvenance?: OutputTextProvenance;
     public readonly retryHistory: RetryAttemptEvent[];
     public readonly cause?: unknown;
 
@@ -86,6 +92,7 @@ export class StructuredOutputError extends Error {
         this.model = meta?.model;
         this.usage = meta?.usage;
         this.refusal = meta?.refusal;
+        this.outputTextProvenance = options.outputTextProvenance ?? meta?.outputTextProvenance;
 
         Object.setPrototypeOf(this, new.target.prototype);
     }
@@ -101,7 +108,8 @@ export class StructuredOutputError extends Error {
             response: this.response,
             validationErrors: this.validationErrors,
             cause: this,
-            retryHistory: retryHistory ?? this.retryHistory
+            retryHistory: retryHistory ?? this.retryHistory,
+            outputTextProvenance: this.outputTextProvenance
         });
     }
 
@@ -116,6 +124,7 @@ export class StructuredOutputError extends Error {
         usage?: Usage;
         refusal?: unknown;
         originalContent?: string | null;
+        outputTextProvenance?: OutputTextProvenance;
     } {
         return {
             structuredOutputReason: this.reason,
@@ -126,7 +135,8 @@ export class StructuredOutputError extends Error {
             model: this.model,
             usage: this.usage,
             refusal: this.refusal,
-            originalContent: this.rawContent
+            originalContent: this.rawContent,
+            outputTextProvenance: this.outputTextProvenance
         };
     }
 

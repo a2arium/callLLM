@@ -4,6 +4,7 @@ import { ProviderManager } from '../caller/ProviderManager.ts';
 import { ModelManager } from '../models/ModelManager.ts';
 import { ResponseProcessor } from '../processors/ResponseProcessor.ts';
 import { StructuredOutputError } from '../processors/StructuredOutputError.ts';
+import { throwIfMultipleStructuredOutputs } from '../processors/assertSingleStructuredOutput.ts';
 import { RetryManager } from '../retry/RetryManager.ts';
 import { UsageTracker } from '../telemetry/UsageTracker.ts';
 import type { UniversalChatParams, UniversalChatResponse, UniversalMessage, UniversalChatSettings, JSONSchemaDefinition, HistoryMode, JsonModeType, ResponseFormat } from '../../interfaces/UniversalInterfaces.ts';
@@ -356,6 +357,13 @@ export class ChatController {
                                 throw new Error(`Response content triggered retry: ${contentRetryResult.reason}. First 255 chars: ${resp.content?.substring(0, 255)}`);
                             }
                         }
+
+                        // Fail closed on multi-item structured output before tool orchestration
+                        // (tool responses skip validateResponse below).
+                        throwIfMultipleStructuredOutputs(resp, {
+                            jsonSchema,
+                            responseFormat: effectiveResponseFormat
+                        });
 
                         // NEW: Validate/Parse JSON response inside the retry loop to trigger retries on failure
                         // But ONLY if there are no tool calls, as tool calls move to the next phase

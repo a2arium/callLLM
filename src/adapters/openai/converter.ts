@@ -28,7 +28,10 @@ import { ModelManager } from '../../core/models/ModelManager.ts';
 import { TokenCalculator } from '../../core/models/TokenCalculator.ts';
 import fs from 'fs';
 import path from 'path';
+import { createHash } from 'crypto';
+import type { OutputTextItemSummary, OutputTextProvenance } from '../../interfaces/UniversalInterfaces.ts';
 
+const MAX_OUTPUT_TEXT_SUMMARY_ITEMS = 8;
 /**
  * Extract the file path from a file placeholder string
  * @param placeholder String that follows the format "<file:path/to/file>"
@@ -845,30 +848,70 @@ export class Converter {
         // Text, refusal, and function_call items are independent projections of the
         // same native response. Presence of output_text must not suppress tools;
         // refusal content must be projected even when text is empty.
+        //
+        // Walk every message/content part for output_text provenance. Do not stop at
+        // the first assistant message (SDK output_text joins all items with '').
         let refusalText = '';
-        if (response.output_text) {
-            log.debug(`Found output_text at top level: "${response.output_text}"`);
-            textContent = response.output_text;
-        }
-        if (response.output && Array.isArray(response.output)) {
-            const messageItem = response.output.find(item =>
-                item.type === 'message' &&
-                item.role === 'assistant' &&
-                (item.status === 'completed' || item.status === 'incomplete')
-            ) as ResponseOutputMessage | undefined;
+        const textParts: Array<{ outputIndex: number; contentIndex: number; text: string }> = [];
 
-            if (messageItem && messageItem.content && Array.isArray(messageItem.content)) {
-                for (const contentItem of messageItem.content) {
-                    if (contentItem.type === 'output_text' && !response.output_text) {
-                        textContent += contentItem.text || '';
+        if (response.output && Array.isArray(response.output)) {
+            response.output.forEach((item, outputIndex) => {
+                if (
+                    item.type !== 'message'
+                    || item.role !== 'assistant'
+                    || (item.status !== 'completed' && item.status !== 'incomplete')
+                ) {
+                    return;
+                }
+                const messageItem = item as ResponseOutputMessage;
+                if (!messageItem.content || !Array.isArray(messageItem.content)) return;
+
+                messageItem.content.forEach((contentItem, contentIndex) => {
+                    if (contentItem.type === 'output_text') {
+                        textParts.push({
+                            outputIndex,
+                            contentIndex,
+                            text: contentItem.text || ''
+                        });
                     } else if (contentItem.type === 'refusal') {
                         const part = (contentItem as { refusal?: string }).refusal || '';
                         if (part) {
                             refusalText += (refusalText ? '\n' : '') + part;
                         }
                     }
-                }
-            }
+                });
+            });
+        }
+
+        const summaryItems: OutputTextItemSummary[] = textParts
+            .slice(0, MAX_OUTPUT_TEXT_SUMMARY_ITEMS)
+            .map(part => ({
+                outputIndex: part.outputIndex,
+                contentIndex: part.contentIndex,
+                sha256: createHash('sha256').update(part.text, 'utf8').digest('hex'),
+                length: part.text.length
+            }));
+
+        const provenance: OutputTextProvenance = {
+            outputTextCount: textParts.length,
+            items: summaryItems,
+            ...(response.id ? { responseId: response.id } : {})
+        };
+        universalResponse.metadata = universalResponse.metadata || {};
+        universalResponse.metadata.outputTextProvenance = provenance;
+
+        if (textParts.length === 1) {
+            // Single native item: use that text (byte-equal to SDK output_text for this case).
+            textContent = textParts[0].text;
+        } else if (textParts.length > 1) {
+            // Multi-item: do not project SDK's empty-separator join as decisional content.
+            // Structured-output callers fail closed with multiple_structured_outputs.
+            textContent = '';
+            log.debug(`Found ${textParts.length} native output_text items; withholding aggregated content`);
+        } else if (response.output_text) {
+            // No enumerable native parts: keep legacy top-level projection for empty/edge paths.
+            log.debug(`Found output_text at top level: "${response.output_text}"`);
+            textContent = response.output_text;
         }
 
         if (refusalText) {

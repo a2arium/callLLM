@@ -177,6 +177,78 @@ describe('StructuredOutputError provenance', () => {
     expect(result.contentObject).toEqual(payload);
     expect(result.metadata?.usage).toEqual(usage);
   });
+
+  it('fails closed with multiple_structured_outputs before contentObject is set', async () => {
+    const provenance = {
+      outputTextCount: 2,
+      responseId: 'resp_dup',
+      items: [
+        { outputIndex: 0, contentIndex: 0, sha256: 'aaa', length: 10 },
+        { outputIndex: 1, contentIndex: 0, sha256: 'aaa', length: 10 }
+      ]
+    };
+    const response: UniversalChatResponse = {
+      content: '',
+      role: 'assistant',
+      metadata: {
+        finishReason: FinishReason.STOP,
+        providerStatus: 'completed',
+        model: 'gpt-4o',
+        usage,
+        outputTextProvenance: provenance
+      }
+    };
+
+    await expect(processor.validateResponse(response, jsonParams(z.object({ a: z.number() })), modelInfo))
+      .rejects.toMatchObject({
+        name: 'StructuredOutputError',
+        reason: 'multiple_structured_outputs',
+        outputTextProvenance: provenance,
+        model: 'gpt-4o',
+        usage
+      });
+  });
+
+  it('still classifies refusal when a single output_text item is present with refusal', async () => {
+    const response: UniversalChatResponse = {
+      content: '{"ok":true}',
+      role: 'assistant',
+      metadata: {
+        finishReason: FinishReason.CONTENT_FILTER,
+        providerStatus: 'completed',
+        model: 'gpt-4o',
+        usage,
+        refusal: { message: 'nope' },
+        outputTextProvenance: {
+          outputTextCount: 1,
+          items: [{ outputIndex: 0, contentIndex: 1, sha256: 'bbb', length: 11 }]
+        }
+      }
+    };
+
+    await expect(processor.validateResponse(response, jsonParams(), modelInfo)).rejects.toMatchObject({
+      reason: 'refusal'
+    });
+  });
+
+  it('parses single-item structured output normally', async () => {
+    const response: UniversalChatResponse = {
+      content: '{"a":1}',
+      role: 'assistant',
+      metadata: {
+        finishReason: FinishReason.STOP,
+        model: 'gpt-4o',
+        usage,
+        outputTextProvenance: {
+          outputTextCount: 1,
+          items: [{ outputIndex: 0, contentIndex: 0, sha256: 'ccc', length: 7 }]
+        }
+      }
+    };
+
+    const result = await processor.validateResponse(response, jsonParams(z.object({ a: z.number() })), modelInfo);
+    expect(result.contentObject).toEqual({ a: 1 });
+  });
 });
 
 describe('RetryManager StructuredOutputError preservation', () => {

@@ -1382,7 +1382,169 @@ describe('OpenAI Response API Converter', () => {
       const result = converter.convertFromOpenAIResponse(openAIResponse as any);
 
       expect(result.content).toBe('Hello, how can I help you?');
+      expect(result.metadata?.outputTextProvenance).toEqual({
+        outputTextCount: 1,
+        responseId: 'resp_text_only',
+        items: [expect.objectContaining({
+          outputIndex: 0,
+          contentIndex: 0,
+          length: 'Hello, how can I help you?'.length,
+          sha256: expect.any(String)
+        })]
+      });
       expect(result.toolCalls).toBeUndefined();
+    });
+
+    test('records provenance and withholds content when two identical output_text items are present', () => {
+      const objectText = '{"action":"tool_call","toolName":"read_file"}';
+      const openAIResponse = {
+        id: 'resp_dup',
+        created_at: 0,
+        model: 'gpt-5.4-mini-2026-03-17',
+        object: 'response',
+        status: 'completed',
+        output_text: objectText + objectText,
+        output: [
+          {
+            id: 'msg_1',
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: objectText }]
+          },
+          {
+            id: 'msg_2',
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: objectText }]
+          }
+        ]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+
+      expect(result.content).toBe('');
+      expect(result.metadata?.outputTextProvenance?.outputTextCount).toBe(2);
+      expect(result.metadata?.outputTextProvenance?.responseId).toBe('resp_dup');
+      expect(result.metadata?.outputTextProvenance?.items).toHaveLength(2);
+      expect(result.metadata?.outputTextProvenance?.items[0].sha256)
+        .toBe(result.metadata?.outputTextProvenance?.items[1].sha256);
+      expect(result.metadata?.outputTextProvenance?.items[0].length).toBe(objectText.length);
+    });
+
+    test('records distinct hashes when two different output_text items are present', () => {
+      const openAIResponse = {
+        id: 'resp_diff',
+        created_at: 0,
+        model: 'gpt-4o',
+        object: 'response',
+        status: 'completed',
+        output_text: '{"a":1}{"b":2}',
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: '{"a":1}' }]
+          },
+          {
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: '{"b":2}' }]
+          }
+        ]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+      expect(result.content).toBe('');
+      expect(result.metadata?.outputTextProvenance?.outputTextCount).toBe(2);
+      expect(result.metadata?.outputTextProvenance?.items[0].sha256)
+        .not.toBe(result.metadata?.outputTextProvenance?.items[1].sha256);
+    });
+
+    test('counts two output_text parts inside a single message', () => {
+      const openAIResponse = {
+        id: 'resp_parts',
+        created_at: 0,
+        model: 'gpt-4o',
+        object: 'response',
+        status: 'completed',
+        output_text: '{"a":1}{"a":1}',
+        output: [{
+          type: 'message',
+          role: 'assistant',
+          status: 'completed',
+          content: [
+            { type: 'output_text', text: '{"a":1}' },
+            { type: 'output_text', text: '{"a":1}' }
+          ]
+        }]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+      expect(result.content).toBe('');
+      expect(result.metadata?.outputTextProvenance?.outputTextCount).toBe(2);
+      expect(result.metadata?.outputTextProvenance?.items.map(i => i.contentIndex)).toEqual([0, 1]);
+    });
+
+    test('preserves refusal with a single output_text item', () => {
+      const openAIResponse = {
+        id: 'resp_refusal_text',
+        created_at: 0,
+        model: 'gpt-4o',
+        object: 'response',
+        status: 'completed',
+        output: [{
+          type: 'message',
+          role: 'assistant',
+          status: 'completed',
+          content: [
+            { type: 'refusal', refusal: 'I cannot help with that.' },
+            { type: 'output_text', text: '{"ok":true}' }
+          ]
+        }]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+      expect(result.content).toBe('{"ok":true}');
+      expect(result.metadata?.refusal?.message).toBe('I cannot help with that.');
+      expect(result.metadata?.outputTextProvenance?.outputTextCount).toBe(1);
+    });
+
+    test('preserves function_call when a single output_text item is also present', () => {
+      const openAIResponse = {
+        id: 'resp_text_tool',
+        created_at: 0,
+        model: 'gpt-4o',
+        object: 'response',
+        status: 'completed',
+        output_text: 'calling',
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: 'calling' }]
+          },
+          {
+            type: 'function_call',
+            id: 'fc_1',
+            name: 'echo',
+            arguments: '{"value":"x"}'
+          }
+        ]
+      };
+
+      const result = converter.convertFromOpenAIResponse(openAIResponse as any);
+      expect(result.content).toBe('calling');
+      expect(result.metadata?.outputTextProvenance?.outputTextCount).toBe(1);
+      expect(result.toolCalls).toEqual([{
+        id: 'fc_1',
+        name: 'echo',
+        arguments: { value: 'x' }
+      }]);
     });
 
     test('should keep malformed function-call arguments as rawArguments', () => {

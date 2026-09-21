@@ -108,7 +108,8 @@ export type RetryStructuredOutputReason =
     | 'empty'
     | 'non_json'
     | 'json_parse'
-    | 'schema_validation';
+    | 'schema_validation'
+    | 'multiple_structured_outputs';
 
 /**
  * Class-scoped retry policy. When present on settings, omitted classes default to 0.
@@ -516,6 +517,25 @@ export type ProcessingInfo = {
     totalChunks: number;
 };
 
+/** One native output_text part from a provider response (bounded; no full body). */
+export type OutputTextItemSummary = {
+    outputIndex: number;
+    contentIndex: number;
+    sha256: string;
+    length: number;
+};
+
+/**
+ * Bounded provenance for native text items before aggregation.
+ * Used to fail closed when a structured-output response has more than one output_text item.
+ */
+export type OutputTextProvenance = {
+    outputTextCount: number;
+    /** Cap typically 8; hashes/lengths only — never full item bodies. */
+    items: OutputTextItemSummary[];
+    responseId?: string;
+};
+
 export type Metadata = {
     finishReason?: FinishReason;
     created?: number;
@@ -538,7 +558,10 @@ export type Metadata = {
         | 'empty'
         | 'non_json'
         | 'json_parse'
-        | 'schema_validation';
+        | 'schema_validation'
+        | 'multiple_structured_outputs';
+    /** Bounded native output_text item provenance (OpenAI Responses). */
+    outputTextProvenance?: OutputTextProvenance;
     provider?: string;
     model?: string;
     selectionMode?: 'exact' | 'preset' | 'policy';
