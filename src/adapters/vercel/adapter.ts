@@ -419,21 +419,25 @@ export class VercelAdapter extends BaseAdapter
         }
 
         const size = params.size || params.options?.size || '1024x1024';
-        const request: Record<string, unknown> = {
+        const request = {
             model,
             prompt: params.prompt || '',
             image: await this.toUploadable(params.files[0]),
             n: params.n || 1,
             size,
-            response_format: (params.response_format || 'b64_json') as 'b64_json' | 'url'
+            response_format: (params.response_format || 'b64_json') as 'b64_json' | 'url',
+            ...(withMask && params.mask
+                ? { mask: await this.toUploadable(params.mask) }
+                : {})
         };
-        if (withMask && params.mask) {
-            request.mask = await this.toUploadable(params.mask);
-        }
 
         const response = signal
-            ? await this.client.images.edit(request as Parameters<OpenAI['images']['edit']>[0], { signal })
-            : await this.client.images.edit(request as Parameters<OpenAI['images']['edit']>[0]);
+            ? await this.client.images.edit(request, { signal })
+            : await this.client.images.edit(request);
+
+        if (!('data' in response)) {
+            throw new VercelAdapterError('Unexpected streaming response from Vercel image edit');
+        }
 
         return this.mapImageResponse(
             model,
