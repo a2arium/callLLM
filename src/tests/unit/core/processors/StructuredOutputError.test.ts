@@ -214,4 +214,33 @@ describe('RetryManager StructuredOutputError preservation', () => {
       expect(soe.cause).toBe(original);
     }
   });
+
+  it('preserves typed fields through classified policy terminal wrap', async () => {
+    const { resolveRetryPolicy } = await import('../../../../../src/core/retry/resolveRetryPolicy.ts');
+    const policy = resolveRetryPolicy({
+      retryPolicy: { structuredOutput: { maxRetries: 0 }, transport: { maxRetries: 0 }, content: { maxRetries: 0 } }
+    });
+    const retryManager = new RetryManager();
+    const original = new StructuredOutputError({
+      reason: 'non_json',
+      response: {
+        content: 'plaintext',
+        role: 'assistant',
+        metadata: { finishReason: FinishReason.STOP, model: 'gpt-4o', usage }
+      }
+    });
+
+    try {
+      await retryManager.executeWithRetry(async () => {
+        throw original;
+      }, { policy, operationId: 'soe-1' });
+      throw new Error('expected reject');
+    } catch (err) {
+      expect(err).toBeInstanceOf(StructuredOutputError);
+      const soe = err as StructuredOutputError;
+      expect(soe.reason).toBe('non_json');
+      expect(soe.usage).toEqual(usage);
+      expect(soe.retryHistory).toEqual([]);
+    }
+  });
 });

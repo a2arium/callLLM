@@ -4,7 +4,7 @@ import { ModelManager } from '../models/ModelManager.ts';
 import { TokenCalculator } from '../models/TokenCalculator.ts';
 import { ResponseProcessor } from '../processors/ResponseProcessor.ts';
 import { RetryManager } from '../retry/RetryManager.ts';
-import { shouldRetryDueToLLMError } from '../retry/utils/ShouldRetryDueToLLMError.ts';
+import { resolveRetryPolicy } from '../retry/resolveRetryPolicy.ts';
 import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
 import { StreamHandler } from './StreamHandler.ts';
 import { logger } from '../../utils/logger.ts';
@@ -219,20 +219,33 @@ export class StreamingService {
         });
 
         try {
-            const maxRetries = params.settings?.maxRetries ?? 3; // Default to 3 retries
+            const resolvedPolicy = resolveRetryPolicy(params.settings);
+            const operationId =
+                params.callerId
+                    ? `stream_${params.callerId}_${Date.now()}`
+                    : `stream_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
             log.debug('Executing stream with retry', {
                 model,
-                maxRetries,
-                callerId: params.callerId
+                transportMaxRetries: resolvedPolicy.transport.maxRetries,
+                structuredOutputMaxRetries: resolvedPolicy.structuredOutput.maxRetries,
+                contentMaxRetries: resolvedPolicy.content.maxRetries,
+                callerId: params.callerId,
+                operationId
             });
 
+            // Per-call policy: reuse instance RetryManager so tests can mock executeWithRetry,
+            // while classified options honor settings.retryPolicy / maxRetries ceilings.
             return await this.retryManager.executeWithRetry(
                 async () => {
                     return await this.executeStreamRequest(model, params, inputTokens, modelInfo, execution, context);
                 },
-                shouldRetryDueToLLMError,
-                context
+                {
+                    policy: resolvedPolicy,
+                    operationId,
+                    onRetryAttempt: params.settings?.onRetryAttempt,
+                    control: context
+                }
             );
         } catch (error) {
             log.error('Stream execution failed after retries', {

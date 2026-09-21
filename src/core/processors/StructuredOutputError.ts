@@ -1,4 +1,9 @@
-import type { FinishReason, UniversalChatResponse, Usage } from '../../interfaces/UniversalInterfaces.ts';
+import type {
+    FinishReason,
+    RetryAttemptEvent,
+    UniversalChatResponse,
+    Usage
+} from '../../interfaces/UniversalInterfaces.ts';
 
 /**
  * Stable machine-readable reasons for structured-output / JSON-schema failures.
@@ -26,6 +31,7 @@ export type StructuredOutputErrorOptions = {
     cause?: unknown;
     /** Max characters of raw content retained on the error (default 4096). */
     maxRawContentLength?: number;
+    retryHistory?: RetryAttemptEvent[];
 };
 
 const DEFAULT_MESSAGES: Record<StructuredOutputFailureReason, string> = {
@@ -55,6 +61,7 @@ export class StructuredOutputError extends Error {
     public readonly model?: string;
     public readonly usage?: Usage;
     public readonly refusal?: unknown;
+    public readonly retryHistory: RetryAttemptEvent[];
     public readonly cause?: unknown;
 
     constructor(options: StructuredOutputErrorOptions) {
@@ -63,6 +70,7 @@ export class StructuredOutputError extends Error {
         this.reason = options.reason;
         this.validationErrors = options.validationErrors;
         this.cause = options.cause;
+        this.retryHistory = options.retryHistory ?? [];
 
         const maxLen = options.maxRawContentLength ?? 4096;
         const response = options.response
@@ -86,13 +94,14 @@ export class StructuredOutputError extends Error {
      * Re-wrap with a new message (e.g. RetryManager terminal wrap) while
      * preserving classification fields and chaining the prior instance as cause.
      */
-    withMessage(message: string): StructuredOutputError {
+    withMessage(message: string, retryHistory?: RetryAttemptEvent[]): StructuredOutputError {
         return new StructuredOutputError({
             reason: this.reason,
             message,
             response: this.response,
             validationErrors: this.validationErrors,
-            cause: this
+            cause: this,
+            retryHistory: retryHistory ?? this.retryHistory
         });
     }
 

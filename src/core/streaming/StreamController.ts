@@ -4,7 +4,8 @@ import { StreamHandler } from './StreamHandler.ts';
 import type { UniversalChatParams, UniversalStreamResponse } from '../../interfaces/UniversalInterfaces.ts';
 import { RetryManager } from '../retry/RetryManager.ts';
 import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent.ts";
-import { shouldRetryDueToLLMError } from '../retry/utils/ShouldRetryDueToLLMError.ts';
+import { resolveRetryPolicy } from '../retry/resolveRetryPolicy.ts';
+import { classifyRetryFailure } from '../retry/classifyRetryFailure.ts';
 import { logger } from '../../utils/logger.ts';
 import type { ProviderExecutionContext } from '../caller/ProviderExecution.ts';
 
@@ -60,10 +61,21 @@ export class StreamController {
         inputTokens: number,
         execution?: ProviderExecutionContext
     ): Promise<AsyncIterable<UniversalStreamResponse>> {
-        // Use maxRetries from settings (if provided)
-        const maxRetries = params.settings?.maxRetries ?? 3;
+        // Class-scoped retry policy (legacy maxRetries shared when retryPolicy omitted)
+        const resolvedPolicy = resolveRetryPolicy(params.settings);
+        const maxRetries = Math.max(
+            resolvedPolicy.transport.maxRetries,
+            resolvedPolicy.structuredOutput.maxRetries,
+            resolvedPolicy.content.maxRetries
+        );
         const startTime = Date.now();
         const requestId = params.callerId || `req_${Date.now()}`;
+        const operationId = `streamctrl_${requestId}`;
+        const outerCounters = {
+            transport: 0,
+            structuredOutput: 0,
+            content: 0
+        };
 
         logger.debug('Creating stream', {
             model,
@@ -210,6 +222,8 @@ export class StreamController {
                 });
 
                 const retryStartTime = Date.now();
+                // Acquisition itself does not retry — class-scoped ceilings are applied
+                // by the outer generator so content and transport share one attempt ledger.
                 const result = await this.retryManager.executeWithRetry(
                     async () => {
                         const res = await getStream();
@@ -222,7 +236,7 @@ export class StreamController {
                         }
                         return res;
                     },
-                    shouldRetryDueToLLMError
+                    () => false
                 );
 
                 log.debug('Stream acquired successfully', {
@@ -368,7 +382,7 @@ export class StreamController {
                             requestId,
                             totalProcessingTimeMs: Date.now() - startTime
                         });
-                        throw new Error(`Stream response content triggered retry due to unsatisfactory answer: ${retryResult.reason}`);
+                        throw new Error(`Response content triggered retry: ${retryResult.reason}`);
                     }
                 }
                 return;
@@ -378,16 +392,44 @@ export class StreamController {
                     throw error;
                 }
 
-                if (attempt >= maxRetries) {
-                    // Extract underlying error message if present.
-                    const errMsg = (error as Error).message;
+                const classification = classifyRetryFailure(error, {
+                    retryableStatusCodes: resolvedPolicy.transport.retryableStatusCodes
+                });
+
+                // Unclassified failures historically retried under the flat ceiling;
+                // map them to transport so legacy StreamController tests and behavior hold.
+                const retryClass = classification.retryClass ?? 'transport';
+
+                let canRetry = false;
+                if (retryClass === 'content') {
+                    canRetry =
+                        resolvedPolicy.content.enabled &&
+                        outerCounters.content < resolvedPolicy.content.maxRetries;
+                } else if (retryClass === 'transport') {
+                    canRetry = outerCounters.transport < resolvedPolicy.transport.maxRetries;
+                } else if (retryClass === 'structuredOutput') {
+                    const reason = classification.reason as
+                        | 'refusal'
+                        | 'max_output_tokens'
+                        | 'empty'
+                        | 'non_json'
+                        | 'json_parse'
+                        | 'schema_validation'
+                        | undefined;
+                    canRetry =
+                        outerCounters.structuredOutput < resolvedPolicy.structuredOutput.maxRetries &&
+                        (!reason || resolvedPolicy.structuredOutput.retryReasons.includes(reason));
+                }
+
+                if (!canRetry) {
+                    const errMsg = error instanceof Error ? error.message : String(error);
                     const underlyingMessage = errMsg.includes('Last error: ')
                         ? errMsg.split('Last error: ')[1]
                         : errMsg;
-
+                    const ceiling = resolvedPolicy[retryClass].maxRetries;
                     const log = logger.createLogger({ prefix: 'StreamController.outerRetryStream' });
                     log.error('All retry attempts failed', {
-                        maxRetries,
+                        maxRetries: ceiling,
                         totalAttempts: attempt + 1,
                         model,
                         callerId: params.callerId,
@@ -396,14 +438,25 @@ export class StreamController {
                         totalTimeMs: Date.now() - startTime,
                         failureCategory: error instanceof Error ? error.constructor.name : 'Unknown'
                     });
-
-                    throw new Error(`Failed after ${maxRetries} retries. Last error: ${underlyingMessage}`);
+                    throw new Error(`Failed after ${ceiling} retries. Last error: ${underlyingMessage}`);
                 }
 
-                // Wait before retrying (exponential backoff).
-                const baseDelay = process.env.NODE_ENV === 'test' ? 1 : 1000;
-                const delayMs = baseDelay * Math.pow(2, attempt + 1);
+                outerCounters[retryClass]++;
+                const baseDelay = process.env.NODE_ENV === 'test' ? 1 : resolvedPolicy.transport.baseDelayMs;
+                const delayMs = baseDelay * Math.pow(2, outerCounters[retryClass]);
                 const nextAttemptNumber = attempt + 2;
+
+                params.settings?.onRetryAttempt?.({
+                    operationId,
+                    attemptIndex: attempt,
+                    retryClass,
+                    reason: classification.reason,
+                    statusCode: classification.statusCode,
+                    delayMs,
+                    usage: classification.usage,
+                    usageAmbiguous: classification.usageAmbiguous,
+                    costUnresolved: classification.costUnresolved
+                });
 
                 const log = logger.createLogger({ prefix: 'StreamController.outerRetryStream' });
                 log.warn('Retrying stream after error', {
@@ -415,7 +468,8 @@ export class StreamController {
                     callerId: params.callerId,
                     requestId,
                     totalElapsedTimeMs: Date.now() - startTime,
-                    errorType: error instanceof Error ? error.constructor.name : 'Unknown'
+                    errorType: error instanceof Error ? error.constructor.name : 'Unknown',
+                    retryClass
                 });
 
                 await new Promise((resolve) => setTimeout(resolve, delayMs));

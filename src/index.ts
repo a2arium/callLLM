@@ -22,11 +22,20 @@ export type {
     RerankCallOptions,
     RerankParams,
     RerankResult,
-    RerankResponse
+    RerankResponse,
+    RetryPolicy,
+    RetryFailureClass,
+    RetryAttemptEvent,
+    RetryStructuredOutputReason
 } from './interfaces/UniversalInterfaces.ts';
 export type { LLMProviderRerank } from './interfaces/LLMProvider.ts';
 export type { LLMExecutionControl, LLMTerminalReason } from './interfaces/ExecutionInterfaces.ts';
 export { LLMAbortError, LLMTimeoutError } from './core/execution/errors.ts';
+export { ProviderTransportError, isProviderTransportError } from './core/retry/ProviderTransportError.ts';
+export { resolveRetryPolicy } from './core/retry/resolveRetryPolicy.ts';
+export { classifyRetryFailure } from './core/retry/classifyRetryFailure.ts';
+export type { ResolvedRetryPolicy } from './core/retry/resolveRetryPolicy.ts';
+export type { RetryClassification } from './core/retry/classifyRetryFailure.ts';
 
 // Usage and Telemetry
 export type {

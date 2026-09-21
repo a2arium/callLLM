@@ -93,6 +93,64 @@ export type HistoryMode = 'full' | 'dynamic' | 'stateless';
  */
 export type JsonModeType = 'native-only' | 'fallback' | 'force-prompt';
 
+/**
+ * Failure classes with independent retry ceilings.
+ */
+export type RetryFailureClass = 'transport' | 'structuredOutput' | 'content';
+
+/**
+ * Structured-output failure reasons eligible for the structuredOutput retry class.
+ * Mirrors {@link import('../core/processors/StructuredOutputError.ts').StructuredOutputFailureReason}.
+ */
+export type RetryStructuredOutputReason =
+    | 'refusal'
+    | 'max_output_tokens'
+    | 'empty'
+    | 'non_json'
+    | 'json_parse'
+    | 'schema_validation';
+
+/**
+ * Class-scoped retry policy. When present on settings, omitted classes default to 0.
+ * When absent, `maxRetries` is applied to all classes (legacy shared budget).
+ */
+export type RetryPolicy = {
+    transport?: {
+        maxRetries: number;
+        baseDelayMs?: number;
+        /** @default [408, 429, 500, 502, 503, 504] */
+        retryableStatusCodes?: number[];
+    };
+    structuredOutput?: {
+        maxRetries: number;
+        /** When omitted and ceiling &gt; 0, all structured-output reasons are eligible. */
+        retryReasons?: RetryStructuredOutputReason[];
+    };
+    content?: {
+        maxRetries: number;
+    };
+};
+
+/**
+ * Provenance for a single provider attempt that led to a retry (or terminal failure history).
+ */
+export type RetryAttemptEvent = {
+    operationId: string;
+    /** 0-based provider attempt index that failed before this retry/terminal. */
+    attemptIndex: number;
+    retryClass: RetryFailureClass;
+    reason?: string;
+    statusCode?: number;
+    requestId?: string;
+    responseId?: string;
+    delayMs: number;
+    usage?: Usage;
+    /** True when the request may have reached the provider but usage is unavailable. */
+    usageAmbiguous: boolean;
+    /** True when cost cannot be proven zero (no usage and not a clear miss before response). */
+    costUnresolved: boolean;
+};
+
 // Define explicit properties for UniversalChatSettings
 export type UniversalChatSettings = {
     /**
@@ -119,10 +177,21 @@ export type UniversalChatSettings = {
      */
     verbosity?: 'low' | 'medium' | 'high';
     /**
-     * Maximum number of retries when the provider call fails
+     * Maximum number of retries when the provider call fails.
+     * Legacy shared ceiling: when `retryPolicy` is omitted, this value applies to
+     * transport, structured-output, and content classes alike.
      * @default 3
      */
     maxRetries?: number;
+    /**
+     * Class-scoped retry ceilings. When set, omitted classes default to 0
+     * (explicit policy mode). When omitted, `maxRetries` is the shared fallback.
+     */
+    retryPolicy?: RetryPolicy;
+    /**
+     * Fired before each retry delay with attempt provenance (class, reason, delay, usage ambiguity).
+     */
+    onRetryAttempt?: (event: RetryAttemptEvent) => void;
     /**
      * Controls which tool the model should use, if any.
      * 'none' means no tool call.

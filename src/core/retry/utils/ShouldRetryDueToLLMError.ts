@@ -1,105 +1,30 @@
 import { logger } from '../../../utils/logger.ts';
-import { isStructuredOutputError } from '../../processors/StructuredOutputError.ts';
+import { classifyRetryFailure } from '../classifyRetryFailure.ts';
+
+export {
+    RETRYABLE_STATUS_CODES,
+    isRetryableStatusCode,
+    isNetworkError
+} from './networkErrors.ts';
 
 /**
- * List of HTTP status codes that should trigger a retry
- */
-export const RETRYABLE_STATUS_CODES = [408, 429, 500, 502, 503, 504];
-
-/**
- * Determines if a status code should trigger a retry
- * @param statusCode The HTTP status code to check
- * @returns True if the status code should trigger a retry
- */
-export function isRetryableStatusCode(statusCode: number): boolean {
-    return RETRYABLE_STATUS_CODES.includes(statusCode);
-}
-
-/**
- * Determines if an error is network-related and should trigger a retry
- * @param error The error to check
- * @returns True if the error is network-related
- */
-export function isNetworkError(error: Error): boolean {
-    const message = error.message.toLowerCase().replace(/_/g, ' ').replace(/-/g, ' ');
-    return message.includes('network') ||
-        message.includes('connection') ||
-        message.includes('socket') ||
-        message.includes('econnreset') ||
-        message.includes('timeout') ||
-        message.includes('timed out') ||
-        message.includes('premature close') ||
-        message.includes('fetch') ||
-        message.includes('econnrefused') ||
-        message.includes('enotfound') ||
-        message.includes('ehostunreach') ||
-        message.includes('enetunreach') ||
-        message.includes('aborted') ||
-        message.includes('stream') ||
-        message.includes('request timeout');
-}
-
-/**
- * Determines if an LLM error should trigger a retry
- * 
- * This function examines errors from LLM API calls to determine if they
- * should trigger a retry, based on status codes and error messages.
- * 
- * @param error The error object from an LLM API call
- * @returns True if the error should trigger a retry
+ * Determines if an LLM error should trigger a retry (legacy boolean predicate).
+ * Prefer classified RetryManager + resolveRetryPolicy for class-scoped ceilings.
  */
 export function shouldRetryDueToLLMError(error: unknown): boolean {
     const log = logger.createLogger({ prefix: 'shouldRetryDueToLLMError' });
 
     if (!error) return false;
 
-    // Typed structured-output failures keep the same content-retry policy as
-    // the prior message-based JSON / validation errors (honor maxRetries).
-    if (isStructuredOutputError(error)) {
-        log.debug(`StructuredOutputError reason=${error.reason} is retryable`);
+    const classification = classifyRetryFailure(error);
+    if (classification.retryClass) {
+        log.debug(`Classified as ${classification.retryClass}: ${classification.reason ?? error}`);
         return true;
     }
 
-    // Handle status code in error objects from different providers
     if (error instanceof Error) {
-        // Extract status code if present in the error
-        let statusCode: number | undefined;
-
-        // Handle OpenAI-style errors
-        if ('status' in error && typeof (error as { status?: number }).status === 'number') {
-            statusCode = (error as { status: number }).status;
-            log.debug(`Found status code ${statusCode} in error object`);
-        }
-
-        // Handle error messages that contain status codes
-        const matches = error.message.match(/(\d{3})/);
-        if (matches && matches[1]) {
-            statusCode = parseInt(matches[1], 10);
-            log.debug(`Extracted status code ${statusCode} from error message`);
-        }
-
-        // Check if status code is retryable
-        if (statusCode && isRetryableStatusCode(statusCode)) {
-            log.debug(`Status code ${statusCode} is retryable`);
-            return true;
-        }
-
-        // Check for content-triggered retry
-        if (error.message.startsWith("Response content triggered retry") ||
-            error.message.includes("Failed to parse JSON response") ||
-            error.message.includes("Failed to validate response")) {
-            log.debug(`Found content-triggered or JSON retry message: ${error.message}`);
-            return true;
-        }
-
-        // Check for network errors
-        if (isNetworkError(error)) {
-            log.debug(`Detected network error: ${error.message}`);
-            return true;
-        }
-
         log.debug(`Error not retryable: ${error.message}`);
     }
 
     return false;
-} 
+}

@@ -193,3 +193,104 @@ describe('RetryManager Logging', () => {
     jest.useRealTimers();
   });
 });
+
+describe('RetryManager classified policy', () => {
+  beforeAll(() => {
+    process.env.NODE_ENV = 'test';
+  });
+
+  it('retries transport twice but returns schema_validation on first SO failure when SO ceiling is 0', async () => {
+    const { resolveRetryPolicy } = await import('../../../../../src/core/retry/resolveRetryPolicy.ts');
+    const { StructuredOutputError } = await import('../../../../../src/core/processors/StructuredOutputError.ts');
+    const { ProviderTransportError } = await import('../../../../../src/core/retry/ProviderTransportError.ts');
+
+    const policy = resolveRetryPolicy({
+      retryPolicy: {
+        transport: { maxRetries: 2 },
+        structuredOutput: { maxRetries: 0 },
+        content: { maxRetries: 0 }
+      }
+    });
+    const retryManager = new RetryManager();
+    const events: Array<{ retryClass: string }> = [];
+    let calls = 0;
+    const operation = jest.fn(async () => {
+      calls++;
+      if (calls <= 2) {
+        throw new Error('getaddrinfo ENOTFOUND api.openai.com');
+      }
+      throw new StructuredOutputError({
+        reason: 'schema_validation',
+        response: { content: '{"a":1}', role: 'assistant' }
+      });
+    });
+
+    try {
+      await retryManager.executeWithRetry(operation, {
+        policy,
+        operationId: 'op-1',
+        onRetryAttempt: (e) => events.push({ retryClass: e.retryClass })
+      });
+      throw new Error('expected reject');
+    } catch (err) {
+      expect(err).toBeInstanceOf(StructuredOutputError);
+      expect((err as InstanceType<typeof StructuredOutputError>).reason).toBe('schema_validation');
+      expect((err as InstanceType<typeof StructuredOutputError>).retryHistory.length).toBe(2);
+    }
+
+    expect(operation).toHaveBeenCalledTimes(3); // 2 DNS + 1 schema
+    expect(events.every((e) => e.retryClass === 'transport')).toBe(true);
+    expect(ProviderTransportError).toBeDefined();
+  });
+
+  it('retries schema once but returns connection failure immediately when transport ceiling is 0', async () => {
+    const { resolveRetryPolicy } = await import('../../../../../src/core/retry/resolveRetryPolicy.ts');
+    const { StructuredOutputError } = await import('../../../../../src/core/processors/StructuredOutputError.ts');
+    const { isProviderTransportError } = await import('../../../../../src/core/retry/ProviderTransportError.ts');
+
+    const policy = resolveRetryPolicy({
+      retryPolicy: {
+        transport: { maxRetries: 0 },
+        structuredOutput: { maxRetries: 1 },
+        content: { maxRetries: 0 }
+      }
+    });
+    const retryManager = new RetryManager();
+    let calls = 0;
+    const operation = jest.fn(async () => {
+      calls++;
+      if (calls === 1) {
+        throw new StructuredOutputError({
+          reason: 'schema_validation',
+          response: { content: '{}', role: 'assistant' }
+        });
+      }
+      throw new Error('getaddrinfo ENOTFOUND api.openai.com');
+    });
+
+    // First failure is SO — one retry allowed, second attempt hits DNS with transport 0
+    try {
+      await retryManager.executeWithRetry(operation, { policy, operationId: 'op-2' });
+      throw new Error('expected reject');
+    } catch (err) {
+      expect(isProviderTransportError(err)).toBe(true);
+    }
+
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  it('honors maxRetries 0 legacy shared ceiling with no retry', async () => {
+    const { resolveRetryPolicy } = await import('../../../../../src/core/retry/resolveRetryPolicy.ts');
+    const policy = resolveRetryPolicy({ maxRetries: 0 });
+    const retryManager = new RetryManager();
+    const operation = jest.fn(async () => {
+      throw new Error('getaddrinfo ENOTFOUND api.openai.com');
+    });
+
+    await expect(
+      retryManager.executeWithRetry(operation, { policy, operationId: 'op-0' })
+    ).rejects.toThrow(/Failed after 0 retries|without retrying/);
+
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+});

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.11
+
+- Add class-scoped `settings.retryPolicy` (transport / structuredOutput / content) with independent ceilings; legacy `maxRetries` remains the shared fallback when no policy is set.
+- Emit `settings.onRetryAttempt` events and attach `retryHistory` on terminal `StructuredOutputError` / `ProviderTransportError`.
+- Honor per-call retry ceilings on stream acquisition (fixes StreamingService ignoring per-call `maxRetries`).
+
 ## 0.4.10
 
 - Preserve machine-readable structured-output failure provenance: project OpenAI Responses refusal content into `metadata.refusal`, retain native `providerStatus` / `incompleteReason`, and throw `StructuredOutputError` with stable `reason` (`refusal`, `max_output_tokens`, `empty`, `non_json`, `json_parse`, `schema_validation`) plus usage/model/finish metadata through RetryManager (including `maxRetries: 0`). Streaming soft-attaches the same classification on the final chunk.

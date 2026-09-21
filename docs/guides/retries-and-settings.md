@@ -79,26 +79,14 @@ await caller.call('Use this provider option.', {
 `settings.providerOptions.model` is preserved as a compatibility escape hatch:
 
 ```ts
-await caller.call('Use a different model for this request.', {
-  settings: {
-    providerOptions: {
-      model: 'gpt-5-mini'
-    }
-  }
-});
-```
-
-This override is treated as an exact model inside the constructor provider scope. It is not interpreted as a preset and is still validated against the request requirements.
-
-Prefer constructor model selection for new code:
-
-```ts
 new LLMCaller('openai', { model: 'gpt-5-mini' });
 ```
 
 ## Retry Behavior
 
 `callllm` retries retryable provider failures with exponential backoff.
+
+### Legacy shared ceiling
 
 ```ts
 const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are helpful.', {
@@ -108,35 +96,74 @@ const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are helpful.', {
 });
 ```
 
-Regular calls:
+When `retryPolicy` is omitted, `maxRetries` (default 3) is the shared ceiling for
+transport, structured-output, and content classes. `maxRetries: N` means N retries
+after the first try (N+1 total attempts per class).
 
-1. Attempt provider call
-2. If the error is retryable, wait with backoff
-3. Retry up to `maxRetries`
-4. Throw the final error if all attempts fail
+### Class-scoped policy
 
-Streaming calls have two retry surfaces:
+Use `settings.retryPolicy` when transport recovery must not resample model output
+(for example frozen evaluations):
 
-- initial stream creation can be retried
-- mid-stream failures can be retried by the stream retry wrapper where supported
+```ts
+import { isStructuredOutputError, isProviderTransportError } from 'callllm';
+
+await caller.call('Judge this answer.', {
+  jsonSchema: { schema },
+  settings: {
+    retryPolicy: {
+      transport: { maxRetries: 2, baseDelayMs: 1000 },
+      structuredOutput: { maxRetries: 0 },
+      content: { maxRetries: 0 }
+    },
+    onRetryAttempt: (event) => {
+      // event.retryClass, event.reason, event.usageAmbiguous, event.delayMs, …
+    }
+  }
+});
+```
+
+When `retryPolicy` is set, omitted classes default to `0`.
+
+| Class | Consumes ceiling for |
+| --- | --- |
+| `transport` | DNS/network/socket timeouts, retryable HTTP (408/429/5xx) |
+| `structuredOutput` | `StructuredOutputError.reason` (optionally filtered by `retryReasons`) |
+| `content` | Content-quality retries; hard-disabled by `shouldRetryDueToContent: false` |
+
+Cancellation / abort is never retried. Tool-loop `maxIterations` stays independent of these ceilings.
+
+Terminal typed errors keep `retryHistory` and their classification (`StructuredOutputError`,
+`ProviderTransportError` with `usageAmbiguous` for timeouts after possible provider acceptance).
+
+Streaming: the same classifier and policy apply to **stream acquisition** (`StreamingService`).
+Final-chunk structured-output soft-attach does not auto re-stream (avoids duplicating tool work).
 
 ## Exponential Backoff
 
-The default retry manager uses exponential backoff with a base delay of 1000 ms:
+The default retry manager uses exponential backoff with a base delay of 1000 ms
+(`transport.baseDelayMs` when set on the policy):
 
 - retry 1: about 1 second
 - retry 2: about 2 seconds
 - retry 3: about 4 seconds
 
-Provider rate limits, transient network failures, and server errors are typical retry candidates. Authentication, invalid request, schema, and capability errors should be fixed rather than retried.
+Provider rate limits, transient network failures, and server errors are typical transport
+retry candidates. Authentication, invalid request, and capability errors should be fixed
+rather than retried.
 
 ## JSON Validation Retries
 
-When a response fails JSON parsing or schema validation, the call is retried up to `maxRetries`. Each retry replays the same request. The prior validation error is not injected back into the prompt. If the schema is unsatisfiable by the model, retries will not converge, so fix the schema instead of raising `maxRetries`. The terminal failure is a `StructuredOutputError` that still carries `reason`, usage, model, and related metadata (including when `maxRetries: 0`). See [Structured Output](./structured-output.md) for the reason enum, and [Errors and Troubleshooting](./errors-and-troubleshooting.md) for inspecting typed failures.
+When a response fails JSON parsing or schema validation, retries consume the
+**structuredOutput** ceiling (or legacy shared `maxRetries`). Each retry replays the same
+request. The prior validation error is not injected back into the prompt. The terminal
+failure is a `StructuredOutputError` that still carries `reason`, usage, model, and
+`retryHistory`. See [Structured Output](./structured-output.md) and
+[Errors and Troubleshooting](./errors-and-troubleshooting.md).
 
 ## Content Retries
 
-`shouldRetryDueToContent` controls retries for incomplete or invalid model content, separate from network/provider retries. It applies to both `call()` and `stream()`; the default is `true`. Set it to `false` to return empty or refusal-like content to the caller instead of converting it into a retry failure:
+`shouldRetryDueToContent` controls retries for incomplete or invalid model content, separate from network/provider retries. It applies to both `call()` and `stream()`; the default is `true`. Set it to `false` to return empty or refusal-like content to the caller instead of converting it into a retry failure (even if `retryPolicy.content.maxRetries > 0`):
 
 ```ts
 await caller.call('Return valid JSON.', {

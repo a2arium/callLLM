@@ -320,8 +320,9 @@ describe('StreamController', () => {
     } catch (err) { error = err; }
     expect(error).toBeTruthy();
     expect(error).toEqual(expect.any(Error));
-    // The actual error message is about undefined.includes being called
-    expect((error as Error).message).toContain('Cannot read properties of undefined');
+    // Non-Error throws are stringified and wrapped after class-scoped retries
+    expect((error as Error).message).toContain('Failed after');
+    expect((error as Error).message).toContain('String error message');
   });
 
   // New test for handling errors in acquireStream due to stream creation
@@ -409,8 +410,9 @@ describe('StreamController', () => {
     } catch (err) { error = err; }
 
     expect(error).toBeTruthy();
-    // The actual error message is about undefined.includes being called
-    expect((error as Error).message).toContain('Cannot read properties of undefined');
+    // Non-Error throws are stringified and wrapped after class-scoped retries
+    expect((error as Error).message).toContain('Failed after');
+    expect((error as Error).message).toContain('Not an error object');
   });
 
   // New tests for content-based retry in streams
@@ -484,7 +486,7 @@ describe('StreamController', () => {
         error = err as Error;
       }
       expect(error).toBeTruthy();
-      expect(error!.message).toMatch(/Failed after 2 retries\. Last error: Stream response content triggered retry due to unsatisfactory answer/);
+      expect(error!.message).toMatch(/Failed after 2 retries\. Last error: Response content triggered retry:/);
       expect(processStreamSpy).toHaveBeenCalledTimes(3);
     });
 
@@ -808,7 +810,8 @@ describe('StreamController', () => {
     } catch (err) { error = err as Error; }
 
     expect(error).toBeTruthy();
-    expect(error!.message).toContain('Custom object with message property');
+    // Custom non-Error objects are stringified after retries (safer than assuming .message)
+    expect(error!.message).toMatch(/Failed after .* retries\. Last error:/);
   });
 
   // Test specifically targeting line 222 with various error types
@@ -981,8 +984,8 @@ describe('StreamController', () => {
     } catch (err) { error = err; }
 
     expect(error).toBeTruthy();
-    // The error is about reading the 'includes' property on undefined, since message is undefined
-    expect((error as Error).message).toContain('Cannot read properties of undefined');
+    // Safer stringification instead of crashing on missing message
+    expect((error as Error).message).toMatch(/Failed after .* retries\. Last error:/);
   });
 
   // Additional test for line 214-218 - error with non-string message property
@@ -1007,8 +1010,8 @@ describe('StreamController', () => {
     } catch (err) { error = err; }
 
     expect(error).toBeTruthy();
-    // The actual error is about calling includes on a non-string
-    expect((error as Error).message).toContain('errMsg.includes is not a function');
+    // Safer stringification instead of calling .includes on a non-string message
+    expect((error as Error).message).toMatch(/Failed after .* retries\. Last error:/);
   });
 
   // Additional test for both lines 70 and 214-218
@@ -1094,8 +1097,8 @@ describe('StreamController', () => {
     } catch (err) { error = err as Error; }
 
     expect(error).toBeTruthy();
-    // The error would be about the lack of an 'includes' method
-    expect(error!.message).toContain('is not a function');
+    // Safer stringification instead of assuming message.includes exists
+    expect(error!.message).toMatch(/Failed after .* retries\. Last error:/);
   });
 
   // Additional specialized test for line 216 - validation error path

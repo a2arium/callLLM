@@ -11,7 +11,7 @@ import { toMessageParts } from '../../interfaces/UniversalInterfaces.ts';
 import { FinishReason } from '../../interfaces/UniversalInterfaces.ts';
 import { z } from 'zod';
 import { shouldRetryDueToContent } from "../retry/utils/ShouldRetryDueToContent.ts";
-import { shouldRetryDueToLLMError } from "../retry/utils/ShouldRetryDueToLLMError.ts";
+import { resolveRetryPolicy } from '../retry/resolveRetryPolicy.ts';
 import { logger } from '../../utils/logger.ts';
 import { ToolController } from '../tools/ToolController.ts';
 import { ToolOrchestrator } from '../tools/ToolOrchestrator.ts';
@@ -273,10 +273,17 @@ export class ChatController {
                 .reverse()
                 .find(m => m.role === 'user' && !m.metadata?.isFormatInstruction)?.content || '';
 
-            const effectiveMaxRetries = mergedSettings?.maxRetries ?? 3;
-            const localRetryManager = new RetryManager({ baseDelay: 1000, maxRetries: effectiveMaxRetries });
+            const resolvedPolicy = resolveRetryPolicy(mergedSettings);
+            const localRetryManager = new RetryManager({
+                baseDelay: resolvedPolicy.transport.baseDelayMs,
+                maxRetries: mergedSettings?.maxRetries ?? 3
+            });
+            const operationId =
+                (typeof callerId === 'string' && callerId.length > 0)
+                    ? `chat_${callerId}_${Date.now()}`
+                    : `chat_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-            // Execute the provider chat call with retry logic
+            // Execute the provider chat call with class-scoped retry logic
             let response = await localRetryManager.executeWithRetry(
                 async () => {
                     const exec = async () => {
@@ -386,12 +393,12 @@ export class ChatController {
 
                     return await exec();
                 },
-                (error: unknown) => {
-                    // Use the centralized shouldRetryDueToLLMError utility
-                    // This handles both content-triggered retries and HTTP status/network errors
-                    return shouldRetryDueToLLMError(error);
-                },
-                context
+                {
+                    policy: resolvedPolicy,
+                    operationId,
+                    onRetryAttempt: mergedSettings?.onRetryAttempt,
+                    control: context
+                }
             );
 
             // Ensure we have a valid response object before validation
