@@ -114,6 +114,8 @@ The caller stores conversation history through `HistoryManager`. The default mod
 - `dynamic`: keep recent history within the selected model context window
 - `full`: send all history
 
+For a complete multi-turn transcript that must not touch persistent history, use `caller.callMessages([...])` instead of `setMessages()` + `call()`. That API is request-scoped: it never reads or mutates `HistoryManager`, and it does not inject the constructor system prompt.
+
 ```ts
 const caller = new LLMCaller('openai', 'gpt-5-mini', 'You are helpful.', {
   historyMode: 'dynamic'

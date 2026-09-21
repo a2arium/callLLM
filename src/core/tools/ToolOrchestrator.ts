@@ -87,6 +87,7 @@ export class ToolOrchestrator {
         context?: CallExecutionContext
     ): Promise<{ requiresResubmission: boolean; newToolCalls: number }> {
         const calledTools = context?.getOrCreate<CalledTool[]>(CALLED_TOOLS_CONTEXT_KEY, () => []) ?? this.calledTools;
+        const historyManager = context?.operationHistory ?? this.historyManager;
 
         // Filter out tool calls whose call ID was already executed.
         // Same name+args with a new call ID (e.g. retry after recoverable error) must run.
@@ -168,7 +169,7 @@ export class ToolOrchestrator {
                         ? call.result
                         : JSON.stringify(call.result);
 
-                    this.historyManager.addMessage('tool', resultContentString, {
+                    historyManager.addMessage('tool', resultContentString, {
                         toolCallId: call.id,
                         name: call.toolName
                     });
@@ -179,7 +180,7 @@ export class ToolOrchestrator {
                         ? call.error
                         : `Error executing tool ${call.toolName}: ${call.error}`;
 
-                    this.historyManager.addMessage('tool',
+                    historyManager.addMessage('tool',
                         errorMessage,
                         { toolCallId: call.id });
                     logger.debug(`Added tool error for ${call.toolName} with ID ${call.id}: ${call.error}`);

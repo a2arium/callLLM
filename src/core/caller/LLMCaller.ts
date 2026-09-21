@@ -8,6 +8,8 @@ import type {
     // Import the new types
     UniversalChatSettings,
     LLMCallOptions,
+    CallMessagesOptions,
+    RequestScopedTextMessage,
     JSONSchemaDefinition,
     ResponseFormat,
     HistoryMode,
@@ -109,6 +111,11 @@ import { OpikProvider } from '../telemetry/providers/opik/OpikProvider.ts'
 import type { PromptMessage, ConversationInputOutput } from '../telemetry/collector/types.ts'
 import { CallExecutionContext } from '../execution/CallExecutionContext.ts';
 import { LLMTimeoutError } from '../execution/errors.ts';
+import {
+    assertCallMessagesOptions,
+    RequestContextOverflowError,
+    validateAndCloneRequestMessages
+} from './callMessages.ts';
 
 /**
  * Interface that matches the core functionality of StreamController
@@ -1684,7 +1691,8 @@ export class LLMCaller implements MCPDirectAccess {
         params.model = params.model || this.getResolvedModel();
 
         const { systemMessage, ...paramsForController } = params;
-        const chatResponse = context?.needsPropagation
+        // Always forward context when present so operationHistory / abort / usage stay isolated.
+        const chatResponse = context
             ? await this.chatController.execute(paramsForController as any, execution, context)
             : execution
                 ? await this.chatController.execute(paramsForController as any, execution)
@@ -2157,6 +2165,10 @@ export class LLMCaller implements MCPDirectAccess {
         userText?: string;
         processedMessages: any[]; // TextPart[]
         operationKind?: 'call' | 'stream';
+        /** When set, use these messages instead of reading HistoryManager. */
+        messagesOverride?: UniversalMessage[];
+        /** When set, stamp this historyMode instead of merging from options/defaults. */
+        historyModeOverride?: HistoryMode;
     }): Promise<{ chatParams: UniversalChatParams; processedMessages: any[]; resolvedModelMetadata: ResolvedModelMetadata; execution?: ProviderExecutionContext }> {
         const log = logger.createLogger({ prefix: 'LLMCaller.buildChatParams' });
         const actualMessage = opts.userText || opts.text || '';
@@ -2173,7 +2185,7 @@ export class LLMCaller implements MCPDirectAccess {
         const mergedSettings = this.mergeSettings(opts.settings);
 
         // Get the effective history mode
-        const effectiveHistoryMode = this.mergeHistoryMode(opts.historyMode);
+        const effectiveHistoryMode = opts.historyModeOverride ?? this.mergeHistoryMode(opts.historyMode);
 
         const inferredRequest = inferChatRequestRequirements(
             opts.operationKind ?? 'call',
@@ -2197,13 +2209,15 @@ export class LLMCaller implements MCPDirectAccess {
             modelInfo = execution.modelInfo ?? modelInfo;
         }
 
-        // Get messages from history manager (which already has the latest user message)
-        let messages = this.historyManager.getMessages() || [];
+        // Explicit override (callMessages) bypasses HistoryManager entirely.
+        let messages = opts.messagesOverride
+            ? opts.messagesOverride.map(msg => ({ ...msg }))
+            : (this.historyManager.getMessages() || []);
 
         // When there's only one processed message and it contains the 'data' field,
         // we should use the processed message instead of the history manager's version
         // to ensure the 'data' parameter is properly included
-        if (opts.processedMessages.length === 1 && opts.data) {
+        if (!opts.messagesOverride && opts.processedMessages.length === 1 && opts.data) {
             const dataStr = typeof opts.data === 'string'
                 ? opts.data
                 : JSON.stringify(opts.data);
@@ -3348,6 +3362,170 @@ export class LLMCaller implements MCPDirectAccess {
             return processedResponses;
         } catch (error) {
             log.error('Error in call method:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Execute one request-scoped text transcript without reading or mutating
+     * the caller's persistent HistoryManager.
+     *
+     * The complete transcript (including the current user turn) is supplied in
+     * one array. Transport retries reuse an immutable snapshot. Native tool
+     * continuations append only to operation-local state that is discarded on
+     * terminal success or failure.
+     */
+    public async callMessages<T extends z.ZodTypeAny = z.ZodTypeAny>(
+        messages: readonly RequestScopedTextMessage[],
+        options: CallMessagesOptions = {}
+    ): Promise<UniversalChatResponse[]> {
+        assertCallMessagesOptions(options);
+        const operationMessages = validateAndCloneRequestMessages(messages);
+        // Empty constructor: default system prompt is NOT added to historical messages.
+        const operationHistory = new HistoryManager();
+        const context = new CallExecutionContext({
+            signal: options.signal,
+            timeoutMs: options.timeoutMs,
+            usageCallback: options.usageCallback,
+            callerId: this.callerId,
+            operationHistory
+        });
+        try {
+            const result = await context.awaitOrAbort(
+                () => this.executeMessagesCall<T>(operationMessages, options, context)
+            );
+            context.beginCommit();
+            await context.runCommitActions();
+            context.complete();
+            return result;
+        } catch (error) {
+            context.fail(error);
+            await context.rollback();
+            throw error;
+        } finally {
+            context.dispose();
+        }
+    }
+
+    private async executeMessagesCall<T extends z.ZodTypeAny = z.ZodTypeAny>(
+        operationMessages: UniversalMessage[],
+        options: CallMessagesOptions,
+        context: CallExecutionContext
+    ): Promise<UniversalChatResponse[]> {
+        const log = logger.createLogger({ prefix: 'LLMCaller.callMessages' });
+
+        try {
+            if (this.toolOrchestrator) this.toolOrchestrator.resetCalledTools();
+
+            const { chatParams, resolvedModelMetadata, execution } = await this.buildChatParams({
+                ...options,
+                processedMessages: [],
+                operationKind: 'call',
+                messagesOverride: operationMessages,
+                historyModeOverride: 'full'
+            });
+
+            const modelInfo = execution?.modelInfo
+                ?? this.findModelInfo(chatParams.model)
+                ?? (() => { throw new Error(`Model ${chatParams.model} not found`); })();
+
+            const reservedResponseTokens = chatParams.settings?.maxTokens
+                ?? modelInfo.maxResponseTokens
+                ?? 0;
+            const tokenCount = this.tokenCalculator.calculateTotalTokens(operationMessages);
+            if (tokenCount + reservedResponseTokens > modelInfo.maxRequestTokens) {
+                throw new RequestContextOverflowError({
+                    message: `callMessages transcript exceeds model context (${tokenCount} + ${reservedResponseTokens} reserved > ${modelInfo.maxRequestTokens} maxRequestTokens)`,
+                    tokenCount,
+                    maxRequestTokens: modelInfo.maxRequestTokens,
+                    reservedResponseTokens
+                });
+            }
+
+            await this.telemetryCollector?.awaitReady?.();
+            const conversationCtx = this.telemetryCollector?.startConversation('call', {
+                callerId: this.callerId,
+                hasTools: Boolean(chatParams.tools?.length)
+            });
+            context.setTelemetryContext(this.telemetryCollector, conversationCtx);
+            if (this.telemetryCollector && conversationCtx) {
+                if (typeof (this.chatController as any).setTelemetryContext === 'function') {
+                    this.chatController.setTelemetryContext(this.telemetryCollector, conversationCtx);
+                }
+                if (typeof (this.toolController as any).setTelemetryContext === 'function') {
+                    this.toolController.setTelemetryContext(this.telemetryCollector, conversationCtx);
+                }
+            }
+
+            const startTime = Date.now();
+            let responses: UniversalChatResponse[];
+            let llmCallsCount = 0;
+            let toolCallsCount = 0;
+            let totalTokens = 0;
+            let totalCost = 0;
+            let errorCount = 0;
+
+            try {
+                log.debug('Calling internalChatCall for callMessages', {
+                    messageCount: chatParams.messages.length
+                });
+                const response = await this.internalChatCall<T>(chatParams, execution, context);
+                responses = [response];
+                llmCallsCount = 1;
+
+                responses.forEach(responseItem => {
+                    if (responseItem.metadata?.usage) {
+                        totalTokens += responseItem.metadata.usage.tokens.total || 0;
+                        if (responseItem.metadata.usage.costs) {
+                            totalCost += responseItem.metadata.usage.costs.total || 0;
+                        }
+                    }
+                    if (responseItem.toolCalls?.length) {
+                        toolCallsCount += responseItem.toolCalls.length;
+                    }
+                });
+            } catch (error) {
+                errorCount++;
+                throw error;
+            }
+
+            const processedResponses = responses.map(response =>
+                this.addResolvedModelMetadata(response, resolvedModelMetadata)
+            );
+
+            const duration = Date.now() - startTime;
+            const success = errorCount === 0 && responses.length > 0;
+
+            if (this.telemetryCollector && conversationCtx) {
+                const initialMessages: PromptMessage[] = operationMessages.map((msg, index) => ({
+                    role: msg.role as 'system' | 'user' | 'assistant' | 'tool',
+                    content: msg.content || '',
+                    sequence: index
+                }));
+                const finalResponse = responses.length > 0
+                    ? responses.map(r => r.content).join('\n')
+                    : '';
+                const inputOutput: ConversationInputOutput = {
+                    initialMessages,
+                    finalResponse
+                };
+                await this.telemetryCollector.endConversation(conversationCtx, {
+                    callId: context.callId,
+                    terminalAt: Date.now(),
+                    terminalReason: context.reason ?? (success ? 'completed' : 'provider_error'),
+                    totalTokens,
+                    totalCost,
+                    llmCallsCount,
+                    toolCallsCount,
+                    success,
+                    errorCount
+                }, inputOutput);
+            }
+
+            log.debug('callMessages completed', { durationMs: duration, success });
+            return processedResponses;
+        } catch (error) {
+            log.error('Error in callMessages method:', error);
             throw error;
         }
     }

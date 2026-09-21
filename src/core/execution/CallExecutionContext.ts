@@ -4,6 +4,7 @@ import { LLMAbortError, LLMTimeoutError, isLLMCancellationError } from './errors
 import type { UsageCallback } from '../../interfaces/UsageInterfaces.ts';
 import type { TelemetryCollector } from '../telemetry/collector/TelemetryCollector.ts';
 import type { ConversationContext } from '../telemetry/collector/types.ts';
+import type { HistoryManager } from '../history/HistoryManager.ts';
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
@@ -12,6 +13,12 @@ export type CallExecutionOptions = {
     timeoutMs?: number;
     usageCallback?: UsageCallback;
     callerId?: string;
+    /**
+     * Optional operation-local history that ChatController / ToolOrchestrator
+     * must prefer over the caller's shared HistoryManager.
+     * Used by callMessages so tool continuations never touch caller history.
+     */
+    operationHistory?: HistoryManager;
 };
 
 type ExecutionState = 'active' | 'committing' | 'terminal';
@@ -23,6 +30,8 @@ export class CallExecutionContext implements LLMExecutionControl {
     public readonly signal: AbortSignal;
     public readonly usageCallback?: UsageCallback;
     public readonly callerId?: string;
+    /** Operation-local history; discarded when the context is disposed. */
+    public readonly operationHistory?: HistoryManager;
     public telemetryCollector?: TelemetryCollector;
     public conversationContext?: ConversationContext;
 
@@ -52,6 +61,7 @@ export class CallExecutionContext implements LLMExecutionControl {
         this.timeoutMs = options.timeoutMs;
         this.usageCallback = options.usageCallback;
         this.callerId = options.callerId;
+        this.operationHistory = options.operationHistory;
         this.deadlineAt = options.timeoutMs === undefined ? undefined : this.startedAt + options.timeoutMs;
         this.signal = this.controller.signal;
 

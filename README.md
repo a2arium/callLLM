@@ -194,6 +194,29 @@ const response = await caller.call('Explain TypeScript generics in two paragraph
 console.log(response[0].content);
 ```
 
+### Request-scoped transcript
+
+Use `callMessages` when you already have a complete text transcript and need one isolated operation that must not touch persistent conversation history. This is not a history mode — it never reads or mutates `HistoryManager`, and it does not inject the constructor system prompt.
+
+```ts
+const response = await caller.callMessages([
+  { role: 'system', content: 'You are helpful.' },
+  { role: 'user', content: 'What is 1 + 1?' },
+  { role: 'assistant', content: '2.' },
+  { role: 'user', content: 'And 2 + 2?' },
+], {
+  settings: {
+    providerOptions: {
+      openai: { store: false }
+    }
+  }
+});
+
+console.log(response[0].content);
+```
+
+See [History reference](docs/reference/history.md) for how this differs from `setMessages` and `historyMode`.
+
 ### Structured JSON
 
 ```ts
@@ -458,6 +481,7 @@ For production applications, configure:
 
 - exact models or policies with cost/context constraints
 - `historyMode: 'stateless'` for independent calls or `'dynamic'` for long conversations
+- `callMessages([...])` when you need a seeded multi-turn transcript without mutating caller history
 - `maxRetries`, timeouts for MCP tools, and provider-level rate-limit handling
 - structured output schemas for machine-consumed responses
 - `usageCallback` and telemetry provider env vars for observability
@@ -503,6 +527,7 @@ Useful examples:
 yarn example:simple
 yarn example:json
 yarn example:tool
+yarn example:historyModes
 yarn example:imageGenerate
 yarn example:speechSynthesis
 yarn example:speechTranscription

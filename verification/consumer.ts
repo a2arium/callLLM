@@ -3,12 +3,18 @@
  * Fails if dist is missing modules or uses unresolvable import specifiers.
  */
 import type { LLMCaller } from '../dist/esm/core/caller/LLMCaller.js';
+import type {
+    CallMessagesValidationError,
+    RequestContextOverflowError
+} from '../dist/esm/core/caller/callMessages.js';
 import type { ProviderAdapter } from '../dist/esm/adapters/types.js';
 import type { StreamChunk, ToolCallChunk } from '../dist/esm/core/streaming/types.js';
 import type {
+    CallMessagesOptions,
     RerankCallOptions,
     RerankDocument,
     RerankResponse,
+    RequestScopedTextMessage,
     UniversalChatResponse
 } from '../dist/esm/interfaces/UniversalInterfaces.js';
 import type { LLMProviderRerank } from '../dist/esm/interfaces/LLMProvider.js';
@@ -24,5 +30,9 @@ export type Verification = [
     RerankCallOptions,
     RerankDocument,
     RerankResponse,
-    LLMProviderRerank
+    LLMProviderRerank,
+    RequestScopedTextMessage,
+    CallMessagesOptions,
+    CallMessagesValidationError,
+    RequestContextOverflowError
 ];

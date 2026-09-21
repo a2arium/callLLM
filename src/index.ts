@@ -18,6 +18,8 @@ export type {
     JSONSchemaDefinition,
     ResponseFormat,
     LLMCallOptions,
+    CallMessagesOptions,
+    RequestScopedTextMessage,
     RerankDocument,
     RerankCallOptions,
     RerankParams,
@@ -54,6 +56,10 @@ export {
 } from './core/evaluate/questions.ts';
 export type { LLMExecutionControl, LLMTerminalReason } from './interfaces/ExecutionInterfaces.ts';
 export { LLMAbortError, LLMTimeoutError } from './core/execution/errors.ts';
+export {
+    CallMessagesValidationError,
+    RequestContextOverflowError
+} from './core/caller/callMessages.ts';
 export { ProviderTransportError, isProviderTransportError } from './core/retry/ProviderTransportError.ts';
 export { resolveRetryPolicy } from './core/retry/resolveRetryPolicy.ts';
 export { classifyRetryFailure } from './core/retry/classifyRetryFailure.ts';

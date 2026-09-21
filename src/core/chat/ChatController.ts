@@ -161,6 +161,9 @@ export class ChatController {
             // Validate JSON mode capability if needed and get injection flag
             const { usePromptInjection, useSchemaInjection } = this.responseProcessor.validateJsonMode(modelInfo, params) || { usePromptInjection: false, useSchemaInjection: false };
 
+            // Prefer operation-local history (callMessages) over the shared caller HistoryManager.
+            const historyManager = context?.operationHistory ?? this.historyManager;
+
             // Get message list according to history mode and filter out any existing format instructions
             // from previous loops to prevent duplication before PromptEnhancer re-applies them.
             let messagesForProvider = messages.filter(m =>
@@ -169,11 +172,11 @@ export class ChatController {
             // Determine effective history mode from top-level only (default to 'stateless')
             const effectiveHistoryMode: HistoryMode = historyMode ?? 'stateless';
 
-            if (effectiveHistoryMode?.toLowerCase() === 'dynamic' && this.historyManager) {
+            if (effectiveHistoryMode?.toLowerCase() === 'dynamic' && historyManager) {
                 log.debug('Using dynamic history mode for chat - intelligently truncating history');
 
                 // Get all historical messages
-                const allMessages = this.historyManager.getMessages(true);
+                const allMessages = historyManager.getMessages(true);
 
                 // If we have a truncator and messages to dynamic, do the truncation
                 if (allMessages.length > 0) {
@@ -208,13 +211,13 @@ export class ChatController {
                 : messagesForProvider;
 
             // Add format instruction to history if present
-            if (this.historyManager && effectiveResponseFormat === 'json') {
+            if (historyManager && effectiveResponseFormat === 'json') {
                 const formatInstruction = enhancedMessages.find(msg =>
                     msg.role === 'user' && msg.metadata?.isFormatInstruction);
 
                 if (formatInstruction) {
                     // Only add if we don't already have an instruction with the same content
-                    const existingInstructions = this.historyManager.getMessages(true).filter(msg =>
+                    const existingInstructions = historyManager.getMessages(true).filter(msg =>
                         msg.metadata?.isFormatInstruction);
 
                     const alreadyHasInstruction = existingInstructions.some(msg => {
@@ -224,7 +227,7 @@ export class ChatController {
                     });
 
                     if (!alreadyHasInstruction) {
-                        this.historyManager.addMessage(
+                        historyManager.addMessage(
                             formatInstruction.role,
                             formatInstruction.content,
                             { metadata: { isFormatInstruction: true } }
@@ -433,13 +436,13 @@ export class ChatController {
             }
 
             // Process tool calls if detected in the response
-            if (hasToolCalls && this.toolController && this.toolOrchestrator && this.historyManager) {
+            if (hasToolCalls && this.toolController && this.toolOrchestrator && historyManager) {
                 log.debug('Tool calls detected, processing...');
 
                 const providerMetadata = response.metadata?.providerState
                     ? { providerState: response.metadata.providerState }
                     : undefined;
-                this.historyManager.addMessage('assistant', response.content ?? '', {
+                historyManager.addMessage('assistant', response.content ?? '', {
                     toolCalls: response.toolCalls,
                     ...(providerMetadata ? { metadata: providerMetadata } : {})
                 });
@@ -455,9 +458,10 @@ export class ChatController {
                 });
 
                 // Track how many messages we had before tool execution
-                const historyCountBeforeTools = this.historyManager.getMessages(true).length;
+                const historyCountBeforeTools = historyManager.getMessages(true).length;
 
-                const toolProcessing = context?.needsPropagation
+                // Always forward context when present so operationHistory / calledTools stay isolated.
+                const toolProcessing = context
                     ? this.toolOrchestrator.processToolCalls(
                         response,
                         params.tools || [],
@@ -472,7 +476,7 @@ export class ChatController {
                 const { requiresResubmission } = await toolProcessing;
 
                 // Fetch exactly the new tool messages added by ToolOrchestrator
-                const currentHistoryMessages = this.historyManager.getMessages(true);
+                const currentHistoryMessages = historyManager.getMessages(true);
                 const newToolMessages = currentHistoryMessages.slice(historyCountBeforeTools);
                 loopMessages = [...loopMessages, ...newToolMessages];
 
@@ -495,7 +499,7 @@ export class ChatController {
                         jsonSchema: jsonSchema, // Explicitly pass original schema
                         responseFormat: effectiveResponseFormat // Explicitly pass original format
                     };
-                    finalResponse = context?.needsPropagation
+                    finalResponse = context
                         ? await this.execute<T>(resubmissionParams, execution, context)
                         : execution
                             ? await this.execute<T>(resubmissionParams, execution)
@@ -527,14 +531,14 @@ export class ChatController {
                 validatedResponse.metadata?.finishReason === FinishReason.TOOL_CALLS
             );
 
-            if (!finalResponseInitiatedTools && this.historyManager && effectiveHistoryMode !== 'stateless') {
+            if (!finalResponseInitiatedTools && historyManager && effectiveHistoryMode !== 'stateless') {
                 // If the *final* response doesn't have tool calls, add it to history.
                 // This handles cases where the initial response had tool calls, but the *final* one after resubmission doesn't.
                 // Also handles cases where there were no tool calls at all.
                 const providerMetadata = validatedResponse.metadata?.providerState
                     ? { providerState: validatedResponse.metadata.providerState }
                     : undefined;
-                this.historyManager.addMessage('assistant', validatedResponse.content ?? '', {
+                historyManager.addMessage('assistant', validatedResponse.content ?? '', {
                     toolCalls: validatedResponse.toolCalls,
                     ...(providerMetadata ? { metadata: providerMetadata } : {})
                 });

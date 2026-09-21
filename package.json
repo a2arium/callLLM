@@ -1,6 +1,6 @@
 {
   "name": "callllm",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A capability-aware TypeScript runtime for production LLM calls.",
   "packageManager": "yarn@4.9.4",
   "type": "module",
@@ -61,6 +61,7 @@
     "example:mcp": "tsx examples/mcpClient.ts",
     "example:mcpDirect": "tsx examples/mcpDirectTools.ts",
     "example:historyModes": "tsx examples/historyModes.ts",
+    "example:callMessages": "tsx examples/callMessages.ts",
     "example:loadHistory": "tsx examples/loadHistory.ts",
     "example:image": "tsx examples/imageInput.ts",
     "example:imageGenerate": "tsx examples/imageGenerationAndEditing.ts",

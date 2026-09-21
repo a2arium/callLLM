@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.1
+
+- Add `LLMCaller.callMessages()` for atomic request-scoped text transcripts that never read or mutate persistent caller history.
+- Preserve exact role/content/order at the provider-neutral boundary; reject empty content, extra fields, unsupported roles, and multiple system messages before provider contact.
+- Keep native tool continuations operation-local; transport retries replay an immutable initial snapshot; forward `settings.providerOptions` (including OpenAI `store`) unchanged.
+- Document the request-scoped use case distinctly from `setMessages` / `historyMode`.
+
+## 0.5.0
+
+- Add Vercel AI Gateway provider support (chat, streaming, tools, embeddings, image generate/edit, rerank, evaluation) with capability-aware model catalog.
+- Fix Vercel image-edit typing for the OpenAI SDK edit response union.
+
 ## 0.4.11
 
 - Add class-scoped `settings.retryPolicy` (transport / structuredOutput / content) with independent ceilings; legacy `maxRetries` remains the shared fallback when no policy is set.

@@ -26,7 +26,31 @@ Here are the primary ways you can add, manage, and influence the history used in
     ```
     Messages with roles like `'tool'` or `'function'` can also be added, often including a `toolCallId` to link them to a previous assistant message that requested the tool.
 
-2.  **Setting/Replacing the Entire History**:
+2.  **Request-scoped transcripts (`callMessages`)**:
+    When you already have a complete text transcript and need one isolated LLM operation — without reading, appending to, or clearing the caller's persistent history — use `callMessages`. Supply the full transcript in one array (including the current user turn). The constructor system prompt is not injected. Transport retries replay the same immutable snapshot. Native tool continuations stay operation-local and are discarded when the call finishes.
+
+    ```typescript
+    import { LLMCaller } from 'callllm';
+
+    const caller = new LLMCaller('openai', 'gpt-4o-mini', 'You are a helpful assistant.');
+
+    const response = await caller.callMessages([
+        { role: 'system', content: 'You are helpful.' },
+        { role: 'user', content: 'What is 1 + 1?' },
+        { role: 'assistant', content: '2.' },
+        { role: 'user', content: 'And 2 + 2?' },
+    ], {
+        settings: {
+            providerOptions: {
+                openai: { store: false },
+            },
+        },
+    });
+    ```
+
+    This is not a history mode and is not a substitute for `setMessages`. Prefer `callMessages` for calibration cells, benchmarks, and any shared caller that must not interleave mutable history installs. Prefer `setMessages` / `historyMode` when you want ongoing conversation state on the caller.
+
+3.  **Setting/Replacing the Entire History**:
     If you need to load a previous conversation state or set the history programmatically, you can use `setMessages`. This replaces the entire current history with the provided array of messages.
 
     ```typescript
@@ -46,7 +70,7 @@ Here are the primary ways you can add, manage, and influence the history used in
     // const response = await caller.call('...');
     ```
 
-3.  **Clearing History**:
+4.  **Clearing History**:
     To start a fresh conversation, you can clear all previous messages using `clearHistory`. This method re-initializes the history with the initial `systemMessage` provided during the `LLMCaller` constructor.
 
     ```typescript
@@ -63,7 +87,7 @@ Here are the primary ways you can add, manage, and influence the history used in
     console.log('History size after clear:', caller.getMessages().length); // Will be 1 (system message)
     ```
 
-4.  **Inspecting History Mode**:
+5.  **Inspecting History Mode**:
     Frameworks or higher-level logic can check the current `historyMode` to decide if they should persist or restore state. Use `getHistoryMode()` to retrieve the active mode.
 
     ```typescript
@@ -74,7 +98,7 @@ Here are the primary ways you can add, manage, and influence the history used in
     }
     ```
 
-5.  **Updating the System Message**:
+6.  **Updating the System Message**:
     The initial system message is crucial for setting the AI's persona and instructions. You can update it using `updateSystemMessage`. You can choose whether to preserve the existing conversation history (`preserveHistory = true`, default) or clear it (`preserveHistory = false`).
 
     ```typescript
@@ -89,7 +113,7 @@ Here are the primary ways you can add, manage, and influence the history used in
     caller.updateSystemMessage('You are now a creative writer.', false);
     ```
 
-6.  **Controlling History Behavior (`historyMode`)**:
+7.  **Controlling History Behavior (`historyMode`)**:
     The library offers different modes to control how the historical messages stored in the `HistoryManager` are included in the actual API call requests sent to the LLM provider. This is managed by the `historyMode` setting.
 
     You can set the `historyMode` during `LLMCaller` initialization or override it for specific `call` or `stream` requests:
@@ -133,7 +157,7 @@ Here are the primary ways you can add, manage, and influence the history used in
     console.log(response[0].metadata?.model); // model whose token limits were used
     ```
 
-7.  **Accessing History**:
+8.  **Accessing History**:
     You can retrieve the current message history using methods like `getMessages()` (excluding the initial system message unless it was explicitly added back) or `getMessages(true)` (includes the initial system message). `getHistorySummary()` provides a condensed view.
 
     ```typescript

@@ -373,6 +373,36 @@ export type LLMCallOptions = {
     maxParallelRequests?: number;
 };
 
+/**
+ * Strict text-only message for request-scoped {@link LLMCaller.callMessages}.
+ * The complete transcript (including the current user turn) is supplied atomically.
+ */
+export type RequestScopedTextMessage = Readonly<{
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+}>;
+
+/**
+ * Options for {@link LLMCaller.callMessages}.
+ * Intentionally excludes historyMode, text, chunking, files, data, and media options.
+ */
+export type CallMessagesOptions = Omit<
+    LLMCallOptions,
+    | 'text'
+    | 'historyMode'
+    | 'file'
+    | 'files'
+    | 'mask'
+    | 'data'
+    | 'endingMessage'
+    | 'input'
+    | 'output'
+    | 'outputPath'
+    | 'maxCharsPerChunk'
+    | 'maxChunkIterations'
+    | 'maxParallelRequests'
+>;
+
 export type UniversalChatParams = {
     messages: Array<UniversalMessage>;
     // Use the refined settings type
