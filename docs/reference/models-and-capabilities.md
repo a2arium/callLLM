@@ -86,6 +86,9 @@ type ModelCapabilities = {
     maxDocumentTokens?: number;
     maxTotalTokens?: number;
   };
+  evaluation?: boolean | {
+    questionTypes?: ('boolean' | 'choice' | 'score')[];
+  };
   audio?: boolean | {
     transcribe?: boolean;
     translate?: boolean;

@@ -8,6 +8,7 @@ import type {
     VideoCallParams,
     LLMProviderAudio,
     LLMProviderRerank,
+    LLMProviderEvaluate,
     AudioOp
 } from '../../interfaces/LLMProvider.ts';
 import type { AdapterConfig } from '../../adapters/base/baseAdapter.ts';
@@ -24,7 +25,9 @@ import type {
     TranslationResponse,
     SpeechResponse,
     RerankParams,
-    RerankResponse
+    RerankResponse,
+    EvaluateParams,
+    EvaluateResponse
 } from '../../interfaces/UniversalInterfaces.ts';
 import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
 import { logger } from '../../utils/logger.ts';
@@ -146,6 +149,26 @@ export class ProviderManager {
             throw new Error(`Provider '${this.currentProviderName}' does not support reranking`);
         }
         return provider.rerankCall(model, params, control);
+    }
+
+    public supportsEvaluation(): boolean {
+        return typeof (this.provider as unknown as { evaluateCall?: unknown }).evaluateCall === 'function';
+    }
+
+    public getEvaluateProvider(): LLMProviderEvaluate | null {
+        return this.supportsEvaluation() ? this.provider as unknown as LLMProviderEvaluate : null;
+    }
+
+    public async callEvaluateOperation(
+        model: string,
+        params: EvaluateParams,
+        control?: LLMExecutionControl
+    ): Promise<EvaluateResponse> {
+        const provider = this.getEvaluateProvider();
+        if (!provider) {
+            throw new Error(`Provider '${this.currentProviderName}' does not support evaluation`);
+        }
+        return provider.evaluateCall(model, params, control);
     }
 
     /** Video support checks */

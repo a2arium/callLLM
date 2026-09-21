@@ -4,6 +4,7 @@ import { VeniceAdapter } from './venice/adapter.ts';
 import { OpenRouterAdapter } from './openrouter/adapter.ts';
 import { GeminiAdapter } from './gemini/adapter.ts';
 import { SiliconFlowAdapter } from './siliconflow/adapter.ts';
+import { VercelAdapter } from './vercel/adapter.ts';
 import type { AdapterConstructor } from './types.ts';
 import { ProviderNotFoundError } from './types.ts';
 
@@ -20,6 +21,7 @@ const ADAPTER_REGISTRY = {
     'openrouter': OpenRouterAdapter as AdapterConstructor,
     'gemini': GeminiAdapter as AdapterConstructor,
     'siliconflow': SiliconFlowAdapter as AdapterConstructor,
+    'vercel': VercelAdapter as AdapterConstructor,
 } as const;
 
 export const adapterRegistry = new Map<string, AdapterConstructor>(

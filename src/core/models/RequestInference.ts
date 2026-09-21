@@ -4,10 +4,14 @@ import type {
     SpeechCallOptions,
     TranscriptionCallOptions,
     TranslationCallOptions,
-    RerankCallOptions
+    RerankCallOptions,
+    EvaluateCallOptions
 } from '../../interfaces/UniversalInterfaces.ts';
 import type { RequestRequirements } from './CapabilityMatcher.ts';
 import type { SelectionOperation, ScoreContext } from './ModelScoring.ts';
+import { isEvaluateQuestionHelper, getQuestionFromHelper } from '../evaluate/questions.ts';
+import { z } from 'zod';
+import type { EvaluateQuestion } from '../../interfaces/UniversalInterfaces.ts';
 
 export type ChatOperationKind = 'call' | 'stream';
 export type ImageOperationRequirement = 'generate' | 'edit' | 'editWithMask' | 'composite';
@@ -165,6 +169,52 @@ export function inferRerankRequestRequirements(options: RerankCallOptions): Infe
             documentCount: texts.length
         }
     };
+}
+
+export function inferEvaluateRequestRequirements(options: EvaluateCallOptions): InferredModelRequest {
+    const questionTypes = collectEvaluateQuestionTypes(options.questions);
+    return {
+        requirements: {
+            textInput: true,
+            evaluation: {
+                required: true,
+                ...(questionTypes.length > 0 ? { questionTypes } : {})
+            },
+            providerInterfaces: { evaluateCall: true }
+        },
+        operation: 'evaluate',
+        scoreContext: { operation: 'evaluate' }
+    };
+}
+
+function collectEvaluateQuestionTypes(
+    questions: EvaluateCallOptions['questions']
+): Array<'boolean' | 'choice' | 'score'> {
+    const types = new Set<'boolean' | 'choice' | 'score'>();
+    if (questions instanceof z.ZodType || (questions && typeof questions === 'object' && 'safeParse' in questions && '_def' in questions)) {
+        const shape = (questions as z.ZodObject<z.ZodRawShape>).shape;
+        if (shape) {
+            for (const field of Object.values(shape)) {
+                if (isEvaluateQuestionHelper(field)) {
+                    types.add(getQuestionFromHelper(field).type);
+                }
+            }
+        }
+        return [...types];
+    }
+    if (questions && typeof questions === 'object' && !Array.isArray(questions)) {
+        for (const value of Object.values(questions as Record<string, unknown>)) {
+            if (isEvaluateQuestionHelper(value)) {
+                types.add(getQuestionFromHelper(value).type);
+            } else if (value && typeof value === 'object' && 'type' in value) {
+                const type = (value as EvaluateQuestion).type;
+                if (type === 'boolean' || type === 'choice' || type === 'score') {
+                    types.add(type);
+                }
+            }
+        }
+    }
+    return [...types];
 }
 
 export function inferTranscriptionRequestRequirements(options: TranscriptionCallOptions): InferredModelRequest {

@@ -7,6 +7,7 @@ export const providerEnv: Record<string, { apiKeyEnv: string }> = {
     openrouter: { apiKeyEnv: 'OPENROUTER_API_KEY' },
     gemini: { apiKeyEnv: 'GEMINI_API_KEY' },
     siliconflow: { apiKeyEnv: 'SILICONFLOW_API_KEY' },
+    vercel: { apiKeyEnv: 'AI_GATEWAY_API_KEY' },
     // Extend as new providers are added
 };
 

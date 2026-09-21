@@ -6,6 +6,7 @@ import { defaultModels as veniceModels } from '../../adapters/venice/models.ts';
 import { defaultModels as openrouterModels } from '../../adapters/openrouter/models.ts';
 import { defaultModels as geminiModels } from '../../adapters/gemini/models.ts';
 import { defaultModels as siliconFlowModels } from '../../adapters/siliconflow/models.ts';
+import { defaultModels as vercelModels } from '../../adapters/vercel/models.ts';
 import type { RegisteredProviders } from '../../adapters/index.ts';
 
 export class ModelManager {
@@ -62,6 +63,9 @@ export class ModelManager {
                 break;
             case 'siliconflow':
                 siliconFlowModels.forEach(model => this.models.set(model.name, model));
+                break;
+            case 'vercel':
+                vercelModels.forEach(model => this.models.set(model.name, model));
                 break;
             default:
                 throw new Error(`Unsupported provider: ${providerName}`);

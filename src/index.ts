@@ -23,12 +23,35 @@ export type {
     RerankParams,
     RerankResult,
     RerankResponse,
+    EvaluateState,
+    EvaluateInstructions,
+    BooleanQuestion,
+    ChoiceQuestion,
+    ScoreQuestion,
+    EvaluateQuestion,
+    EvaluateQuestions,
+    BooleanAnswer,
+    ChoiceAnswer,
+    ScoreAnswer,
+    EvaluateAnswer,
+    EvaluateAnswers,
+    AnswersForQuestions,
+    EvaluateParams,
+    EvaluateResponse,
+    EvaluateCallOptions,
     RetryPolicy,
     RetryFailureClass,
     RetryAttemptEvent,
     RetryStructuredOutputReason
 } from './interfaces/UniversalInterfaces.ts';
-export type { LLMProviderRerank } from './interfaces/LLMProvider.ts';
+export type { LLMProviderRerank, LLMProviderEvaluate } from './interfaces/LLMProvider.ts';
+export {
+    booleanQuestion,
+    choiceQuestion,
+    scoreQuestion,
+    compileEvaluateQuestions,
+    normalizeEvaluateQuestions
+} from './core/evaluate/questions.ts';
 export type { LLMExecutionControl, LLMTerminalReason } from './interfaces/ExecutionInterfaces.ts';
 export { LLMAbortError, LLMTimeoutError } from './core/execution/errors.ts';
 export { ProviderTransportError, isProviderTransportError } from './core/retry/ProviderTransportError.ts';

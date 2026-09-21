@@ -21,6 +21,7 @@ import { audioTranslate } from './audioTranslate.ts';
 import { multimodalInput } from './multimodalInput.ts';
 import { videoGenerate } from './videoGenerate.ts';
 import { rerankScenario } from './rerank.ts';
+import { evaluateScenario } from './evaluate.ts';
 
 export const allScenarios: Scenario[] = [
     simpleChat,
@@ -45,4 +46,5 @@ export const allScenarios: Scenario[] = [
     audioSpeech,
     audioTranslate,
     rerankScenario,
+    evaluateScenario,
 ];

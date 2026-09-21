@@ -141,6 +141,7 @@ OPENROUTER_API_KEY=...
 CEREBRAS_API_KEY=...
 VENICE_API_KEY=...
 SILICONFLOW_API_KEY=...
+AI_GATEWAY_API_KEY=...
 ```
 
 ## Run Locally
@@ -177,6 +178,8 @@ The repository examples can also be run directly:
 yarn example:simple
 yarn example:json
 yarn example:tool
+yarn example:reranking
+yarn example:evaluation
 yarn example:modelSelection
 ```
 
@@ -284,6 +287,7 @@ The same request model also applies to:
 - **Video**: asynchronous video jobs with status polling, download helpers, usage seconds, and estimated video cost.
 - **Embeddings**: exact embedding models for retrieval systems or dynamic embedding-capable selection for one-off jobs.
 - **Reranking**: provider-neutral query/document reranking with typed document IDs, capability-aware selection, and normalized usage.
+- **Evaluation**: System One typed questions (boolean, choice, score) against shared state via `caller.evaluate()` (for example Vercel Jev).
 - **Large inputs**: split large strings, objects, and markdown into model-sized chunks.
 - **MCP and function folders**: expose external tool servers or load local tool files by name.
 
@@ -401,6 +405,7 @@ Guides:
 - [Media: images, video, and audio](docs/guides/media.md)
 - [Embeddings](docs/guides/embeddings.md)
 - [Reranking](docs/guides/reranking.md)
+- [Evaluation](docs/guides/evaluation.md)
 - [Telemetry and usage](docs/guides/telemetry-and-usage.md)
 - [Settings, retries, and overrides](docs/guides/retries-and-settings.md)
 
@@ -439,10 +444,13 @@ Provider registry keys and environment variables:
 | Cerebras | `cerebras` | `CEREBRAS_API_KEY` |
 | Venice | `venice` | `VENICE_API_KEY` |
 | SiliconFlow | `siliconflow` | `SILICONFLOW_API_KEY` |
+| Vercel AI Gateway | `vercel` | `AI_GATEWAY_API_KEY` |
 
 Support is model-specific. Dynamic selection filters by the actual model capabilities before scoring. Structured JSON output is available through `callllm` for all chat-capable providers: native JSON mode is used when available, and prompt/schema fallback is used otherwise unless `jsonMode: 'native-only'` is requested.
 
 SiliconFlow currently supports chat, streaming, reasoning, function tools, reranking, usage/cost mapping, and JSON object mode through this adapter. Provider-specific chat parameters can be passed under `settings.providerOptions.siliconflow`, for example `{ enable_thinking: true, thinking_budget: 8192 }`. Reranking supports the cataloged Qwen3 reranker models through `caller.rerank()`. Embedding, image, audio, and video endpoints are not yet exposed by this adapter.
+
+Vercel AI Gateway currently supports chat, streaming, reasoning, function tools, embeddings, image generate/edit, reranking, evaluation (Jev via `caller.evaluate()`), usage/cost mapping, and JSON / structured output through the OpenAI-compatible APIs at `https://ai-gateway.vercel.sh/v1` (plus `/v2/rerank` and `/v1/evaluate`). Gateway routing options (`order`, `only`, `sort`, fallbacks, tags, BYOK, and related flags) can be passed under `settings.providerOptions.gateway`. Video and audio endpoints are not yet exposed by this adapter. Refresh the generated model catalog with `yarn fetch:vercel-models` (or `yarn fetch:models` for all providers that support catalog generation).
 
 ## Production Notes
 

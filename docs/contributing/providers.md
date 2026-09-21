@@ -13,7 +13,8 @@ const ADAPTER_REGISTRY = {
   venice: VeniceAdapter,
   openrouter: OpenRouterAdapter,
   gemini: GeminiAdapter,
-  siliconflow: SiliconFlowAdapter
+  siliconflow: SiliconFlowAdapter,
+  vercel: VercelAdapter
 } as const;
 ```
 
@@ -34,6 +35,7 @@ A provider can implement one or more surfaces:
 - video provider
 - embedding provider
 - reranking provider
+- evaluation provider
 - audio provider
 
 Dynamic model selection checks both model capabilities and adapter interface support. For example, a model with `output.image` still cannot be selected for image generation if the provider adapter does not implement `imageCall`.
@@ -49,6 +51,8 @@ Catalog entries should include:
 - capabilities
 - quality/speed/latency characteristics
 - media limits and pricing where applicable
+
+If the provider exposes a models API, generate the catalog with a fetch script and register it in `scripts/fetch-all-models.ts`. Use `yarn fetch:<provider>-models` for one provider or `yarn fetch:models` for all generators. See `ADAPTER_CREATION_RULES.md` for the full workflow.
 
 See [Models and capabilities](../reference/models-and-capabilities.md).
 
@@ -76,6 +80,7 @@ Add tests for every implemented surface:
 - video
 - embeddings
 - reranking
+- evaluation
 - audio
 - usage mapping
 - error mapping

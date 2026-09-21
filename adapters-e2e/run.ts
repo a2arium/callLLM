@@ -108,19 +108,33 @@ async function run() {
                     if (modelName) break;
                 }
                 // Special handling for streaming: prefer non-reasoning models when available
-                if (scenario.id === 'streaming-chat') {
+                if (scenario.id === 'streaming-chat' || scenario.id === 'streaming-json') {
                     try {
                         const models = selectorCaller.getAvailableModels();
                         const candidates = models.filter(m => {
+                            if (m.maxResponseTokens <= 0 || m.maxRequestTokens <= 0) return false;
+                            if (/-beta$/i.test(m.name)) return false;
                             const caps = m.capabilities || { output: { text: { textOutputFormats: ['text'] } } as any } as any;
                             const textCap = caps.output?.text;
                             const supportsText = textCap !== false;
                             const supportsStreaming = Boolean(caps.streaming);
                             const isReasoning = Boolean(caps.reasoning);
-                            return supportsText && supportsStreaming && !isReasoning;
+                            if (!supportsText || !supportsStreaming || isReasoning) return false;
+                            if (scenario.id === 'streaming-json') {
+                                const formats = typeof textCap === 'object' && Array.isArray(textCap.textOutputFormats)
+                                    ? textCap.textOutputFormats
+                                    : ['text'];
+                                return formats.includes('json');
+                            }
+                            return true;
                         });
                         if (candidates.length > 0) {
-                            const fastest = candidates.reduce((a, b) => (a.characteristics.outputSpeed > b.characteristics.outputSpeed ? a : b));
+                            const fastest = candidates.reduce((a, b) => {
+                                if (a.characteristics.outputSpeed !== b.characteristics.outputSpeed) {
+                                    return a.characteristics.outputSpeed > b.characteristics.outputSpeed ? a : b;
+                                }
+                                return a.inputPricePerMillion <= b.inputPricePerMillion ? a : b;
+                            });
                             modelName = fastest.name;
                         }
                     } catch { }
@@ -133,6 +147,7 @@ async function run() {
                         'audio-round-trip', 'text-to-speech', 'audio-translate',
                         'multimodal-input', 'video-generate',
                         'rerank',
+                        'evaluate',
                     ];
                     if (specializedIds.includes(scenario.id)) {
                         try {
@@ -176,16 +191,32 @@ async function run() {
                     console.log(`\n--- Running '${scenario.title}' on ${provider} • model='${modelName}' ---`);
                 }
 
-                // If scenario needs images, ensure provider implements image interface
-                const needsImages = Boolean(scenario.requirements.imageOutput?.required || scenario.requirements.imageInput?.required);
+                // Gate provider interfaces: image generation needs imageCall; chat vision
+                // (imageInput / multimodal) does not. Video/audio skip cleanly when deferred.
+                const needsImageOutput = Boolean(scenario.requirements.imageOutput?.required);
                 const needsRerank = Boolean(scenario.requirements.reranking?.required);
+                const needsEvaluate = Boolean(scenario.requirements.evaluation?.required);
+                const needsVideo = Boolean(scenario.requirements.videoOutput?.required);
+                const needsAudio = Boolean(scenario.requirements.audio?.required);
                 const pm: any = (caller as any)["providerManager"];
-                if (needsImages && pm && typeof pm.supportsImageGeneration === 'function' && !pm.supportsImageGeneration()) {
+                if (needsImageOutput && pm && typeof pm.supportsImageGeneration === 'function' && !pm.supportsImageGeneration()) {
                     console.log(`[skip] ${provider} provider doesn’t support image API for '${scenario.id}'`);
                     continue;
                 }
                 if (needsRerank && pm && typeof pm.supportsReranking === 'function' && !pm.supportsReranking()) {
                     console.log(`[skip] ${provider} provider doesn’t support reranking for '${scenario.id}'`);
+                    continue;
+                }
+                if (needsEvaluate && pm && typeof pm.supportsEvaluation === 'function' && !pm.supportsEvaluation()) {
+                    console.log(`[skip] ${provider} provider doesn’t support evaluation for '${scenario.id}'`);
+                    continue;
+                }
+                if (needsVideo && pm && typeof pm.supportsVideoGeneration === 'function' && !pm.supportsVideoGeneration()) {
+                    console.log(`[skip] ${provider} provider doesn’t support video API for '${scenario.id}'`);
+                    continue;
+                }
+                if (needsAudio && pm && typeof pm.supportsAudio === 'function' && !pm.supportsAudio()) {
+                    console.log(`[skip] ${provider} provider doesn’t support audio API for '${scenario.id}'`);
                     continue;
                 }
 

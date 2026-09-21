@@ -53,6 +53,16 @@ caller.checkRerankCapabilities(modelName): RerankingCapabilityInfo
 
 `rerank()` accepts a query and an array of strings or typed text documents. It is stateless and does not modify chat history. See [Reranking](../guides/reranking.md).
 
+## Evaluation
+
+```ts
+caller.evaluate(options): Promise<EvaluateResponse>
+caller.getAvailableEvaluationModels(): string[]
+caller.checkEvaluationCapabilities(modelName): EvaluationCapabilityInfo
+```
+
+`evaluate()` accepts shared `state` and typed questions (`boolean`, `choice`, `score`). Plain question maps and Zod objects of `booleanQuestion` / `choiceQuestion` / `scoreQuestion` helpers are supported. See [Evaluation](../guides/evaluation.md).
+
 ## Audio
 
 ```ts

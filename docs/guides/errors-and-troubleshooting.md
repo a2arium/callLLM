@@ -7,7 +7,7 @@ LLM applications fail in predictable ways: bad credentials, unsupported models, 
 | Symptom | Likely cause | What to do |
 | --- | --- | --- |
 | API key error | missing or invalid provider key | set the provider env var or pass `apiKey` / `providerApiKeys` |
-| `ProviderNotFoundError` | unknown provider key | use one of `openai`, `gemini`, `openrouter`, `cerebras`, `venice` |
+| `ProviderNotFoundError` | unknown provider key | use one of `openai`, `gemini`, `openrouter`, `cerebras`, `venice`, `siliconflow`, `vercel` |
 | `ModelNotFoundError` | model not in provider scope | check spelling or provider scope |
 | `AmbiguousModelError` | exact model exists in multiple providers | use `{ provider, model }` |
 | `ModelSelectionConfigError` | invalid selection object | use a preset, exact model, or non-empty policy |

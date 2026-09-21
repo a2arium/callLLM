@@ -146,6 +146,7 @@ metadata?: Metadata;
   - `capabilities.reasoning`
   - `capabilities.embeddings`
   - `capabilities.reranking`
+  - `capabilities.evaluation`
   - `capabilities.audio`
   - `capabilities.input.image`
   - `capabilities.output.text.textOutputFormats`
@@ -172,6 +173,7 @@ Implement optional provider interfaces when the provider supports them:
 - `videoCall`, `retrieveVideo`, `downloadVideo` for video jobs and downloads
 - `embeddingCall` for embeddings
 - `rerankCall` for query/document reranking
+- `evaluateCall` for System One / evaluation (boolean, choice, score)
 - audio APIs for transcription, translation, and speech synthesis
 
 These interfaces are part of request-time model selection. A candidate model must satisfy both model capability metadata and provider interface availability.
@@ -248,9 +250,15 @@ export interface UniversalStreamResponse<T = unknown> {
 ### How adapters are discovered and instantiated
 
 - Register new adapters in `src/adapters/index.ts`:
-```11:16:src/adapters/index.ts
+```ts
 const ADAPTER_REGISTRY = {
-    'openai': OpenAIResponseAdapter as AdapterConstructor,
+    openai: OpenAIResponseAdapter as AdapterConstructor,
+    cerebras: CerebrasAdapter as AdapterConstructor,
+    venice: VeniceAdapter as AdapterConstructor,
+    openrouter: OpenRouterAdapter as AdapterConstructor,
+    gemini: GeminiAdapter as AdapterConstructor,
+    siliconflow: SiliconFlowAdapter as AdapterConstructor,
+    vercel: VercelAdapter as AdapterConstructor,
 } as const;
 
 export const adapterRegistry = new Map<string, AdapterConstructor>(
@@ -653,19 +661,67 @@ export const mapProviderError = (error: unknown): OpenAIResponseAdapterError => 
 ### Models and capabilities
 
 - Add a `models.ts` in your adapter directory and register those in `ModelManager` based on provider name:
-```41:49:src/core/models/ModelManager.ts
-    private initializeModels(providerName: RegisteredProviders): void {
-        switch (providerName) {
-            case 'openai':
-                openAIResponseModels.forEach(model => this.models.set(model.name, model));
-                break;
-            // Add other providers here when implemented
-            default:
-                throw new Error(`Unsupported provider: ${providerName}`);
-        }
+```ts
+private initializeModels(providerName: RegisteredProviders): void {
+    switch (providerName) {
+        case 'openai':
+            openAIResponseModels.forEach(model => this.models.set(model.name, model));
+            break;
+        case 'cerebras':
+            cerebrasModels.forEach(model => this.models.set(model.name, model));
+            break;
+        case 'venice':
+            veniceModels.forEach(model => this.models.set(model.name, model));
+            break;
+        case 'openrouter':
+            openrouterModels.forEach(model => this.models.set(model.name, model));
+            break;
+        case 'gemini':
+            geminiModels.forEach(model => this.models.set(model.name, model));
+            break;
+        case 'siliconflow':
+            siliconFlowModels.forEach(model => this.models.set(model.name, model));
+            break;
+        case 'vercel':
+            vercelModels.forEach(model => this.models.set(model.name, model));
+            break;
+        default:
+            throw new Error(`Unsupported provider: ${providerName}`);
     }
+}
 ```
+- Also add the catalog to `DEFAULT_PROVIDER_MODEL_CATALOGS` in `src/core/models/ModelCatalog.ts`.
 - Each `ModelInfo` should declare pricing, token limits, and capabilities (streaming, toolCalls, parallelToolCalls, reasoning, input/output formats). The capability map drives features like tool calling and JSON mode decisions across controllers.
+
+### Model catalog generation
+
+If the provider exposes a models discovery API, generate `src/adapters/<provider>/models.ts` instead of maintaining it by hand.
+
+1. Add `scripts/fetch-<provider>-models.ts` that:
+   - Fetches the provider's models list
+   - Maps each entry into `ModelInfo` (pricing units, token limits, capabilities, characteristics)
+   - Overwrites `src/adapters/<provider>/models.ts` with a generated timestamp comment
+2. Add a package script:
+   ```json
+   "fetch:<provider>-models": "tsx scripts/fetch-<provider>-models.ts"
+   ```
+3. Register the fetcher in `scripts/fetch-all-models.ts` (include the required env var name when auth is needed).
+4. Refresh one provider with `yarn fetch:<provider>-models`.
+5. Refresh every supporting provider with `yarn fetch:models`.
+
+Current catalog generators:
+
+- `yarn fetch:openrouter-models` — requires `OPENROUTER_API_KEY`
+- `yarn fetch:venice-models` — requires `VENICE_API_KEY`
+- `yarn fetch:vercel-models` — public catalog (`AI_GATEWAY_API_KEY` optional)
+- `yarn fetch:models` — runs all registered generators; skips providers whose required env is missing; exits non-zero if any fetch fails
+
+Rules for generated catalogs:
+
+- Do not hand-edit generated `models.ts` files; change the fetch script and regenerate.
+- Map pricing carefully (per-token vs per-million vs flat image prices).
+- Keep capability flags honest relative to adapter surfaces. Catalog-only types (for example image/video/rerank/evaluation models) without `imageCall` / `videoCall` / `rerankCall` / `evaluateCall` remain discoverable but are skipped by selection when the adapter does not implement those interfaces.
+- Characteristics may use baseline placeholders when the discovery API does not expose quality/speed metrics.
 
 ### Video generation support (Sora-like models)
 
@@ -925,9 +981,18 @@ export class YourProviderStreamHandler {
 import { YourProviderAdapter } from './yourprovider/adapter';
 const ADAPTER_REGISTRY = {
   openai: OpenAIResponseAdapter as AdapterConstructor,
+  cerebras: CerebrasAdapter as AdapterConstructor,
+  venice: VeniceAdapter as AdapterConstructor,
+  openrouter: OpenRouterAdapter as AdapterConstructor,
+  gemini: GeminiAdapter as AdapterConstructor,
+  siliconflow: SiliconFlowAdapter as AdapterConstructor,
+  vercel: VercelAdapter as AdapterConstructor,
   yourprovider: YourProviderAdapter as AdapterConstructor,
 } as const;
 ```
+- Wire the model catalog in `ModelManager` and `ModelCatalog`.
+- Add e2e env mapping in `adapters-e2e/providerConfig.ts`.
+- If the provider has a models API, add a fetch script and register it in `scripts/fetch-all-models.ts`.
 
 ### Tests and scenarios to add
 

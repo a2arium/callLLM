@@ -9,6 +9,7 @@ export type SelectionOperation =
     | 'reasoning'
     | 'embeddings'
     | 'rerank'
+    | 'evaluate'
     | 'imageInput'
     | 'imageOutput'
     | 'video'
@@ -220,6 +221,8 @@ export function getOperationCost(
             return model.inputPricePerMillion;
         case 'rerank':
             return getRerankCost(model, context);
+        case 'evaluate':
+            return model.inputPricePerMillion;
         case 'text':
         case 'json':
         case 'tools':
@@ -297,6 +300,7 @@ function getDimensionRelevance(operation: SelectionOperation): Record<Preference
     switch (operation) {
         case 'embeddings':
         case 'rerank':
+        case 'evaluate':
             return { cost: true, latency: true, throughput: false, quality: true, context: true };
         case 'imageOutput':
         case 'video':
@@ -317,6 +321,7 @@ function getDimensionRelevance(operation: SelectionOperation): Record<Preference
 
 function isNonTextMediaOperation(operation: SelectionOperation): boolean {
     return operation === 'rerank'
+        || operation === 'evaluate'
         || operation === 'imageOutput'
         || operation === 'video'
         || operation === 'audioTranscribe'

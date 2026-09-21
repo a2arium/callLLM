@@ -28,6 +28,8 @@ export {
     supportsAudioOutput,
     supportsVideoOutput,
     supportsEmbeddings,
+    supportsReranking,
+    supportsEvaluation,
     supportsAudioApi,
     supportsToolCalls
 } from './models/CapabilityMatcher.ts';
@@ -37,6 +39,14 @@ export type {
     ProviderInterfaceSupport,
     CapabilityMatchResult
 } from './models/CapabilityMatcher.ts';
+export { EvaluateController } from './evaluate/EvaluateController.ts';
+export {
+    booleanQuestion,
+    choiceQuestion,
+    scoreQuestion,
+    compileEvaluateQuestions,
+    normalizeEvaluateQuestions
+} from './evaluate/questions.ts';
 export {
     rankCandidates,
     applyModelConstraints,

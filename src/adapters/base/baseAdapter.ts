@@ -12,7 +12,9 @@ import type {
     TranslationResponse,
     SpeechResponse,
     RerankParams,
-    RerankResponse
+    RerankResponse,
+    EvaluateParams,
+    EvaluateResponse
 } from '../../interfaces/UniversalInterfaces.ts';
 import type { LLMExecutionControl } from '../../interfaces/ExecutionInterfaces.ts';
 import type { LLMProvider } from '../../interfaces/LLMProvider.ts';
@@ -51,6 +53,9 @@ export abstract class BaseAdapter implements LLMProvider {
 
     /** Optional query/document reranking support. */
     rerankCall?(model: string, params: RerankParams, control?: LLMExecutionControl): Promise<RerankResponse>;
+
+    /** Optional System One / evaluation support (boolean, choice, score). */
+    evaluateCall?(model: string, params: EvaluateParams, control?: LLMExecutionControl): Promise<EvaluateResponse>;
 
     /**
      * Convert embedding parameters to provider-specific format.

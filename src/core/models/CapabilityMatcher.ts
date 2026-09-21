@@ -46,6 +46,10 @@ export type RequestRequirements = {
         estimatedDocumentTokens?: number;
         estimatedTotalTokens?: number;
     };
+    evaluation?: {
+        required: boolean;
+        questionTypes?: Array<'boolean' | 'choice' | 'score'>;
+    };
     audioApi?: {
         required: boolean;
         operations?: ('transcribe' | 'translate' | 'synthesize')[];
@@ -73,6 +77,7 @@ export type RequestRequirements = {
         videoCall?: boolean;
         embeddingCall?: boolean;
         rerankCall?: boolean;
+        evaluateCall?: boolean;
         audioCall?: boolean;
     };
 };
@@ -82,6 +87,7 @@ export type ProviderInterfaceSupport = {
     videoCall?: boolean;
     embeddingCall?: boolean;
     rerankCall?: boolean;
+    evaluateCall?: boolean;
     audioCall?: boolean;
 };
 
@@ -173,6 +179,10 @@ export function explainCapabilityMatch(
 
     if (requirements.reranking?.required && !supportsReranking(capabilities, requirements.reranking)) {
         reasons.push(formatRerankingReason(requirements.reranking));
+    }
+
+    if (requirements.evaluation?.required && !supportsEvaluation(capabilities, requirements.evaluation)) {
+        reasons.push(formatEvaluationReason(requirements.evaluation));
     }
 
     if (requirements.audioApi?.required && !supportsAudioApi(capabilities, requirements.audioApi)) {
@@ -332,6 +342,22 @@ export function supportsReranking(
     return true;
 }
 
+export function supportsEvaluation(
+    capabilities: ModelCapabilities,
+    requirement: NonNullable<RequestRequirements['evaluation']>
+): boolean {
+    const capability = capabilities.evaluation;
+    if (!capability) return false;
+    if (capability === true) return true;
+    if (requirement.questionTypes?.length) {
+        const supported = capability.questionTypes;
+        if (supported && !requirement.questionTypes.every(type => supported.includes(type))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 export function supportsAudioApi(
     capabilities: ModelCapabilities,
     requirement: NonNullable<RequestRequirements['audioApi']>
@@ -427,6 +453,7 @@ function checkProviderInterfaces(
     if (required.videoCall && available.videoCall !== true) reasons.push('provider videoCall interface is not available');
     if (required.embeddingCall && available.embeddingCall !== true) reasons.push('provider embeddingCall interface is not available');
     if (required.rerankCall && available.rerankCall !== true) reasons.push('provider rerankCall interface is not available');
+    if (required.evaluateCall && available.evaluateCall !== true) reasons.push('provider evaluateCall interface is not available');
     if (required.audioCall && available.audioCall !== true) reasons.push('provider audioCall interface is not available');
 
     return reasons;
@@ -481,6 +508,12 @@ function formatRerankingReason(requirement: NonNullable<RequestRequirements['rer
     return details.length
         ? `reranking does not support required options: ${details.join(', ')}`
         : 'reranking is not supported';
+}
+
+function formatEvaluationReason(requirement: NonNullable<RequestRequirements['evaluation']>): string {
+    return requirement.questionTypes?.length
+        ? `evaluation does not support required question types: ${requirement.questionTypes.join(', ')}`
+        : 'evaluation is not supported';
 }
 
 function formatAudioApiReason(requirement: NonNullable<RequestRequirements['audioApi']>): string {

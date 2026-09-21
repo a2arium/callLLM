@@ -13,7 +13,7 @@ type ProviderScope = RegisteredProviders | RegisteredProviders[];
 Registered providers:
 
 ```ts
-'openai' | 'gemini' | 'openrouter' | 'cerebras' | 'venice' | 'siliconflow'
+'openai' | 'gemini' | 'openrouter' | 'cerebras' | 'venice' | 'siliconflow' | 'vercel'
 ```
 
 ## Model Selection

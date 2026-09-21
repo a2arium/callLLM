@@ -6,6 +6,7 @@ import { defaultModels as veniceModels } from '../../adapters/venice/models.ts';
 import { defaultModels as openrouterModels } from '../../adapters/openrouter/models.ts';
 import { defaultModels as geminiModels } from '../../adapters/gemini/models.ts';
 import { defaultModels as siliconFlowModels } from '../../adapters/siliconflow/models.ts';
+import { defaultModels as vercelModels } from '../../adapters/vercel/models.ts';
 import type { ExactModelSelection, ProviderScope } from './ModelSelection.ts';
 import { ModelSelectionConfigError } from './ModelSelection.ts';
 
@@ -22,7 +23,8 @@ export const DEFAULT_PROVIDER_MODEL_CATALOGS: Record<RegisteredProviders, readon
     venice: veniceModels,
     openrouter: openrouterModels,
     gemini: geminiModels,
-    siliconflow: siliconFlowModels
+    siliconflow: siliconFlowModels,
+    vercel: vercelModels
 };
 
 export class ModelNotFoundError extends Error {

@@ -56,6 +56,12 @@ export type CapabilityRequirement = {
         required: boolean;
     };
 
+    /** System One / evaluation capability requirements */
+    evaluation?: {
+        required: boolean;
+        questionTypes?: Array<'boolean' | 'choice' | 'score'>;
+    };
+
     /** Reasoning capability requirements */
     reasoning?: {
         /** Whether reasoning is required */
@@ -163,6 +169,22 @@ export class ModelSelector {
 
         if (requirements.reranking?.required && !capabilities.reranking) {
             return false;
+        }
+
+        if (requirements.evaluation?.required) {
+            if (!capabilities.evaluation) return false;
+            if (
+                requirements.evaluation.questionTypes?.length &&
+                typeof capabilities.evaluation === 'object' &&
+                capabilities.evaluation.questionTypes &&
+                !requirements.evaluation.questionTypes.every(type =>
+                    capabilities.evaluation && typeof capabilities.evaluation === 'object'
+                        ? capabilities.evaluation.questionTypes?.includes(type)
+                        : true
+                )
+            ) {
+                return false;
+            }
         }
 
         // Check reasoning requirements

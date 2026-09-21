@@ -731,6 +731,14 @@ export type ModelCapabilities = {
     };
 
     /**
+     * Whether the model supports System One / evaluation questions
+     * (boolean, choice, score) rather than free-form text generation.
+     */
+    evaluation?: boolean | {
+        questionTypes?: Array<'boolean' | 'choice' | 'score'>;
+    };
+
+    /**
      * Standalone audio API support (transcription, translation, TTS), distinct from chat multimodal input.audio/output.audio.
      */
     audio?: boolean | {
@@ -1074,6 +1082,91 @@ export type RerankResponse = {
     model: string;
     usage: Usage;
     metadata?: Metadata;
+};
+
+/** Shared state for evaluation models (string, object, or array). */
+export type EvaluateState = string | Record<string, unknown> | readonly unknown[];
+
+export type EvaluateInstructions = string | Record<string, unknown> | readonly unknown[];
+
+export type BooleanQuestion = {
+    type: 'boolean';
+    instructions: EvaluateInstructions;
+    criteria?: { true?: string; false?: string };
+};
+
+export type ChoiceQuestion<TOptions extends string = string> = {
+    type: 'choice';
+    instructions: EvaluateInstructions;
+    criteria: Record<TOptions, string | null>;
+};
+
+export type ScoreQuestion = {
+    type: 'score';
+    instructions: EvaluateInstructions;
+    criteria: readonly [string, string, ...string[]];
+};
+
+export type EvaluateQuestion = BooleanQuestion | ChoiceQuestion | ScoreQuestion;
+export type EvaluateQuestions = Record<string, EvaluateQuestion>;
+
+export type BooleanAnswer = {
+    type: 'boolean';
+    probability: number;
+};
+
+export type ChoiceAnswer<TOptions extends string = string> = {
+    type: 'choice';
+    choice: TOptions;
+    probabilities: Record<TOptions, number>;
+    confidence?: number;
+};
+
+export type ScoreAnswer = {
+    type: 'score';
+    score: number;
+    probabilities: Record<string, number>;
+    legend?: Record<string, string>;
+    confidence?: number;
+};
+
+export type EvaluateAnswer = BooleanAnswer | ChoiceAnswer | ScoreAnswer;
+export type EvaluateAnswers = Record<string, EvaluateAnswer>;
+
+export type AnswersForQuestions<Q extends EvaluateQuestions> = {
+    [K in keyof Q]: Q[K] extends ChoiceQuestion<infer O>
+        ? ChoiceAnswer<O>
+        : Q[K] extends ScoreQuestion
+            ? ScoreAnswer
+            : Q[K] extends BooleanQuestion
+                ? BooleanAnswer
+                : EvaluateAnswer;
+};
+
+/** Normalized provider request after controller validation. */
+export type EvaluateParams = {
+    state: EvaluateState;
+    questions: EvaluateQuestions;
+    providerOptions?: Record<string, unknown>;
+};
+
+export type EvaluateResponse<A extends EvaluateAnswers = EvaluateAnswers> = {
+    answers: A;
+    model: string;
+    usage: Usage;
+    metadata?: Metadata;
+};
+
+export type EvaluateCallOptions<Q extends EvaluateQuestions = EvaluateQuestions> = {
+    state: EvaluateState;
+    questions: Q | z.ZodTypeAny;
+    model?: string;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    usageCallback?: UsageCallback;
+    settings?: {
+        providerOptions?: Record<string, unknown>;
+    };
 };
 
 /** Operations routed through {@link LLMProviderAudio.audioCall}. */

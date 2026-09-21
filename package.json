@@ -66,6 +66,7 @@
     "example:imageGenerate": "tsx examples/imageGenerationAndEditing.ts",
     "example:embeddings": "tsx examples/embeddings-example.ts",
     "example:reranking": "tsx examples/reranking.ts",
+    "example:evaluation": "tsx examples/evaluation.ts",
     "example:modelSelection": "tsx examples/modelSelection.ts",
     "example:video": "tsx examples/videoGeneration.ts",
     "example:speechSynthesis": "tsx examples/speechSynthesis.ts",
@@ -74,6 +75,8 @@
     "adapters:e2e:fast": "tsx adapters-e2e/run.ts --providers=venice --scenarios=simple-chat,streaming-chat",
     "fetch:venice-models": "tsx scripts/fetch-venice-models.ts",
     "fetch:openrouter-models": "tsx scripts/fetch-openrouter-models.ts",
+    "fetch:vercel-models": "tsx scripts/fetch-vercel-models.ts",
+    "fetch:models": "tsx scripts/fetch-all-models.ts",
     "lint": "eslint . --ext .ts",
     "verify:dist-types": "tsc --project verification/tsconfig.json",
     "verify:attw": "attw --pack ."

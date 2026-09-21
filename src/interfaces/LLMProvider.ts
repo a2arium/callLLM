@@ -18,7 +18,9 @@ import type {
     TranslationResponse,
     SpeechResponse,
     RerankParams,
-    RerankResponse
+    RerankResponse,
+    EvaluateParams,
+    EvaluateResponse
 } from './UniversalInterfaces.ts';
 
 export type { AudioOp } from './UniversalInterfaces.ts';
@@ -105,6 +107,18 @@ export interface LLMProviderRerank {
         params: RerankParams,
         control?: LLMExecutionControl
     ): Promise<RerankResponse>;
+}
+
+/**
+ * Interface for providers that support System One / evaluation models
+ * (boolean, choice, score questions against shared state).
+ */
+export interface LLMProviderEvaluate {
+    evaluateCall(
+        model: string,
+        params: EvaluateParams,
+        control?: LLMExecutionControl
+    ): Promise<EvaluateResponse>;
 }
 
 /**
