@@ -191,12 +191,17 @@ export class Converter {
         // Instructions are supported on the Responses API for all models (including GPT-5 / reasoning).
         // Input may include EasyInputMessage and native function_call / function_call_output items.
         let input: ResponseInputItem[] = [];
-        const instructions: string | undefined = params.systemMessage || undefined;
+        // Reasoning models skip system/developer in `input` and require `instructions`.
+        // Prefer explicit systemMessage; otherwise lift from messages (callMessages shape).
+        // Non-reasoning keeps system roles in `input` and only uses explicit systemMessage here.
+        const instructions: string | undefined = hasReasoningCapability
+            ? this.resolveInstructions(params)
+            : (params.systemMessage || undefined);
 
         if (hasReasoningCapability) {
             // System text is sent via `instructions`; preserve tool history as native items.
             for (const message of params.messages) {
-                if (message.role === 'system') {
+                if (message.role === 'system' || message.role === 'developer') {
                     continue;
                 }
                 if (this.appendFunctionCallHistory(message, input)) {
@@ -660,6 +665,24 @@ export class Converter {
         }
 
         return false;
+    }
+
+    /**
+     * Resolve Responses `instructions` from an explicit systemMessage, or from
+     * system/developer roles in messages when that field is absent (callMessages path).
+     * @private
+     */
+    private resolveInstructions(params: UniversalChatParams): string | undefined {
+        if (params.systemMessage) {
+            return params.systemMessage;
+        }
+
+        const fromMessages = (params.messages || [])
+            .filter(m => m.role === 'system' || m.role === 'developer')
+            .map(m => typeof m.content === 'string' ? m.content : String(m.content ?? ''))
+            .filter(content => content.length > 0);
+
+        return fromMessages.length > 0 ? fromMessages.join('\n\n') : undefined;
     }
 
     /**

@@ -1,6 +1,7 @@
 jest.mock('@dqbd/tiktoken');
 
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { z } from 'zod';
 import { LLMCaller } from '../../../../core/caller/LLMCaller.ts';
 import { HistoryManager } from '../../../../core/history/HistoryManager.ts';
 import { TokenCalculator } from '../../../../core/models/TokenCalculator.ts';
@@ -139,10 +140,16 @@ describe('LLMCaller.callMessages', () => {
   let caller: LLMCaller;
   let tokenCalculator: TokenCalculator;
 
-  function createCaller(opts?: { maxRequestTokens?: number; provider?: RegisteredProviders }): LLMCaller {
+  function createCaller(opts?: {
+    maxRequestTokens?: number;
+    provider?: RegisteredProviders;
+    modelName?: string;
+    capabilities?: ModelInfo['capabilities'];
+  }): LLMCaller {
     historyManager = new HistoryManager(CONSTRUCTOR_SYSTEM);
     mockChatCall = jest.fn(async () => textResponse('ok'));
     const providerName = opts?.provider ?? 'openai';
+    const modelName = opts?.modelName ?? MODEL_NAME;
 
     const mockProvider = {
       chatCall: mockChatCall,
@@ -160,7 +167,9 @@ describe('LLMCaller.callMessages', () => {
 
     const modelInfo: ModelInfo = {
       ...baseModelInfo,
-      maxRequestTokens: opts?.maxRequestTokens ?? baseModelInfo.maxRequestTokens
+      name: modelName,
+      maxRequestTokens: opts?.maxRequestTokens ?? baseModelInfo.maxRequestTokens,
+      capabilities: opts?.capabilities ?? baseModelInfo.capabilities
     };
 
     const mockModelManager = {
@@ -168,7 +177,7 @@ describe('LLMCaller.callMessages', () => {
       getAvailableModels: jest.fn(() => [modelInfo]),
       addModel: jest.fn(),
       updateModel: jest.fn(),
-      resolveModel: jest.fn(() => MODEL_NAME),
+      resolveModel: jest.fn(() => modelName),
       hasModel: jest.fn(() => true)
     };
 
@@ -193,7 +202,7 @@ describe('LLMCaller.callMessages', () => {
     jest.spyOn(tokenCalculator, 'calculateTokens').mockReturnValue(10);
     jest.spyOn(tokenCalculator, 'calculateTotalTokens').mockReturnValue(40);
 
-    return new LLMCaller(providerName, MODEL_NAME, CONSTRUCTOR_SYSTEM, {
+    return new LLMCaller(providerName, modelName, CONSTRUCTOR_SYSTEM, {
       historyManager,
       providerManager: mockProviderManager as never,
       modelManager: mockModelManager as never,
@@ -254,6 +263,170 @@ describe('LLMCaller.callMessages', () => {
         { data: 'nope' } as never
       )).rejects.toBeInstanceOf(CallMessagesValidationError);
       expect(mockChatCall).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reasoning Responses system preservation', () => {
+    const REASONING_MODEL = 'gpt-5.4-mini-2026-03-17';
+    const reasoningCapabilities: ModelInfo['capabilities'] = {
+      streaming: true,
+      toolCalls: true,
+      parallelToolCalls: false,
+      reasoning: true,
+      input: { text: true },
+      output: { text: { textOutputFormats: ['text', 'json'], structuredOutputs: true } }
+    };
+
+    const actorSchema = z.object({
+      action: z.string()
+    });
+
+    beforeEach(() => {
+      caller = createCaller({
+        modelName: REASONING_MODEL,
+        capabilities: reasoningCapabilities
+      });
+    });
+
+    it('keeps request-scoped [system, user] and does not inject constructor system', async () => {
+      const preexisting: UniversalMessage[] = [
+        { role: 'system', content: CONSTRUCTOR_SYSTEM },
+        { role: 'user', content: 'leave me' }
+      ];
+      historyManager.setMessages(preexisting.map(m => ({ ...m })));
+      const before = historyManager.getMessages(true);
+
+      const seed: RequestScopedTextMessage[] = [
+        { role: 'system', content: 'Frozen actor system.' },
+        { role: 'user', content: 'Choose an action' }
+      ];
+
+      await caller.callMessages(seed, { providerStorage: 'disabled' });
+
+      const params = mockChatCall.mock.calls[0][1];
+      expect(params.model).toBe(REASONING_MODEL);
+      expect(params.messages).toEqual(seed);
+      expect(params.messages.some(m => m.content === CONSTRUCTOR_SYSTEM)).toBe(false);
+      expect(params.settings?.providerOptions?.openai).toEqual({ store: false });
+      expect(historyManager.getMessages(true)).toEqual(before);
+    });
+
+    it('preserves [system, user, assistant, user] order and content', async () => {
+      const seed: RequestScopedTextMessage[] = [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'first' },
+        { role: 'assistant', content: 'ack' },
+        { role: 'user', content: 'second' }
+      ];
+
+      await caller.callMessages(seed);
+
+      expect(mockChatCall.mock.calls[0][1].messages).toEqual(seed);
+    });
+
+    it('keeps system and appends format-hint user under native jsonSchema (disposition: keep)', async () => {
+      const seed: RequestScopedTextMessage[] = [
+        { role: 'system', content: 'Frozen actor system.' },
+        { role: 'user', content: 'Choose an action' }
+      ];
+
+      const jsonReply: UniversalChatResponse = {
+        content: '{"action":"stop"}',
+        role: 'assistant',
+        contentObject: { action: 'stop' },
+        metadata: usageMeta(),
+        toolCalls: []
+      };
+      mockChatCall.mockImplementation(async () => jsonReply);
+
+      await caller.callMessages(seed, {
+        providerStorage: 'disabled',
+        jsonSchema: { name: 'Phase5ScientificActorAction', schema: actorSchema },
+        settings: { maxRetries: 0 }
+      });
+
+      const params = mockChatCall.mock.calls[0][1];
+      expect(params.model).toBe(REASONING_MODEL);
+      expect(params.jsonSchema?.name).toBe('Phase5ScientificActorAction');
+      expect(params.settings?.providerOptions?.openai).toEqual({ store: false });
+
+      const systemMsgs = params.messages.filter(m => m.role === 'system');
+      expect(systemMsgs).toHaveLength(1);
+      expect(systemMsgs[0].content).toBe('Frozen actor system.');
+      expect(params.messages.some(m => m.content === CONSTRUCTOR_SYSTEM)).toBe(false);
+
+      const formatHint = params.messages.find(
+        m => m.role === 'user' && (m.metadata?.isFormatInstruction || String(m.content).startsWith('Format instructions:'))
+      );
+      expect(formatHint).toBeDefined();
+      expect(formatHint?.content).toBe('Format instructions: Provide your response in valid JSON format.');
+
+      const nonFormatUsers = params.messages.filter(
+        m => m.role === 'user' && !m.metadata?.isFormatInstruction
+      );
+      expect(nonFormatUsers.map(m => m.content)).toEqual(['Choose an action']);
+    });
+
+    it('replays system across transport retries with store false', async () => {
+      const seed: RequestScopedTextMessage[] = [
+        { role: 'system', content: 'sys surviving retry' },
+        { role: 'user', content: 'retry me' }
+      ];
+
+      mockChatCall
+        .mockImplementationOnce(async () => {
+          throw new Error('Network connection failed');
+        })
+        .mockImplementationOnce(async () => textResponse('ok after retry'));
+
+      await caller.callMessages(seed, {
+        providerStorage: 'disabled',
+        settings: { maxRetries: 2 }
+      });
+
+      expect(mockChatCall).toHaveBeenCalledTimes(2);
+      for (const call of mockChatCall.mock.calls) {
+        expect(call[1].messages.find(m => m.role === 'system')?.content).toBe('sys surviving retry');
+        expect(call[1].settings?.providerOptions?.openai).toEqual({ store: false });
+      }
+    });
+
+    it('keeps system on native tool continuation attempts', async () => {
+      const echoTool: ToolDefinition = {
+        name: 'echo',
+        description: 'Echo',
+        parameters: {
+          type: 'object',
+          properties: { value: { type: 'string' } },
+          required: ['value']
+        },
+        callFunction: (async ({ value }: { value: string }) => ({ echoed: value })) as ToolDefinition['callFunction']
+      };
+
+      const seed: RequestScopedTextMessage[] = [
+        { role: 'system', content: 'tool system' },
+        { role: 'user', content: 'please echo hi' }
+      ];
+
+      mockChatCall
+        .mockResolvedValueOnce({
+          content: '',
+          role: 'assistant',
+          metadata: { finishReason: FinishReason.TOOL_CALLS, usage: usageMeta()?.usage },
+          toolCalls: [{ id: 'call_1', name: 'echo', arguments: { value: 'hi' } }]
+        })
+        .mockResolvedValueOnce(textResponse('done'));
+
+      await caller.callMessages(seed, {
+        providerStorage: 'disabled',
+        tools: [echoTool]
+      });
+
+      expect(mockChatCall).toHaveBeenCalledTimes(2);
+      for (const call of mockChatCall.mock.calls) {
+        expect(call[1].messages.find(m => m.role === 'system')?.content).toBe('tool system');
+        expect(call[1].settings?.providerOptions?.openai).toEqual({ store: false });
+      }
     });
   });
 

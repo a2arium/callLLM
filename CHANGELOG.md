@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.8
+
+- Fix OpenAI Responses reasoning routes dropping the system instruction when it only appears in `messages` (the `callMessages` / ChatController shape). The converter now lifts system/developer text into native `instructions` when `params.systemMessage` is absent, without duplicating it in `input`.
+- Keep the PromptEnhancer trailing format-hint user item under native `json_schema` (intentional).
+- Add converter and `callMessages` regression coverage for messages-only system, multi-turn order, tool continuation, transport retries, and `store: false`.
+
 ## 0.5.7
 
 - Fix the OpenAI Responses schema pass corrupting nodes whose type is defined elsewhere. A sibling `type` is no longer added beside `$ref`, `anyOf`, `oneOf`, or `allOf`, so a nullable property such as `{"type":["string","null"]}` keeps its `null` branch instead of being narrowed to string-only. Compositions nested in array items and inside other composition branches are fixed too.

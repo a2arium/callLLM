@@ -203,6 +203,183 @@ describe('OpenAI Response API Converter', () => {
       expect(result.input?.some((item: any) => item.type === 'function_call_output')).toBe(true);
     });
 
+    describe('reasoning messages-only system (callMessages shape)', () => {
+      const reasoningCaps = {
+        reasoning: true,
+        toolCalls: true,
+        input: { text: true },
+        output: { text: { textOutputFormats: ['text', 'json'], structuredOutputs: true } }
+      };
+
+      const actorSchema = {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          action: { type: 'string', enum: ['tool_call', 'stop'] },
+          toolName: { type: ['string', 'null'] },
+          argumentsJson: { type: ['string', 'null'] }
+        },
+        required: ['action', 'toolName', 'argumentsJson']
+      };
+
+      beforeEach(() => {
+        mockModelManager.getModel.mockReturnValue({
+          name: 'gpt-5.4-mini-2026-03-17',
+          capabilities: reasoningCaps
+        } as any);
+      });
+
+      test('lifts system from messages into instructions when systemMessage is absent', async () => {
+        const systemText = 'You are the frozen actor.';
+        const result = await converter.convertToOpenAIResponseParams(
+          'gpt-5.4-mini-2026-03-17',
+          {
+            model: 'gpt-5.4-mini-2026-03-17',
+            messages: [
+              { role: 'system', content: systemText },
+              { role: 'user', content: 'Close the account' }
+            ]
+          }
+        );
+
+        expect(result.instructions).toBe(systemText);
+        expect(result.input).toEqual([{ role: 'user', content: 'Close the account' }]);
+        expect(result.input?.some((item: any) => item.role === 'system')).toBe(false);
+      });
+
+      test('preserves messages-only system with jsonSchema, store false, and exact model/schema name', async () => {
+        const systemText = 'You are the frozen actor.';
+        const result = await converter.convertToOpenAIResponseParams(
+          'gpt-5.4-mini-2026-03-17',
+          {
+            model: 'gpt-5.4-mini-2026-03-17',
+            messages: [
+              { role: 'system', content: systemText },
+              { role: 'user', content: 'Choose an action' }
+            ],
+            jsonSchema: { name: 'Phase5ScientificActorAction', schema: actorSchema },
+            responseFormat: 'json',
+            settings: {
+              providerOptions: { openai: { store: false } }
+            }
+          }
+        );
+
+        expect(result.model).toBe('gpt-5.4-mini-2026-03-17');
+        expect(result.instructions).toBe(systemText);
+        expect(result.store).toBe(false);
+        expect(result.input).toEqual([{ role: 'user', content: 'Choose an action' }]);
+        expect(result.text?.format).toMatchObject({
+          type: 'json_schema',
+          name: 'Phase5ScientificActorAction',
+          strict: true
+        });
+      });
+
+      test('preserves non-system order for multi-turn messages-only transcripts', async () => {
+        const systemText = 'You are the actor.';
+        const result = await converter.convertToOpenAIResponseParams(
+          'gpt-5.4-mini-2026-03-17',
+          {
+            model: 'gpt-5.4-mini-2026-03-17',
+            messages: [
+              { role: 'system', content: systemText },
+              { role: 'user', content: 'first' },
+              { role: 'assistant', content: 'ack' },
+              { role: 'user', content: 'second' }
+            ]
+          }
+        );
+
+        expect(result.instructions).toBe(systemText);
+        expect(result.input).toEqual([
+          { role: 'user', content: 'first' },
+          { role: 'assistant', content: 'ack' },
+          { role: 'user', content: 'second' }
+        ]);
+      });
+
+      test('tool continuation with messages-only system injects instructions once', async () => {
+        const systemText = 'You are the actor.';
+        const result = await converter.convertToOpenAIResponseParams(
+          'gpt-5.4-mini-2026-03-17',
+          {
+            model: 'gpt-5.4-mini-2026-03-17',
+            messages: [
+              { role: 'system', content: systemText },
+              { role: 'user', content: 'Close the account' },
+              {
+                role: 'assistant',
+                content: '',
+                toolCalls: [{
+                  id: 'call_1',
+                  name: 'close_account',
+                  arguments: { id: 'at58506' }
+                }]
+              },
+              {
+                role: 'tool',
+                content: '{"status":"ambiguous"}',
+                toolCallId: 'call_1'
+              }
+            ]
+          }
+        );
+
+        expect(result.instructions).toBe(systemText);
+        expect(result.input).toEqual([
+          { role: 'user', content: 'Close the account' },
+          {
+            type: 'function_call',
+            call_id: 'call_1',
+            name: 'close_account',
+            arguments: JSON.stringify({ id: 'at58506' }),
+            id: 'call_1'
+          },
+          {
+            type: 'function_call_output',
+            call_id: 'call_1',
+            output: '{"status":"ambiguous"}'
+          }
+        ]);
+        expect(result.input?.some((item: any) => item.role === 'system')).toBe(false);
+      });
+
+      test('explicit systemMessage wins over messages system (no double injection)', async () => {
+        const result = await converter.convertToOpenAIResponseParams(
+          'gpt-5.4-mini-2026-03-17',
+          {
+            model: 'gpt-5.4-mini-2026-03-17',
+            systemMessage: 'Explicit wins.',
+            messages: [
+              { role: 'system', content: 'Messages lose.' },
+              { role: 'user', content: 'hi' }
+            ]
+          }
+        );
+
+        expect(result.instructions).toBe('Explicit wins.');
+        expect(result.input).toEqual([{ role: 'user', content: 'hi' }]);
+      });
+
+      test('joins multiple system/developer messages when systemMessage is absent', async () => {
+        const result = await converter.convertToOpenAIResponseParams(
+          'gpt-5.4-mini-2026-03-17',
+          {
+            model: 'gpt-5.4-mini-2026-03-17',
+            messages: [
+              { role: 'system', content: 'Part A' },
+              { role: 'developer', content: 'Part B' },
+              { role: 'user', content: 'hi' }
+            ]
+          }
+        );
+
+        expect(result.instructions).toBe('Part A\n\nPart B');
+        expect(result.input).toEqual([{ role: 'user', content: 'hi' }]);
+      });
+    });
+
     test('preserves rawArguments when serializing malformed tool call args', async () => {
       const universalParams: UniversalChatParams = {
         messages: [
