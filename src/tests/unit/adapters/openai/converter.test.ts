@@ -1959,6 +1959,138 @@ describe('OpenAI Response API Converter', () => {
       expect(JSON.stringify(result.input)).not.toContain('System Instructions:');
     });
 
+    describe('composition-aware strict schema projection', () => {
+      const project = async (properties: Record<string, unknown>, required: string[] = []) => {
+        mockModelManager.getModel.mockReturnValue(gpt5Model);
+        const result = await converter.convertToOpenAIResponseParams('gpt-5', {
+          model: 'gpt-5',
+          messages: [{ role: 'user', content: 'Decide' }],
+          responseFormat: 'json',
+          jsonSchema: {
+            name: 'Projection',
+            schema: { type: 'object', additionalProperties: false, properties, required }
+          }
+        });
+        return {
+          format: (result.text as any)?.format,
+          properties: (result.text as any)?.format?.schema?.properties as Record<string, any>
+        };
+      };
+
+      it('keeps a nullable property as a composition without a sibling type', async () => {
+        const { format, properties } = await project({
+          toolName: { type: ['string', 'null'] },
+          argumentsJson: { type: ['string', 'null'] }
+        }, ['toolName', 'argumentsJson']);
+
+        expect(format.type).toBe('json_schema');
+        expect(format.strict).toBe(true);
+        for (const key of ['toolName', 'argumentsJson']) {
+          expect(properties[key].anyOf).toEqual([{ type: 'string' }, { type: 'null' }]);
+          expect('type' in properties[key]).toBe(false);
+        }
+      });
+
+      it('keeps explicit anyOf, oneOf, and allOf properties as compositions', async () => {
+        const { properties } = await project({
+          explicitAnyOf: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+          explicitOneOf: { oneOf: [{ type: 'string' }, { type: 'number' }] },
+          explicitAllOf: { allOf: [{ type: 'object', properties: { c: { type: 'string' } } }] }
+        });
+
+        expect('type' in properties.explicitAnyOf).toBe(false);
+        expect('type' in properties.explicitOneOf).toBe(false);
+        expect('type' in properties.explicitAllOf).toBe(false);
+        expect(properties.explicitOneOf.oneOf).toHaveLength(2);
+      });
+
+      it('preserves closed object variants inside a composition', async () => {
+        const { properties } = await project({
+          variants: {
+            anyOf: [
+              { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] },
+              { type: 'object', properties: { b: { type: 'number' } }, required: ['b'] }
+            ]
+          }
+        });
+
+        expect('type' in properties.variants).toBe(false);
+        expect(properties.variants.anyOf).toHaveLength(2);
+        for (const branch of properties.variants.anyOf) {
+          expect(branch.type).toBe('object');
+          expect(branch.additionalProperties).toBe(false);
+        }
+        expect(properties.variants.anyOf[0].properties.a.type).toBe('string');
+        expect(properties.variants.anyOf[1].properties.b.type).toBe('number');
+      });
+
+      it('keeps compositions nested inside array items', async () => {
+        const { properties } = await project({
+          listOfUnions: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'null' }] } }
+        });
+
+        expect(properties.listOfUnions.type).toBe('array');
+        expect('type' in properties.listOfUnions.items).toBe(false);
+        expect(properties.listOfUnions.items.anyOf).toEqual([{ type: 'string' }, { type: 'null' }]);
+      });
+
+      it('leaves $ref nodes untouched, alone and inside a composition', async () => {
+        mockModelManager.getModel.mockReturnValue(gpt5Model);
+        const result = await converter.convertToOpenAIResponseParams('gpt-5', {
+          model: 'gpt-5',
+          messages: [{ role: 'user', content: 'Decide' }],
+          responseFormat: 'json',
+          jsonSchema: {
+            name: 'Refs',
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              $defs: { Foo: { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] } },
+              properties: {
+                refProp: { $ref: '#/$defs/Foo' },
+                nullableRef: { anyOf: [{ $ref: '#/$defs/Foo' }, { type: 'null' }] }
+              },
+              required: []
+            }
+          }
+        });
+        const properties = (result.text as any)?.format?.schema?.properties;
+
+        expect(properties.refProp).toEqual({ $ref: '#/$defs/Foo' });
+        expect(properties.nullableRef.anyOf[0]).toEqual({ $ref: '#/$defs/Foo' });
+        expect('type' in properties.nullableRef).toBe(false);
+      });
+
+      it('derives enum and const types from their literals', async () => {
+        const { properties } = await project({
+          stringEnum: { enum: ['a', 'b'] },
+          numericEnum: { enum: [1, 2, 3] },
+          boolEnum: { enum: [true, false] },
+          mixedEnum: { enum: ['a', 1, null] },
+          constNumber: { const: 5 }
+        });
+
+        expect(properties.stringEnum.type).toBe('string');
+        expect(properties.numericEnum.type).toBe('number');
+        expect(properties.boolEnum.type).toBe('boolean');
+        expect('type' in properties.mixedEnum).toBe(false);
+        expect(properties.constNumber.type).toBe('number');
+      });
+
+      it('keeps ordinary structural and untyped-leaf inference unchanged', async () => {
+        const { properties } = await project({
+          untypedWithProps: { properties: { d: { type: 'string' } } },
+          untypedWithItems: { items: { type: 'string' } },
+          trulyUntyped: { description: 'leaf' }
+        });
+
+        expect(properties.untypedWithProps.type).toBe('object');
+        expect(properties.untypedWithProps.additionalProperties).toBe(false);
+        expect(properties.untypedWithItems.type).toBe('array');
+        expect(properties.trulyUntyped.type).toBe('string');
+      });
+    });
+
     it('collapses nullable unions without selectors in flatten mode', async () => {
       mockModelManager.getModel.mockReturnValue(flattenModel);
 

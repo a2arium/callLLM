@@ -119,6 +119,9 @@ export type {
     StructuredOutputValidationError
 } from './core/processors/StructuredOutputError.ts';
 
+/** Thrown when a provider schema pass would send a narrower contract than the caller's. */
+export { SchemaProjectionError } from './core/schema/assertSchemaProjection.ts';
+
 // MCP functionality (most commonly used exports)
 export { MCPServiceAdapter } from './core/mcp/MCPServiceAdapter.ts';
 export type {

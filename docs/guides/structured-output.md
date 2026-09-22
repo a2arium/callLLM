@@ -60,7 +60,7 @@ const response = await caller.call('Create metadata for this article.', {
 
 The schema layer sanitizes/coerces schemas for provider compatibility where possible.
 
-Prefer Zod over a JSON Schema string when post-response validation matters. String JSON Schema is accepted on the outbound path but is not enforced against responses, so `metadata.validationErrors` will not be populated. JSON Schema as a plain object is also accepted.
+Prefer Zod over a JSON Schema string when post-response validation matters. String JSON Schema is accepted on the outbound path but is not enforced against responses, so `metadata.validationErrors` will not be populated. A plain JSON Schema object is projected outbound the same way, but response enforcement currently requires Zod: a plain object fails validation with `Invalid schema type` regardless of the payload.
 
 ## How Schemas Are Normalized for Providers
 
@@ -72,6 +72,17 @@ Prefer Zod over a JSON Schema string when post-response validation matters. Stri
 - `default` values are removed
 - root-level unions are downgraded to a generic JSON object format
 - descriptions (`.describe(...)`) are preserved and reach the model
+- a missing `type` is only filled in from evidence on the node itself: `enum` / `const`
+  literals give their own type, `properties` gives `object`, `items` gives `array`, and a
+  node carrying `$ref`, `anyOf`, `oneOf`, `allOf`, or a mixed-type `enum` is left as-is
+  because a sibling `type` would intersect with it rather than annotate it. A node with no
+  evidence at all still falls back to `string`.
+
+Nullable and union properties therefore reach the provider intact: `{"type":["string","null"]}`
+becomes an `anyOf` of string and null with no sibling `type`, so the `null` branch survives.
+The projected schema is verified against the prepared input before the request is sent, and a
+pass that narrowed the caller's contract raises `SchemaProjectionError` instead of contacting
+the provider.
 
 This means:
 

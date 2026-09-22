@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.7
+
+- Fix the OpenAI Responses schema pass corrupting nodes whose type is defined elsewhere. A sibling `type` is no longer added beside `$ref`, `anyOf`, `oneOf`, or `allOf`, so a nullable property such as `{"type":["string","null"]}` keeps its `null` branch instead of being narrowed to string-only. Compositions nested in array items and inside other composition branches are fixed too.
+- Derive `enum` / `const` types from their literals instead of hardcoding `string`: `{"enum":[1,2,3]}`, `{"enum":[true,false]}`, and `{"const":5}` previously became unsatisfiable nodes. Mixed-type enums are left untyped because the enum already constrains them exactly. Nodes with no type evidence keep the historical `string` fallback.
+- Share one type-inference helper between `SchemaSanitizer` and the OpenAI pass, which had drifted apart, and verify the projected schema against the prepared input before the request leaves the process: a pass that narrows the caller's contract now raises `SchemaProjectionError` instead of silently sending a different schema.
+- Document that response enforcement requires Zod; a plain JSON Schema object is projected outbound but fails validation with `Invalid schema type`.
+
 ## 0.5.6
 
 - Resolve repeated `final_answer` assistant messages to the last one in native output order instead of failing with `multiple_structured_outputs`. Selection still ignores text bodies; `finalAnswerCount` and `decisionalItem` in `outputTextProvenance` show when an earlier final answer was superseded.

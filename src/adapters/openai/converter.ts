@@ -12,6 +12,8 @@ import {
     rewriteOpenMapsToJsonStrings
 } from '../../core/schema/openMapToolSchema.ts';
 import { OPTIONAL_UNION_OPTION_KEY } from '../../core/schema/UnionTransformer.ts';
+import { inferNodeTypeIfMissing } from '../../core/schema/schemaNodeTypes.ts';
+import { assertSchemaProjectionSound } from '../../core/schema/assertSchemaProjection.ts';
 import { z } from 'zod';
 import type {
     ResponseCreateParams,
@@ -1169,8 +1171,11 @@ export class Converter {
         };
         stripValidation(preparedSchema);
 
-        // Process the schema recursively
+        // Process the schema recursively, then prove the pass did not narrow the
+        // caller's contract before the request leaves the process.
+        const beforeProjection = JSON.parse(JSON.stringify(preparedSchema));
         this.processSchemaForOpenAI(preparedSchema);
+        assertSchemaProjectionSound(beforeProjection, preparedSchema);
 
         log.debug('Prepared response schema for OpenAI', {
             type: preparedSchema.type,
@@ -1190,17 +1195,15 @@ export class Converter {
             return;
         }
 
-        // Ensure each node has a type when possible (OpenAI requires 'type')
+        // OpenAI wants an explicit 'type' wherever one can be established from the
+        // node itself. Composition, $ref, and mixed-literal nodes are left alone:
+        // a sibling type would intersect with them, not annotate them.
+        const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.processSchemaForOpenAI' });
         const ensureType = (node: Record<string, unknown>): void => {
-            if (!node || typeof node !== 'object') return;
-            if (!Object.prototype.hasOwnProperty.call(node, 'type')) {
-                const hasProps = typeof (node as any).properties === 'object';
-                const hasItems = Boolean((node as any).items);
-                const hasEnum = Array.isArray((node as any).enum);
-                if (hasProps) (node as any).type = 'object';
-                else if (hasItems) (node as any).type = 'array';
-                else if (hasEnum) (node as any).type = 'string';
-                else (node as any).type = 'string';
+            if (inferNodeTypeIfMissing(node)) {
+                log.debug('Applied string fallback to a schema node with no type evidence', {
+                    keywords: Object.keys(node).filter(key => key !== 'type')
+                });
             }
         };
 
