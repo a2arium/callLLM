@@ -44,7 +44,7 @@ Here are the primary ways you can add, manage, and influence the history used in
     });
     ```
 
-    `providerStorage: 'disabled'` is a provider-neutral, fail-closed requirement: CallLLM maps it to the selected adapter's verified storage control (OpenAI Responses → `store: false`) and rejects unsupported providers before contact. It does not suppress CallLLM telemetry or billing.
+    `providerStorage: 'disabled'` is a provider-neutral, fail-closed requirement: CallLLM maps it to the selected adapter's verified storage control (OpenAI Responses → `store: false`; Vercel AI Gateway → `providerOptions.gateway.zeroDataRetention: true`) and rejects unsupported providers before contact. It does not suppress CallLLM telemetry or billing.
     This is not a history mode and is not a substitute for `setMessages`. Prefer `callMessages` for calibration cells, benchmarks, and any shared caller that must not interleave mutable history installs. Prefer `setMessages` / `historyMode` when you want ongoing conversation state on the caller.
 
 3.  **Setting/Replacing the Entire History**:

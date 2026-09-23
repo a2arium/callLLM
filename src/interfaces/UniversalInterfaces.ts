@@ -408,8 +408,10 @@ export type CallMessagesOptions = Omit<
      * Provider-neutral storage policy for the resolved adapter.
      * - Omitted: provider default (existing behavior).
      * - `'disabled'`: hard requirement to disable provider-side API storage
-     *   (OpenAI Responses → `store: false`). Unsupported providers fail closed
-     *   before contact. Does not suppress CallLLM telemetry or billing.
+     *   (OpenAI Responses → `store: false`; Vercel AI Gateway →
+     *   `providerOptions.gateway.zeroDataRetention: true`). Unsupported
+     *   providers fail closed before contact. Does not suppress CallLLM
+     *   telemetry or billing.
      */
     providerStorage?: ProviderStoragePolicy;
 };

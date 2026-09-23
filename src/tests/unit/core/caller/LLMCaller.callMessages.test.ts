@@ -651,6 +651,42 @@ describe('LLMCaller.callMessages', () => {
       expect(mockChatCall).not.toHaveBeenCalled();
     });
 
+    it('maps disabled to vercel gateway.zeroDataRetention and preserves unrelated options', async () => {
+      caller = createCaller({ provider: 'vercel' });
+      await caller.callMessages([{ role: 'user', content: 'hi' }], {
+        providerStorage: 'disabled',
+        settings: {
+          temperature: 0,
+          providerOptions: {
+            gateway: { tags: ['evo'], order: ['openai'] },
+            openai: { user: 'bench' }
+          }
+        }
+      });
+
+      const settings = mockChatCall.mock.calls[0][1].settings;
+      expect(settings?.temperature).toBe(0);
+      expect(settings?.providerOptions?.gateway).toEqual({
+        tags: ['evo'],
+        order: ['openai'],
+        zeroDataRetention: true
+      });
+      expect(settings?.providerOptions?.openai).toEqual({ user: 'bench' });
+    });
+
+    it('rejects contradictory gateway.zeroDataRetention false before provider contact', async () => {
+      caller = createCaller({ provider: 'vercel' });
+      await expect(caller.callMessages([{ role: 'user', content: 'hi' }], {
+        providerStorage: 'disabled',
+        settings: { providerOptions: { gateway: { zeroDataRetention: false } } }
+      })).rejects.toMatchObject({
+        name: 'CallMessagesValidationError',
+        code: 'CALL_MESSAGES_VALIDATION_ERROR',
+        reason: 'provider_storage_conflict'
+      });
+      expect(mockChatCall).not.toHaveBeenCalled();
+    });
+
     it('rejects unknown providerStorage values', async () => {
       await expect(caller.callMessages([{ role: 'user', content: 'hi' }], {
         providerStorage: 'enabled' as 'disabled'
@@ -691,6 +727,17 @@ describe('LLMCaller.callMessages', () => {
     it('is a no-op when policy is omitted', () => {
       const settings = { temperature: 0.2 };
       expect(applyProviderStoragePolicy(settings, undefined, 'openai')).toBe(settings);
+    });
+
+    it('maps vercel disabled to gateway.zeroDataRetention true', () => {
+      const settings = {
+        providerOptions: { gateway: { tags: ['bench'] } }
+      };
+      expect(applyProviderStoragePolicy(settings, 'disabled', 'vercel')).toEqual({
+        providerOptions: {
+          gateway: { tags: ['bench'], zeroDataRetention: true }
+        }
+      });
     });
   });
 

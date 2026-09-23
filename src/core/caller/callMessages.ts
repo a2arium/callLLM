@@ -11,7 +11,7 @@ const ALLOWED_MESSAGE_KEYS = new Set(['role', 'content']);
 const ALLOWED_PROVIDER_STORAGE_POLICIES = new Set<ProviderStoragePolicy>(['disabled']);
 
 /** Providers with a verified mapping for providerStorage: 'disabled'. */
-const PROVIDER_STORAGE_DISABLED_SUPPORT = new Set(['openai']);
+const PROVIDER_STORAGE_DISABLED_SUPPORT = new Set(['openai', 'vercel']);
 
 /** Keys that belong to LLMCallOptions but are not part of CallMessagesOptions. */
 const FORBIDDEN_CALL_MESSAGES_OPTION_KEYS = [
@@ -246,6 +246,22 @@ function readOpenAIStore(settings: UniversalChatSettings | undefined): boolean |
     return typeof store === 'boolean' ? store : undefined;
 }
 
+function readGatewayZeroDataRetention(settings: UniversalChatSettings | undefined): boolean | undefined {
+    const gateway = settings?.providerOptions?.gateway;
+    if (gateway === undefined || gateway === null || typeof gateway !== 'object' || Array.isArray(gateway)) {
+        return undefined;
+    }
+    const zeroDataRetention = (gateway as Record<string, unknown>).zeroDataRetention;
+    return typeof zeroDataRetention === 'boolean' ? zeroDataRetention : undefined;
+}
+
+function asPlainObject(value: unknown): Record<string, unknown> {
+    if (value !== undefined && value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        return { ...(value as Record<string, unknown>) };
+    }
+    return {};
+}
+
 /**
  * Translate providerStorage into verified provider-specific settings.
  * Omission is a no-op. 'disabled' is fail-closed for unsupported providers.
@@ -266,14 +282,6 @@ export function applyProviderStoragePolicy(
         });
     }
 
-    if (readOpenAIStore(settings) === true) {
-        throw new CallMessagesValidationError({
-            message: 'providerStorage: "disabled" conflicts with settings.providerOptions.openai.store: true',
-            reason: 'provider_storage_conflict',
-            field: 'providerStorage'
-        });
-    }
-
     if (!PROVIDER_STORAGE_DISABLED_SUPPORT.has(provider)) {
         throw new ProviderStorageUnsupportedError({
             message: `providerStorage: "disabled" is not supported by provider "${provider}"`,
@@ -283,22 +291,44 @@ export function applyProviderStoragePolicy(
     }
 
     const existingProviderOptions = settings?.providerOptions ?? {};
-    const existingOpenAI = existingProviderOptions.openai;
-    const openaiBase =
-        existingOpenAI !== undefined
-            && existingOpenAI !== null
-            && typeof existingOpenAI === 'object'
-            && !Array.isArray(existingOpenAI)
-            ? { ...(existingOpenAI as Record<string, unknown>) }
-            : {};
+
+    if (provider === 'openai') {
+        if (readOpenAIStore(settings) === true) {
+            throw new CallMessagesValidationError({
+                message: 'providerStorage: "disabled" conflicts with settings.providerOptions.openai.store: true',
+                reason: 'provider_storage_conflict',
+                field: 'providerStorage'
+            });
+        }
+
+        return {
+            ...settings,
+            providerOptions: {
+                ...existingProviderOptions,
+                openai: {
+                    ...asPlainObject(existingProviderOptions.openai),
+                    store: false
+                }
+            }
+        };
+    }
+
+    // vercel → AI Gateway zero-data-retention routing
+    if (readGatewayZeroDataRetention(settings) === false) {
+        throw new CallMessagesValidationError({
+            message: 'providerStorage: "disabled" conflicts with settings.providerOptions.gateway.zeroDataRetention: false',
+            reason: 'provider_storage_conflict',
+            field: 'providerStorage'
+        });
+    }
 
     return {
         ...settings,
         providerOptions: {
             ...existingProviderOptions,
-            openai: {
-                ...openaiBase,
-                store: false
+            gateway: {
+                ...asPlainObject(existingProviderOptions.gateway),
+                zeroDataRetention: true
             }
         }
     };

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.12
+
+- Support `providerStorage: 'disabled'` on Vercel: map to `providerOptions.gateway.zeroDataRetention: true`, reject explicit `zeroDataRetention: false`, and keep fail-closed for unsupported providers. OpenAI mapping to `store: false` is unchanged.
+
 ## 0.5.11
 
 - Preserve HTTP `status` on mapped Vercel and SiliconFlow adapter errors so 503/429/5xx remain transport-retryable after `map*Error` wrapping (fixes evaluate/chat failing closed as non-retryable on gateway 503).
