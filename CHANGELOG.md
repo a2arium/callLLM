@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.11
+
+- Preserve HTTP `status` on mapped Vercel and SiliconFlow adapter errors so 503/429/5xx remain transport-retryable after `map*Error` wrapping (fixes evaluate/chat failing closed as non-retryable on gateway 503).
+- Classify retries using provider provenance that walks `cause`, so status on the original SDK/HTTP error still triggers retry when the outer wrapper omits it.
+- Add OpenAI GPT-6 models (`gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`) and refresh GPT-5.6 Sol/Terra/Luna pricing; refresh Vercel AI Gateway model catalog for matching `openai/gpt-6-*` aliases.
+
 ## 0.5.10
 
 - Preserve OpenAI SDK error cause and bounded identity (`status`, provider `code`, `requestID` / `requestId` / `request_id`) through adapter HTTP mapping (notably chatCall 400 → `OpenAIResponseValidationError`). RetryManager already wrapped terminals as `ProviderHttpError`; the adapter no longer drops SDK provenance before that path. HTTP 400 remains non-retryable. Bodies/headers are not retained on the wrapper.
