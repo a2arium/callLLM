@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Preserve structured provenance on non-retryable provider HTTP failures under RetryManager: terminal `ProviderHttpError` keeps `cause`, usable `status` / `providerCode` / `requestId` (from `requestId` or SDK `request_id`), and explicit `retryHistory` (often `[]`). HTTP 400 remains non-retryable and is not relabeled as transport; usage/zero-charge are not invented from status. Class-scoped and legacy terminal branches share this contract.
+
 ## 0.5.8
 
 - Fix OpenAI Responses reasoning routes dropping the system instruction when it only appears in `messages` (the `callMessages` / ChatController shape). The converter now lifts system/developer text into native `instructions` when `params.systemMessage` is absent, without duplicating it in `input`.

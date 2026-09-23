@@ -293,4 +293,124 @@ describe('RetryManager classified policy', () => {
 
     expect(operation).toHaveBeenCalledTimes(1);
   });
+
+  it('preserves cause and provider fields for non-retryable HTTP 400 (class-scoped)', async () => {
+    const { resolveRetryPolicy } = await import('../../../../../src/core/retry/resolveRetryPolicy.ts');
+    const { isProviderHttpError } = await import('../../../../../src/core/retry/ProviderHttpError.ts');
+    const { isProviderTransportError } = await import('../../../../../src/core/retry/ProviderTransportError.ts');
+    const { classifyRetryFailure } = await import('../../../../../src/core/retry/classifyRetryFailure.ts');
+
+    const policy = resolveRetryPolicy({
+      retryPolicy: {
+        transport: { maxRetries: 2, baseDelayMs: 1 },
+        structuredOutput: { maxRetries: 0 },
+        content: { maxRetries: 0 }
+      }
+    });
+    const original = Object.assign(new Error('Synthetic non-retryable provider rejection'), {
+      status: 400,
+      code: 'synthetic_rejection',
+      requestId: 'synthetic-request'
+    });
+    const retryManager = new RetryManager();
+    let calls = 0;
+
+    try {
+      await retryManager.executeWithRetry(async () => {
+        calls++;
+        throw original;
+      }, { policy, operationId: 'offline-provenance' });
+      throw new Error('expected reject');
+    } catch (err) {
+      expect(calls).toBe(1);
+      expect(isProviderHttpError(err)).toBe(true);
+      expect(isProviderTransportError(err)).toBe(false);
+      if (!isProviderHttpError(err)) throw new Error('expected ProviderHttpError');
+      expect(err.cause).toBe(original);
+      expect(err.status).toBe(400);
+      expect(err.statusCode).toBe(400);
+      expect(err.providerCode).toBe('synthetic_rejection');
+      expect(err.requestId).toBe('synthetic-request');
+      expect(err.retryHistory).toEqual([]);
+      expect(classifyRetryFailure(original).retryClass).toBeUndefined();
+      expect(classifyRetryFailure(err).retryClass).toBeUndefined();
+      expect(classifyRetryFailure(err).statusCode).toBe(400);
+    }
+  });
+
+  it('normalizes SDK request_id and tolerates absent optional metadata', async () => {
+    const { resolveRetryPolicy } = await import('../../../../../src/core/retry/resolveRetryPolicy.ts');
+    const { isProviderHttpError } = await import('../../../../../src/core/retry/ProviderHttpError.ts');
+
+    const policy = resolveRetryPolicy({
+      retryPolicy: {
+        transport: { maxRetries: 2 },
+        structuredOutput: { maxRetries: 0 },
+        content: { maxRetries: 0 }
+      }
+    });
+    const withRequestIdSnake = Object.assign(new Error('policy rejection'), {
+      status: 400,
+      request_id: 'sdk-req-1'
+    });
+    const bare = new Error('bare non-retryable');
+
+    const retryManager = new RetryManager();
+
+    try {
+      await retryManager.executeWithRetry(async () => {
+        throw withRequestIdSnake;
+      }, { policy, operationId: 'req-id' });
+      throw new Error('expected reject');
+    } catch (err) {
+      expect(isProviderHttpError(err)).toBe(true);
+      if (!isProviderHttpError(err)) throw new Error('expected ProviderHttpError');
+      expect(err.requestId).toBe('sdk-req-1');
+      expect(err.providerCode).toBeUndefined();
+      expect(err.retryHistory).toEqual([]);
+    }
+
+    try {
+      await retryManager.executeWithRetry(async () => {
+        throw bare;
+      }, { policy, operationId: 'bare' });
+      throw new Error('expected reject');
+    } catch (err) {
+      expect(isProviderHttpError(err)).toBe(true);
+      if (!isProviderHttpError(err)) throw new Error('expected ProviderHttpError');
+      expect(err.cause).toBe(bare);
+      expect(err.status).toBeUndefined();
+      expect(err.providerCode).toBeUndefined();
+      expect(err.requestId).toBeUndefined();
+      expect(err.retryHistory).toEqual([]);
+    }
+  });
+
+  it('preserves cause and provider fields on legacy non-retry terminal branch', async () => {
+    const { isProviderHttpError } = await import('../../../../../src/core/retry/ProviderHttpError.ts');
+    const original = Object.assign(new Error('legacy rejection'), {
+      status: 400,
+      code: 'legacy_code',
+      request_id: 'legacy-req'
+    });
+    const retryManager = new RetryManager({ maxRetries: 3 });
+    let calls = 0;
+
+    try {
+      await retryManager.executeWithRetry(async () => {
+        calls++;
+        throw original;
+      }, () => false);
+      throw new Error('expected reject');
+    } catch (err) {
+      expect(calls).toBe(1);
+      expect(isProviderHttpError(err)).toBe(true);
+      if (!isProviderHttpError(err)) throw new Error('expected ProviderHttpError');
+      expect(err.cause).toBe(original);
+      expect(err.status).toBe(400);
+      expect(err.providerCode).toBe('legacy_code');
+      expect(err.requestId).toBe('legacy-req');
+      expect(err.retryHistory).toEqual([]);
+    }
+  });
 });

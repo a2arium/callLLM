@@ -63,6 +63,8 @@ export {
     ProviderStorageUnsupportedError
 } from './core/caller/callMessages.ts';
 export { ProviderTransportError, isProviderTransportError } from './core/retry/ProviderTransportError.ts';
+export { ProviderHttpError, isProviderHttpError } from './core/retry/ProviderHttpError.ts';
+export type { ProviderHttpErrorOptions } from './core/retry/ProviderHttpError.ts';
 export { resolveRetryPolicy } from './core/retry/resolveRetryPolicy.ts';
 export { classifyRetryFailure } from './core/retry/classifyRetryFailure.ts';
 export type { ResolvedRetryPolicy } from './core/retry/resolveRetryPolicy.ts';

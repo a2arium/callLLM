@@ -10,6 +10,12 @@ import {
 } from '../processors/StructuredOutputError.ts';
 import { isNetworkError, RETRYABLE_STATUS_CODES } from './utils/networkErrors.ts';
 import { isProviderTransportError } from './ProviderTransportError.ts';
+import { isProviderHttpError } from './ProviderHttpError.ts';
+import {
+    extractProviderProvenance,
+    extractProviderRequestIds,
+    extractProviderStatus
+} from './providerErrorProvenance.ts';
 
 export type RetryClassification = {
     /** When undefined, the failure must not be retried. */
@@ -26,29 +32,6 @@ export type RetryClassification = {
 export type ClassifyRetryFailureOptions = {
     retryableStatusCodes?: number[];
 };
-
-function extractStatusCode(error: Error): number | undefined {
-    if ('status' in error && typeof (error as { status?: number }).status === 'number') {
-        return (error as { status: number }).status;
-    }
-    const matches = error.message.match(/\b([45]\d{2})\b/);
-    if (matches && matches[1]) {
-        return parseInt(matches[1], 10);
-    }
-    return undefined;
-}
-
-function extractIds(error: Error): { requestId?: string; responseId?: string } {
-    const requestId =
-        'requestId' in error && typeof (error as { requestId?: unknown }).requestId === 'string'
-            ? (error as { requestId: string }).requestId
-            : undefined;
-    const responseId =
-        'responseId' in error && typeof (error as { responseId?: unknown }).responseId === 'string'
-            ? (error as { responseId: string }).responseId
-            : undefined;
-    return { requestId, responseId };
-}
 
 function isUsageAmbiguousTimeout(message: string): boolean {
     const m = message.toLowerCase();
@@ -77,6 +60,8 @@ function isClearMissBeforeResponse(message: string): boolean {
 /**
  * Classify an operation failure into a retry class for selective ceilings.
  * Cancellation is never retryable (`retryClass` undefined).
+ * {@link ProviderHttpError} (non-retryable HTTP / provider rejection) is never retried
+ * and is not relabeled as transport.
  */
 export function classifyRetryFailure(
     error: unknown,
@@ -102,6 +87,17 @@ export function classifyRetryFailure(
         };
     }
 
+    if (isProviderHttpError(error)) {
+        const provenance = extractProviderProvenance(error);
+        return {
+            statusCode: provenance.status,
+            requestId: provenance.requestId,
+            responseId: provenance.responseId,
+            usageAmbiguous: false,
+            costUnresolved: false
+        };
+    }
+
     if (isProviderTransportError(error)) {
         return {
             retryClass: 'transport',
@@ -119,7 +115,7 @@ export function classifyRetryFailure(
         return { usageAmbiguous: false, costUnresolved: false };
     }
 
-    const { requestId, responseId } = extractIds(error);
+    const { requestId, responseId } = extractProviderRequestIds(error);
 
     if (error.message.startsWith('Response content triggered retry')) {
         return {
@@ -151,7 +147,7 @@ export function classifyRetryFailure(
     }
 
     const statusCodes = options?.retryableStatusCodes ?? RETRYABLE_STATUS_CODES;
-    const statusCode = extractStatusCode(error);
+    const statusCode = extractProviderStatus(error);
     if (statusCode !== undefined && statusCodes.includes(statusCode)) {
         // HTTP response received — cost may or may not be billed; treat 5xx/429 as ambiguous when no usage.
         const usageAmbiguous = statusCode === 408 || statusCode >= 500;

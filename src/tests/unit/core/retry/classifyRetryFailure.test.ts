@@ -65,4 +65,36 @@ describe('classifyRetryFailure', () => {
     expect(c.usageAmbiguous).toBe(true);
     expect(c.reason).toBe('timeout_or_disconnect');
   });
+
+  it('does not retry HTTP 400 and retains status/request identity', () => {
+    const err = Object.assign(new Error('Bad Request'), {
+      status: 400,
+      code: 'invalid_request_error',
+      request_id: 'req_abc'
+    });
+    const c = classifyRetryFailure(err);
+    expect(c.retryClass).toBeUndefined();
+    expect(c.statusCode).toBe(400);
+    expect(c.requestId).toBe('req_abc');
+    expect(c.usageAmbiguous).toBe(false);
+    expect(c.costUnresolved).toBe(false);
+  });
+
+  it('classifies ProviderHttpError as non-retryable without inventing usage', async () => {
+    const { ProviderHttpError } = await import('../../../../core/retry/ProviderHttpError.ts');
+    const err = new ProviderHttpError({
+      message: 'rejected',
+      status: 400,
+      providerCode: 'synthetic_rejection',
+      requestId: 'synthetic-request',
+      retryHistory: []
+    });
+    const c = classifyRetryFailure(err);
+    expect(c.retryClass).toBeUndefined();
+    expect(c.statusCode).toBe(400);
+    expect(c.requestId).toBe('synthetic-request');
+    expect(c.usage).toBeUndefined();
+    expect(c.usageAmbiguous).toBe(false);
+    expect(c.costUnresolved).toBe(false);
+  });
 });

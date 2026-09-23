@@ -4,6 +4,13 @@ import { LLMAbortError, isLLMCancellationError } from '../execution/errors.ts';
 import { isStructuredOutputError } from '../processors/StructuredOutputError.ts';
 import { classifyRetryFailure } from './classifyRetryFailure.ts';
 import {
+    isProviderHttpError,
+    ProviderHttpError
+} from './ProviderHttpError.ts';
+import {
+    extractProviderProvenance
+} from './providerErrorProvenance.ts';
+import {
     isProviderTransportError,
     ProviderTransportError
 } from './ProviderTransportError.ts';
@@ -186,7 +193,7 @@ export class RetryManager {
             }
         }
 
-        throwClassifiedTerminal(lastError, lastClassification, retryHistory, attemptIndex);
+        throwClassifiedTerminal(lastError, lastClassification, retryHistory);
     }
 }
 
@@ -201,21 +208,32 @@ function throwTerminal(lastError: unknown, attempt: number): never {
             `Failed after ${attempt - 1} retries. Last error: ${lastError.message}. (Hint: Increase 'maxRetries' in settings if needed)`
         );
     }
-    if (attempt === 0) {
-        throw new Error(
-            `Operation failed without retrying (non-retryable error). Error: ${(lastError instanceof Error) ? lastError.message : lastError}`
-        );
+    if (isProviderTransportError(lastError)) {
+        const message =
+            attempt === 0
+                ? `Operation failed without retrying (non-retryable error). Error: ${lastError.message}`
+                : `Failed after ${attempt - 1} retries. Last error: ${lastError.message}. (Hint: Increase 'maxRetries' in settings if needed)`;
+        throw lastError.withMessage(message);
     }
-    throw new Error(
-        `Failed after ${attempt - 1} retries. Last error: ${(lastError instanceof Error) ? lastError.message : lastError}. (Hint: Increase 'maxRetries' in settings if needed)`
-    );
+    if (isProviderHttpError(lastError)) {
+        const message =
+            attempt === 0
+                ? `Operation failed without retrying (non-retryable error). Error: ${lastError.message}`
+                : `Failed after ${attempt - 1} retries. Last error: ${lastError.message}. (Hint: Increase 'maxRetries' in settings if needed)`;
+        throw lastError.withMessage(message);
+    }
+
+    const message =
+        attempt === 0
+            ? `Operation failed without retrying (non-retryable error). Error: ${(lastError instanceof Error) ? lastError.message : lastError}`
+            : `Failed after ${attempt - 1} retries. Last error: ${(lastError instanceof Error) ? lastError.message : lastError}. (Hint: Increase 'maxRetries' in settings if needed)`;
+    throw wrapNonRetryableProviderError(lastError, message, []);
 }
 
 function throwClassifiedTerminal(
     lastError: unknown,
     classification: ReturnType<typeof classifyRetryFailure>,
-    retryHistory: RetryAttemptEvent[],
-    attemptIndex: number
+    retryHistory: RetryAttemptEvent[]
 ): never {
     const retriesAttempted = retryHistory.length;
     const hint = 'Hint: Increase class ceilings in settings.retryPolicy (or legacy maxRetries) if needed';
@@ -249,14 +267,41 @@ function throwClassifiedTerminal(
         throw base.withMessage(message, retryHistory);
     }
 
-    if (retriesAttempted === 0) {
-        throw new Error(
-            `Operation failed without retrying (non-retryable error). Error: ${(lastError instanceof Error) ? lastError.message : lastError}`
-        );
+    if (isProviderHttpError(lastError)) {
+        const message =
+            retriesAttempted === 0
+                ? `Operation failed without retrying (non-retryable error). Error: ${lastError.message}`
+                : `Failed after ${retriesAttempted} retries. Last error: ${lastError.message}. (${hint})`;
+        throw lastError.withMessage(message, retryHistory);
     }
-    throw new Error(
-        `Failed after ${retriesAttempted} retries. Last error: ${(lastError instanceof Error) ? lastError.message : lastError}. (${hint})`
-    );
+
+    const message =
+        retriesAttempted === 0
+            ? `Operation failed without retrying (non-retryable error). Error: ${(lastError instanceof Error) ? lastError.message : lastError}`
+            : `Failed after ${retriesAttempted} retries. Last error: ${(lastError instanceof Error) ? lastError.message : lastError}. (${hint})`;
+    throw wrapNonRetryableProviderError(lastError, message, retryHistory, classification);
+}
+
+/**
+ * Wrap a non-retryable, non-transport, non-structured-output failure while preserving
+ * original `cause` and bounded provider identity fields when supplied.
+ */
+function wrapNonRetryableProviderError(
+    lastError: unknown,
+    message: string,
+    retryHistory: RetryAttemptEvent[],
+    classification?: ReturnType<typeof classifyRetryFailure>
+): never {
+    const fromError = extractProviderProvenance(lastError);
+    throw new ProviderHttpError({
+        message,
+        cause: lastError,
+        status: classification?.statusCode ?? fromError.status,
+        providerCode: fromError.providerCode,
+        requestId: classification?.requestId ?? fromError.requestId,
+        responseId: classification?.responseId ?? fromError.responseId,
+        retryHistory
+    });
 }
 
 function cancellationReason(signal?: AbortSignal, fallback?: unknown): Error {
