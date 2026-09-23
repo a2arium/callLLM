@@ -31,43 +31,52 @@ const getRetryAfter = (error: unknown): number | undefined => {
 };
 
 export class VercelAdapterError extends Error {
-    constructor(message: string, public readonly cause?: unknown) {
+    constructor(
+        message: string,
+        public readonly cause?: unknown,
+        public readonly status?: number
+    ) {
         super(message);
         this.name = 'VercelAdapterError';
     }
 }
 
 export class VercelAuthError extends VercelAdapterError {
-    constructor(message: string, cause?: unknown) {
-        super(message, cause);
+    constructor(message: string, cause?: unknown, status?: number) {
+        super(message, cause, status);
         this.name = 'VercelAuthError';
     }
 }
 
 export class VercelRateLimitError extends VercelAdapterError {
-    constructor(message: string, public readonly retryAfter?: number, cause?: unknown) {
-        super(message, cause);
+    constructor(
+        message: string,
+        public readonly retryAfter?: number,
+        cause?: unknown,
+        status?: number
+    ) {
+        super(message, cause, status);
         this.name = 'VercelRateLimitError';
     }
 }
 
 export class VercelValidationError extends VercelAdapterError {
-    constructor(message: string, cause?: unknown) {
-        super(message, cause);
+    constructor(message: string, cause?: unknown, status?: number) {
+        super(message, cause, status);
         this.name = 'VercelValidationError';
     }
 }
 
 export class VercelNetworkError extends VercelAdapterError {
-    constructor(message: string, cause?: unknown) {
-        super(message, cause);
+    constructor(message: string, cause?: unknown, status?: number) {
+        super(message, cause, status);
         this.name = 'VercelNetworkError';
     }
 }
 
 export class VercelServiceError extends VercelAdapterError {
-    constructor(message: string, cause?: unknown) {
-        super(message, cause);
+    constructor(message: string, cause?: unknown, status?: number) {
+        super(message, cause, status);
         this.name = 'VercelServiceError';
     }
 }
@@ -80,17 +89,18 @@ export const mapVercelError = (error: unknown): VercelAdapterError => {
     const lower = message.toLowerCase();
 
     if (status === 401 || status === 403 || lower.includes('invalid token') || lower.includes('api key')) {
-        return new VercelAuthError(`Authentication error: ${message}`, error);
+        return new VercelAuthError(`Authentication error: ${message}`, error, status);
     }
     if (status === 429 || lower.includes('rate limit') || lower.includes('tpm limit')) {
         return new VercelRateLimitError(
             `Rate limit exceeded: ${message}`,
             getRetryAfter(error),
-            error
+            error,
+            status
         );
     }
     if (status === 400 || status === 404 || lower.includes('model does not exist')) {
-        return new VercelValidationError(`Invalid request: ${message}`, error);
+        return new VercelValidationError(`Invalid request: ${message}`, error, status);
     }
     if (
         lower.includes('econnrefused') ||
@@ -99,10 +109,10 @@ export const mapVercelError = (error: unknown): VercelAdapterError => {
         lower.includes('timeout') ||
         lower.includes('timed out')
     ) {
-        return new VercelNetworkError(`Network error: ${message}`, error);
+        return new VercelNetworkError(`Network error: ${message}`, error, status);
     }
     if (status !== undefined && status >= 500) {
-        return new VercelServiceError(`Vercel AI Gateway service error: ${message}`, error);
+        return new VercelServiceError(`Vercel AI Gateway service error: ${message}`, error, status);
     }
-    return new VercelAdapterError(message, error);
+    return new VercelAdapterError(message, error, status);
 };

@@ -7,6 +7,8 @@ import {
     SiliconFlowServiceError,
     SiliconFlowValidationError
 } from '@/adapters/siliconflow/errors.ts';
+import { classifyRetryFailure } from '@/core/retry/classifyRetryFailure.ts';
+import { shouldRetryDueToLLMError } from '@/core/retry/utils/ShouldRetryDueToLLMError.ts';
 
 describe('SiliconFlow errors', () => {
     it.each([
@@ -28,5 +30,23 @@ describe('SiliconFlow errors', () => {
 
         expect(error).toBeInstanceOf(SiliconFlowRateLimitError);
         expect((error as SiliconFlowRateLimitError).retryAfter).toBe(12);
+        expect(error.status).toBe(429);
+    });
+
+    it('preserves HTTP status on mapped service errors so retries can classify', () => {
+        const error = mapSiliconFlowError({
+            status: 503,
+            message: 'Service temporarily unavailable. Please try again shortly.'
+        });
+
+        expect(error).toBeInstanceOf(SiliconFlowServiceError);
+        expect(error.status).toBe(503);
+        expect(error.message).not.toMatch(/\b503\b/);
+        expect(classifyRetryFailure(error)).toMatchObject({
+            retryClass: 'transport',
+            reason: 'http_503',
+            statusCode: 503
+        });
+        expect(shouldRetryDueToLLMError(error)).toBe(true);
     });
 });

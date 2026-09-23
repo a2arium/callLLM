@@ -4,6 +4,8 @@ import { StructuredOutputError } from '../../../../core/processors/StructuredOut
 import { LLMAbortError, LLMTimeoutError } from '../../../../core/execution/errors.ts';
 import { ProviderTransportError } from '../../../../core/retry/ProviderTransportError.ts';
 import { FinishReason } from '../../../../interfaces/UniversalInterfaces.ts';
+import { mapVercelError } from '../../../../adapters/vercel/errors.ts';
+import { shouldRetryDueToLLMError } from '../../../../core/retry/utils/ShouldRetryDueToLLMError.ts';
 
 describe('classifyRetryFailure', () => {
   it('never retries cancellation errors', () => {
@@ -51,6 +53,28 @@ describe('classifyRetryFailure', () => {
     const c = classifyRetryFailure(err);
     expect(c.retryClass).toBe('transport');
     expect(c.statusCode).toBe(503);
+  });
+
+  it('classifies mapped VercelServiceError 503 as transport', () => {
+    const mapped = mapVercelError({
+      status: 503,
+      message: 'Service temporarily unavailable. Please try again shortly.'
+    });
+    const c = classifyRetryFailure(mapped);
+    expect(c.retryClass).toBe('transport');
+    expect(c.reason).toBe('http_503');
+    expect(c.statusCode).toBe(503);
+    expect(shouldRetryDueToLLMError(mapped)).toBe(true);
+  });
+
+  it('reads status from cause when the wrapper omits it', () => {
+    const cause = Object.assign(new Error('Service temporarily unavailable'), { status: 503 });
+    const wrapped = new Error('Vercel AI Gateway service error: Service temporarily unavailable');
+    (wrapped as Error & { cause: Error }).cause = cause;
+    const c = classifyRetryFailure(wrapped);
+    expect(c.retryClass).toBe('transport');
+    expect(c.statusCode).toBe(503);
+    expect(shouldRetryDueToLLMError(wrapped)).toBe(true);
   });
 
   it('preserves ProviderTransportError fields', () => {

@@ -12,9 +12,7 @@ import { isNetworkError, RETRYABLE_STATUS_CODES } from './utils/networkErrors.ts
 import { isProviderTransportError } from './ProviderTransportError.ts';
 import { isProviderHttpError } from './ProviderHttpError.ts';
 import {
-    extractProviderProvenance,
-    extractProviderRequestIds,
-    extractProviderStatus
+    extractProviderProvenance
 } from './providerErrorProvenance.ts';
 
 export type RetryClassification = {
@@ -115,7 +113,11 @@ export function classifyRetryFailure(
         return { usageAmbiguous: false, costUnresolved: false };
     }
 
-    const { requestId, responseId } = extractProviderRequestIds(error);
+    const provenance = extractProviderProvenance(error);
+    const { requestId, responseId } = {
+        requestId: provenance.requestId,
+        responseId: provenance.responseId
+    };
 
     if (error.message.startsWith('Response content triggered retry')) {
         return {
@@ -147,7 +149,7 @@ export function classifyRetryFailure(
     }
 
     const statusCodes = options?.retryableStatusCodes ?? RETRYABLE_STATUS_CODES;
-    const statusCode = extractProviderStatus(error);
+    const statusCode = provenance.status;
     if (statusCode !== undefined && statusCodes.includes(statusCode)) {
         // HTTP response received — cost may or may not be billed; treat 5xx/429 as ambiguous when no usage.
         const usageAmbiguous = statusCode === 408 || statusCode >= 500;

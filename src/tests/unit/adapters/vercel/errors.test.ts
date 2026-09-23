@@ -7,6 +7,8 @@ import {
     VercelServiceError,
     VercelValidationError
 } from '@/adapters/vercel/errors.ts';
+import { classifyRetryFailure } from '@/core/retry/classifyRetryFailure.ts';
+import { shouldRetryDueToLLMError } from '@/core/retry/utils/ShouldRetryDueToLLMError.ts';
 
 describe('Vercel errors', () => {
     it.each([
@@ -28,5 +30,23 @@ describe('Vercel errors', () => {
 
         expect(error).toBeInstanceOf(VercelRateLimitError);
         expect((error as VercelRateLimitError).retryAfter).toBe(12);
+        expect(error.status).toBe(429);
+    });
+
+    it('preserves HTTP status on mapped service errors so retries can classify', () => {
+        const error = mapVercelError({
+            status: 503,
+            message: 'Service temporarily unavailable. Please try again shortly.'
+        });
+
+        expect(error).toBeInstanceOf(VercelServiceError);
+        expect(error.status).toBe(503);
+        expect(error.message).not.toMatch(/\b503\b/);
+        expect(classifyRetryFailure(error)).toMatchObject({
+            retryClass: 'transport',
+            reason: 'http_503',
+            statusCode: 503
+        });
+        expect(shouldRetryDueToLLMError(error)).toBe(true);
     });
 });

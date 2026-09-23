@@ -31,43 +31,52 @@ const getRetryAfter = (error: unknown): number | undefined => {
 };
 
 export class SiliconFlowAdapterError extends Error {
-    constructor(message: string, public readonly cause?: unknown) {
+    constructor(
+        message: string,
+        public readonly cause?: unknown,
+        public readonly status?: number
+    ) {
         super(message);
         this.name = 'SiliconFlowAdapterError';
     }
 }
 
 export class SiliconFlowAuthError extends SiliconFlowAdapterError {
-    constructor(message: string, cause?: unknown) {
-        super(message, cause);
+    constructor(message: string, cause?: unknown, status?: number) {
+        super(message, cause, status);
         this.name = 'SiliconFlowAuthError';
     }
 }
 
 export class SiliconFlowRateLimitError extends SiliconFlowAdapterError {
-    constructor(message: string, public readonly retryAfter?: number, cause?: unknown) {
-        super(message, cause);
+    constructor(
+        message: string,
+        public readonly retryAfter?: number,
+        cause?: unknown,
+        status?: number
+    ) {
+        super(message, cause, status);
         this.name = 'SiliconFlowRateLimitError';
     }
 }
 
 export class SiliconFlowValidationError extends SiliconFlowAdapterError {
-    constructor(message: string, cause?: unknown) {
-        super(message, cause);
+    constructor(message: string, cause?: unknown, status?: number) {
+        super(message, cause, status);
         this.name = 'SiliconFlowValidationError';
     }
 }
 
 export class SiliconFlowNetworkError extends SiliconFlowAdapterError {
-    constructor(message: string, cause?: unknown) {
-        super(message, cause);
+    constructor(message: string, cause?: unknown, status?: number) {
+        super(message, cause, status);
         this.name = 'SiliconFlowNetworkError';
     }
 }
 
 export class SiliconFlowServiceError extends SiliconFlowAdapterError {
-    constructor(message: string, cause?: unknown) {
-        super(message, cause);
+    constructor(message: string, cause?: unknown, status?: number) {
+        super(message, cause, status);
         this.name = 'SiliconFlowServiceError';
     }
 }
@@ -80,17 +89,18 @@ export const mapSiliconFlowError = (error: unknown): SiliconFlowAdapterError => 
     const lower = message.toLowerCase();
 
     if (status === 401 || status === 403 || lower.includes('invalid token') || lower.includes('api key')) {
-        return new SiliconFlowAuthError(`Authentication error: ${message}`, error);
+        return new SiliconFlowAuthError(`Authentication error: ${message}`, error, status);
     }
     if (status === 429 || lower.includes('rate limit') || lower.includes('tpm limit')) {
         return new SiliconFlowRateLimitError(
             `Rate limit exceeded: ${message}`,
             getRetryAfter(error),
-            error
+            error,
+            status
         );
     }
     if (status === 400 || status === 404 || lower.includes('model does not exist')) {
-        return new SiliconFlowValidationError(`Invalid request: ${message}`, error);
+        return new SiliconFlowValidationError(`Invalid request: ${message}`, error, status);
     }
     if (
         lower.includes('econnrefused') ||
@@ -99,10 +109,10 @@ export const mapSiliconFlowError = (error: unknown): SiliconFlowAdapterError => 
         lower.includes('timeout') ||
         lower.includes('timed out')
     ) {
-        return new SiliconFlowNetworkError(`Network error: ${message}`, error);
+        return new SiliconFlowNetworkError(`Network error: ${message}`, error, status);
     }
     if (status !== undefined && status >= 500) {
-        return new SiliconFlowServiceError(`SiliconFlow service error: ${message}`, error);
+        return new SiliconFlowServiceError(`SiliconFlow service error: ${message}`, error, status);
     }
-    return new SiliconFlowAdapterError(message, error);
+    return new SiliconFlowAdapterError(message, error, status);
 };
