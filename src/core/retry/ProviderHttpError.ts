@@ -10,7 +10,7 @@ export type ProviderHttpErrorOptions = {
      * Distinct from this class's stable discriminant {@link ProviderHttpError.code}.
      */
     providerCode?: string;
-    /** Normalized request identity (`requestId` or SDK `request_id`). */
+    /** Normalized request identity (`requestId`, SDK `requestID`, or `request_id`). */
     requestId?: string;
     responseId?: string;
     retryHistory?: RetryAttemptEvent[];
