@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Preserve OpenAI SDK error cause and bounded identity (`status`, provider `code`, `requestID` / `requestId` / `request_id`) through adapter HTTP mapping (notably chatCall 400 → `OpenAIResponseValidationError`). RetryManager already wrapped terminals as `ProviderHttpError`; the adapter no longer drops SDK provenance before that path. HTTP 400 remains non-retryable. Bodies/headers are not retained on the wrapper.
+
 ## 0.5.9
 
 - Preserve structured provenance on non-retryable provider HTTP failures under RetryManager: terminal `ProviderHttpError` keeps `cause`, usable `status` / `providerCode` / `requestId` (from `requestId` or SDK `request_id`), and explicit `retryHistory` (often `[]`). HTTP 400 remains non-retryable and is not relabeled as transport; usage/zero-charge are not invented from status. Class-scoped and legacy terminal branches share this contract.

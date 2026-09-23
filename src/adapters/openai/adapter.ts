@@ -25,7 +25,7 @@ import type {
     TranscriptionChunkingStrategy
 } from '../../interfaces/UniversalInterfaces.ts';
 import { FinishReason } from '../../interfaces/UniversalInterfaces.ts';
-import { OpenAIResponseAdapterError, OpenAIResponseValidationError, OpenAIResponseAuthError, OpenAIResponseRateLimitError, OpenAIResponseNetworkError, OpenAIResponseServiceError } from './errors.ts';
+import { OpenAIResponseAdapterError, OpenAIResponseValidationError, OpenAIResponseAuthError, OpenAIResponseRateLimitError, OpenAIResponseNetworkError, OpenAIResponseServiceError, attachSdkCause } from './errors.ts';
 import { Converter } from './converter.ts';
 import { StreamHandler } from './stream.ts';
 import { Validator } from './validator.ts';
@@ -88,6 +88,31 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
         };
         signal.addEventListener('abort', onAbort, { once: true });
     });
+}
+
+/**
+ * Map an OpenAI SDK APIError to a typed adapter error while preserving the SDK
+ * exception as `cause` and bounded identity fields. Does not attach bodies/headers.
+ */
+function throwMappedOpenAIApiError(error: InstanceType<typeof OpenAI.APIError>): never {
+    if (error.status === 401) {
+        throw new OpenAIResponseAuthError('Invalid API key or authentication error', error);
+    }
+    if (error.status === 429) {
+        const retryAfterHeader = error.headers?.get?.('retry-after') ?? (error.headers as { ['retry-after']?: string } | undefined)?.['retry-after'];
+        const retryAfter = retryAfterHeader ? parseInt(String(retryAfterHeader), 10) : 60;
+        throw new OpenAIResponseRateLimitError('Rate limit exceeded', Number.isFinite(retryAfter) ? retryAfter : 60, error);
+    }
+    if (typeof error.status === 'number' && error.status >= 500) {
+        throw attachSdkCause(
+            new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`),
+            error
+        );
+    }
+    if (error.status === 400) {
+        throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters', error);
+    }
+    throw new OpenAIResponseAdapterError(`OpenAI API error: ${error.message || String(error)}`, error);
 }
 
 // Extend the ImageCallParams interface with usage tracking properties
@@ -197,20 +222,10 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
 
             // Handle specific OpenAI API error types
             if (error instanceof OpenAI.APIError) {
-                if (error.status === 401) {
-                    throw new OpenAIResponseAuthError('Invalid API key or authentication error');
-                } else if (error.status === 429) {
-                    const retryAfter = error.headers?.['retry-after'];
-                    throw new OpenAIResponseRateLimitError('Rate limit exceeded',
-                        retryAfter ? parseInt(retryAfter, 10) : 60);
-                } else if (error.status >= 500) {
-                    throw new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`);
-                } else if (error.status === 400) {
-                    throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
-                }
+                throwMappedOpenAIApiError(error);
             }
 
-            throw new OpenAIResponseAdapterError(`OpenAI API error: ${error?.message || String(error)}`);
+            throw new OpenAIResponseAdapterError(`OpenAI API error: ${error?.message || String(error)}`, error instanceof Error ? error : undefined);
         }
     }
 
@@ -389,18 +404,9 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.videoCall' });
             log.error('Video call failed:', error);
             if (error instanceof OpenAI.APIError) {
-                if (error.status === 401) {
-                    throw new OpenAIResponseAuthError('Invalid API key or authentication error');
-                } else if (error.status === 429) {
-                    const retryAfter = error.headers?.['retry-after'];
-                    throw new OpenAIResponseRateLimitError('Rate limit exceeded', retryAfter ? parseInt(retryAfter, 10) : 60);
-                } else if (error.status >= 500) {
-                    throw new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`);
-                } else if (error.status === 400) {
-                    throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
-                }
+                throwMappedOpenAIApiError(error);
             }
-            throw new OpenAIResponseAdapterError(`OpenAI video API error: ${error?.message || String(error)}`);
+            throw new OpenAIResponseAdapterError(`OpenAI video API error: ${error?.message || String(error)}`, error instanceof Error ? error : undefined);
         }
     }
 
@@ -484,20 +490,10 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
             if (cancellation) throw cancellation;
             // Handle specific OpenAI API error types
             if (error instanceof OpenAI.APIError) {
-                if (error.status === 401) {
-                    throw new OpenAIResponseAuthError('Invalid API key or authentication error');
-                } else if (error.status === 429) {
-                    const retryAfter = error.headers?.['retry-after'];
-                    throw new OpenAIResponseRateLimitError('Rate limit exceeded',
-                        retryAfter ? parseInt(retryAfter, 10) : 60);
-                } else if (error.status >= 500) {
-                    throw new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`);
-                } else if (error.status === 400) {
-                    throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
-                }
+                throwMappedOpenAIApiError(error);
             }
             log.error('Stream API call failed:', error);
-            throw new OpenAIResponseAdapterError(`OpenAI API stream error: ${error?.message || String(error)}`);
+            throw new OpenAIResponseAdapterError(`OpenAI API stream error: ${error?.message || String(error)}`, error instanceof Error ? error : undefined);
         }
     }
 
@@ -1850,20 +1846,10 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
 
             // Handle specific OpenAI API error types
             if (error instanceof OpenAI.APIError) {
-                if (error.status === 401) {
-                    throw new OpenAIResponseAuthError('Invalid API key or authentication error');
-                } else if (error.status === 429) {
-                    const retryAfter = error.headers?.['retry-after'];
-                    throw new OpenAIResponseRateLimitError('Rate limit exceeded',
-                        retryAfter ? parseInt(retryAfter, 10) : 60);
-                } else if (error.status >= 500) {
-                    throw new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`);
-                } else if (error.status === 400) {
-                    throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
-                }
+                throwMappedOpenAIApiError(error);
             }
 
-            throw new OpenAIResponseAdapterError(`OpenAI embedding API error: ${error?.message || String(error)}`);
+            throw new OpenAIResponseAdapterError(`OpenAI embedding API error: ${error?.message || String(error)}`, error instanceof Error ? error : undefined);
         }
     }
 
@@ -2106,25 +2092,10 @@ export class OpenAIResponseAdapter extends BaseAdapter implements LLMProviderIma
         const log = logger.createLogger({ prefix: 'OpenAIResponseAdapter.audio' });
         log.error(`${label} failed:`, error);
         if (error instanceof OpenAI.APIError) {
-            if (error.status === 401) {
-                throw new OpenAIResponseAuthError('Invalid API key or authentication error');
-            }
-            if (error.status === 429) {
-                const retryAfter = error.headers?.['retry-after'];
-                throw new OpenAIResponseRateLimitError(
-                    'Rate limit exceeded',
-                    retryAfter ? parseInt(String(retryAfter), 10) : 60
-                );
-            }
-            if (error.status !== undefined && error.status >= 500) {
-                throw new OpenAIResponseNetworkError(`OpenAI server error: ${error.message}`);
-            }
-            if (error.status === 400) {
-                throw new OpenAIResponseValidationError(error.message || 'Invalid request parameters');
-            }
+            throwMappedOpenAIApiError(error);
         }
         const msg = error instanceof Error ? error.message : String(error);
-        throw new OpenAIResponseAdapterError(`OpenAI audio API error: ${msg}`);
+        throw new OpenAIResponseAdapterError(`OpenAI audio API error: ${msg}`, error instanceof Error ? error : undefined);
     }
 
     private parseTranscriptionSegments(raw: unknown): TranscriptionSegment[] | undefined {

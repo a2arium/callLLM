@@ -93,6 +93,7 @@ let OpenAI: any;
 let OpenAIResponseAdapter: any;
 let FinishReason: any;
 let OpenAIResponseAdapterError: any;
+let OpenAIResponseValidationError: any;
 
 // Now use dynamic imports to import the modules after mocking
 beforeAll(async () => {
@@ -114,6 +115,7 @@ beforeAll(async () => {
   // Import error types
   const errorsModule = await import('@/adapters/openai/errors.ts');
   OpenAIResponseAdapterError = errorsModule.OpenAIResponseAdapterError;
+  OpenAIResponseValidationError = errorsModule.OpenAIResponseValidationError;
 });
 
 describe('OpenAIResponseAdapter', () => {
@@ -285,10 +287,22 @@ describe('OpenAIResponseAdapter', () => {
     test('should handle validation errors (400)', async () => {
       // Set up mock to throw an APIError with status 400
       const validationError = new MockAPIError('Invalid request parameters', 400);
+      (validationError as MockAPIError & { code?: string; requestID?: string }).code = 'synthetic_rejection';
+      (validationError as MockAPIError & { code?: string; requestID?: string }).requestID = 'synthetic-request';
       mockCreate.mockRejectedValueOnce(validationError);
 
-      // Test that the adapter throws the correct error type
-      await expect(adapter.chatCall('test-model', defaultParams)).rejects.toThrow(/Invalid request parameters/);
+      try {
+        await adapter.chatCall('test-model', defaultParams);
+        throw new Error('expected reject');
+      } catch (err) {
+        expect(err).toBeInstanceOf(OpenAIResponseValidationError);
+        const mapped = err as OpenAIResponseValidationError;
+        expect(mapped.message).toMatch(/Invalid request parameters/);
+        expect(mapped.cause).toBe(validationError);
+        expect(mapped.status).toBe(400);
+        expect(mapped.providerCode).toBe('synthetic_rejection');
+        expect(mapped.requestId).toBe('synthetic-request');
+      }
     });
 
     test('should handle generic errors', async () => {

@@ -19,7 +19,7 @@ describe('providerErrorProvenance', () => {
     expect(extractProviderRequestIds(err)).toEqual({ requestId: 'r1', responseId: undefined });
   });
 
-  it('prefers requestId but accepts SDK request_id', () => {
+  it('prefers requestId but accepts SDK request_id and requestID', () => {
     expect(
       extractProviderRequestIds(
         Object.assign(new Error('x'), { request_id: 'snake' })
@@ -27,9 +27,30 @@ describe('providerErrorProvenance', () => {
     ).toBe('snake');
     expect(
       extractProviderRequestIds(
-        Object.assign(new Error('x'), { requestId: 'camel', request_id: 'snake' })
+        Object.assign(new Error('x'), { requestID: 'sdkCamel' })
+      ).requestId
+    ).toBe('sdkCamel');
+    expect(
+      extractProviderRequestIds(
+        Object.assign(new Error('x'), { requestId: 'camel', request_id: 'snake', requestID: 'sdk' })
       ).requestId
     ).toBe('camel');
+  });
+
+  it('walks cause chain for SDK identity when the wrapper has none', () => {
+    const sdk = Object.assign(new Error('400 Synthetic provider rejection'), {
+      status: 400,
+      code: 'synthetic_rejection',
+      requestID: 'synthetic-request'
+    });
+    const wrapped = new Error('wrapper');
+    (wrapped as Error & { cause?: unknown }).cause = sdk;
+    expect(extractProviderProvenance(wrapped)).toEqual({
+      status: 400,
+      providerCode: 'synthetic_rejection',
+      requestId: 'synthetic-request',
+      responseId: undefined
+    });
   });
 
   it('tolerates absent optional metadata', () => {

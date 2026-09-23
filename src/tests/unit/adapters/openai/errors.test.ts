@@ -32,6 +32,20 @@ describe('OpenAI Errors', () => {
       expect(error.message).toBe('Invalid param');
       expect(error.name).toBe('OpenAIResponseValidationError');
     });
+
+    it('preserves SDK cause and bounded identity without appending the message twice', () => {
+      const cause = Object.assign(new Error('400 Synthetic provider rejection'), {
+        status: 400,
+        code: 'synthetic_rejection',
+        requestID: 'synthetic-request'
+      });
+      const error = new OpenAIResponseValidationError(cause.message, cause);
+      expect(error.message).toBe('400 Synthetic provider rejection');
+      expect(error.cause).toBe(cause);
+      expect(error.status).toBe(400);
+      expect(error.providerCode).toBe('synthetic_rejection');
+      expect(error.requestId).toBe('synthetic-request');
+    });
   });
 
   describe('OpenAIResponseRateLimitError', () => {

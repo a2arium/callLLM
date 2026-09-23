@@ -137,7 +137,7 @@ Terminal typed errors keep `retryHistory` and their classification:
 
 - `StructuredOutputError` — structured-output / schema failures
 - `ProviderTransportError` — transport class (`usageAmbiguous` for timeouts after possible provider acceptance)
-- `ProviderHttpError` — non-retryable provider HTTP / rejection (for example HTTP 400). Remains non-retryable, is **not** relabeled as transport, and preserves `cause` plus usable `status` / `providerCode` / `requestId` (from `requestId` or SDK `request_id`) when supplied. `retryHistory` is `[]` when the failure was rejected on the first try. CallLLM does not invent usage or infer zero charge from HTTP 400.
+- `ProviderHttpError` — non-retryable provider HTTP / rejection (for example HTTP 400). Remains non-retryable, is **not** relabeled as transport, and preserves `cause` plus usable `status` / `providerCode` / `requestId` (from `requestId`, SDK `requestID`, or `request_id`) when supplied. OpenAI adapter mappings keep the original SDK exception as `cause` (and copy the same bounded identity fields) so RetryManager can surface them on the terminal error. `retryHistory` is `[]` when the failure was rejected on the first try. CallLLM does not invent usage or infer zero charge from HTTP 400.
 
 Streaming: the same classifier and policy apply to **stream acquisition** (`StreamingService`).
 Final-chunk structured-output soft-attach does not auto re-stream (avoids duplicating tool work).

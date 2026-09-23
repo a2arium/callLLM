@@ -15,7 +15,7 @@ LLM applications fail in predictable ways: bad credentials, unsupported models, 
 | `CapabilityError` | exact model lacks required capability | choose capable exact model or use a preset/policy |
 | invalid `contentObject` / `StructuredOutputError` | model refused, hit `max_output_tokens`, returned non-JSON, or failed schema | inspect `err.reason`, `err.usage`, `err.refusal`, `err.rawContent`, `err.retryHistory` (or stream `metadata.structuredOutputReason`) |
 | `ProviderTransportError` / DNS / 5xx | network or retryable HTTP before usable content | inspect `err.usageAmbiguous` / `err.costUnresolved`; use `retryPolicy.transport` without raising SO retries |
-| `ProviderHttpError` / HTTP 400 (and other non-retryable provider HTTP) | provider rejected the request; not retried | inspect `err.status`, `err.providerCode`, `err.requestId`, `err.cause`, `err.retryHistory` (often `[]`). Do not treat as transport or invent usage/zero charge from status alone |
+| `ProviderHttpError` / HTTP 400 (and other non-retryable provider HTTP) | provider rejected the request; not retried | inspect `err.status`, `err.providerCode`, `err.requestId`, `err.cause` (SDK / adapter chain), `err.retryHistory` (often `[]`). OpenAI HTTP mappings retain the SDK error as `cause`. Do not treat as transport or invent usage/zero charge from status alone |
 | tool failure | tool threw or returned invalid result | validate tool args and handle tool exceptions |
 | `TranscriptionFfmpegError` | `ffmpeg`/`ffprobe` missing for audio splitting/transcoding | install ffmpeg and ensure it is on `PATH` |
 
