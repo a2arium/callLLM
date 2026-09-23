@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.9
 
 - Preserve structured provenance on non-retryable provider HTTP failures under RetryManager: terminal `ProviderHttpError` keeps `cause`, usable `status` / `providerCode` / `requestId` (from `requestId` or SDK `request_id`), and explicit `retryHistory` (often `[]`). HTTP 400 remains non-retryable and is not relabeled as transport; usage/zero-charge are not invented from status. Class-scoped and legacy terminal branches share this contract.
 
