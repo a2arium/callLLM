@@ -1,14 +1,14 @@
 import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
 
 export const defaultModels: ModelInfo[] = [
-    // GPT-5 family
+    // GPT-6 family
     {
-        name: 'gpt-5.6',
+        name: 'gpt-6-astra',
         maxRequestTokens: 1050000,
         maxResponseTokens: 128000,
-        inputPricePerMillion: 5.0,
-        inputCachedPricePerMillion: 0.50,
-        outputPricePerMillion: 30.0,
+        inputPricePerMillion: 10.0,
+        inputCachedPricePerMillion: 1.0,
+        outputPricePerMillion: 50.0,
         capabilities: {
             streaming: true,
             toolCalls: true,
@@ -27,7 +27,98 @@ export const defaultModels: ModelInfo[] = [
             }
         },
         characteristics: {
-            qualityIndex: 85,
+            qualityIndex: 98,
+            outputSpeed: 150,
+            firstTokenLatency: 28000,
+        },
+    },
+    {
+        name: 'gpt-6-sol',
+        maxRequestTokens: 1050000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 2.0,
+        inputCachedPricePerMillion: 0.20,
+        outputPricePerMillion: 10.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 92,
+            outputSpeed: 165,
+            firstTokenLatency: 22000,
+        },
+    },
+    {
+        name: 'gpt-6-luna',
+        maxRequestTokens: 1050000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 0.10,
+        inputCachedPricePerMillion: 0.01,
+        outputPricePerMillion: 0.50,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 74,
+            outputSpeed: 200,
+            firstTokenLatency: 12000,
+        },
+    },
+    // GPT-5.6 family (gpt-5.6 alias routes to Sol)
+    {
+        name: 'gpt-5.6',
+        maxRequestTokens: 1050000,
+        maxResponseTokens: 128000,
+        inputPricePerMillion: 4.0,
+        inputCachedPricePerMillion: 0.40,
+        outputPricePerMillion: 20.0,
+        capabilities: {
+            streaming: true,
+            toolCalls: true,
+            parallelToolCalls: true,
+            reasoning: true,
+            input: {
+                text: true,
+                image: true
+            },
+            output: {
+                text: {
+                    textOutputFormats: ['text', 'json'],
+                    structuredOutputs: true,
+                    jsonSchemaUnions: 'anyOf'
+                }
+            }
+        },
+        characteristics: {
+            qualityIndex: 88,
             outputSpeed: 160,
             firstTokenLatency: 25000,
         },
@@ -36,9 +127,9 @@ export const defaultModels: ModelInfo[] = [
         name: 'gpt-5.6-sol',
         maxRequestTokens: 1050000,
         maxResponseTokens: 128000,
-        inputPricePerMillion: 5.0,
-        inputCachedPricePerMillion: 0.50,
-        outputPricePerMillion: 30.0,
+        inputPricePerMillion: 4.0,
+        inputCachedPricePerMillion: 0.40,
+        outputPricePerMillion: 20.0,
         capabilities: {
             streaming: true,
             toolCalls: true,
@@ -57,7 +148,7 @@ export const defaultModels: ModelInfo[] = [
             }
         },
         characteristics: {
-            qualityIndex: 85,
+            qualityIndex: 88,
             outputSpeed: 160,
             firstTokenLatency: 25000,
         },
@@ -66,9 +157,9 @@ export const defaultModels: ModelInfo[] = [
         name: 'gpt-5.6-terra',
         maxRequestTokens: 1050000,
         maxResponseTokens: 128000,
-        inputPricePerMillion: 2.50,
-        inputCachedPricePerMillion: 0.25,
-        outputPricePerMillion: 15.0,
+        inputPricePerMillion: 2.0,
+        inputCachedPricePerMillion: 0.20,
+        outputPricePerMillion: 12.0,
         capabilities: {
             streaming: true,
             toolCalls: true,
@@ -87,7 +178,7 @@ export const defaultModels: ModelInfo[] = [
             }
         },
         characteristics: {
-            qualityIndex: 72,
+            qualityIndex: 78,
             outputSpeed: 170,
             firstTokenLatency: 20000,
         },
@@ -96,9 +187,9 @@ export const defaultModels: ModelInfo[] = [
         name: 'gpt-5.6-luna',
         maxRequestTokens: 1050000,
         maxResponseTokens: 128000,
-        inputPricePerMillion: 1.0,
-        inputCachedPricePerMillion: 0.10,
-        outputPricePerMillion: 6.0,
+        inputPricePerMillion: 0.20,
+        inputCachedPricePerMillion: 0.02,
+        outputPricePerMillion: 1.20,
         capabilities: {
             streaming: true,
             toolCalls: true,
@@ -117,7 +208,7 @@ export const defaultModels: ModelInfo[] = [
             }
         },
         characteristics: {
-            qualityIndex: 62,
+            qualityIndex: 66,
             outputSpeed: 190,
             firstTokenLatency: 15000,
         },

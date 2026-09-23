@@ -3,7 +3,7 @@ import type { ModelInfo } from '../../interfaces/UniversalInterfaces.ts';
 /**
  * Automatically generated model list from Vercel AI Gateway API.
  * This file is managed by the scripts/fetch-vercel-models.ts script.
- * Last updated: 2026-09-21T12:21:31.212Z
+ * Last updated: 2026-09-23T17:42:52.047Z
  */
 export const defaultModels: ModelInfo[] = [
     {
@@ -23,9 +23,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -52,9 +53,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -81,9 +83,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -110,9 +113,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -170,9 +174,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -199,9 +204,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -229,9 +235,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -258,9 +265,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -382,16 +390,17 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": true,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true
             },
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -419,9 +428,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -449,9 +459,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -479,9 +490,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -508,9 +520,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -568,9 +581,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -751,9 +765,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -781,9 +796,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -843,9 +859,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -874,9 +891,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -905,9 +923,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -936,9 +955,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -967,9 +987,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1270,9 +1291,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1301,9 +1323,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1330,9 +1353,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1360,9 +1384,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1414,9 +1439,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1445,9 +1471,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1476,9 +1503,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1507,9 +1535,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1523,7 +1552,7 @@ export const defaultModels: ModelInfo[] = [
     {
         "name": "anthropic/claude-opus-4",
         "maxRequestTokens": 200000,
-        "maxResponseTokens": 8192,
+        "maxResponseTokens": 32000,
         "inputPricePerMillion": 15,
         "outputPricePerMillion": 75,
         "capabilities": {
@@ -1569,9 +1598,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1600,9 +1630,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1631,9 +1662,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1662,9 +1694,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1693,9 +1726,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1724,9 +1758,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1755,9 +1790,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1769,11 +1805,11 @@ export const defaultModels: ModelInfo[] = [
         "inputCachedPricePerMillion": 1
     },
     {
-        "name": "anthropic/claude-sonnet-4",
+        "name": "anthropic/claude-opus-5.5",
         "maxRequestTokens": 1000000,
-        "maxResponseTokens": 8192,
-        "inputPricePerMillion": 3,
-        "outputPricePerMillion": 15,
+        "maxResponseTokens": 128000,
+        "inputPricePerMillion": 4,
+        "outputPricePerMillion": 20,
         "capabilities": {
             "streaming": true,
             "toolCalls": true,
@@ -1789,6 +1825,69 @@ export const defaultModels: ModelInfo[] = [
                         "text"
                     ],
                     "structuredOutputs": false
+                }
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.19999999999999998
+    },
+    {
+        "name": "anthropic/claude-opus-5.5-fast",
+        "maxRequestTokens": 1000000,
+        "maxResponseTokens": 128000,
+        "inputPricePerMillion": 8,
+        "outputPricePerMillion": 40,
+        "capabilities": {
+            "streaming": true,
+            "toolCalls": true,
+            "parallelToolCalls": false,
+            "reasoning": true,
+            "input": {
+                "text": true,
+                "image": true
+            },
+            "output": {
+                "text": {
+                    "textOutputFormats": [
+                        "text"
+                    ],
+                    "structuredOutputs": false
+                }
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.39999999999999997
+    },
+    {
+        "name": "anthropic/claude-sonnet-4",
+        "maxRequestTokens": 1000000,
+        "maxResponseTokens": 64000,
+        "inputPricePerMillion": 3,
+        "outputPricePerMillion": 15,
+        "capabilities": {
+            "streaming": true,
+            "toolCalls": true,
+            "parallelToolCalls": false,
+            "reasoning": true,
+            "input": {
+                "text": true,
+                "image": true
+            },
+            "output": {
+                "text": {
+                    "textOutputFormats": [
+                        "text",
+                        "json"
+                    ],
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1817,9 +1916,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1848,9 +1948,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1879,9 +1980,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -1909,9 +2011,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -2310,10 +2413,9 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text",
-                        "json"
+                        "text"
                     ],
-                    "structuredOutputs": true
+                    "structuredOutputs": false
                 }
             }
         },
@@ -2625,9 +2727,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -2791,9 +2894,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -2821,9 +2925,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -2844,7 +2949,7 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": true,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true
             },
@@ -2873,7 +2978,7 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": true,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true
             },
@@ -2909,9 +3014,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -2939,9 +3045,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -2970,9 +3077,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3000,9 +3108,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3030,9 +3139,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3061,9 +3171,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3072,7 +3183,7 @@ export const defaultModels: ModelInfo[] = [
             "outputSpeed": 50,
             "firstTokenLatency": 1000
         },
-        "inputCachedPricePerMillion": 0.03
+        "inputCachedPricePerMillion": 0.007
     },
     {
         "name": "fish-audio/s1",
@@ -3169,7 +3280,7 @@ export const defaultModels: ModelInfo[] = [
     {
         "name": "google/gemini-2.5-flash",
         "maxRequestTokens": 1000000,
-        "maxResponseTokens": 65536,
+        "maxResponseTokens": 65535,
         "inputPricePerMillion": 0.3,
         "outputPricePerMillion": 2.5,
         "capabilities": {
@@ -3184,9 +3295,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3200,14 +3312,14 @@ export const defaultModels: ModelInfo[] = [
     {
         "name": "google/gemini-2.5-flash-image",
         "maxRequestTokens": 32768,
-        "maxResponseTokens": 65536,
+        "maxResponseTokens": 65535,
         "inputPricePerMillion": 0.3,
         "outputPricePerMillion": 2.5,
         "capabilities": {
             "streaming": true,
             "toolCalls": false,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true,
                 "image": true
@@ -3231,7 +3343,7 @@ export const defaultModels: ModelInfo[] = [
     {
         "name": "google/gemini-2.5-flash-lite",
         "maxRequestTokens": 1048576,
-        "maxResponseTokens": 65536,
+        "maxResponseTokens": 65535,
         "inputPricePerMillion": 0.09999999999999999,
         "outputPricePerMillion": 0.39999999999999997,
         "capabilities": {
@@ -3246,9 +3358,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3262,7 +3375,7 @@ export const defaultModels: ModelInfo[] = [
     {
         "name": "google/gemini-2.5-pro",
         "maxRequestTokens": 1048576,
-        "maxResponseTokens": 65536,
+        "maxResponseTokens": 65535,
         "inputPricePerMillion": 1.25,
         "outputPricePerMillion": 10,
         "capabilities": {
@@ -3277,9 +3390,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3308,9 +3422,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3331,7 +3446,7 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": false,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true,
                 "image": true
@@ -3339,9 +3454,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3370,9 +3486,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3401,9 +3518,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3432,9 +3550,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3494,9 +3613,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3525,9 +3645,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3556,9 +3677,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3633,9 +3755,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3649,7 +3772,7 @@ export const defaultModels: ModelInfo[] = [
     {
         "name": "google/gemini-3.7-flash",
         "maxRequestTokens": 1000000,
-        "maxResponseTokens": 65536,
+        "maxResponseTokens": 65535,
         "inputPricePerMillion": 0.75,
         "outputPricePerMillion": 3.75,
         "capabilities": {
@@ -3664,9 +3787,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3680,7 +3804,7 @@ export const defaultModels: ModelInfo[] = [
     {
         "name": "google/gemini-3.8-flash",
         "maxRequestTokens": 1000000,
-        "maxResponseTokens": 65536,
+        "maxResponseTokens": 65535,
         "inputPricePerMillion": 0.75,
         "outputPricePerMillion": 3.75,
         "capabilities": {
@@ -3695,9 +3819,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3707,6 +3832,54 @@ export const defaultModels: ModelInfo[] = [
             "firstTokenLatency": 1000
         },
         "inputCachedPricePerMillion": 0.075
+    },
+    {
+        "name": "google/gemini-3.8-flash-lite-tts",
+        "maxRequestTokens": 0,
+        "maxResponseTokens": 0,
+        "inputPricePerMillion": 0.5,
+        "outputPricePerMillion": 6,
+        "capabilities": {
+            "streaming": false,
+            "toolCalls": false,
+            "reasoning": false,
+            "input": {
+                "text": true
+            },
+            "output": {
+                "text": false
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.125
+    },
+    {
+        "name": "google/gemini-3.8-flash-tts",
+        "maxRequestTokens": 0,
+        "maxResponseTokens": 0,
+        "inputPricePerMillion": 0.5,
+        "outputPricePerMillion": 9,
+        "capabilities": {
+            "streaming": false,
+            "toolCalls": false,
+            "reasoning": false,
+            "input": {
+                "text": true
+            },
+            "output": {
+                "text": false
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.125
     },
     {
         "name": "google/gemini-3.8-live",
@@ -3820,9 +3993,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3850,9 +4024,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -3881,9 +4056,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4078,9 +4254,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4108,9 +4285,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4138,9 +4316,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4197,9 +4376,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4300,8 +4480,8 @@ export const defaultModels: ModelInfo[] = [
         "name": "inclusionai/ling-3.0-flash-vl",
         "maxRequestTokens": 256000,
         "maxResponseTokens": 32000,
-        "inputPricePerMillion": 0,
-        "outputPricePerMillion": 0,
+        "inputPricePerMillion": 0.075,
+        "outputPricePerMillion": 0.015,
         "capabilities": {
             "streaming": true,
             "toolCalls": true,
@@ -4324,37 +4504,8 @@ export const defaultModels: ModelInfo[] = [
             "qualityIndex": 50,
             "outputSpeed": 50,
             "firstTokenLatency": 1000
-        }
-    },
-    {
-        "name": "inclusionai/ling-3.0-flash-vl-free",
-        "maxRequestTokens": 256000,
-        "maxResponseTokens": 32000,
-        "inputPricePerMillion": 0,
-        "outputPricePerMillion": 0,
-        "capabilities": {
-            "streaming": true,
-            "toolCalls": true,
-            "parallelToolCalls": false,
-            "reasoning": true,
-            "input": {
-                "text": true,
-                "image": true
-            },
-            "output": {
-                "text": {
-                    "textOutputFormats": [
-                        "text"
-                    ],
-                    "structuredOutputs": false
-                }
-            }
         },
-        "characteristics": {
-            "qualityIndex": 50,
-            "outputSpeed": 50,
-            "firstTokenLatency": 1000
-        }
+        "inputCachedPricePerMillion": 0.22
     },
     {
         "name": "inference-net/schematron-v2-small",
@@ -4436,9 +4587,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4650,16 +4802,17 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": true,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true
             },
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4679,16 +4832,17 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": true,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true
             },
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4708,7 +4862,7 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": true,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true
             },
@@ -4737,7 +4891,7 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": true,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true,
                 "image": true
@@ -4745,9 +4899,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4767,7 +4922,7 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": true,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true,
                 "image": true
@@ -4775,9 +4930,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4805,9 +4961,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4865,9 +5022,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4896,9 +5054,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4927,9 +5086,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4958,9 +5118,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -4989,9 +5150,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5067,9 +5229,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5097,9 +5260,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5127,9 +5291,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5157,9 +5322,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5187,9 +5353,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5217,9 +5384,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5247,9 +5415,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5278,9 +5447,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5308,9 +5478,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5364,9 +5535,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5426,9 +5598,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5481,9 +5654,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5512,9 +5686,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5542,9 +5717,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5572,9 +5748,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5602,9 +5779,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5661,9 +5839,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5692,9 +5871,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5722,9 +5902,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5753,9 +5934,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5784,9 +5966,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5847,9 +6030,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5877,9 +6061,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5906,9 +6091,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5965,9 +6151,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -5994,9 +6181,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6024,9 +6212,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6055,9 +6244,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6173,9 +6363,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6204,9 +6395,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6235,9 +6427,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6266,9 +6459,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6297,9 +6491,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6328,9 +6523,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6359,9 +6555,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6390,9 +6587,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6421,9 +6619,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6452,9 +6651,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6529,9 +6729,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6560,9 +6761,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6591,9 +6793,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6622,9 +6825,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6653,9 +6857,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6684,9 +6889,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6745,9 +6951,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6776,9 +6983,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6807,9 +7015,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6838,9 +7047,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6869,9 +7079,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6900,9 +7111,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6931,9 +7143,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6962,9 +7175,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -6993,9 +7207,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7023,9 +7238,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7054,9 +7270,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7085,9 +7302,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7116,9 +7334,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7147,9 +7366,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7178,9 +7398,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7209,9 +7430,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7240,9 +7462,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7270,9 +7493,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7301,9 +7525,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7332,9 +7557,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7362,9 +7588,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7393,9 +7620,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7424,9 +7652,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7455,9 +7684,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7486,9 +7716,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7517,9 +7748,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7548,9 +7780,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7579,9 +7812,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7591,6 +7825,134 @@ export const defaultModels: ModelInfo[] = [
             "firstTokenLatency": 1000
         },
         "inputCachedPricePerMillion": 2
+    },
+    {
+        "name": "openai/gpt-6-luna",
+        "maxRequestTokens": 1050000,
+        "maxResponseTokens": 128000,
+        "inputPricePerMillion": 0.09999999999999999,
+        "outputPricePerMillion": 0.5,
+        "capabilities": {
+            "streaming": true,
+            "toolCalls": true,
+            "parallelToolCalls": false,
+            "reasoning": true,
+            "input": {
+                "text": true,
+                "image": true
+            },
+            "output": {
+                "text": {
+                    "textOutputFormats": [
+                        "text",
+                        "json"
+                    ],
+                    "structuredOutputs": true
+                }
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.01
+    },
+    {
+        "name": "openai/gpt-6-luna-fast",
+        "maxRequestTokens": 1050000,
+        "maxResponseTokens": 128000,
+        "inputPricePerMillion": 0.19999999999999998,
+        "outputPricePerMillion": 1,
+        "capabilities": {
+            "streaming": true,
+            "toolCalls": true,
+            "parallelToolCalls": false,
+            "reasoning": true,
+            "input": {
+                "text": true,
+                "image": true
+            },
+            "output": {
+                "text": {
+                    "textOutputFormats": [
+                        "text",
+                        "json"
+                    ],
+                    "structuredOutputs": true
+                }
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.02
+    },
+    {
+        "name": "openai/gpt-6-sol",
+        "maxRequestTokens": 1050000,
+        "maxResponseTokens": 128000,
+        "inputPricePerMillion": 2,
+        "outputPricePerMillion": 10,
+        "capabilities": {
+            "streaming": true,
+            "toolCalls": true,
+            "parallelToolCalls": false,
+            "reasoning": true,
+            "input": {
+                "text": true,
+                "image": true
+            },
+            "output": {
+                "text": {
+                    "textOutputFormats": [
+                        "text",
+                        "json"
+                    ],
+                    "structuredOutputs": true
+                }
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.19999999999999998
+    },
+    {
+        "name": "openai/gpt-6-sol-fast",
+        "maxRequestTokens": 1050000,
+        "maxResponseTokens": 128000,
+        "inputPricePerMillion": 4,
+        "outputPricePerMillion": 20,
+        "capabilities": {
+            "streaming": true,
+            "toolCalls": true,
+            "parallelToolCalls": false,
+            "reasoning": true,
+            "input": {
+                "text": true,
+                "image": true
+            },
+            "output": {
+                "text": {
+                    "textOutputFormats": [
+                        "text",
+                        "json"
+                    ],
+                    "structuredOutputs": true
+                }
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.39999999999999997
     },
     {
         "name": "openai/gpt-image-1",
@@ -7812,9 +8174,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7822,7 +8185,8 @@ export const defaultModels: ModelInfo[] = [
             "qualityIndex": 50,
             "outputSpeed": 50,
             "firstTokenLatency": 1000
-        }
+        },
+        "inputCachedPricePerMillion": 0.09999999999999999
     },
     {
         "name": "openai/gpt-oss-20b",
@@ -7841,9 +8205,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7870,9 +8235,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -7899,9 +8265,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -8053,9 +8420,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -8084,9 +8452,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -8115,9 +8484,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -8145,9 +8515,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -8176,9 +8547,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -8206,9 +8578,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -8237,9 +8610,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -8457,9 +8831,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -8487,9 +8862,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -8517,9 +8893,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -8852,6 +9229,35 @@ export const defaultModels: ModelInfo[] = [
         "imagePricePerImage": 0.035
     },
     {
+        "name": "recraft/recraft-v4.1-flash",
+        "maxRequestTokens": 1,
+        "maxResponseTokens": 0,
+        "inputPricePerMillion": 0,
+        "outputPricePerMillion": 0,
+        "capabilities": {
+            "streaming": false,
+            "toolCalls": false,
+            "reasoning": false,
+            "input": {
+                "text": true,
+                "image": true
+            },
+            "output": {
+                "text": false,
+                "image": {
+                    "generate": true,
+                    "edit": true
+                }
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "imagePricePerImage": 0.007
+    },
+    {
         "name": "recraft/recraft-v4.1-pro",
         "maxRequestTokens": 1,
         "maxResponseTokens": 0,
@@ -8988,9 +9394,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9114,9 +9521,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9137,7 +9545,7 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": false,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true,
                 "image": true
@@ -9145,9 +9553,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9204,9 +9613,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9233,9 +9643,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9262,9 +9673,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9323,9 +9735,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9354,9 +9767,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9713,7 +10127,7 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": true,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true,
                 "image": true
@@ -9721,9 +10135,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9752,9 +10167,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9783,9 +10199,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9814,9 +10231,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9837,7 +10255,7 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": true,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true,
                 "image": true
@@ -9845,9 +10263,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9868,7 +10287,7 @@ export const defaultModels: ModelInfo[] = [
             "streaming": true,
             "toolCalls": true,
             "parallelToolCalls": false,
-            "reasoning": false,
+            "reasoning": true,
             "input": {
                 "text": true,
                 "image": true
@@ -9876,9 +10295,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9907,9 +10327,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9938,9 +10359,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -9969,9 +10391,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10000,9 +10423,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10031,9 +10455,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10043,6 +10468,38 @@ export const defaultModels: ModelInfo[] = [
             "firstTokenLatency": 1000
         },
         "inputCachedPricePerMillion": 0.5
+    },
+    {
+        "name": "spacexai/grok-4.7",
+        "maxRequestTokens": 500000,
+        "maxResponseTokens": 500000,
+        "inputPricePerMillion": 1.2,
+        "outputPricePerMillion": 3.5999999999999996,
+        "capabilities": {
+            "streaming": true,
+            "toolCalls": true,
+            "parallelToolCalls": false,
+            "reasoning": true,
+            "input": {
+                "text": true,
+                "image": true
+            },
+            "output": {
+                "text": {
+                    "textOutputFormats": [
+                        "text",
+                        "json"
+                    ],
+                    "structuredOutputs": true
+                }
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.3
     },
     {
         "name": "spacexai/grok-build-0.1",
@@ -10062,9 +10519,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10293,9 +10751,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10323,9 +10782,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10335,6 +10795,102 @@ export const defaultModels: ModelInfo[] = [
             "firstTokenLatency": 1000
         },
         "inputCachedPricePerMillion": 0.0036
+    },
+    {
+        "name": "xiaomi/mimo-v2.6-flash",
+        "maxRequestTokens": 1048576,
+        "maxResponseTokens": 131072,
+        "inputPricePerMillion": 0.14,
+        "outputPricePerMillion": 0.28,
+        "capabilities": {
+            "streaming": true,
+            "toolCalls": true,
+            "parallelToolCalls": false,
+            "reasoning": true,
+            "input": {
+                "text": true,
+                "image": true
+            },
+            "output": {
+                "text": {
+                    "textOutputFormats": [
+                        "text",
+                        "json"
+                    ],
+                    "structuredOutputs": true
+                }
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.0028
+    },
+    {
+        "name": "xiaomi/mimo-v2.6-pro",
+        "maxRequestTokens": 1048576,
+        "maxResponseTokens": 131072,
+        "inputPricePerMillion": 0.435,
+        "outputPricePerMillion": 0.87,
+        "capabilities": {
+            "streaming": true,
+            "toolCalls": true,
+            "parallelToolCalls": false,
+            "reasoning": true,
+            "input": {
+                "text": true,
+                "image": true
+            },
+            "output": {
+                "text": {
+                    "textOutputFormats": [
+                        "text",
+                        "json"
+                    ],
+                    "structuredOutputs": true
+                }
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.0036
+    },
+    {
+        "name": "xiaomi/mimo-v2.6-pro-ultraspeed",
+        "maxRequestTokens": 1048576,
+        "maxResponseTokens": 131072,
+        "inputPricePerMillion": 4.35,
+        "outputPricePerMillion": 8.7,
+        "capabilities": {
+            "streaming": true,
+            "toolCalls": true,
+            "parallelToolCalls": false,
+            "reasoning": true,
+            "input": {
+                "text": true,
+                "image": true
+            },
+            "output": {
+                "text": {
+                    "textOutputFormats": [
+                        "text",
+                        "json"
+                    ],
+                    "structuredOutputs": true
+                }
+            }
+        },
+        "characteristics": {
+            "qualityIndex": 50,
+            "outputSpeed": 50,
+            "firstTokenLatency": 1000
+        },
+        "inputCachedPricePerMillion": 0.036
     },
     {
         "name": "zai/glm-4.5",
@@ -10353,9 +10909,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10383,9 +10940,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10414,9 +10972,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10444,9 +11003,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10474,9 +11034,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10504,9 +11065,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10563,9 +11125,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10622,9 +11185,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10652,9 +11216,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10682,9 +11247,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10712,9 +11278,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10742,9 +11309,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10773,9 +11341,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10804,9 +11373,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
@@ -10835,9 +11405,10 @@ export const defaultModels: ModelInfo[] = [
             "output": {
                 "text": {
                     "textOutputFormats": [
-                        "text"
+                        "text",
+                        "json"
                     ],
-                    "structuredOutputs": false
+                    "structuredOutputs": true
                 }
             }
         },
